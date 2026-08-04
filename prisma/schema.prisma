@@ -1,0 +1,722 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  FACEBOOK
+}
+
+enum UserRole {
+  VCARD_OWNER     @map("vcard-owner")
+  CORPORATE_OWNER @map("corporate-owner")
+  ADMIN           @map("admin")
+}
+
+model User {
+  id                String       @id @default(cuid())
+  legacyId          Int?         @unique
+  email             String       @unique
+  password          String?
+  name              String?
+  avatar            String?
+  role              UserRole     @default(VCARD_OWNER)
+  provider          AuthProvider @default(LOCAL)
+  providerId        String?
+  isVerified        Boolean      @default(false)
+  isActive          Boolean      @default(true)
+  otpCode           Int?
+  otpCoolDown       DateTime?
+  otpExpiresAt      DateTime?
+  passwordChangedAt DateTime?
+  stripeId          String?
+  pmType            String?
+  pmLastFour        String?
+  trialEndsAt       DateTime?
+  createdById       String?
+  deletedAt         DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  forgotPasswordTokens ForgotPasswordToken[]
+  passwordSetupTokens  PasswordSetupToken[]
+  profiles             Profile[]             @relation("ProfileOwner")
+  companyProfiles      Profile[]             @relation("ProfileCompany")
+  createdProfiles      Profile[]             @relation("ProfileCreatedBy")
+  companyEmployees     CompanyEmployee[]     @relation("EmployeeUser")
+  ownedCompanies       CompanyEmployee[]     @relation("CompanyOwner")
+  subscriptions        Subscription[]
+  transactions         Transaction[]
+  createdPosts         Post[]                @relation("PostCreatedBy")
+  updatedPosts         Post[]                @relation("PostUpdatedBy")
+
+  @@index([provider, providerId])
+}
+
+model ForgotPasswordToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model PasswordSetupToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Status {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profiles Profile[]
+}
+
+model Gender {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profiles Profile[]
+}
+
+model MaritalStatus {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profiles Profile[]
+}
+
+model Profession {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profiles Profile[]
+}
+
+model Country {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  name      String
+  code      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  states State[]
+  cities City[]
+}
+
+model State {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  name      String
+  countryId String?
+  country   Country? @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cities City[]
+
+  @@index([countryId])
+}
+
+model City {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  name      String
+  stateId   String?
+  state     State?   @relation(fields: [stateId], references: [id], onDelete: SetNull)
+  countryId String?
+  country   Country? @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([stateId])
+  @@index([countryId])
+}
+
+model Profile {
+  id              String    @id @default(cuid())
+  legacyId        Int?      @unique
+  userId          String?
+  user            User?     @relation("ProfileOwner", fields: [userId], references: [id], onDelete: SetNull)
+  companyUserId   String?
+  companyUser     User?     @relation("ProfileCompany", fields: [companyUserId], references: [id], onDelete: SetNull)
+  createdById     String?
+  createdBy       User?     @relation("ProfileCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  statusId        String?
+  status          Status?   @relation(fields: [statusId], references: [id], onDelete: SetNull)
+  genderId        String?
+  gender          Gender?   @relation(fields: [genderId], references: [id], onDelete: SetNull)
+  maritalStatusId String?
+  maritalStatus   MaritalStatus? @relation(fields: [maritalStatusId], references: [id], onDelete: SetNull)
+  professionId    String?
+  profession      Profession? @relation(fields: [professionId], references: [id], onDelete: SetNull)
+
+  name         String
+  slug         String?   @unique
+  prof         String?
+  companyName  String?
+  email        String
+  website      String?
+  lastName     String?
+  dob          DateTime?
+  phone        String?
+  whatsapp     String?
+  countryCode  String?
+  facebook     String?
+  instagram    String?
+  twitter      String?
+  tiktok       String?
+  youtube      String?
+  rumble       String?
+  truth        String?
+  linkedin     String?
+  pinterest    String?
+  avatar       String?
+  zipCode      String?
+  colorCode    String    @default("#212121")
+  address      String?
+  about        String?
+  isEmploy     Boolean   @default(false)
+  designation  String?
+  referralCount Int      @default(0)
+  referralCode String?   @unique
+  isPublic     Boolean   @default(true)
+  viewCount    Int       @default(0)
+  template     String    @default("default")
+  themeConfig  Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  addresses          Address[]
+  education          Education[]
+  experiences        Experience[]
+  services           Service[]
+  portfolios         Portfolio[]
+  posts              Post[]
+  settings           Setting[]
+  profileSettings    ProfileSetting?
+  socialLinks        SocialLink[]
+  skillTags          SkillTag[]
+  contacts           Contact[]
+  guestUsers         GuestUserData[]
+  userNotes          UserNote[]
+  eventLogs          EventLog[]
+  pushSubscriptions  PushSubscription[]
+  menus              Menu[]
+  attachments        Attachment[]
+
+  @@index([userId])
+  @@index([companyUserId])
+  @@index([slug])
+  @@index([isPublic])
+}
+
+model Address {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  label     String?
+  line1     String?
+  line2     String?
+  city      String?
+  state     String?
+  country   String?
+  zipCode   String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model Education {
+  id         String    @id @default(cuid())
+  legacyId   Int?      @unique
+  profileId  String
+  profile    Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  institute  String?
+  degree     String?
+  fromDate   DateTime?
+  toDate     DateTime?
+  tillNow    Boolean   @default(false)
+  description String?
+  sortOrder  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([profileId])
+}
+
+model Experience {
+  id          String    @id @default(cuid())
+  legacyId    Int?      @unique
+  profileId   String
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  company     String?
+  jobTitle    String?
+  description String?
+  fromDate    DateTime?
+  toDate      DateTime?
+  tillNow     Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([profileId])
+}
+
+model SkillType {
+  id        String     @id @default(cuid())
+  legacyId  Int?       @unique
+  name      String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  skillTags SkillTag[]
+}
+
+model SkillTag {
+  id          String    @id @default(cuid())
+  legacyId    Int?      @unique
+  profileId   String
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  skillTypeId String?
+  skillType   SkillType? @relation(fields: [skillTypeId], references: [id], onDelete: SetNull)
+  name        String
+  level       String?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([profileId])
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  legacyId    Int?     @unique
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title       String?
+  description String?
+  status      Int      @default(1)
+  sortOrder   Int      @default(0)
+  reviewUrl   String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model Portfolio {
+  id          String   @id @default(cuid())
+  legacyId    Int?     @unique
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title       String?
+  description String?
+  status      Int      @default(1)
+  sortOrder   Int      @default(0)
+  url         String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model PostType {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  name      String
+  title     String?
+  slug      String?
+  status    String?  @default("active")
+  typeId    Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  posts     Post[]
+
+  @@index([name])
+}
+
+model Post {
+  id          String    @id @default(cuid())
+  legacyId    Int?      @unique
+  profileId   String
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  postTypeId  String?
+  postType    PostType? @relation(fields: [postTypeId], references: [id], onDelete: SetNull)
+  title       String?
+  description String?
+  status      String    @default("1")
+  url         String?
+  featuredImage String?
+  sortOrder   Int       @default(0)
+  createdById String?
+  createdBy   User?     @relation("PostCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById String?
+  updatedBy   User?     @relation("PostUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  metas       PostMeta[]
+  attachments Attachment[]
+
+  @@index([profileId])
+  @@index([postTypeId])
+  @@index([status])
+}
+
+model PostMeta {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  metaKey   String
+  metaValue String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId])
+  @@index([metaKey])
+}
+
+model AttachmentType {
+  id          String       @id @default(cuid())
+  legacyId    Int?         @unique
+  name        String
+  slug        String?
+  status      String?      @default("active")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  attachments Attachment[]
+}
+
+model Attachment {
+  id               String          @id @default(cuid())
+  legacyId         Int?            @unique
+  attachmentTypeId String?
+  attachmentType   AttachmentType? @relation(fields: [attachmentTypeId], references: [id], onDelete: SetNull)
+  /// Polymorphic target: Profile | Post | Service | Portfolio
+  attachableType   String
+  attachableId     String
+  profileId        String?
+  profile          Profile?        @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  postId           String?
+  post             Post?           @relation(fields: [postId], references: [id], onDelete: SetNull)
+  docName          String?
+  url              String?
+  publicId         String?
+  resourceType     String?
+  format           String?
+  bytes            Int?
+  extension        String?
+  mimeType         String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([attachableType, attachableId])
+  @@index([profileId])
+  @@index([postId])
+  @@index([attachmentTypeId])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  key       String
+  value     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([profileId, key])
+  @@index([profileId])
+}
+
+model ProfileSetting {
+  id              String   @id @default(cuid())
+  legacyId        Int?     @unique
+  profileId       String   @unique
+  profile         Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profileTemplate String   @default("v3")
+  layoutStyle     String?
+  buttonStyle     String?
+  cornerStyle     String?
+  themeConfig     Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model SocialLink {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name      String?
+  url       String?
+  icon      String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model Menu {
+  id        String     @id @default(cuid())
+  legacyId  Int?       @unique
+  profileId String
+  profile   Profile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name      String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  items     MenuItem[]
+
+  @@index([profileId])
+}
+
+model MenuItem {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  menuId    String
+  menu      Menu     @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  title     String?
+  url       String?
+  price     String?
+  description String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([menuId])
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name      String?
+  email     String?
+  phone     String?
+  message   String?
+  meta      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model GuestUserData {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  firstName String?
+  lastName  String?
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model UserNote {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model EventLog {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  profileId String?
+  profile   Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  eventType String
+  payload   Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([profileId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+model PushSubscription {
+  id          String   @id @default(cuid())
+  legacyId    Int?     @unique
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  endpoint    String
+  endpointHash String
+  p256dh      String
+  auth        String
+  browser     String?
+  platform    String?
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  preferences PushNotificationPreference?
+
+  @@index([profileId])
+  @@index([endpointHash])
+}
+
+model PushNotificationPreference {
+  id                  String           @id @default(cuid())
+  legacyId            Int?             @unique
+  pushSubscriptionId  String           @unique
+  pushSubscription    PushSubscription @relation(fields: [pushSubscriptionId], references: [id], onDelete: Cascade)
+  serviceUpdates      Boolean          @default(true)
+  portfolioUpdates    Boolean          @default(true)
+  contactUpdates      Boolean          @default(true)
+  offers              Boolean          @default(true)
+  businessHours       Boolean          @default(true)
+  news                Boolean          @default(true)
+  themeUpdates        Boolean          @default(false)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+}
+
+model Package {
+  id           String           @id @default(cuid())
+  legacyId     Int?             @unique
+  name         String
+  slug         String?          @unique
+  description  String?
+  monthlyPrice Int              @default(0)
+  yearlyPrice  Int              @default(0)
+  isActive     Boolean          @default(true)
+  sortOrder    Int              @default(0)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  features     PackageFeature[]
+  subscriptions Subscription[]
+}
+
+model PackageFeature {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  packageId String
+  package   Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  featureKey String
+  featureValue String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([packageId])
+  @@unique([packageId, featureKey])
+}
+
+model Subscription {
+  id               String    @id @default(cuid())
+  legacyId         Int?      @unique
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  packageId        String?
+  package          Package?  @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  name             String?
+  stripeId         String?
+  stripeStatus     String?
+  stripePrice      String?
+  quantity         Int?
+  trialEndsAt      DateTime?
+  endsAt           DateTime?
+  provider         String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  items        SubscriptionItem[]
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([packageId])
+}
+
+model SubscriptionItem {
+  id             String       @id @default(cuid())
+  legacyId       Int?         @unique
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  stripeId       String?
+  stripeProduct  String?
+  stripePrice    String?
+  quantity       Int?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([subscriptionId])
+}
+
+model Transaction {
+  id             String        @id @default(cuid())
+  legacyId       Int?          @unique
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  amount         Int           @default(0)
+  currency       String        @default("usd")
+  status         String?
+  provider       String?
+  meta           Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([subscriptionId])
+}
+
+model CompanyEmployee {
+  id        String   @id @default(cuid())
+  legacyId  Int?     @unique
+  userId    String
+  user      User     @relation("EmployeeUser", fields: [userId], references: [id], onDelete: Cascade)
+  companyId String
+  company   User     @relation("CompanyOwner", fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+}

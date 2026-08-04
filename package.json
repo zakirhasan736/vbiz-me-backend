@@ -1,0 +1,93 @@
+{
+  "name": "vbizme-backend",
+  "version": "1.0.0",
+  "description": "VBizMe backend API",
+  "main": "dist/server.js",
+  "type": "module",
+  "packageManager": "yarn@4.11.0",
+  "imports": {
+    "@prisma/client": "./dist/generated/prisma/client.js",
+    "@prisma/client/*": "./node_modules/@prisma/client/*"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "build": "tsc && tsx src/copy.assets.ts",
+    "start": "tsx src/server.ts",
+    "postinstall": "prisma generate",
+    "generate": "prisma generate",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "studio": "prisma studio",
+    "migrate:laravel": "tsx --env-file=.env scripts/migrate-from-laravel.ts",
+    "migrate:media": "tsx --env-file=.env scripts/migrate-media-to-s3.ts",
+    "prepare": "husky",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "typecheck": "tsc --noEmit"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,mjs,cjs}": [
+      "prettier --check",
+      "eslint --max-warnings=0"
+    ],
+    "*.{json,md,css,html,yml,yaml}": [
+      "prettier --check"
+    ]
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1101.0",
+    "@aws-sdk/lib-storage": "^3.1101.0",
+    "@prisma/adapter-pg": "^7.9.0",
+    "@prisma/client": "^7.9.0",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "dotenv-flow": "^4.1.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.2.0",
+    "mysql2": "^3.23.2",
+    "nodemailer": "^9.0.3",
+    "passport": "^0.7.0",
+    "passport-facebook": "^3.0.0",
+    "passport-google-oauth20": "^2.0.0",
+    "pg": "^8.22.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "zod": "3.24.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/fs-extra": "^11.0.4",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^24.10.1",
+    "@types/nodemailer": "^8.0.1",
+    "@types/passport": "^1.0.17",
+    "@types/passport-facebook": "^3.0.3",
+    "@types/passport-google-oauth20": "^2.0.16",
+    "@types/pg": "^8.15.6",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "fs-extra": "^11.3.6",
+    "globals": "^17.7.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.1.1",
+    "prettier": "^3.9.6",
+    "prettier-plugin-organize-imports": "^4.3.0",
+    "prisma": "^7.9.0",
+    "tsx": "^4.21.0",
+    "typescript": "5.7.3",
+    "typescript-eslint": "^8.65.0"
+  },
+  "license": "ISC"
+}

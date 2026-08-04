@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "rootDir": ".",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@prisma/client": ["./generated/prisma/client.ts"],
+      "@prisma/client/*": ["./node_modules/@prisma/client/*"]
+    },
+    "typeRoots": ["./node_modules/@types", "./src/@types"],
+    "sourceMap": true,
+    "outDir": "./dist",
+    "removeComments": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictPropertyInitialization": true,
+    "alwaysStrict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitReturns": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*", "generated/**/*", "scripts/**/*"]
+}

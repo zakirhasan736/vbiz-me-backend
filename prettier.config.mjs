@@ -1,0 +1,9 @@
+const config = {
+  semi: false,
+  singleQuote: true,
+  printWidth: 120,
+  trailingComma: 'es5',
+  plugins: ['prettier-plugin-organize-imports'],
+}
+
+export default config

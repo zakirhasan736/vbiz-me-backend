@@ -1,0 +1,10 @@
+export type IErrorSources = {
+  path: string | number
+  message: string
+}[]
+
+export type IGenericErrorRes = {
+  statusCode: number
+  message: string
+  errorSources: IErrorSources
+}
