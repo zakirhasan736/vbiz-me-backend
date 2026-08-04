@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import type { Attachment, Setting } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
+import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 
 const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
@@ -8,6 +9,10 @@ const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
   background: ['background', 'bg video', 'background video', 'bg_video', 'background_media'],
   intro: ['intro', 'intro video', 'profile video', '2d explainer', '2d video'],
   audio: ['audio', 'background audio', 'bg music', 'music'],
+}
+
+type AttachmentWithType = Attachment & {
+  attachmentType?: { name: string | null; legacyId?: number | null } | null
 }
 
 function settingsToMap(settings: Setting[]): Record<string, string> {
@@ -24,23 +29,34 @@ function matchAttachmentType(name: string | null | undefined, aliases: string[])
   return aliases.some((a) => n.includes(a))
 }
 
-function toMediaBlock(att: Attachment | undefined, enabled = true) {
-  if (!att?.url) {
+function resolveAttachmentUrl(att: AttachmentWithType | undefined, profileLegacyId?: number | null) {
+  if (!att) return null
+  return ensureAbsoluteMediaUrl(att.url, {
+    docName: att.docName,
+    attachmentTypeLegacyId: att.attachmentType?.legacyId ?? null,
+    attachmentTypeName: att.attachmentType?.name ?? null,
+    profileLegacyId,
+  })
+}
+
+function toMediaBlock(att: AttachmentWithType | undefined, enabled = true, profileLegacyId?: number | null) {
+  const url = resolveAttachmentUrl(att, profileLegacyId)
+  if (!url) {
     return { enabled: false, url: null, video_url: null, is_video: false }
   }
   const isVideo =
-    att.resourceType === 'video' ||
-    (att.extension && ['mp4', 'webm', 'mov'].includes(att.extension.toLowerCase())) ||
-    Boolean(att.url.includes('youtube') || att.url.includes('youtu.be'))
+    att?.resourceType === 'video' ||
+    (att?.extension && ['mp4', 'webm', 'mov'].includes(att.extension.toLowerCase())) ||
+    Boolean(url.includes('youtube') || url.includes('youtu.be'))
   return {
     enabled,
-    url: att.url,
-    video_url: isVideo ? att.url : null,
-    fallback_url: att.url,
+    url,
+    video_url: isVideo ? url : null,
+    fallback_url: url,
     type: isVideo ? 'video' : 'image',
     is_video: isVideo,
-    doc_name: att.docName || undefined,
-    extension: att.extension || undefined,
+    doc_name: att?.docName || undefined,
+    extension: att?.extension || undefined,
   }
 }
 
@@ -63,10 +79,7 @@ async function getProfileBySlugOrThrow(slug: string) {
   return profile
 }
 
-function pickAttachment(
-  attachments: (Attachment & { attachmentType?: { name: string | null } | null })[],
-  kind: keyof typeof ATTACHMENT_TYPE_ALIASES
-) {
+function pickAttachment(attachments: AttachmentWithType[], kind: keyof typeof ATTACHMENT_TYPE_ALIASES) {
   const aliases = ATTACHMENT_TYPE_ALIASES[kind]
   return attachments.find(
     (a) => matchAttachmentType(a.attachmentType?.name, aliases) || matchAttachmentType(a.docName, aliases)
@@ -86,10 +99,13 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
   const background = pickAttachment(profile.attachments, 'background')
   const intro = pickAttachment(profile.attachments, 'intro')
   const audio = pickAttachment(profile.attachments, 'audio')
+  const legacyId = profile.legacyId
 
   const template = profile.profileSettings?.profileTemplate || profile.template || 'default'
 
   const address = profile.addresses.find((a) => a.isPrimary) || profile.addresses[0]
+
+  const audioUrl = resolveAttachmentUrl(audio, legacyId)
 
   return {
     profile: {
@@ -124,9 +140,9 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
     settings,
     features,
     template,
-    background_media: toMediaBlock(background, settings.bg_video_checkbox !== '0'),
-    intro_video: toMediaBlock(intro, settings.profile_video_checkbox !== '0'),
-    profile_media: toMediaBlock(primary ?? undefined, true),
+    background_media: toMediaBlock(background, settings.bg_video_checkbox !== '0', legacyId),
+    intro_video: toMediaBlock(intro, settings.profile_video_checkbox !== '0', legacyId),
+    profile_media: toMediaBlock(primary ?? undefined, true, legacyId),
     action_buttons: {
       my_info: { enabled: settings.my_info_checkbox !== '0', label: 'My Info' },
       save_contact: {
@@ -178,11 +194,11 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
         icon: s.icon || undefined,
       })),
     },
-    background_audio: audio?.url
+    background_audio: audioUrl
       ? {
           enabled: true,
-          url: audio.url,
-          doc_name: audio.docName || undefined,
+          url: audioUrl,
+          doc_name: audio?.docName || undefined,
         }
       : undefined,
     theme_config: profile.themeConfig || profile.profileSettings?.themeConfig || undefined,
@@ -352,6 +368,15 @@ const getProfileAiData = async (profileId: string) => {
 const getDynamicSection = async (sectionName: string, profileId: string) => {
   const profile = await prisma.profile.findFirst({ where: { id: profileId, isPublic: true } })
   if (!profile) throw new AppError(404, 'Profile not found')
+  const legacyId = profile.legacyId
+
+  const abs = (raw?: string | null, docName?: string | null, typeLegacyId?: number | null, typeName?: string | null) =>
+    ensureAbsoluteMediaUrl(raw, {
+      docName,
+      attachmentTypeLegacyId: typeLegacyId,
+      attachmentTypeName: typeName,
+      profileLegacyId: legacyId,
+    })
 
   const name = decodeURIComponent(sectionName)
 
@@ -364,14 +389,17 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
       type: 'services',
       postType: { name: 'services', title: 'Services' },
       profile: { id: profileId },
-      items: items.map((s) => ({
-        id: s.id,
-        title: s.title,
-        description: s.description,
-        status: s.status,
-        featured_image: s.imageUrl ? [{ url: s.imageUrl }] : [],
-        review_link: { url: s.reviewUrl || '', has_link: Boolean(s.reviewUrl) },
-      })),
+      items: items.map((s) => {
+        const imageUrl = abs(s.imageUrl, null, 6, 'Service Image')
+        return {
+          id: s.id,
+          title: s.title,
+          description: s.description,
+          status: s.status,
+          featured_image: imageUrl || null,
+          review_link: { url: s.reviewUrl || '', has_link: Boolean(s.reviewUrl) },
+        }
+      }),
     }
   }
 
@@ -384,15 +412,18 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
       type: 'gallery',
       postType: { name: 'gallery', title: 'Gallery' },
       profile: { id: profileId },
-      items: items.map((p) => ({
-        id: p.id,
-        title: p.title,
-        description: p.description,
-        status: p.status,
-        featured_image: p.imageUrl ? [{ id: p.id, doc_name: p.title, url: p.imageUrl }] : [],
-        gallery: p.imageUrl ? [{ id: p.id, doc_name: p.title, url: p.imageUrl }] : [],
-        general_info_url: p.url,
-      })),
+      items: items.map((p) => {
+        const imageUrl = abs(p.imageUrl, null, 5, 'Portfolio Gallery')
+        return {
+          id: p.id,
+          title: p.title,
+          description: p.description,
+          status: p.status,
+          featured_image: imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : [],
+          gallery: imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : [],
+          general_info_url: p.url,
+        }
+      }),
     }
   }
 
@@ -460,7 +491,7 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
     include: {
       postType: true,
       metas: true,
-      attachments: true,
+      attachments: { include: { attachmentType: true } },
     },
     orderBy: { sortOrder: 'asc' },
   })
@@ -476,23 +507,28 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
       type_id: postType?.typeId,
     },
     profile: { id: profileId },
-    items: posts.map((p) => ({
-      id: p.id,
-      title: p.title,
-      description: p.description,
-      status: p.status,
-      featured_image: p.featuredImage
-        ? [{ id: p.id, doc_name: p.title, url: p.featuredImage }]
-        : p.attachments.filter((a) => a.url).map((a) => ({ id: a.id, doc_name: a.docName, url: a.url })),
-      general_info_url: p.url,
-      attachments: p.attachments.map((a) => ({
-        id: a.id,
-        doc_name: a.docName,
-        url: a.url,
-        extension: a.extension,
-      })),
-      metas: Object.fromEntries(p.metas.map((m) => [m.metaKey, m.metaValue])),
-    })),
+    items: posts.map((p) => {
+      const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
+      const attachmentImages = p.attachments
+        .map((a) => {
+          const url = resolveAttachmentUrl(a, legacyId)
+          return url ? { id: a.id, doc_name: a.docName, url, extension: a.extension } : null
+        })
+        .filter(Boolean) as { id: string; doc_name: string | null; url: string; extension: string | null }[]
+
+      return {
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        status: p.status,
+        featured_image: featuredFromField
+          ? [{ id: p.id, doc_name: p.title, url: featuredFromField }]
+          : attachmentImages.map(({ id, doc_name, url }) => ({ id, doc_name, url })),
+        general_info_url: p.url,
+        attachments: attachmentImages,
+        metas: Object.fromEntries(p.metas.map((m) => [m.metaKey, m.metaValue])),
+      }
+    }),
     section_id: postType?.id,
     post_type: postType
       ? { name: postType.name, title: postType.title || postType.name, type_id: postType.typeId }
@@ -545,10 +581,16 @@ const getPublicCards = async (query: {
 
   const lastPage = Math.max(1, Math.ceil(total / perPage))
   const data = rows.map((p) => {
+    const profileAtt = p.attachments.find((a) =>
+      matchAttachmentType(a.attachmentType?.name, ATTACHMENT_TYPE_ALIASES.profile)
+    )
     const avatar =
-      p.avatar ||
-      p.attachments.find((a) => matchAttachmentType(a.attachmentType?.name, ATTACHMENT_TYPE_ALIASES.profile))?.url ||
-      null
+      ensureAbsoluteMediaUrl(p.avatar, {
+        docName: p.avatar,
+        attachmentTypeLegacyId: 13,
+        attachmentTypeName: 'Profile Picture',
+        profileLegacyId: p.legacyId,
+      }) || resolveAttachmentUrl(profileAtt, p.legacyId)
     return {
       id: p.id,
       name: p.name,

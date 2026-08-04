@@ -11,7 +11,16 @@ import mysql from 'mysql2/promise'
 import { AuthProvider, UserRole } from '../generated/prisma/client'
 import config from '../src/configs/config'
 import logger from '../src/utils/logger'
+import { resolveMediaUrl } from '../src/utils/mediaUrl'
 import { prisma } from '../src/utils/prisma'
+
+const legacyIdForProfile = (profileMap: IdMap, profileId: string | null): number | null => {
+  if (!profileId) return null
+  for (const [legacy, id] of profileMap) {
+    if (id === profileId) return legacy
+  }
+  return null
+}
 
 type IdMap = Map<number, string>
 
@@ -285,7 +294,15 @@ async function importProfiles(conn: mysql.Connection, userMap: IdMap, maps: Awai
       rumble: row.rumble ? String(row.rumble) : null,
       truth: row.truth ? String(row.truth) : null,
       linkedin: row.linkedin ? String(row.linkedin) : null,
-      avatar: row.avatar ? String(row.avatar) : null,
+      avatar: row.avatar
+        ? resolveMediaUrl({
+            url: String(row.avatar),
+            docName: String(row.avatar),
+            attachmentTypeLegacyId: 13,
+            attachmentTypeName: 'Profile Picture',
+            profileLegacyId: Number(row.id),
+          }) || String(row.avatar)
+        : null,
       zipCode: row.zip_code ? String(row.zip_code) : null,
       colorCode: row.color_code ? String(row.color_code) : '#212121',
       address: row.address ? String(row.address) : null,
@@ -491,7 +508,18 @@ async function importContent(
     if (!attachableId) continue
 
     const docName = row.doc_name ? String(row.doc_name) : row.name ? String(row.name) : null
-    const url = row.url ? String(row.url) : docName
+    const typeLegacyId = row.attachment_type_id != null ? Number(row.attachment_type_id) : null
+    const profileLegacyId =
+      legacyIdForProfile(profileMap, profileId) ?? (attachableType.includes('Profile') ? attachableLegacyId : null)
+    const rawUrl = row.url ? String(row.url) : docName
+    const url =
+      resolveMediaUrl({
+        url: rawUrl,
+        docName,
+        attachmentTypeLegacyId: typeLegacyId,
+        profileLegacyId,
+      }) || rawUrl
+
     await prisma.attachment.upsert({
       where: { legacyId: Number(row.id) },
       create: {

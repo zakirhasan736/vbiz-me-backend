@@ -28,3 +28,6 @@ Thumbs.db
 # coverage / misc
 coverage/
 *.tsbuildinfo
+
+# media migration failure reports
+scripts/reports/

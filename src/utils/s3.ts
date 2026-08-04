@@ -102,16 +102,43 @@ const uploadFromUrl = async (
   options?: { folder?: string; resourceType?: 'image' | 'video' | 'raw' | 'auto' }
 ): Promise<S3UploadResult> => {
   ensureConfigured()
-  const response = await fetch(remoteUrl)
+  let fetchUrl = remoteUrl
+  try {
+    const u = new URL(remoteUrl.startsWith('//') ? `https:${remoteUrl}` : remoteUrl)
+    u.pathname = u.pathname
+      .split('/')
+      .map((seg) => {
+        if (!seg) return seg
+        try {
+          return encodeURIComponent(decodeURIComponent(seg))
+        } catch {
+          return encodeURIComponent(seg)
+        }
+      })
+      .join('/')
+    fetchUrl = u.toString()
+  } catch {
+    fetchUrl = remoteUrl
+  }
+  const response = await fetch(fetchUrl, {
+    headers: {
+      'User-Agent': 'vbizme-media-migrator/1.0',
+      Accept: '*/*',
+    },
+    redirect: 'follow',
+  })
   if (!response.ok) {
     throw new AppError(502, `Failed to download remote media (${response.status})`)
   }
   const contentType = response.headers.get('content-type') || 'application/octet-stream'
+  if (contentType.includes('text/html')) {
+    throw new AppError(502, `Failed to download remote media (got HTML instead of file)`)
+  }
   const arrayBuffer = await response.arrayBuffer()
   const buffer = Buffer.from(arrayBuffer)
   let filename: string | undefined
   try {
-    filename = path.basename(new URL(remoteUrl).pathname) || undefined
+    filename = decodeURIComponent(path.basename(new URL(fetchUrl).pathname)) || undefined
   } catch {
     filename = undefined
   }
