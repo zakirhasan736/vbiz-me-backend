@@ -260,10 +260,13 @@ const getPostTypesForProfile = async (profileId: string) => {
     })
   }
 
-  // Also include dedicated services/portfolios as section names when present
-  const [serviceCount, portfolioCount] = await Promise.all([
+  // Also include dedicated first-class tables as section names when present
+  const [serviceCount, portfolioCount, educationCount, experienceCount, skillCount] = await Promise.all([
     prisma.service.count({ where: { profileId, status: 1 } }),
     prisma.portfolio.count({ where: { profileId, status: 1 } }),
+    prisma.education.count({ where: { profileId } }),
+    prisma.experience.count({ where: { profileId } }),
+    prisma.skillTag.count({ where: { profileId } }),
   ])
   if (serviceCount > 0 && !post_types.some((t) => t.name.toLowerCase() === 'services')) {
     post_types.push({
@@ -283,6 +286,46 @@ const getPostTypesForProfile = async (profileId: string) => {
       status: 'active',
       type_id: null,
       slug: 'gallery',
+    })
+  }
+  if (
+    educationCount > 0 &&
+    !post_types.some((t) => /^(resume|education)$/i.test(t.name) || /^(resume|education)$/i.test(t.title || ''))
+  ) {
+    post_types.push({
+      id: 'resume',
+      name: 'Resume',
+      title: 'Resume',
+      status: 'active',
+      type_id: null,
+      slug: 'resume',
+    })
+  }
+  if (
+    experienceCount > 0 &&
+    !post_types.some(
+      (t) =>
+        /^(work experience|work|experience)$/i.test(t.name) ||
+        /^(work experience|work|experience)$/i.test(t.title || '')
+    )
+  ) {
+    post_types.push({
+      id: 'work-experience',
+      name: 'Work Experience',
+      title: 'Work Experience',
+      status: 'active',
+      type_id: null,
+      slug: 'work-experience',
+    })
+  }
+  if (skillCount > 0 && !post_types.some((t) => /^skills?$/i.test(t.name) || /^skills?$/i.test(t.title || ''))) {
+    post_types.push({
+      id: 'skills',
+      name: 'skills',
+      title: 'Skills',
+      status: 'active',
+      type_id: null,
+      slug: 'skills',
     })
   }
 
@@ -322,6 +365,11 @@ const getProfileAiData = async (profileId: string) => {
   })
   if (!profile) throw new AppError(404, 'Profile not found')
 
+  const formatDate = (d: Date | null | undefined) => {
+    if (!d) return null
+    return d.toISOString().slice(0, 10)
+  }
+
   return {
     slug: profile.slug,
     ownerName: profile.name,
@@ -332,6 +380,8 @@ const getProfileAiData = async (profileId: string) => {
     phone: profile.phone,
     whatsapp: profile.whatsapp,
     website: profile.website,
+    // Laravel-compatible `location`; keep `address` alias for Node callers
+    location: profile.address,
     address: profile.address,
     about: profile.about,
     socials: {
@@ -341,26 +391,45 @@ const getProfileAiData = async (profileId: string) => {
       linkedin: profile.linkedin,
       youtube: profile.youtube,
       tiktok: profile.tiktok,
+      rumble: null,
+      truth: null,
       custom: profile.socialLinks,
     },
-    skills: profile.skillTags.map((s) => ({ name: s.name, level: s.level })),
+    // Prefer string[] for frontend ProfileAiData; objects remain readable via names
+    skills: profile.skillTags.map((s) => s.name),
     services: profile.services.map((s) => ({ title: s.title, description: s.description })),
     experience: profile.experiences.map((e) => ({
       company: e.company,
-      jobTitle: e.jobTitle,
+      title: e.jobTitle,
+      job_title: e.jobTitle,
       description: e.description,
-      fromDate: e.fromDate,
-      toDate: e.toDate,
+      from_date: formatDate(e.fromDate) || '',
+      to_date: formatDate(e.toDate),
+      current_status: e.tillNow ? 1 : 0,
+      // camelCase aliases
+      jobTitle: e.jobTitle,
+      fromDate: formatDate(e.fromDate),
+      toDate: formatDate(e.toDate),
       tillNow: e.tillNow,
     })),
     education: profile.education.map((e) => ({
       institute: e.institute,
+      title: e.degree,
       degree: e.degree,
-      fromDate: e.fromDate,
-      toDate: e.toDate,
+      from_date: formatDate(e.fromDate) || '',
+      to_date: formatDate(e.toDate),
+      current_status: e.tillNow ? 1 : 0,
+      // camelCase aliases
+      fromDate: formatDate(e.fromDate),
+      toDate: formatDate(e.toDate),
       tillNow: e.tillNow,
     })),
-    portfolio: profile.portfolios.map((p) => ({ title: p.title, description: p.description, url: p.url })),
+    portfolio: profile.portfolios.map((p) => ({
+      title: p.title,
+      description: p.description,
+      url: p.url,
+      status: p.status,
+    })),
     customSections: [],
   }
 }
@@ -440,6 +509,24 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
           status: '1',
         },
       ],
+    }
+  }
+
+  if (/^skills?$/i.test(name)) {
+    const skillTags = await prisma.skillTag.findMany({
+      where: { profileId },
+      orderBy: { sortOrder: 'asc' },
+    })
+    return {
+      type: 'skills',
+      postType: { name: 'skills', title: 'Skills' },
+      profile: { id: profileId },
+      items: skillTags.map((s) => ({
+        id: s.id,
+        title: s.name,
+        description: s.level || '',
+        status: '1',
+      })),
     }
   }
 

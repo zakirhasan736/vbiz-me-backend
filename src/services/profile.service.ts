@@ -74,35 +74,83 @@ const create = async (
     companyName?: string
     designation?: string
     phone?: string
+    whatsapp?: string
+    website?: string
+    address?: string
     about?: string
+    prof?: string
+    isPublic?: boolean
     template?: string
+    facebook?: string
+    instagram?: string
+    twitter?: string
+    tiktok?: string
+    youtube?: string
+    linkedin?: string
+    settings?: Record<string, string>
+    profileSettings?: {
+      profileTemplate?: string
+      layoutStyle?: string
+      buttonStyle?: string
+      cornerStyle?: string
+      themeConfig?: unknown
+    }
+    [key: string]: unknown
   }
 ) => {
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) throw new AppError(404, 'User not found')
 
-  const slug = await ensureUniqueSlug(input.slug || input.name)
+  const { settings, profileSettings, ...raw } = input
+  const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
   const profile = await prisma.profile.create({
     data: {
       userId,
-      name: input.name,
-      email: input.email || user.email,
+      name: String(raw.name),
+      email: (raw.email as string) || user.email,
       slug,
-      companyName: input.companyName,
-      designation: input.designation,
-      phone: input.phone,
-      about: input.about,
-      template: input.template || 'default',
-      isPublic: true,
+      companyName: raw.companyName as string | undefined,
+      designation: raw.designation as string | undefined,
+      phone: raw.phone as string | undefined,
+      whatsapp: raw.whatsapp as string | undefined,
+      website: raw.website as string | undefined,
+      address: raw.address as string | undefined,
+      about: raw.about as string | undefined,
+      prof: raw.prof as string | undefined,
+      template: (raw.template as string) || 'default',
+      isPublic: raw.isPublic !== false,
+      facebook: raw.facebook as string | undefined,
+      instagram: raw.instagram as string | undefined,
+      twitter: raw.twitter as string | undefined,
+      tiktok: raw.tiktok as string | undefined,
+      youtube: raw.youtube as string | undefined,
+      linkedin: raw.linkedin as string | undefined,
       profileSettings: {
         create: {
-          profileTemplate: input.template === 'dynamic' ? 'v1' : input.template === 'classic' ? 'v2' : 'v3',
+          profileTemplate:
+            profileSettings?.profileTemplate ||
+            (raw.template === 'dynamic' ? 'v1' : raw.template === 'classic' ? 'v2' : 'v3'),
+          layoutStyle: profileSettings?.layoutStyle,
+          buttonStyle: profileSettings?.buttonStyle,
+          cornerStyle: profileSettings?.cornerStyle,
+          themeConfig: profileSettings?.themeConfig as object | undefined,
         },
       },
     },
     include: profileInclude,
   })
-  return profile
+
+  if (settings) {
+    await Promise.all(
+      Object.entries(settings).map(([key, value]) =>
+        prisma.setting.create({
+          data: { profileId: profile.id, key, value },
+        })
+      )
+    )
+  }
+
+  return prisma.profile.findUniqueOrThrow({ where: { id: profile.id }, include: profileInclude })
 }
 
 const update = async (
