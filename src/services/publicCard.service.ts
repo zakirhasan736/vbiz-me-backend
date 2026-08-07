@@ -5,14 +5,36 @@ import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 
 const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
-  profile: ['profile', 'profile pic', 'profile_pic', 'avatar', 'profile picture'],
-  background: ['background', 'bg video', 'background video', 'bg_video', 'background_media'],
-  intro: ['intro', 'intro video', 'profile video', '2d explainer', '2d video'],
-  audio: ['audio', 'background audio', 'bg music', 'music'],
+  profile: ['profile picture', 'profile pic', 'profile_pic', 'avatar', 'profile image', 'profile'],
+  background: ['background video/image', 'background_media', 'bg_video', 'bg video', 'background video', 'background'],
+  intro: ['intro vcard video', 'intro video', '2d explainer', '2d video', 'profile video', 'intro'],
+  audio: ['background music', 'background audio', 'bg music', 'audio', 'music'],
 }
 
 type AttachmentWithType = Attachment & {
   attachmentType?: { name: string | null; legacyId?: number | null } | null
+}
+
+type MediaBlock = {
+  enabled: boolean
+  url: string | null
+  video_url: string | null
+  fallback_url?: string | null
+  type?: string
+  is_video: boolean
+  doc_name?: string
+  extension?: string
+  youtube?: { link?: string; embed_url?: string; video_id?: string }
+  regular_video?: { url?: string | null }
+}
+
+type BackgroundAudioBlock = {
+  enabled: boolean
+  use_youtube_link?: boolean
+  url?: string
+  doc_name?: string
+  youtube?: { link?: string; video_id?: string; embed_url?: string }
+  repeat?: boolean
 }
 
 function settingsToMap(settings: Setting[]): Record<string, string> {
@@ -23,10 +45,71 @@ function settingsToMap(settings: Setting[]): Record<string, string> {
   return map
 }
 
+function isSettingEnabled(settings: Record<string, string>, ...keys: string[]) {
+  let sawDefined = false
+  for (const key of keys) {
+    const value = settings[key]
+    if (value === undefined) continue
+    sawDefined = true
+    if (value === '1' || value === 'true') return true
+  }
+  // Missing checkbox defaults to enabled for media (legacy behavior).
+  // If every provided key is explicitly off, treat as disabled.
+  return !sawDefined
+}
+
+function extractYoutubeVideoId(url?: string | null): string | null {
+  if (!url?.trim()) return null
+  const trimmed = url.trim()
+  try {
+    const parsed = new URL(trimmed)
+    const host = parsed.hostname.replace(/^www\./, '')
+    if (host === 'youtu.be') {
+      const id = parsed.pathname.split('/').filter(Boolean)[0]
+      return id || null
+    }
+    if (host.endsWith('youtube.com')) {
+      const fromQuery = parsed.searchParams.get('v')
+      if (fromQuery) return fromQuery
+      const parts = parsed.pathname.split('/').filter(Boolean)
+      const embedIndex = parts.indexOf('embed')
+      if (embedIndex >= 0 && parts[embedIndex + 1]) return parts[embedIndex + 1]
+      const shortsIndex = parts.indexOf('shorts')
+      if (shortsIndex >= 0 && parts[shortsIndex + 1]) return parts[shortsIndex + 1]
+    }
+  } catch {
+    /* not a URL */
+  }
+  return null
+}
+
+function isYoutubeUrl(url?: string | null): boolean {
+  return Boolean(extractYoutubeVideoId(url))
+}
+
+function isDurableMediaUrl(url?: string | null): boolean {
+  if (!url?.trim()) return false
+  const trimmed = url.trim()
+  if (trimmed.startsWith('blob:')) return false
+  return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('/')
+}
+
+function attachmentLabel(att: AttachmentWithType): string {
+  return `${att.attachmentType?.name || ''} ${att.docName || ''}`.toLowerCase()
+}
+
+function scoreAttachmentAlias(label: string, aliases: string[]): number {
+  let best = -1
+  for (const alias of aliases) {
+    if (!label.includes(alias)) continue
+    best = Math.max(best, alias.length)
+  }
+  return best
+}
+
 function matchAttachmentType(name: string | null | undefined, aliases: string[]): boolean {
   if (!name) return false
-  const n = name.toLowerCase()
-  return aliases.some((a) => n.includes(a))
+  return scoreAttachmentAlias(name.toLowerCase(), aliases) >= 0
 }
 
 function resolveAttachmentUrl(att: AttachmentWithType | undefined, profileLegacyId?: number | null) {
@@ -39,15 +122,36 @@ function resolveAttachmentUrl(att: AttachmentWithType | undefined, profileLegacy
   })
 }
 
-function toMediaBlock(att: AttachmentWithType | undefined, enabled = true, profileLegacyId?: number | null) {
-  const url = resolveAttachmentUrl(att, profileLegacyId)
-  if (!url) {
-    return { enabled: false, url: null, video_url: null, is_video: false }
+function emptyMediaBlock(): MediaBlock {
+  return { enabled: false, url: null, video_url: null, is_video: false }
+}
+
+function toMediaBlockFromUrl(
+  url: string | null | undefined,
+  enabled = true,
+  extras?: { doc_name?: string; extension?: string; resourceType?: string | null }
+): MediaBlock {
+  if (!url || !isDurableMediaUrl(url)) return emptyMediaBlock()
+  const youtubeId = extractYoutubeVideoId(url)
+  if (youtubeId) {
+    const embedUrl = `https://www.youtube.com/embed/${youtubeId}`
+    return {
+      enabled,
+      url,
+      video_url: embedUrl,
+      fallback_url: url,
+      type: 'video',
+      is_video: true,
+      youtube: { link: url, embed_url: embedUrl, video_id: youtubeId },
+      doc_name: extras?.doc_name,
+      extension: extras?.extension,
+    }
   }
+  const ext = extras?.extension?.toLowerCase()
   const isVideo =
-    att?.resourceType === 'video' ||
-    (att?.extension && ['mp4', 'webm', 'mov'].includes(att.extension.toLowerCase())) ||
-    Boolean(url.includes('youtube') || url.includes('youtu.be'))
+    extras?.resourceType === 'video' ||
+    Boolean(ext && ['mp4', 'webm', 'mov', 'm4v', 'ogg', 'ogv'].includes(ext)) ||
+    /\.(mp4|webm|mov|m4v|ogg|ogv)(\?|$)/i.test(url)
   return {
     enabled,
     url,
@@ -55,9 +159,23 @@ function toMediaBlock(att: AttachmentWithType | undefined, enabled = true, profi
     fallback_url: url,
     type: isVideo ? 'video' : 'image',
     is_video: isVideo,
+    regular_video: isVideo ? { url } : undefined,
+    doc_name: extras?.doc_name,
+    extension: extras?.extension,
+  }
+}
+
+function toMediaBlock(
+  att: AttachmentWithType | undefined,
+  enabled = true,
+  profileLegacyId?: number | null
+): MediaBlock {
+  const url = resolveAttachmentUrl(att, profileLegacyId)
+  return toMediaBlockFromUrl(url, enabled, {
     doc_name: att?.docName || undefined,
     extension: att?.extension || undefined,
-  }
+    resourceType: att?.resourceType,
+  })
 }
 
 async function getProfileBySlugOrThrow(slug: string) {
@@ -81,9 +199,149 @@ async function getProfileBySlugOrThrow(slug: string) {
 
 function pickAttachment(attachments: AttachmentWithType[], kind: keyof typeof ATTACHMENT_TYPE_ALIASES) {
   const aliases = ATTACHMENT_TYPE_ALIASES[kind]
-  return attachments.find(
-    (a) => matchAttachmentType(a.attachmentType?.name, aliases) || matchAttachmentType(a.docName, aliases)
-  )
+  let best: AttachmentWithType | undefined
+  let bestScore = -1
+
+  for (const att of attachments) {
+    const label = attachmentLabel(att)
+    if (kind === 'background' && (label.includes('music') || /\baudio\b/.test(label))) continue
+    if (kind === 'intro' && (label.includes('music') || label.includes('background'))) continue
+    if (kind === 'audio' && !(label.includes('music') || label.includes('audio'))) continue
+    if (kind === 'profile' && (label.includes('intro') || label.includes('background') || label.includes('music'))) {
+      continue
+    }
+
+    const score = Math.max(
+      scoreAttachmentAlias(att.attachmentType?.name?.toLowerCase() || '', aliases),
+      scoreAttachmentAlias(att.docName?.toLowerCase() || '', aliases)
+    )
+    if (score > bestScore) {
+      bestScore = score
+      best = att
+    }
+  }
+
+  return bestScore >= 0 ? best : undefined
+}
+
+function resolveIntroMedia(
+  attachments: AttachmentWithType[],
+  settings: Record<string, string>,
+  legacyId?: number | null
+): MediaBlock {
+  const enabled = isSettingEnabled(settings, 'profile_video_checkbox', 'profile_video_link_checkbox')
+
+  // Prefer settings URLs from the editor; fall back to attachments for legacy cards.
+  const fileUrl = settings.intro_video_url?.trim()
+  if (fileUrl && !isYoutubeUrl(fileUrl)) {
+    return toMediaBlockFromUrl(fileUrl, enabled)
+  }
+
+  const youtubeUrl = settings.intro_youtube_url?.trim() || (isYoutubeUrl(fileUrl) ? fileUrl : '')
+  if (youtubeUrl) return toMediaBlockFromUrl(youtubeUrl, enabled)
+
+  const fromAttachment = toMediaBlock(pickAttachment(attachments, 'intro'), enabled, legacyId)
+  if (fromAttachment.url) return fromAttachment
+
+  return emptyMediaBlock()
+}
+
+function resolveBackgroundMedia(
+  attachments: AttachmentWithType[],
+  settings: Record<string, string>,
+  legacyId?: number | null
+): MediaBlock {
+  const enabled = isSettingEnabled(settings, 'background_video_checkbox', 'bg_video_checkbox')
+
+  const fileUrl = settings.background_media_url?.trim()
+  if (fileUrl) return toMediaBlockFromUrl(fileUrl, enabled)
+
+  const fromAttachment = toMediaBlock(pickAttachment(attachments, 'background'), enabled, legacyId)
+  if (fromAttachment.url) return fromAttachment
+
+  return emptyMediaBlock()
+}
+
+function resolveProfileMedia(
+  attachments: AttachmentWithType[],
+  settings: Record<string, string>,
+  avatar: string | null | undefined,
+  legacyId?: number | null
+): MediaBlock {
+  const enabled = isSettingEnabled(settings, 'profile_image_checkbox')
+
+  const fromSettings = settings.profile_media_url?.trim()
+  if (fromSettings && isDurableMediaUrl(fromSettings)) {
+    return toMediaBlockFromUrl(fromSettings, enabled)
+  }
+
+  const fromAttachment = toMediaBlock(pickAttachment(attachments, 'profile'), enabled, legacyId)
+  if (fromAttachment.url) return fromAttachment
+
+  if (avatar?.trim()) {
+    const absolute = ensureAbsoluteMediaUrl(avatar.trim(), {
+      docName: avatar.trim(),
+      profileLegacyId: legacyId,
+    })
+    if (absolute) return toMediaBlockFromUrl(absolute, enabled)
+  }
+
+  return emptyMediaBlock()
+}
+
+function resolveBackgroundAudio(
+  attachments: AttachmentWithType[],
+  settings: Record<string, string>,
+  legacyId?: number | null
+): BackgroundAudioBlock | undefined {
+  const fileEnabled = isSettingEnabled(settings, 'background_music_checkbox')
+  const youtubeEnabled = isSettingEnabled(settings, 'background_music_link_checkbox')
+  const repeat = settings.repeat_bg_music_checkbox !== '0' && settings.repeat_bg_music_checkbox !== 'false'
+
+  const fileSettingUrl = settings.background_music_file_url?.trim()
+  if (fileSettingUrl && isDurableMediaUrl(fileSettingUrl) && !isYoutubeUrl(fileSettingUrl) && fileEnabled) {
+    return {
+      enabled: true,
+      url: fileSettingUrl,
+      repeat,
+    }
+  }
+
+  const musicUrl = settings.background_music_url?.trim()
+  if (musicUrl && youtubeEnabled && isYoutubeUrl(musicUrl)) {
+    const videoId = extractYoutubeVideoId(musicUrl)!
+    return {
+      enabled: true,
+      use_youtube_link: true,
+      youtube: {
+        link: musicUrl,
+        video_id: videoId,
+        embed_url: `https://www.youtube.com/embed/${videoId}`,
+      },
+      repeat,
+    }
+  }
+
+  if (musicUrl && fileEnabled && isDurableMediaUrl(musicUrl) && !isYoutubeUrl(musicUrl)) {
+    return {
+      enabled: true,
+      url: musicUrl,
+      repeat,
+    }
+  }
+
+  const audioAtt = pickAttachment(attachments, 'audio')
+  const attachmentUrl = resolveAttachmentUrl(audioAtt, legacyId)
+  if (attachmentUrl && fileEnabled) {
+    return {
+      enabled: true,
+      url: attachmentUrl,
+      doc_name: audioAtt?.docName || undefined,
+      repeat,
+    }
+  }
+
+  return undefined
 }
 
 function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>>) {
@@ -95,17 +353,15 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
     }
   }
 
-  const primary = pickAttachment(profile.attachments, 'profile')
-  const background = pickAttachment(profile.attachments, 'background')
-  const intro = pickAttachment(profile.attachments, 'intro')
-  const audio = pickAttachment(profile.attachments, 'audio')
   const legacyId = profile.legacyId
+  const background_media = resolveBackgroundMedia(profile.attachments, settings, legacyId)
+  const intro_video = resolveIntroMedia(profile.attachments, settings, legacyId)
+  const background_audio = resolveBackgroundAudio(profile.attachments, settings, legacyId)
+  const profile_media = resolveProfileMedia(profile.attachments, settings, profile.avatar, legacyId)
 
   const template = profile.profileSettings?.profileTemplate || profile.template || 'default'
 
   const address = profile.addresses.find((a) => a.isPrimary) || profile.addresses[0]
-
-  const audioUrl = resolveAttachmentUrl(audio, legacyId)
 
   return {
     profile: {
@@ -140,9 +396,9 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
     settings,
     features,
     template,
-    background_media: toMediaBlock(background, settings.bg_video_checkbox !== '0', legacyId),
-    intro_video: toMediaBlock(intro, settings.profile_video_checkbox !== '0', legacyId),
-    profile_media: toMediaBlock(primary ?? undefined, true, legacyId),
+    background_media,
+    intro_video,
+    profile_media,
     action_buttons: {
       my_info: { enabled: settings.my_info_checkbox !== '0', label: 'My Info' },
       save_contact: {
@@ -194,23 +450,14 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
         icon: s.icon || undefined,
       })),
     },
-    background_audio: audioUrl
-      ? {
-          enabled: true,
-          url: audioUrl,
-          doc_name: audio?.docName || undefined,
-        }
-      : undefined,
+    background_audio,
     theme_config: profile.themeConfig || profile.profileSettings?.themeConfig || undefined,
   }
 }
 
 const getMyCardBySlug = async (slug: string) => {
   const profile = await getProfileBySlugOrThrow(slug)
-  await prisma.profile.update({
-    where: { id: profile.id },
-    data: { viewCount: { increment: 1 } },
-  })
+  // viewCount is incremented only when a unique guest is tracked via trackEvent(profile_view).
   return buildMyCard(profile)
 }
 
@@ -395,8 +642,10 @@ const getProfileAiData = async (profileId: string) => {
       truth: null,
       custom: profile.socialLinks,
     },
-    // Prefer string[] for frontend ProfileAiData; objects remain readable via names
-    skills: profile.skillTags.map((s) => s.name),
+    skills: profile.skillTags.map((s) => ({
+      name: s.name,
+      level: s.level,
+    })),
     services: profile.services.map((s) => ({ title: s.title, description: s.description })),
     experience: profile.experiences.map((e) => ({
       company: e.company,
@@ -722,28 +971,90 @@ const getPublicCards = async (query: {
   }
 }
 
-const saveGuestUser = async (input: {
-  first_name?: string
-  last_name?: string
-  email?: string
-  profile_id: string
-}) => {
-  const profile = await prisma.profile.findFirst({ where: { id: input.profile_id, isPublic: true } })
+const saveGuestUser = async (
+  input: {
+    full_name?: string
+    name?: string
+    phone?: string
+    email?: string
+    profile_id?: string
+    meta?: unknown
+  },
+  requestMeta?: { ip?: string; userAgent?: string }
+) => {
+  const fullName = String(input.full_name || input.name || '').trim()
+  const phone = String(input.phone || '').trim()
+  const email = String(input.email || '').trim()
+  const profileId = String(input.profile_id || '').trim()
+
+  if (!fullName || !phone || !email || !profileId) {
+    throw new AppError(400, 'full_name, phone, email, and profile_id are required')
+  }
+
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, isPublic: true } })
   if (!profile) throw new AppError(404, 'Profile not found')
+
+  let clientMeta: Record<string, unknown> = {}
+  if (typeof input.meta === 'string' && input.meta.trim()) {
+    try {
+      const parsed = JSON.parse(input.meta) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        clientMeta = parsed as Record<string, unknown>
+      }
+    } catch {
+      /* ignore invalid client meta JSON */
+    }
+  } else if (input.meta && typeof input.meta === 'object' && !Array.isArray(input.meta)) {
+    clientMeta = input.meta as Record<string, unknown>
+  }
+
+  const submittedAt = new Date().toISOString()
+  const meta = {
+    ...clientMeta,
+    profileId: profile.id,
+    profileSlug: profile.slug || null,
+    ownerName: profile.name || null,
+    ip: requestMeta?.ip || null,
+    userAgent: requestMeta?.userAgent || (typeof clientMeta.userAgent === 'string' ? clientMeta.userAgent : null),
+    submittedAt,
+  }
+
   const row = await prisma.guestUserData.create({
     data: {
-      profileId: input.profile_id,
-      firstName: input.first_name,
-      lastName: input.last_name,
-      email: input.email,
+      profileId: profile.id,
+      fullName,
+      phone,
+      email,
+      meta,
+      firstName: null,
+      lastName: null,
     },
   })
+
+  await logEvent(
+    profile.id,
+    'save_guest_user',
+    {
+      guestUserId: row.id,
+      fullName,
+      phone,
+      email,
+      profileSlug: profile.slug,
+      ownerName: profile.name,
+    },
+    { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
+  )
+
   return {
     id: row.id,
-    first_name: row.firstName,
-    last_name: row.lastName,
+    full_name: row.fullName,
+    phone: row.phone,
     email: row.email,
     profile_id: row.profileId,
+    profile_slug: profile.slug || null,
+    owner_name: profile.name || null,
+    meta: row.meta,
+    created_at: row.createdAt.toISOString(),
   }
 }
 
@@ -756,16 +1067,24 @@ const saveNote = async (profileId: string, content: string) => {
   return { id: note.id, content: note.content, profile_id: profileId }
 }
 
-const saveContactCard = async (profileId: string) => {
+const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; userAgent?: string }) => {
   const profile = await prisma.profile.findFirst({ where: { id: profileId, isPublic: true } })
   if (!profile) throw new AppError(404, 'Profile not found')
+
+  await logEvent(
+    profile.id,
+    'save_contact_download',
+    { profileId: profile.id, profileSlug: profile.slug, ownerName: profile.name },
+    { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
+  )
+
   return {
     action_buttons: {
       save_contact: {
         data: {
           name: profile.name,
           email: profile.email,
-          phone: profile.phone || '',
+          phone: profile.phone,
           company: profile.companyName || '',
           website: profile.website || '',
           note: profile.about || '',
@@ -791,6 +1110,103 @@ const logEvent = async (
       userAgent: meta?.userAgent,
     },
   })
+}
+
+const trackEvent = async (
+  input: {
+    eventType: 'social_click' | 'profile_view'
+    guestId: string
+    channel?: string
+    profileId?: string
+    profile_id?: string
+    slug?: string
+    profile_slug?: string
+  },
+  requestMeta?: { ip?: string; userAgent?: string }
+) => {
+  const guestId = input.guestId.trim()
+  if (!guestId) throw new AppError(400, 'guestId is required')
+
+  const profileId = input.profileId || input.profile_id
+  const slug = input.slug || input.profile_slug
+  const profile = await prisma.profile.findFirst({
+    where: profileId ? { id: profileId, isPublic: true } : { slug, isPublic: true },
+    select: { id: true, slug: true },
+  })
+  if (!profile) throw new AppError(404, 'Profile not found')
+
+  const eventType = input.eventType
+  const channel = eventType === 'social_click' ? input.channel : undefined
+
+  const payloadFilters: Array<{ payload: { path: string[]; equals: string } }> = [
+    { payload: { path: ['guestId'], equals: guestId } },
+  ]
+  if (eventType === 'social_click' && channel) {
+    payloadFilters.push({ payload: { path: ['channel'], equals: channel } })
+  }
+
+  const existing = await prisma.eventLog.findFirst({
+    where: {
+      profileId: profile.id,
+      eventType,
+      AND: payloadFilters,
+    },
+    select: { id: true },
+  })
+
+  if (existing) {
+    return {
+      tracked: false as const,
+      reason: 'already_counted' as const,
+      eventType,
+      ...(channel ? { channel } : {}),
+      profileId: profile.id,
+      guestId,
+    }
+  }
+
+  const platform = (() => {
+    const ua = requestMeta?.userAgent || ''
+    if (/ipad|tablet|kindle|silk|(android(?!.*mobile))/i.test(ua)) return 'Tablet'
+    if (/mobi|iphone|ipod|android.*mobile|windows phone|blackberry/i.test(ua)) return 'Mobile'
+    return 'Desktop'
+  })()
+
+  const payload =
+    eventType === 'social_click'
+      ? {
+          channel,
+          guestId,
+          profileId: profile.id,
+          profileSlug: profile.slug,
+        }
+      : {
+          guestId,
+          slug: profile.slug,
+          profileId: profile.id,
+          profileSlug: profile.slug,
+          platform,
+        }
+
+  await logEvent(profile.id, eventType, payload, {
+    ip: requestMeta?.ip,
+    userAgent: requestMeta?.userAgent,
+  })
+
+  if (eventType === 'profile_view') {
+    await prisma.profile.update({
+      where: { id: profile.id },
+      data: { viewCount: { increment: 1 } },
+    })
+  }
+
+  return {
+    tracked: true as const,
+    eventType,
+    ...(channel ? { channel } : {}),
+    profileId: profile.id,
+    guestId,
+  }
 }
 
 const pushSubscribe = async (input: {
@@ -861,6 +1277,7 @@ const publicCardService = {
   saveNote,
   saveContactCard,
   logEvent,
+  trackEvent,
   pushSubscribe,
   pushSubscriptionStatus,
 }

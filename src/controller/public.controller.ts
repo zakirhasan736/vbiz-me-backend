@@ -6,15 +6,7 @@ const param = (value: string | string[]): string => (Array.isArray(value) ? valu
 
 const getMyCard = catchAsyncError(async (req, res) => {
   const data = await publicCardService.getMyCardBySlug(param(req.params.slug))
-  await publicCardService.logEvent(
-    String(data.profile.id),
-    'profile_view',
-    { slug: param(req.params.slug) },
-    {
-      ip: req.ip,
-      userAgent: req.get('user-agent') || undefined,
-    }
-  )
+  // profile_view is tracked client-side via POST /track-event with guestId (once per guest).
   sendPublicResponse(res, { success: true, data })
 })
 
@@ -60,13 +52,21 @@ const getPublicCards = catchAsyncError(async (req, res) => {
 })
 
 const saveGuestUser = catchAsyncError(async (req, res) => {
-  const body = req.body as Record<string, string>
-  const data = await publicCardService.saveGuestUser({
-    first_name: body.first_name,
-    last_name: body.last_name,
-    email: body.email,
-    profile_id: body.profile_id,
-  })
+  const body = req.body as Record<string, unknown>
+  const data = await publicCardService.saveGuestUser(
+    {
+      full_name: body.full_name != null ? String(body.full_name) : undefined,
+      name: body.name != null ? String(body.name) : undefined,
+      phone: body.phone != null ? String(body.phone) : undefined,
+      email: body.email != null ? String(body.email) : undefined,
+      profile_id: body.profile_id != null ? String(body.profile_id) : undefined,
+      meta: body.meta,
+    },
+    {
+      ip: req.ip,
+      userAgent: req.get('user-agent') || undefined,
+    }
+  )
   sendPublicResponse(res, { success: true, data })
 })
 
@@ -81,7 +81,10 @@ const saveNote = catchAsyncError(async (req, res) => {
 })
 
 const saveContact = catchAsyncError(async (req, res) => {
-  const data = await publicCardService.saveContactCard(param(req.params.id))
+  const data = await publicCardService.saveContactCard(param(req.params.id), {
+    ip: req.ip,
+    userAgent: req.get('user-agent') || undefined,
+  })
   sendPublicResponse(res, { success: true, data })
 })
 
@@ -118,6 +121,23 @@ const pushTest = catchAsyncError(async (_req, res) => {
   sendPublicResponse(res, { success: true, data: { sent: false, message: 'Push test stub' } })
 })
 
+const trackEvent = catchAsyncError(async (req, res) => {
+  const body = req.body as {
+    eventType: 'social_click' | 'profile_view'
+    guestId: string
+    channel?: string
+    profileId?: string
+    profile_id?: string
+    slug?: string
+    profile_slug?: string
+  }
+  const data = await publicCardService.trackEvent(body, {
+    ip: req.ip,
+    userAgent: req.get('user-agent') || undefined,
+  })
+  sendPublicResponse(res, { success: true, data })
+})
+
 const publicController = {
   getMyCard,
   getPostTypes,
@@ -134,6 +154,7 @@ const publicController = {
   pushPreferences,
   pushUnsubscribe,
   pushTest,
+  trackEvent,
 }
 
 export default publicController

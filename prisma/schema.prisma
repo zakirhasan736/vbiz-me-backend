@@ -543,9 +543,12 @@ model GuestUserData {
   legacyId  Int?     @unique
   profileId String
   profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  fullName  String?
   firstName String?
   lastName  String?
   email     String?
+  phone     String?
+  meta      Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

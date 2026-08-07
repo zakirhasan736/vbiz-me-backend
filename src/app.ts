@@ -15,7 +15,7 @@ app.use(cookieParser())
 
 app.use(
   cors({
-    origin: [config.FRONTEND_URL!, 'http://localhost:3000', 'http://localhost:5173'],
+    origin: [config.FRONTEND_URL!, 'http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     credentials: true,
   })

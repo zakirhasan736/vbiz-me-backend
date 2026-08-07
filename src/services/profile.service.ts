@@ -1,7 +1,23 @@
 import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
+import {
+  SOCIAL_CHANNELS,
+  SOCIAL_CHANNEL_LABELS,
+  buildDailyPoints,
+  countDistinctGuests,
+  countDistinctGuestsByChannel,
+  countDistinctGuestsByDay,
+  eventTypeLabel,
+  formatRelativeTime,
+  parsePlatformFromUa,
+  trendPercent,
+  viewerFromPayload,
+} from '../utils/dashboardAnalytics'
 import { prisma } from '../utils/prisma'
+
+const DASHBOARD_WINDOW_DAYS = 30
+const RECENT_ENGAGEMENT_LIMIT = 10
 
 const profileInclude = {
   gender: true,
@@ -65,6 +81,68 @@ const ensureUniqueSlug = async (base: string, excludeId?: string) => {
   }
 }
 
+const checkSlugAvailability = async (rawSlug: string, excludeId?: string) => {
+  const slug = slugify(rawSlug)
+  if (!slug) {
+    return { slug: '', available: false, suggestion: '' }
+  }
+
+  const existing = await prisma.profile.findFirst({
+    where: { slug, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
+  })
+
+  if (!existing) {
+    return { slug, available: true, suggestion: slug }
+  }
+
+  const suggestion = await ensureUniqueSlug(slug, excludeId)
+  return { slug, available: false, suggestion }
+}
+
+const asOptionalString = (value: unknown): string | undefined => {
+  if (value === null || value === undefined) return undefined
+  const trimmed = String(value).trim()
+  return trimmed || undefined
+}
+
+/** Upsert the primary Address row used for city/state (and mirrored zip). */
+const upsertPrimaryAddress = async (
+  profileId: string,
+  fields: {
+    address?: unknown
+    city?: unknown
+    state?: unknown
+    zipCode?: unknown
+  }
+) => {
+  const line1 = asOptionalString(fields.address)
+  const city = asOptionalString(fields.city)
+  const state = asOptionalString(fields.state)
+  const zipCode = asOptionalString(fields.zipCode)
+
+  if (!line1 && !city && !state && !zipCode) return
+
+  const existing =
+    (await prisma.address.findFirst({ where: { profileId, isPrimary: true } })) ||
+    (await prisma.address.findFirst({ where: { profileId }, orderBy: { createdAt: 'asc' } }))
+
+  const data = {
+    line1: line1 ?? null,
+    city: city ?? null,
+    state: state ?? null,
+    zipCode: zipCode ?? null,
+    isPrimary: true,
+  }
+
+  if (existing) {
+    await prisma.address.update({ where: { id: existing.id }, data })
+  } else {
+    await prisma.address.create({
+      data: { profileId, ...data },
+    })
+  }
+}
+
 const create = async (
   userId: string,
   input: {
@@ -101,7 +179,8 @@ const create = async (
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) throw new AppError(404, 'User not found')
 
-  const { settings, profileSettings, ...raw } = input
+  const { settings, profileSettings, city, state, ...raw } = input
+  const zipCode = asOptionalString(raw.zipCode)
   const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
   const profile = await prisma.profile.create({
     data: {
@@ -115,8 +194,10 @@ const create = async (
       whatsapp: raw.whatsapp as string | undefined,
       website: raw.website as string | undefined,
       address: raw.address as string | undefined,
+      zipCode,
       about: raw.about as string | undefined,
       prof: raw.prof as string | undefined,
+      dob: raw.dob ? new Date(String(raw.dob)) : undefined,
       template: (raw.template as string) || 'default',
       isPublic: raw.isPublic !== false,
       facebook: raw.facebook as string | undefined,
@@ -138,6 +219,13 @@ const create = async (
       },
     },
     include: profileInclude,
+  })
+
+  await upsertPrimaryAddress(profile.id, {
+    address: raw.address,
+    city,
+    state,
+    zipCode,
   })
 
   if (settings) {
@@ -170,17 +258,36 @@ const update = async (
   }
 ) => {
   await getOwned(profileId, userId, role)
-  const { settings, profileSettings, ...raw } = data
+  // city/state belong on Address, not Profile scalars — strip before Prisma update
+  const { settings, profileSettings, city, state, ...raw } = data
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
+
+  if ('dob' in raw) {
+    const dobValue = raw.dob
+    profileData.dob = dobValue === null || dobValue === undefined || dobValue === '' ? null : new Date(String(dobValue))
+  }
 
   if (typeof profileData.slug === 'string') {
     profileData.slug = await ensureUniqueSlug(profileData.slug, profileId)
+  }
+
+  if ('zipCode' in raw) {
+    profileData.zipCode = asOptionalString(raw.zipCode) ?? null
   }
 
   await prisma.profile.update({
     where: { id: profileId },
     data: profileData,
   })
+
+  if ('address' in raw || 'city' in data || 'state' in data || 'zipCode' in raw) {
+    await upsertPrimaryAddress(profileId, {
+      address: raw.address,
+      city,
+      state,
+      zipCode: raw.zipCode,
+    })
+  }
 
   if (settings) {
     await Promise.all(
@@ -224,26 +331,44 @@ const remove = async (profileId: string, userId: string, role: string) => {
   return { id: profileId, deleted: true }
 }
 
-const replaceCollection = async <T extends { id?: string }>(
+const COLLECTION_DELEGATE = {
+  education: 'education',
+  experiences: 'experience',
+  services: 'service',
+  portfolios: 'portfolio',
+  skillTags: 'skillTag',
+  socialLinks: 'socialLink',
+  addresses: 'address',
+} as const
+
+type CollectionKind = keyof typeof COLLECTION_DELEGATE
+
+const replaceCollection = async <T extends Record<string, unknown>>(
   profileId: string,
   userId: string,
   role: string,
-  kind: 'education' | 'experiences' | 'services' | 'portfolios' | 'skillTags' | 'socialLinks' | 'addresses',
+  kind: CollectionKind,
   items: T[],
   mapItem: (item: T) => Record<string, unknown>
 ) => {
   await getOwned(profileId, userId, role)
+  const delegate = COLLECTION_DELEGATE[kind]
   await prisma.$transaction(async (tx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (tx as any)[kind].deleteMany({ where: { profileId } })
-    if (items.length) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (tx as any)[kind].createMany({
-        data: items.map((item, index) => ({
+    const model = (tx as any)[delegate]
+    if (!model?.deleteMany || !model?.create) {
+      throw new AppError(500, `Unknown collection model: ${kind}`)
+    }
+    await model.deleteMany({ where: { profileId } })
+    // Prefer per-row `create` over `createMany` so Prisma applies `@default(cuid())`
+    // and `@updatedAt` (createMany skips those client-side defaults).
+    for (let index = 0; index < items.length; index += 1) {
+      await model.create({
+        data: {
           profileId,
           sortOrder: index,
-          ...mapItem(item),
-        })),
+          ...mapItem(items[index]),
+        },
       })
     }
   })
@@ -308,12 +433,14 @@ const updatePost = async (
     featuredImage?: string
     status?: string
     sortOrder?: number
+    metas?: Record<string, string>
   }
 ) => {
   const post = await prisma.post.findUnique({ where: { id: postId } })
   if (!post) throw new AppError(404, 'Post not found')
   await getOwned(post.profileId, userId, role)
-  return prisma.post.update({
+
+  await prisma.post.update({
     where: { id: postId },
     data: {
       title: data.title,
@@ -324,6 +451,24 @@ const updatePost = async (
       sortOrder: data.sortOrder,
       updatedById: userId,
     },
+  })
+
+  if (data.metas && typeof data.metas === 'object') {
+    await Promise.all(
+      Object.entries(data.metas).map(async ([metaKey, metaValue]) => {
+        const existing = await prisma.postMeta.findFirst({ where: { postId, metaKey } })
+        const value = metaValue == null ? '' : String(metaValue)
+        if (existing) {
+          await prisma.postMeta.update({ where: { id: existing.id }, data: { metaValue: value } })
+        } else if (value) {
+          await prisma.postMeta.create({ data: { postId, metaKey, metaValue: value } })
+        }
+      })
+    )
+  }
+
+  return prisma.post.findUniqueOrThrow({
+    where: { id: postId },
     include: { postType: true, metas: true, attachments: true },
   })
 }
@@ -349,19 +494,86 @@ const listPosts = async (profileId: string, userId: string, role: string, postTy
   })
 }
 
+const emptyProfileIds = (profileIds: string[]) => profileIds.length === 0
+
 const getDashboardStats = async (userId: string, role: string) => {
   const profiles = await listForUser(userId, role)
   const profileIds = profiles.map((p) => p.id)
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const now = new Date()
+  const since = new Date(now.getTime() - DASHBOARD_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+  const prevSince = new Date(since.getTime() - DASHBOARD_WINDOW_DAYS * 24 * 60 * 60 * 1000)
 
-  const [views, contacts, notes, guests] = await Promise.all([
-    prisma.eventLog.count({
-      where: { profileId: { in: profileIds }, eventType: 'profile_view', createdAt: { gte: since } },
-    }),
-    prisma.contact.count({ where: { profileId: { in: profileIds }, createdAt: { gte: since } } }),
-    prisma.userNote.count({ where: { profileId: { in: profileIds }, createdAt: { gte: since } } }),
-    prisma.guestUserData.count({ where: { profileId: { in: profileIds }, createdAt: { gte: since } } }),
-  ])
+  if (emptyProfileIds(profileIds)) {
+    return {
+      cards: 0,
+      totalViews: 0,
+      viewsLast30Days: 0,
+      contactsLast30Days: 0,
+      notesLast30Days: 0,
+      guestsLast30Days: 0,
+      visitsChart: { total: 0, trendPercent: 0, points: buildDailyPoints(now, DASHBOARD_WINDOW_DAYS, new Map()) },
+      socialChannels: SOCIAL_CHANNELS.map((channel) => ({
+        channel,
+        label: SOCIAL_CHANNEL_LABELS[channel],
+        count: 0,
+        trendPercent: 0,
+      })),
+      recentEngagement: [] as Array<{
+        id: string
+        event: string
+        viewer: string
+        time: string
+        platform: string
+        createdAt: string
+      }>,
+      profiles: [],
+    }
+  }
+
+  const [contacts, notes, guests, viewEvents, prevViewEvents, socialEvents, prevSocialEvents, recentLogs] =
+    await Promise.all([
+      prisma.contact.count({ where: { profileId: { in: profileIds }, createdAt: { gte: since } } }),
+      prisma.userNote.count({ where: { profileId: { in: profileIds }, createdAt: { gte: since } } }),
+      prisma.guestUserData.count({ where: { profileId: { in: profileIds }, createdAt: { gte: since } } }),
+      prisma.eventLog.findMany({
+        where: { profileId: { in: profileIds }, eventType: 'profile_view', createdAt: { gte: since } },
+        select: { createdAt: true, payload: true },
+      }),
+      prisma.eventLog.findMany({
+        where: {
+          profileId: { in: profileIds },
+          eventType: 'profile_view',
+          createdAt: { gte: prevSince, lt: since },
+        },
+        select: { payload: true },
+      }),
+      prisma.eventLog.findMany({
+        where: { profileId: { in: profileIds }, eventType: 'social_click', createdAt: { gte: since } },
+        select: { payload: true },
+      }),
+      prisma.eventLog.findMany({
+        where: {
+          profileId: { in: profileIds },
+          eventType: 'social_click',
+          createdAt: { gte: prevSince, lt: since },
+        },
+        select: { payload: true },
+      }),
+      prisma.eventLog.findMany({
+        where: { profileId: { in: profileIds } },
+        orderBy: { createdAt: 'desc' },
+        take: RECENT_ENGAGEMENT_LIMIT,
+        select: { id: true, eventType: true, payload: true, userAgent: true, createdAt: true },
+      }),
+    ])
+
+  const views = countDistinctGuests(viewEvents)
+  const prevViews = countDistinctGuests(prevViewEvents)
+  const countsByDay = countDistinctGuestsByDay(viewEvents)
+  const visitsPoints = buildDailyPoints(now, DASHBOARD_WINDOW_DAYS, countsByDay)
+
+  const currentSocial = countDistinctGuestsByChannel(socialEvents)
+  const prevSocial = countDistinctGuestsByChannel(prevSocialEvents)
 
   const totalViews = profiles.reduce((sum, p) => sum + p.viewCount, 0)
 
@@ -372,6 +584,28 @@ const getDashboardStats = async (userId: string, role: string) => {
     contactsLast30Days: contacts,
     notesLast30Days: notes,
     guestsLast30Days: guests,
+    visitsChart: {
+      total: views,
+      trendPercent: trendPercent(views, prevViews),
+      points: visitsPoints,
+    },
+    socialChannels: SOCIAL_CHANNELS.map((channel) => ({
+      channel,
+      label: SOCIAL_CHANNEL_LABELS[channel],
+      count: currentSocial.get(channel) || 0,
+      trendPercent: trendPercent(currentSocial.get(channel) || 0, prevSocial.get(channel) || 0),
+    })),
+    recentEngagement: recentLogs.map((row) => {
+      const payload = row.payload && typeof row.payload === 'object' ? (row.payload as Record<string, unknown>) : null
+      return {
+        id: row.id,
+        event: eventTypeLabel(row.eventType, payload),
+        viewer: viewerFromPayload(row.eventType, payload),
+        time: formatRelativeTime(row.createdAt, now),
+        platform: parsePlatformFromUa(row.userAgent),
+        createdAt: row.createdAt.toISOString(),
+      }
+    }),
     profiles: profiles.map((p) => ({
       id: p.id,
       name: p.name,
@@ -393,6 +627,70 @@ const listContacts = async (userId: string, role: string, profileId?: string) =>
     orderBy: { createdAt: 'desc' },
     include: { profile: { select: { id: true, name: true, slug: true } } },
   })
+}
+
+type RecentEngagementQuery = {
+  skip?: number
+  limit?: number
+  profileId?: string
+  eventType?: string
+  from?: Date
+  to?: Date
+}
+
+const listRecentEngagement = async (userId: string, role: string, query: RecentEngagementQuery = {}) => {
+  const skip = Math.max(0, Number(query.skip) || 0)
+  const limit = Math.min(50, Math.max(1, Number(query.limit) || 10))
+
+  if (query.profileId) {
+    await getOwned(query.profileId, userId, role)
+  }
+
+  const profiles = await listForUser(userId, role)
+  const profileIds = query.profileId ? [query.profileId] : profiles.map((p) => p.id)
+
+  if (emptyProfileIds(profileIds)) {
+    return { items: [], total: 0, skip, limit }
+  }
+
+  const where: Prisma.EventLogWhereInput = {
+    profileId: { in: profileIds },
+    ...(query.eventType ? { eventType: query.eventType } : {}),
+    ...(query.from || query.to
+      ? {
+          createdAt: {
+            ...(query.from ? { gte: query.from } : {}),
+            ...(query.to ? { lte: query.to } : {}),
+          },
+        }
+      : {}),
+  }
+
+  const now = new Date()
+  const [total, rows] = await Promise.all([
+    prisma.eventLog.count({ where }),
+    prisma.eventLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      select: { id: true, eventType: true, payload: true, userAgent: true, createdAt: true },
+    }),
+  ])
+
+  const items = rows.map((row) => {
+    const payload = row.payload && typeof row.payload === 'object' ? (row.payload as Record<string, unknown>) : null
+    return {
+      id: row.id,
+      event: eventTypeLabel(row.eventType, payload),
+      viewer: viewerFromPayload(row.eventType, payload),
+      time: formatRelativeTime(row.createdAt, now),
+      platform: parsePlatformFromUa(row.userAgent),
+      createdAt: row.createdAt.toISOString(),
+    }
+  })
+
+  return { items, total, skip, limit }
 }
 
 const listPackages = async () => {
@@ -424,10 +722,12 @@ const profileService = {
   deletePost,
   listPosts,
   getDashboardStats,
+  listRecentEngagement,
   listContacts,
   listPackages,
   listSubscriptions,
   ensureUniqueSlug,
+  checkSlugAvailability,
 }
 
 export default profileService

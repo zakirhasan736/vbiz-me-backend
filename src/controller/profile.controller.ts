@@ -1,7 +1,9 @@
 import AppError from '../error/AppError'
 import profileService from '../services/profile.service'
+import { buildOverviewPdf } from '../utils/buildOverviewPdf'
 import catchAsyncError from '../utils/catchAsyncError'
 import sendResponse from '../utils/sendResponse'
+import ProfileZodSchema from '../zodValidation/profile.zod'
 
 const param = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
 
@@ -120,12 +122,23 @@ const replacePortfolios = catchAsyncError(async (req, res) => {
 const replaceSkills = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const items = (Array.isArray(req.body) ? req.body : req.body.items || []) as Array<Record<string, unknown>>
+  const normalized = items
+    .map((item) => ({
+      name: typeof item.name === 'string' ? item.name.trim() : String(item.name ?? '').trim(),
+      level:
+        typeof item.level === 'string' && item.level.trim()
+          ? item.level.trim()
+          : item.level == null || item.level === ''
+            ? null
+            : String(item.level).trim() || null,
+    }))
+    .filter((item) => Boolean(item.name))
   const data = await profileService.replaceCollection(
     param(req.params.id),
     req.user.id,
     req.user.role,
     'skillTags',
-    items,
+    normalized,
     (item) => ({
       name: item.name,
       level: item.level,
@@ -187,6 +200,20 @@ const dashboard = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Dashboard stats', data })
 })
 
+const recentEngagement = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const query = ProfileZodSchema.recentEngagementQuery.parse(req.query)
+  const data = await profileService.listRecentEngagement(req.user.id, req.user.role, query)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Recent engagement fetched', data })
+})
+
+const checkSlug = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const query = ProfileZodSchema.checkSlugQuery.parse(req.query)
+  const data = await profileService.checkSlugAvailability(query.slug, query.excludeId)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Slug availability', data })
+})
+
 const contacts = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const data = await profileService.listContacts(
@@ -208,6 +235,18 @@ const subscriptions = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Subscriptions fetched', data })
 })
 
+const exportDashboard = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const stats = await profileService.getDashboardStats(req.user.id, req.user.role)
+  const pdf = await buildOverviewPdf(stats)
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace(/Z$/, '')
+  const filename = `overview-last-30-days_${stamp}.pdf`
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  res.setHeader('Content-Length', String(pdf.length))
+  res.status(200).send(pdf)
+})
+
 const profileController = {
   list,
   getOne,
@@ -225,6 +264,9 @@ const profileController = {
   updatePost,
   deletePost,
   dashboard,
+  recentEngagement,
+  checkSlug,
+  exportDashboard,
   contacts,
   packages,
   subscriptions,
