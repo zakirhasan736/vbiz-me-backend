@@ -14,10 +14,14 @@ import {
   trendPercent,
   viewerFromPayload,
 } from '../utils/dashboardAnalytics'
+import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 
 const DASHBOARD_WINDOW_DAYS = 30
 const RECENT_ENGAGEMENT_LIMIT = 10
+
+/** Setting keys that store media URLs shown on the admin vCards grid. */
+const LIST_MEDIA_SETTING_KEYS = new Set(['profile_media_url', 'background_media_url'])
 
 const profileInclude = {
   gender: true,
@@ -36,6 +40,59 @@ const profileInclude = {
   attachments: { include: { attachmentType: true } },
 } satisfies Prisma.ProfileInclude
 
+const listInclude = {
+  profession: true,
+  profileSettings: true,
+  settings: true,
+  attachments: { include: { attachmentType: true } },
+  _count: { select: { services: true, portfolios: true, posts: true } },
+} satisfies Prisma.ProfileInclude
+
+type ListProfileRow = Prisma.ProfileGetPayload<{ include: typeof listInclude }>
+
+/** Absolutize avatar / media settings / attachment URLs for admin list responses. */
+const absolutizeListProfile = (profile: ListProfileRow): ListProfileRow => {
+  const legacyId = profile.legacyId ?? null
+  const slug = profile.slug ?? null
+
+  const avatar =
+    ensureAbsoluteMediaUrl(profile.avatar, {
+      docName: profile.avatar,
+      attachmentTypeLegacyId: 13,
+      attachmentTypeName: 'Profile Picture',
+      profileLegacyId: legacyId,
+      profileSlug: slug,
+    }) || profile.avatar
+
+  const settings = profile.settings.map((row) => {
+    if (!LIST_MEDIA_SETTING_KEYS.has(row.key) || !row.value?.trim()) return row
+    const isBackground = row.key === 'background_media_url'
+    const absolute =
+      ensureAbsoluteMediaUrl(row.value, {
+        docName: row.value,
+        attachmentTypeLegacyId: isBackground ? 9 : 13,
+        attachmentTypeName: isBackground ? 'Background Video' : 'Profile Picture',
+        profileLegacyId: legacyId,
+        profileSlug: slug,
+      }) || row.value
+    return { ...row, value: absolute }
+  })
+
+  const attachments = profile.attachments.map((att) => {
+    const absolute =
+      ensureAbsoluteMediaUrl(att.url, {
+        docName: att.docName,
+        attachmentTypeLegacyId: att.attachmentType?.legacyId ?? null,
+        attachmentTypeName: att.attachmentType?.name ?? null,
+        profileLegacyId: legacyId,
+        profileSlug: slug,
+      }) || att.url
+    return { ...att, url: absolute }
+  })
+
+  return { ...profile, avatar, settings, attachments }
+}
+
 const listForUser = async (userId: string, role: string) => {
   const where =
     role === 'admin'
@@ -43,15 +100,12 @@ const listForUser = async (userId: string, role: string) => {
       : {
           OR: [{ userId }, { companyUserId: userId }],
         }
-  return prisma.profile.findMany({
+  const profiles = await prisma.profile.findMany({
     where,
-    include: {
-      profession: true,
-      profileSettings: true,
-      _count: { select: { services: true, portfolios: true, posts: true } },
-    },
+    include: listInclude,
     orderBy: { updatedAt: 'desc' },
   })
+  return profiles.map(absolutizeListProfile)
 }
 
 const getOwned = async (profileId: string, userId: string, role: string) => {
