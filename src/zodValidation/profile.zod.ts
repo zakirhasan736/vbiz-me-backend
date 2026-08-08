@@ -17,6 +17,10 @@ const recentEngagementQuery = z.object({
   to: z.coerce.date().optional(),
 })
 
+const dashboardPeriodQuery = z.object({
+  period: z.enum(['all', '7', '30', '90']).default('all'),
+})
+
 const checkSlugQuery = z.object({
   slug: z.string().min(1),
   excludeId: z.string().min(1).optional(),
@@ -24,6 +28,7 @@ const checkSlugQuery = z.object({
 
 const ProfileZodSchema = {
   recentEngagementQuery,
+  dashboardPeriodQuery,
   checkSlugQuery,
   ENGAGEMENT_EVENT_TYPES,
 }

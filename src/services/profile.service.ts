@@ -2,22 +2,28 @@ import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
 import {
+  DASHBOARD_ALL_CHART_DAYS,
   SOCIAL_CHANNELS,
   SOCIAL_CHANNEL_LABELS,
   buildDailyPoints,
   countDistinctGuests,
   countDistinctGuestsByChannel,
   countDistinctGuestsByDay,
+  dayKey,
   eventTypeLabel,
   formatRelativeTime,
   parsePlatformFromUa,
+  resolveDashboardWindowDays,
   trendPercent,
   viewerFromPayload,
+  type DashboardPeriod,
+  type SocialChannel,
 } from '../utils/dashboardAnalytics'
+import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
+import pushService from './push.service'
 
-const DASHBOARD_WINDOW_DAYS = 30
 const RECENT_ENGAGEMENT_LIMIT = 10
 
 /** Setting keys that store media URLs shown on the admin vCards grid. */
@@ -35,6 +41,7 @@ const profileInclude = {
   experiences: { orderBy: { sortOrder: 'asc' as const } },
   services: { orderBy: { sortOrder: 'asc' as const } },
   portfolios: { orderBy: { sortOrder: 'asc' as const } },
+  reviews: { orderBy: { sortOrder: 'asc' as const } },
   skillTags: { orderBy: { sortOrder: 'asc' as const } },
   addresses: true,
   attachments: { include: { attachmentType: true } },
@@ -159,22 +166,16 @@ const asOptionalString = (value: unknown): string | undefined => {
   return trimmed || undefined
 }
 
-/** Upsert the primary Address row used for city/state (and mirrored zip). */
+/** Upsert the primary Address row used for street address (line1). */
 const upsertPrimaryAddress = async (
   profileId: string,
   fields: {
     address?: unknown
-    city?: unknown
-    state?: unknown
-    zipCode?: unknown
   }
 ) => {
   const line1 = asOptionalString(fields.address)
-  const city = asOptionalString(fields.city)
-  const state = asOptionalString(fields.state)
-  const zipCode = asOptionalString(fields.zipCode)
 
-  if (!line1 && !city && !state && !zipCode) return
+  if (!line1) return
 
   const existing =
     (await prisma.address.findFirst({ where: { profileId, isPrimary: true } })) ||
@@ -182,9 +183,6 @@ const upsertPrimaryAddress = async (
 
   const data = {
     line1: line1 ?? null,
-    city: city ?? null,
-    state: state ?? null,
-    zipCode: zipCode ?? null,
     isPrimary: true,
   }
 
@@ -233,8 +231,7 @@ const create = async (
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) throw new AppError(404, 'User not found')
 
-  const { settings, profileSettings, city, state, ...raw } = input
-  const zipCode = asOptionalString(raw.zipCode)
+  const { settings, profileSettings, city: _city, state: _state, zipCode: _zipCode, ...raw } = input
   const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
   const profile = await prisma.profile.create({
     data: {
@@ -248,7 +245,6 @@ const create = async (
       whatsapp: raw.whatsapp as string | undefined,
       website: raw.website as string | undefined,
       address: raw.address as string | undefined,
-      zipCode,
       about: raw.about as string | undefined,
       prof: raw.prof as string | undefined,
       dob: raw.dob ? new Date(String(raw.dob)) : undefined,
@@ -277,9 +273,6 @@ const create = async (
 
   await upsertPrimaryAddress(profile.id, {
     address: raw.address,
-    city,
-    state,
-    zipCode,
   })
 
   if (settings) {
@@ -312,8 +305,8 @@ const update = async (
   }
 ) => {
   await getOwned(profileId, userId, role)
-  // city/state belong on Address, not Profile scalars — strip before Prisma update
-  const { settings, profileSettings, city, state, ...raw } = data
+  // Strip non-Profile scalars / removed address fields before Prisma update
+  const { settings, profileSettings, city: _city, state: _state, zipCode: _zipCode, ...raw } = data
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
 
   if ('dob' in raw) {
@@ -325,21 +318,14 @@ const update = async (
     profileData.slug = await ensureUniqueSlug(profileData.slug, profileId)
   }
 
-  if ('zipCode' in raw) {
-    profileData.zipCode = asOptionalString(raw.zipCode) ?? null
-  }
-
   await prisma.profile.update({
     where: { id: profileId },
     data: profileData,
   })
 
-  if ('address' in raw || 'city' in data || 'state' in data || 'zipCode' in raw) {
+  if ('address' in raw) {
     await upsertPrimaryAddress(profileId, {
       address: raw.address,
-      city,
-      state,
-      zipCode: raw.zipCode,
     })
   }
 
@@ -376,7 +362,59 @@ const update = async (
     })
   }
 
-  return prisma.profile.findUniqueOrThrow({ where: { id: profileId }, include: profileInclude })
+  const updated = await prisma.profile.findUniqueOrThrow({ where: { id: profileId }, include: profileInclude })
+
+  const themeTouched = Boolean(
+    profileSettings &&
+    (profileSettings.profileTemplate !== undefined ||
+      profileSettings.layoutStyle !== undefined ||
+      profileSettings.buttonStyle !== undefined ||
+      profileSettings.cornerStyle !== undefined ||
+      profileSettings.themeConfig !== undefined ||
+      'colorCode' in raw ||
+      'template' in raw ||
+      'themeConfig' in raw)
+  )
+  const contactKeys = [
+    'email',
+    'phone',
+    'whatsapp',
+    'website',
+    'facebook',
+    'instagram',
+    'twitter',
+    'tiktok',
+    'youtube',
+    'rumble',
+    'truth',
+    'linkedin',
+    'pinterest',
+    'address',
+    'countryCode',
+  ]
+  const contactTouched = contactKeys.some((key) => key in raw)
+
+  if (themeTouched) {
+    pushService.notifyProfileUpdate(profileId, {
+      type: 'theme_updates',
+      title: 'Theme updated',
+      body: `${updated.companyName || updated.name} updated their card design.`,
+    })
+  } else if (contactTouched) {
+    pushService.notifyProfileUpdate(profileId, {
+      type: 'contact_updates',
+      title: 'Contact info updated',
+      body: `${updated.companyName || updated.name} updated their contact info.`,
+    })
+  } else {
+    pushService.notifyProfileUpdate(profileId, {
+      type: 'business_hours',
+      title: 'Profile updated',
+      body: `${updated.companyName || updated.name} updated their profile.`,
+    })
+  }
+
+  return updated
 }
 
 const remove = async (profileId: string, userId: string, role: string) => {
@@ -390,6 +428,7 @@ const COLLECTION_DELEGATE = {
   experiences: 'experience',
   services: 'service',
   portfolios: 'portfolio',
+  reviews: 'review',
   skillTags: 'skillTag',
   socialLinks: 'socialLink',
   addresses: 'address',
@@ -426,7 +465,61 @@ const replaceCollection = async <T extends Record<string, unknown>>(
       })
     }
   })
-  return getOwned(profileId, userId, role)
+  const owned = await getOwned(profileId, userId, role)
+  const preferenceType = pushService.preferenceKeyForCollection(kind)
+  if (preferenceType) {
+    const titles: Record<string, { title: string; action: string }> = {
+      service_updates: { title: 'Services updated', action: 'updated their services' },
+      portfolio_updates: { title: 'Portfolio updated', action: 'added new photos or videos' },
+      contact_updates: { title: 'Contact links updated', action: 'updated their contact links' },
+      business_hours: { title: 'Professional info updated', action: 'updated their professional info' },
+    }
+    const copy = titles[preferenceType] || { title: 'Card updated', action: 'has a new update' }
+    const businessName = owned.companyName || owned.name
+    pushService.notifyProfileUpdate(profileId, {
+      type: preferenceType,
+      title: copy.title,
+      body: `${businessName} ${copy.action}.`,
+    })
+  }
+  return owned
+}
+
+type PostDocumentInput = {
+  url: string
+  name?: string
+  type?: string
+}
+
+const extensionFromDoc = (doc: PostDocumentInput) => {
+  const fromName = doc.name?.includes('.') ? doc.name.split('.').pop() : undefined
+  if (fromName) return fromName.toLowerCase()
+  if (doc.type?.includes('/')) return doc.type.split('/')[1]?.toLowerCase()
+  try {
+    const pathname = new URL(doc.url).pathname
+    const ext = pathname.includes('.') ? pathname.split('.').pop() : undefined
+    return ext?.toLowerCase()
+  } catch {
+    return undefined
+  }
+}
+
+const syncPostDocuments = async (postId: string, profileId: string, documents: PostDocumentInput[]) => {
+  await prisma.attachment.deleteMany({ where: { postId } })
+  const valid = documents.filter((d) => typeof d?.url === 'string' && d.url.trim())
+  if (!valid.length) return
+  await prisma.attachment.createMany({
+    data: valid.map((doc) => ({
+      attachableType: 'Post',
+      attachableId: postId,
+      postId,
+      profileId,
+      docName: doc.name?.trim() || 'document',
+      url: doc.url.trim(),
+      mimeType: doc.type || undefined,
+      extension: extensionFromDoc(doc),
+    })),
+  })
 }
 
 const createPost = async (
@@ -442,6 +535,7 @@ const createPost = async (
     featuredImage?: string
     status?: string
     metas?: Record<string, string>
+    documents?: PostDocumentInput[]
   }
 ) => {
   await getOwned(profileId, userId, role)
@@ -455,6 +549,9 @@ const createPost = async (
     postTypeId = pt.id
   }
 
+  const primaryDocUrl = input.documents?.find((d) => d?.url?.trim())?.url?.trim()
+  const featuredImage = input.featuredImage?.trim() || primaryDocUrl || undefined
+
   const post = await prisma.post.create({
     data: {
       profileId,
@@ -462,7 +559,7 @@ const createPost = async (
       title: input.title,
       description: input.description,
       url: input.url,
-      featuredImage: input.featuredImage,
+      featuredImage,
       status: input.status ?? '1',
       createdById: userId,
       metas: input.metas
@@ -473,7 +570,29 @@ const createPost = async (
     },
     include: { postType: true, metas: true, attachments: true },
   })
-  return post
+
+  if (Array.isArray(input.documents)) {
+    await syncPostDocuments(post.id, profileId, input.documents)
+  }
+
+  const created = await prisma.post.findUniqueOrThrow({
+    where: { id: post.id },
+    include: { postType: true, metas: true, attachments: true },
+  })
+
+  const preferenceType = pushService.preferenceKeyForPostType(created.postType?.name || input.postTypeName)
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { name: true, companyName: true },
+  })
+  const businessName = profile?.companyName || profile?.name || 'vBiz Me'
+  pushService.notifyProfileUpdate(profileId, {
+    type: preferenceType,
+    title: created.title?.trim() || 'New post',
+    body: `${businessName} published a new update.`,
+  })
+
+  return created
 }
 
 const updatePost = async (
@@ -488,11 +607,18 @@ const updatePost = async (
     status?: string
     sortOrder?: number
     metas?: Record<string, string>
+    documents?: PostDocumentInput[]
   }
 ) => {
   const post = await prisma.post.findUnique({ where: { id: postId } })
   if (!post) throw new AppError(404, 'Post not found')
   await getOwned(post.profileId, userId, role)
+
+  const primaryDocUrl = Array.isArray(data.documents)
+    ? data.documents.find((d) => d?.url?.trim())?.url?.trim()
+    : undefined
+  const featuredImage =
+    data.featuredImage !== undefined ? data.featuredImage : primaryDocUrl !== undefined ? primaryDocUrl : undefined
 
   await prisma.post.update({
     where: { id: postId },
@@ -500,7 +626,7 @@ const updatePost = async (
       title: data.title,
       description: data.description,
       url: data.url,
-      featuredImage: data.featuredImage,
+      featuredImage,
       status: data.status,
       sortOrder: data.sortOrder,
       updatedById: userId,
@@ -521,10 +647,28 @@ const updatePost = async (
     )
   }
 
-  return prisma.post.findUniqueOrThrow({
+  if (Array.isArray(data.documents)) {
+    await syncPostDocuments(postId, post.profileId, data.documents)
+  }
+
+  const updatedPost = await prisma.post.findUniqueOrThrow({
     where: { id: postId },
     include: { postType: true, metas: true, attachments: true },
   })
+
+  const preferenceType = pushService.preferenceKeyForPostType(updatedPost.postType?.name)
+  const profile = await prisma.profile.findUnique({
+    where: { id: post.profileId },
+    select: { name: true, companyName: true },
+  })
+  const businessName = profile?.companyName || profile?.name || 'vBiz Me'
+  pushService.notifyProfileUpdate(post.profileId, {
+    type: preferenceType,
+    title: updatedPost.title?.trim() || 'Post updated',
+    body: `${businessName} updated a post.`,
+  })
+
+  return updatedPost
 }
 
 const deletePost = async (postId: string, userId: string, role: string) => {
@@ -550,12 +694,15 @@ const listPosts = async (profileId: string, userId: string, role: string, postTy
 
 const emptyProfileIds = (profileIds: string[]) => profileIds.length === 0
 
-const getDashboardStats = async (userId: string, role: string) => {
+const getDashboardStats = async (userId: string, role: string, period: DashboardPeriod = 'all') => {
   const profiles = await listForUser(userId, role)
   const profileIds = profiles.map((p) => p.id)
   const now = new Date()
-  const since = new Date(now.getTime() - DASHBOARD_WINDOW_DAYS * 24 * 60 * 60 * 1000)
-  const prevSince = new Date(since.getTime() - DASHBOARD_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+  const windowDays = resolveDashboardWindowDays(period)
+  const chartDays = windowDays ?? DASHBOARD_ALL_CHART_DAYS
+  const since = windowDays != null ? new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000) : null
+  const prevSince = since && windowDays != null ? new Date(since.getTime() - windowDays * 24 * 60 * 60 * 1000) : null
+  const createdAtFilter = since ? { createdAt: { gte: since } } : {}
 
   if (emptyProfileIds(profileIds)) {
     return {
@@ -565,7 +712,10 @@ const getDashboardStats = async (userId: string, role: string) => {
       contactsLast30Days: 0,
       notesLast30Days: 0,
       guestsLast30Days: 0,
-      visitsChart: { total: 0, trendPercent: 0, points: buildDailyPoints(now, DASHBOARD_WINDOW_DAYS, new Map()) },
+      uniqueViews: 0,
+      shares: 0,
+      period,
+      visitsChart: { total: 0, trendPercent: 0, points: buildDailyPoints(now, chartDays, new Map()) },
       socialChannels: SOCIAL_CHANNELS.map((channel) => ({
         channel,
         label: SOCIAL_CHANNEL_LABELS[channel],
@@ -586,33 +736,37 @@ const getDashboardStats = async (userId: string, role: string) => {
 
   const [contacts, notes, guests, viewEvents, prevViewEvents, socialEvents, prevSocialEvents, recentLogs] =
     await Promise.all([
-      prisma.contact.count({ where: { profileId: { in: profileIds }, createdAt: { gte: since } } }),
-      prisma.userNote.count({ where: { profileId: { in: profileIds }, createdAt: { gte: since } } }),
-      prisma.guestUserData.count({ where: { profileId: { in: profileIds }, createdAt: { gte: since } } }),
+      prisma.contact.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
+      prisma.userNote.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
+      prisma.guestUserData.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
       prisma.eventLog.findMany({
-        where: { profileId: { in: profileIds }, eventType: 'profile_view', createdAt: { gte: since } },
+        where: { profileId: { in: profileIds }, eventType: 'profile_view', ...createdAtFilter },
         select: { createdAt: true, payload: true },
       }),
+      prevSince && since
+        ? prisma.eventLog.findMany({
+            where: {
+              profileId: { in: profileIds },
+              eventType: 'profile_view',
+              createdAt: { gte: prevSince, lt: since },
+            },
+            select: { payload: true },
+          })
+        : Promise.resolve([] as Array<{ payload: unknown }>),
       prisma.eventLog.findMany({
-        where: {
-          profileId: { in: profileIds },
-          eventType: 'profile_view',
-          createdAt: { gte: prevSince, lt: since },
-        },
+        where: { profileId: { in: profileIds }, eventType: 'social_click', ...createdAtFilter },
         select: { payload: true },
       }),
-      prisma.eventLog.findMany({
-        where: { profileId: { in: profileIds }, eventType: 'social_click', createdAt: { gte: since } },
-        select: { payload: true },
-      }),
-      prisma.eventLog.findMany({
-        where: {
-          profileId: { in: profileIds },
-          eventType: 'social_click',
-          createdAt: { gte: prevSince, lt: since },
-        },
-        select: { payload: true },
-      }),
+      prevSince && since
+        ? prisma.eventLog.findMany({
+            where: {
+              profileId: { in: profileIds },
+              eventType: 'social_click',
+              createdAt: { gte: prevSince, lt: since },
+            },
+            select: { payload: true },
+          })
+        : Promise.resolve([] as Array<{ payload: unknown }>),
       prisma.eventLog.findMany({
         where: { profileId: { in: profileIds } },
         orderBy: { createdAt: 'desc' },
@@ -624,10 +778,11 @@ const getDashboardStats = async (userId: string, role: string) => {
   const views = countDistinctGuests(viewEvents)
   const prevViews = countDistinctGuests(prevViewEvents)
   const countsByDay = countDistinctGuestsByDay(viewEvents)
-  const visitsPoints = buildDailyPoints(now, DASHBOARD_WINDOW_DAYS, countsByDay)
+  const visitsPoints = buildDailyPoints(now, chartDays, countsByDay)
 
   const currentSocial = countDistinctGuestsByChannel(socialEvents)
   const prevSocial = countDistinctGuestsByChannel(prevSocialEvents)
+  const shares = SOCIAL_CHANNELS.reduce((sum, channel) => sum + (currentSocial.get(channel) || 0), 0)
 
   const totalViews = profiles.reduce((sum, p) => sum + p.viewCount, 0)
 
@@ -638,16 +793,19 @@ const getDashboardStats = async (userId: string, role: string) => {
     contactsLast30Days: contacts,
     notesLast30Days: notes,
     guestsLast30Days: guests,
+    uniqueViews: views,
+    shares,
+    period,
     visitsChart: {
       total: views,
-      trendPercent: trendPercent(views, prevViews),
+      trendPercent: since ? trendPercent(views, prevViews) : 0,
       points: visitsPoints,
     },
     socialChannels: SOCIAL_CHANNELS.map((channel) => ({
       channel,
       label: SOCIAL_CHANNEL_LABELS[channel],
       count: currentSocial.get(channel) || 0,
-      trendPercent: trendPercent(currentSocial.get(channel) || 0, prevSocial.get(channel) || 0),
+      trendPercent: since ? trendPercent(currentSocial.get(channel) || 0, prevSocial.get(channel) || 0) : 0,
     })),
     recentEngagement: recentLogs.map((row) => {
       const payload = row.payload && typeof row.payload === 'object' ? (row.payload as Record<string, unknown>) : null
@@ -764,6 +922,142 @@ const listSubscriptions = async (userId: string, role: string) => {
   })
 }
 
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+const WEEKDAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
+
+/** All-time social click counts for channels with at least one click. */
+const getLiveSocialClicks = async (userId: string, role: string): Promise<LiveSocialClickRow[]> => {
+  const profiles = await listForUser(userId, role)
+  const profileIds = profiles.map((p) => p.id)
+  if (emptyProfileIds(profileIds)) return []
+
+  const socialEvents = await prisma.eventLog.findMany({
+    where: { profileId: { in: profileIds }, eventType: 'social_click' },
+    select: { payload: true },
+  })
+  const counts = countDistinctGuestsByChannel(socialEvents)
+  const rows: LiveSocialClickRow[] = []
+  for (const channel of SOCIAL_CHANNELS) {
+    const clickCount = counts.get(channel) || 0
+    if (clickCount <= 0) continue
+    rows.push({
+      channel,
+      label: SOCIAL_CHANNEL_LABELS[channel],
+      clickCount,
+    })
+  }
+  rows.sort((a, b) => b.clickCount - a.clickCount)
+  return rows
+}
+
+/** After a newly counted social_click, push refreshed totals to profile owners listening on SSE. */
+const notifyLiveSocialClicks = async (profileId: string) => {
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { userId: true, companyUserId: true },
+  })
+  if (!profile) return
+
+  const ownerIds = Array.from(
+    new Set([profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id)))
+  )
+
+  await Promise.all(
+    ownerIds.map(async (ownerId) => {
+      const clicks = await getLiveSocialClicks(ownerId, 'vcard-owner')
+      liveClicksHub.publishClickUpdate(ownerId, clicks)
+    })
+  )
+}
+
+/** Current UTC calendar week Mon–Sun: views / social clicks / CTR. */
+const getWeeklyEngagement = async (userId: string, role: string) => {
+  const profiles = await listForUser(userId, role)
+  const profileIds = profiles.map((p) => p.id)
+  const profileName = profiles[0]?.name || 'Your card'
+
+  const now = new Date()
+  const utcDay = now.getUTCDay() // 0 Sun … 6 Sat
+  const daysFromMonday = utcDay === 0 ? 6 : utcDay - 1
+  const mondayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysFromMonday)
+  const weekStart = new Date(mondayUtc)
+  const weekEnd = new Date(mondayUtc + 7 * 24 * 60 * 60 * 1000)
+
+  const emptyDays = () => {
+    const days = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(mondayUtc + i * 24 * 60 * 60 * 1000)
+      const wd = d.getUTCDay()
+      days.push({
+        day: WEEKDAY_SHORT[wd],
+        fullDay: WEEKDAY_FULL[wd],
+        views: 0,
+        clicks: 0,
+        ctr: 0,
+      })
+    }
+    return {
+      days,
+      totals: { views: 0, clicks: 0, avgCtr: 0 },
+      profileName,
+    }
+  }
+
+  if (emptyProfileIds(profileIds)) return emptyDays()
+
+  const [viewEvents, clickEvents] = await Promise.all([
+    prisma.eventLog.findMany({
+      where: {
+        profileId: { in: profileIds },
+        eventType: 'profile_view',
+        createdAt: { gte: weekStart, lt: weekEnd },
+      },
+      select: { createdAt: true, payload: true },
+    }),
+    prisma.eventLog.findMany({
+      where: {
+        profileId: { in: profileIds },
+        eventType: 'social_click',
+        createdAt: { gte: weekStart, lt: weekEnd },
+      },
+      select: { createdAt: true, payload: true },
+    }),
+  ])
+
+  const viewsByDay = countDistinctGuestsByDay(viewEvents)
+  const clicksByDay = countDistinctGuestsByDay(clickEvents)
+
+  const days: Array<{ day: string; fullDay: string; views: number; clicks: number; ctr: number }> = []
+  let viewsSum = 0
+  let clicksSum = 0
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(mondayUtc + i * 24 * 60 * 60 * 1000)
+    const key = dayKey(d)
+    const wd = d.getUTCDay()
+    const views = viewsByDay.get(key) || 0
+    const clicks = clicksByDay.get(key) || 0
+    const ctr = views > 0 ? parseFloat(((clicks / views) * 100).toFixed(1)) : 0
+    viewsSum += views
+    clicksSum += clicks
+    days.push({
+      day: WEEKDAY_SHORT[wd],
+      fullDay: WEEKDAY_FULL[wd],
+      views,
+      clicks,
+      ctr,
+    })
+  }
+
+  const avgCtr = viewsSum > 0 ? parseFloat(((clicksSum / viewsSum) * 100).toFixed(1)) : 0
+
+  return {
+    days,
+    totals: { views: viewsSum, clicks: clicksSum, avgCtr },
+    profileName,
+  }
+}
+
 const profileService = {
   listForUser,
   getOwned,
@@ -776,6 +1070,9 @@ const profileService = {
   deletePost,
   listPosts,
   getDashboardStats,
+  getLiveSocialClicks,
+  notifyLiveSocialClicks,
+  getWeeklyEngagement,
   listRecentEngagement,
   listContacts,
   listPackages,
@@ -785,3 +1082,5 @@ const profileService = {
 }
 
 export default profileService
+
+export type { LiveSocialClickRow, SocialChannel }

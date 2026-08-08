@@ -199,7 +199,6 @@ model Profile {
   linkedin     String?
   pinterest    String?
   avatar       String?
-  zipCode      String?
   colorCode    String    @default("#212121")
   address      String?
   about        String?
@@ -219,6 +218,7 @@ model Profile {
   experiences        Experience[]
   services           Service[]
   portfolios         Portfolio[]
+  reviews            Review[]
   posts              Post[]
   settings           Setting[]
   profileSettings    ProfileSetting?
@@ -246,10 +246,7 @@ model Address {
   label     String?
   line1     String?
   line2     String?
-  city      String?
-  state     String?
   country   String?
-  zipCode   String?
   isPrimary Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -336,18 +333,36 @@ model Service {
 }
 
 model Portfolio {
-  id          String   @id @default(cuid())
-  legacyId    Int?     @unique
-  profileId   String
-  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  title       String?
-  description String?
-  status      Int      @default(1)
-  sortOrder   Int      @default(0)
-  url         String?
-  imageUrl    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(cuid())
+  legacyId       Int?     @unique
+  profileId      String
+  profile        Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title          String?
+  description    String?
+  status         Int      @default(1)
+  sortOrder      Int      @default(0)
+  url            String?
+  imageUrl       String?
+  /** Secondary image/video attachment (admin “Attachments (Images/Video)”). */
+  attachmentUrl  String?
+  attachmentName String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  author    String?
+  text      String?
+  rating    Int      @default(5)
+  status    Int      @default(1)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([profileId])
 }
@@ -601,24 +616,27 @@ model PushSubscription {
 
   preferences PushNotificationPreference?
 
+  @@unique([profileId, endpointHash])
   @@index([profileId])
   @@index([endpointHash])
 }
 
 model PushNotificationPreference {
-  id                  String           @id @default(cuid())
-  legacyId            Int?             @unique
-  pushSubscriptionId  String           @unique
-  pushSubscription    PushSubscription @relation(fields: [pushSubscriptionId], references: [id], onDelete: Cascade)
-  serviceUpdates      Boolean          @default(true)
-  portfolioUpdates    Boolean          @default(true)
-  contactUpdates      Boolean          @default(true)
-  offers              Boolean          @default(true)
-  businessHours       Boolean          @default(true)
-  news                Boolean          @default(true)
-  themeUpdates        Boolean          @default(false)
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  id                   String           @id @default(cuid())
+  legacyId             Int?             @unique
+  pushSubscriptionId   String           @unique
+  pushSubscription     PushSubscription @relation(fields: [pushSubscriptionId], references: [id], onDelete: Cascade)
+  serviceUpdates       Boolean          @default(true)
+  portfolioUpdates     Boolean          @default(true)
+  contactUpdates       Boolean          @default(true)
+  offers               Boolean          @default(true)
+  businessHours        Boolean          @default(true)
+  news                 Boolean          @default(true)
+  eventUpdates         Boolean          @default(true)
+  announcementUpdates  Boolean          @default(true)
+  themeUpdates         Boolean          @default(false)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 }
 
 model Package {

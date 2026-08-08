@@ -2,6 +2,7 @@ import AppError from '../error/AppError'
 import profileService from '../services/profile.service'
 import { buildOverviewPdf } from '../utils/buildOverviewPdf'
 import catchAsyncError from '../utils/catchAsyncError'
+import liveClicksHub from '../utils/liveClicksHub'
 import sendResponse from '../utils/sendResponse'
 import ProfileZodSchema from '../zodValidation/profile.zod'
 
@@ -108,15 +109,54 @@ const replacePortfolios = catchAsyncError(async (req, res) => {
     req.user.role,
     'portfolios',
     items,
-    (item) => ({
-      title: item.title,
-      description: item.description,
-      status: item.status ?? 1,
-      url: item.url,
-      imageUrl: item.imageUrl,
-    })
+    (item) => {
+      const attachments =
+        item.attachments && typeof item.attachments === 'object'
+          ? (item.attachments as { url?: unknown; name?: unknown })
+          : null
+      const attachmentUrl =
+        (typeof item.attachmentUrl === 'string' && item.attachmentUrl) ||
+        (typeof attachments?.url === 'string' && attachments.url) ||
+        null
+      const attachmentName =
+        (typeof item.attachmentName === 'string' && item.attachmentName) ||
+        (typeof attachments?.name === 'string' && attachments.name) ||
+        null
+      return {
+        title: item.title,
+        description: item.description,
+        status: item.status ?? 1,
+        url: item.url,
+        imageUrl: item.imageUrl,
+        attachmentUrl,
+        attachmentName,
+      }
+    }
   )
   sendResponse(res, { success: true, statusCode: 200, message: 'Portfolios updated', data })
+})
+
+const replaceReviews = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const items = (Array.isArray(req.body) ? req.body : req.body.items || []) as Array<Record<string, unknown>>
+  const data = await profileService.replaceCollection(
+    param(req.params.id),
+    req.user.id,
+    req.user.role,
+    'reviews',
+    items,
+    (item) => {
+      const rawRating = typeof item.rating === 'number' ? item.rating : Number(item.rating)
+      const rating = Number.isFinite(rawRating) ? Math.min(5, Math.max(1, Math.round(rawRating))) : 5
+      return {
+        author: item.author,
+        text: item.text,
+        rating,
+        status: item.status ?? 1,
+      }
+    }
+  )
+  sendResponse(res, { success: true, statusCode: 200, message: 'Reviews updated', data })
 })
 
 const replaceSkills = catchAsyncError(async (req, res) => {
@@ -196,7 +236,8 @@ const deletePost = catchAsyncError(async (req, res) => {
 
 const dashboard = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const data = await profileService.getDashboardStats(req.user.id, req.user.role)
+  const { period } = ProfileZodSchema.dashboardPeriodQuery.parse(req.query)
+  const data = await profileService.getDashboardStats(req.user.id, req.user.role, period)
   sendResponse(res, { success: true, statusCode: 200, message: 'Dashboard stats', data })
 })
 
@@ -237,14 +278,38 @@ const subscriptions = catchAsyncError(async (req, res) => {
 
 const exportDashboard = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const stats = await profileService.getDashboardStats(req.user.id, req.user.role)
-  const pdf = await buildOverviewPdf(stats)
+  const { period } = ProfileZodSchema.dashboardPeriodQuery.parse(req.query)
+  const stats = await profileService.getDashboardStats(req.user.id, req.user.role, period)
+  const pdf = await buildOverviewPdf(stats, period)
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace(/Z$/, '')
-  const filename = `overview-last-30-days_${stamp}.pdf`
+  const periodLabel = period === 'all' ? 'all-time' : `last-${period}-days`
+  const filename = `overview-${periodLabel}_${stamp}.pdf`
   res.setHeader('Content-Type', 'application/pdf')
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
   res.setHeader('Content-Length', String(pdf.length))
   res.status(200).send(pdf)
+})
+
+const weeklyEngagement = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const data = await profileService.getWeeklyEngagement(req.user.id, req.user.role)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Weekly engagement', data })
+})
+
+const liveClicks = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const userId = req.user.id
+  const role = req.user.role
+
+  const cleanup = liveClicksHub.subscribe(userId, res)
+  try {
+    const clicks = await profileService.getLiveSocialClicks(userId, role)
+    liveClicksHub.publishSnapshot(userId, clicks)
+  } catch (err) {
+    cleanup()
+    throw err
+  }
+  // Connection stays open until client disconnects; do not call res.end().
 })
 
 const profileController = {
@@ -257,6 +322,7 @@ const profileController = {
   replaceExperiences,
   replaceServices,
   replacePortfolios,
+  replaceReviews,
   replaceSkills,
   replaceSocialLinks,
   listPosts,
@@ -265,6 +331,8 @@ const profileController = {
   deletePost,
   dashboard,
   recentEngagement,
+  weeklyEngagement,
+  liveClicks,
   checkSlug,
   exportDashboard,
   contacts,

@@ -1,4 +1,3 @@
-import crypto from 'crypto'
 import type { Attachment, Setting } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
@@ -371,10 +370,7 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
       email: profile.email,
       phone: profile.phone,
       address: profile.address,
-      city: address?.city ?? null,
-      state: address?.state ?? null,
       country: address?.country ?? null,
-      zipcode: profile.zipCode,
       website: profile.website,
       company_name: profile.companyName,
       designation: profile.designation,
@@ -508,9 +504,10 @@ const getPostTypesForProfile = async (profileId: string) => {
   }
 
   // Also include dedicated first-class tables as section names when present
-  const [serviceCount, portfolioCount, educationCount, experienceCount, skillCount] = await Promise.all([
+  const [serviceCount, portfolioCount, reviewCount, educationCount, experienceCount, skillCount] = await Promise.all([
     prisma.service.count({ where: { profileId, status: 1 } }),
     prisma.portfolio.count({ where: { profileId, status: 1 } }),
+    prisma.review.count({ where: { profileId, status: 1 } }),
     prisma.education.count({ where: { profileId } }),
     prisma.experience.count({ where: { profileId } }),
     prisma.skillTag.count({ where: { profileId } }),
@@ -533,6 +530,16 @@ const getPostTypesForProfile = async (profileId: string) => {
       status: 'active',
       type_id: null,
       slug: 'gallery',
+    })
+  }
+  if (reviewCount > 0 && !post_types.some((t) => /^reviews?$/i.test(t.name) || /^testimonials?$/i.test(t.name))) {
+    post_types.push({
+      id: 'reviews',
+      name: 'reviews',
+      title: 'Reviews',
+      status: 'active',
+      type_id: null,
+      slug: 'reviews',
     })
   }
   if (
@@ -678,6 +685,10 @@ const getProfileAiData = async (profileId: string) => {
       description: p.description,
       url: p.url,
       status: p.status,
+      imageUrl: p.imageUrl,
+      attachmentUrl: p.attachmentUrl,
+      attachmentName: p.attachmentName,
+      attachments: p.attachmentUrl ? { url: p.attachmentUrl, name: p.attachmentName || '' } : null,
     })),
     customSections: [],
   }
@@ -732,16 +743,45 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
       profile: { id: profileId },
       items: items.map((p) => {
         const imageUrl = abs(p.imageUrl, null, 5, 'Portfolio Gallery')
+        const attachmentUrl = abs(p.attachmentUrl, p.attachmentName, 5, 'Portfolio Attachment')
+        const gallery = [
+          ...(imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : []),
+          ...(attachmentUrl
+            ? [{ id: `${p.id}-attachment`, doc_name: p.attachmentName || p.title, url: attachmentUrl }]
+            : []),
+        ]
         return {
           id: p.id,
           title: p.title,
           description: p.description,
           status: p.status,
           featured_image: imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : [],
-          gallery: imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : [],
+          gallery,
+          attachments: attachmentUrl ? { url: attachmentUrl, name: p.attachmentName || '' } : null,
           general_info_url: p.url,
         }
       }),
+    }
+  }
+
+  if (/^reviews?$/i.test(name) || /^testimonials?$/i.test(name)) {
+    const items = await prisma.review.findMany({
+      where: { profileId, status: 1 },
+      orderBy: { sortOrder: 'asc' },
+    })
+    return {
+      type: 'reviews',
+      postType: { name: 'reviews', title: 'Reviews' },
+      profile: { id: profileId },
+      items: items.map((r) => ({
+        id: r.id,
+        title: r.author,
+        description: r.text,
+        status: r.status,
+        rating: r.rating,
+        featured_image: null,
+        review_link: { url: '', has_link: false },
+      })),
     }
   }
 
@@ -851,18 +891,23 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
           return url ? { id: a.id, doc_name: a.docName, url, extension: a.extension } : null
         })
         .filter(Boolean) as { id: string; doc_name: string | null; url: string; extension: string | null }[]
+      const metas = Object.fromEntries(p.metas.map((m) => [m.metaKey, m.metaValue ?? '']))
+      const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
+      const year = typeof metas.year === 'string' ? metas.year.trim() : ''
 
       return {
         id: p.id,
         title: p.title,
         description: p.description,
         status: p.status,
+        issuer,
+        year,
         featured_image: featuredFromField
           ? [{ id: p.id, doc_name: p.title, url: featuredFromField }]
           : attachmentImages.map(({ id, doc_name, url }) => ({ id, doc_name, url })),
         general_info_url: p.url,
         attachments: attachmentImages,
-        metas: Object.fromEntries(p.metas.map((m) => [m.metaKey, m.metaValue])),
+        metas,
       }
     }),
     section_id: postType?.id,
@@ -1200,6 +1245,12 @@ const trackEvent = async (
     })
   }
 
+  if (eventType === 'social_click') {
+    void import('../services/profile.service')
+      .then((mod) => mod.default.notifyLiveSocialClicks(profile.id))
+      .catch(() => undefined)
+  }
+
   return {
     tracked: true as const,
     eventType,
@@ -1207,63 +1258,6 @@ const trackEvent = async (
     profileId: profile.id,
     guestId,
   }
-}
-
-const pushSubscribe = async (input: {
-  profile_slug?: string
-  profile_id?: string
-  endpoint: string
-  keys: { p256dh: string; auth: string }
-  browser?: string
-  platform?: string
-}) => {
-  const profile = await prisma.profile.findFirst({
-    where: input.profile_id ? { id: input.profile_id, isPublic: true } : { slug: input.profile_slug, isPublic: true },
-  })
-  if (!profile) throw new AppError(404, 'Profile not found')
-
-  const endpointHash = crypto.createHash('sha256').update(input.endpoint).digest('hex')
-  const existing = await prisma.pushSubscription.findFirst({ where: { endpointHash } })
-
-  const sub = existing
-    ? await prisma.pushSubscription.update({
-        where: { id: existing.id },
-        data: {
-          profileId: profile.id,
-          p256dh: input.keys.p256dh,
-          auth: input.keys.auth,
-          isActive: true,
-          lastUsedAt: new Date(),
-        },
-        include: { preferences: true },
-      })
-    : await prisma.pushSubscription.create({
-        data: {
-          profileId: profile.id,
-          endpoint: input.endpoint,
-          endpointHash,
-          p256dh: input.keys.p256dh,
-          auth: input.keys.auth,
-          browser: input.browser,
-          platform: input.platform,
-          preferences: { create: {} },
-        },
-        include: { preferences: true },
-      })
-
-  return { id: sub.id, subscribed: true, preferences: sub.preferences }
-}
-
-const pushSubscriptionStatus = async (slug: string, endpoint?: string) => {
-  const profile = await prisma.profile.findFirst({ where: { slug, isPublic: true } })
-  if (!profile) throw new AppError(404, 'Profile not found')
-  if (!endpoint) return { subscribed: false }
-  const endpointHash = crypto.createHash('sha256').update(endpoint).digest('hex')
-  const sub = await prisma.pushSubscription.findFirst({
-    where: { profileId: profile.id, endpointHash, isActive: true },
-    include: { preferences: true },
-  })
-  return { subscribed: Boolean(sub), preferences: sub?.preferences || null }
 }
 
 const publicCardService = {
@@ -1278,8 +1272,6 @@ const publicCardService = {
   saveContactCard,
   logEvent,
   trackEvent,
-  pushSubscribe,
-  pushSubscriptionStatus,
 }
 
 export default publicCardService

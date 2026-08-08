@@ -100,6 +100,22 @@ export function shortDayLabel(date: Date): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
+export type DashboardPeriod = 'all' | '7' | '30' | '90'
+
+export const DASHBOARD_PERIOD_DAYS: Record<Exclude<DashboardPeriod, 'all'>, number> = {
+  '7': 7,
+  '30': 30,
+  '90': 90,
+}
+
+/** Chart day cap when period=all (keeps response size bounded). */
+export const DASHBOARD_ALL_CHART_DAYS = 90
+
+export function resolveDashboardWindowDays(period: DashboardPeriod = 'all'): number | null {
+  if (period === 'all') return null
+  return DASHBOARD_PERIOD_DAYS[period]
+}
+
 export function buildDailyPoints(
   end: Date,
   days: number,

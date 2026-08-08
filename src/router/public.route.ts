@@ -23,9 +23,9 @@ router.get('/profiles/:slug/google-wallet', publicController.googleWallet)
 router.post('/track-event', validSchema(PublicZodSchema.trackEvent), publicController.trackEvent)
 
 router.get('/push/subscription-status/:slug', publicController.pushStatus)
-router.post('/push/subscribe', publicController.pushSubscribe)
-router.post('/push/preferences', publicController.pushPreferences)
-router.post('/push/unsubscribe', publicController.pushUnsubscribe)
-router.post('/push/test', publicController.pushTest)
+router.post('/push/subscribe', validSchema(PublicZodSchema.pushSubscribe), publicController.pushSubscribe)
+router.post('/push/preferences', validSchema(PublicZodSchema.pushPreferences), publicController.pushPreferences)
+router.post('/push/unsubscribe', validSchema(PublicZodSchema.pushUnsubscribe), publicController.pushUnsubscribe)
+router.post('/push/test', validSchema(PublicZodSchema.pushTest), publicController.pushTest)
 
 export default router

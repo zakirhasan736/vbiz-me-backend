@@ -1,4 +1,5 @@
 import publicCardService from '../services/publicCard.service'
+import pushService from '../services/push.service'
 import catchAsyncError from '../utils/catchAsyncError'
 import sendPublicResponse from '../utils/sendPublicResponse'
 
@@ -97,7 +98,7 @@ const googleWallet = catchAsyncError(async (_req, res) => {
 })
 
 const pushStatus = catchAsyncError(async (req, res) => {
-  const data = await publicCardService.pushSubscriptionStatus(
+  const data = await pushService.subscriptionStatus(
     param(req.params.slug),
     req.query.endpoint ? String(req.query.endpoint) : undefined
   )
@@ -105,20 +106,62 @@ const pushStatus = catchAsyncError(async (req, res) => {
 })
 
 const pushSubscribe = catchAsyncError(async (req, res) => {
-  const data = await publicCardService.pushSubscribe(req.body)
+  const body = req.body as {
+    profile_slug?: string
+    profile_id?: string
+    cardSlug?: string
+    endpoint: string
+    keys: { p256dh: string; auth: string }
+    browser?: string
+    platform?: string
+  }
+  const data = await pushService.subscribe({
+    ...body,
+    profile_slug: body.profile_slug || body.cardSlug,
+  })
   sendPublicResponse(res, { success: true, data })
 })
 
 const pushPreferences = catchAsyncError(async (req, res) => {
-  sendPublicResponse(res, { success: true, data: req.body })
+  const body = req.body as {
+    profile_slug?: string
+    profile_id?: string
+    cardSlug?: string
+    endpoint: string
+    preferences: Parameters<typeof pushService.updatePreferences>[0]['preferences']
+  }
+  const data = await pushService.updatePreferences({
+    ...body,
+    profile_slug: body.profile_slug || body.cardSlug,
+  })
+  sendPublicResponse(res, { success: true, data })
 })
 
-const pushUnsubscribe = catchAsyncError(async (_req, res) => {
-  sendPublicResponse(res, { success: true, data: { unsubscribed: true } })
+const pushUnsubscribe = catchAsyncError(async (req, res) => {
+  const body = req.body as {
+    profile_slug?: string
+    profile_id?: string
+    cardSlug?: string
+    endpoint: string
+  }
+  const data = await pushService.unsubscribe({
+    ...body,
+    profile_slug: body.profile_slug || body.cardSlug,
+  })
+  sendPublicResponse(res, { success: true, data })
 })
 
-const pushTest = catchAsyncError(async (_req, res) => {
-  sendPublicResponse(res, { success: true, data: { sent: false, message: 'Push test stub' } })
+const pushTest = catchAsyncError(async (req, res) => {
+  const body = req.body as {
+    profile_slug?: string
+    profile_id?: string
+    cardSlug?: string
+    endpoint: string
+    title?: string
+    body?: string
+  }
+  const data = await pushService.sendTest(body)
+  sendPublicResponse(res, { success: true, data })
 })
 
 const trackEvent = catchAsyncError(async (req, res) => {

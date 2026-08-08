@@ -303,7 +303,6 @@ async function importProfiles(conn: mysql.Connection, userMap: IdMap, maps: Awai
             profileLegacyId: Number(row.id),
           }) || String(row.avatar)
         : null,
-      zipCode: row.zip_code ? String(row.zip_code) : null,
       colorCode: row.color_code ? String(row.color_code) : '#212121',
       address: row.address ? String(row.address) : null,
       about: row.about ? String(row.about) : null,

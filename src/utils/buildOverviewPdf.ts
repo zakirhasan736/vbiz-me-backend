@@ -1,5 +1,5 @@
 import PDFDocument from 'pdfkit'
-import type { SocialChannel } from './dashboardAnalytics'
+import type { DashboardPeriod, SocialChannel } from './dashboardAnalytics'
 
 export type DashboardOverviewForPdf = {
   cards: number
@@ -35,7 +35,15 @@ function formatTrend(value: number): string {
   return '0%'
 }
 
-export async function buildOverviewPdf(stats: DashboardOverviewForPdf): Promise<Buffer> {
+function periodLabel(period: DashboardPeriod): string {
+  if (period === 'all') return 'All time'
+  return `Last ${period} Days`
+}
+
+export async function buildOverviewPdf(
+  stats: DashboardOverviewForPdf,
+  period: DashboardPeriod = 'all'
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 48, size: 'A4' })
     const chunks: Buffer[] = []
@@ -45,10 +53,11 @@ export async function buildOverviewPdf(stats: DashboardOverviewForPdf): Promise<
     doc.on('error', reject)
 
     const contactsSaved = (stats.contactsLast30Days || 0) + (stats.guestsLast30Days || 0)
+    const range = periodLabel(period)
 
     doc.fontSize(20).fillColor('#0f172a').text('vBiz Me — Overview Report', { align: 'left' })
     doc.moveDown(0.3)
-    doc.fontSize(10).fillColor('#64748b').text(`Generated ${new Date().toLocaleString()} · Last 30 Days`)
+    doc.fontSize(10).fillColor('#64748b').text(`Generated ${new Date().toLocaleString()} · ${range}`)
     doc.moveDown(1)
 
     doc.fontSize(14).fillColor('#0f172a').text('Summary')
@@ -57,10 +66,10 @@ export async function buildOverviewPdf(stats: DashboardOverviewForPdf): Promise<
     const summaryLines = [
       `Cards: ${stats.cards}`,
       `Total views: ${stats.totalViews}`,
-      `Views (30d): ${stats.viewsLast30Days}`,
-      `Notes (30d): ${stats.notesLast30Days}`,
-      `Contacts saved (30d): ${contactsSaved}`,
-      `Website visits (30d): ${stats.visitsChart.total} (${formatTrend(stats.visitsChart.trendPercent)})`,
+      `Views (${range}): ${stats.viewsLast30Days}`,
+      `Notes (${range}): ${stats.notesLast30Days}`,
+      `Contacts saved (${range}): ${contactsSaved}`,
+      `Website visits (${range}): ${stats.visitsChart.total} (${formatTrend(stats.visitsChart.trendPercent)})`,
     ]
     for (const line of summaryLines) {
       doc.text(line)
