@@ -1,4 +1,4 @@
-import bcrypt from 'bcrypt'
+import argon2 from 'argon2'
 import { CookieOptions, Response } from 'express'
 import { readFileSync } from 'fs'
 import nodemailer from 'nodemailer'
@@ -61,12 +61,21 @@ const clearAuthCookies = (res: Response) => {
   res.clearCookie('accessToken', cookieOptions).clearCookie('refreshToken', cookieOptions)
 }
 
-const comparePassword = (plainPassword: string, hashedPassword: string): boolean => {
-  return bcrypt.compareSync(plainPassword, hashedPassword)
+const comparePassword = async (plainPassword: string, hashedPassword: string): Promise<boolean> => {
+  try {
+    return await argon2.verify(hashedPassword, plainPassword)
+  } catch {
+    return false
+  }
 }
 
 const hashPassword = async (password: string): Promise<string> => {
-  return bcrypt.hash(password, config.bycrypt_salt_rounds)
+  return argon2.hash(password, {
+    type: config.argon2.type,
+    memoryCost: config.argon2.memoryCost,
+    timeCost: config.argon2.timeCost,
+    parallelism: config.argon2.parallelism,
+  })
 }
 
 const mapUser = (user: AuthUserRecord): IAuthUser => ({

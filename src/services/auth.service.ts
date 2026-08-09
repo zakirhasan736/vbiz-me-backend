@@ -77,7 +77,7 @@ const login = async (body: ILoginBody): Promise<ILoginResult> => {
     throw new AppError(401, 'Invalid login credentials')
   }
 
-  const isMatch = authUtils.comparePassword(body.password, existingPassword)
+  const isMatch = await authUtils.comparePassword(body.password, existingPassword)
   if (!isMatch) {
     throw new AppError(401, 'Invalid login credentials')
   }
@@ -195,7 +195,7 @@ const updateUser = async (
     if (!body.currentPassword) {
       throw new AppError(400, 'Current password is required to change password')
     }
-    const isMatch = authUtils.comparePassword(body.currentPassword, user.password)
+    const isMatch = await authUtils.comparePassword(body.currentPassword, user.password)
     if (!isMatch) {
       throw new AppError(403, 'Current password is incorrect')
     }
@@ -506,12 +506,12 @@ const changePassword = async (body: IChangePasswordBody, userId: string): Promis
     }
   }
 
-  const isMatch = authUtils.comparePassword(oldPassword, user.password)
+  const isMatch = await authUtils.comparePassword(oldPassword, user.password)
   if (!isMatch) {
     throw new AppError(400, 'Invalid Password')
   }
 
-  const isSamePassword = authUtils.comparePassword(password, user.password)
+  const isSamePassword = await authUtils.comparePassword(password, user.password)
   if (isSamePassword) {
     throw new AppError(400, 'New password cannot be same as old password')
   }

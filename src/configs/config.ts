@@ -34,6 +34,8 @@ const {
   PUBLIC_RATE_LIMIT_MAX,
   LARAVEL_MYSQL_URL,
   MEDIA_BASE_URL,
+  ADMIN_EMAIL,
+  ADMIN_PASSWORD,
 } = process.env
 
 export default {
@@ -41,7 +43,12 @@ export default {
   PORT: PORT || '5000',
   SERVER_URL: SERVER_URL || 'http://localhost:5000',
   DATABASE_URL,
-  bycrypt_salt_rounds: 10,
+  argon2: {
+    type: 2 as const, // argon2id
+    memoryCost: 65536,
+    timeCost: 3,
+    parallelism: 1,
+  },
   REFRESH_TOKEN: {
     SECRET: REFRESH_TOKEN_SECRET,
     EXPIRY: '7d',
@@ -80,4 +87,8 @@ export default {
   },
   LARAVEL_MYSQL_URL,
   MEDIA_BASE_URL: MEDIA_BASE_URL || 'https://app.vbizme.com',
+  ADMIN: {
+    EMAIL: ADMIN_EMAIL,
+    PASSWORD: ADMIN_PASSWORD,
+  },
 }
