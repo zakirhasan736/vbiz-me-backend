@@ -26,10 +26,13 @@ export type IAuthUser = {
   name: string | null
   avatar: string | null
   role: UserRole
+  staffRole: string | null
+  allowedModules: string[]
   provider: string
   hasPassword: boolean
   isVerified: boolean
   isActive: boolean
+  accountStatus: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
   createdAt: Date
   updatedAt: Date
 }

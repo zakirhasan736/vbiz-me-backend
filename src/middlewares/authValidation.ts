@@ -37,6 +37,20 @@ const getAccessToken = (req: Request): string | undefined => {
   return undefined
 }
 
+const toRequestUser = (user: {
+  id: string
+  email: string
+  role: Parameters<typeof toApiRole>[0]
+  staffRole?: string | null
+  allowedModules?: string[]
+}) => ({
+  id: user.id,
+  email: user.email,
+  role: toApiRole(user.role),
+  staffRole: user.staffRole ?? null,
+  allowedModules: user.allowedModules ?? [],
+})
+
 const isAuthenticateUser = catchAsyncError(async (req, res, next) => {
   const accessToken = getAccessToken(req)
 
@@ -65,11 +79,7 @@ const isAuthenticateUser = catchAsyncError(async (req, res, next) => {
     const tokens = authUtils.issueTokens(user)
     authUtils.setAuthCookies(res, tokens.accessToken, tokens.refreshToken)
 
-    req.user = {
-      id: user.id,
-      email: user.email,
-      role: toApiRole(user.role),
-    }
+    req.user = toRequestUser(user)
 
     return next()
   }
@@ -85,11 +95,7 @@ const isAuthenticateUser = catchAsyncError(async (req, res, next) => {
 
   authUtils.assertActiveUser(user)
 
-  req.user = {
-    id: user.id,
-    email: user.email,
-    role: toApiRole(user.role),
-  }
+  req.user = toRequestUser(user)
 
   next()
 })
@@ -110,48 +116,36 @@ const optionalAuthenticateUser = catchAsyncError(async (req, res, next) => {
     return next()
   }
 
-  try {
-    if (isTokenExpired(accessToken)) {
-      const refreshToken = req.cookies.refreshToken as string | undefined
-      if (!refreshToken) {
-        return next()
-      }
-
-      const decryptedJwt = jwt.verify(refreshToken, config.REFRESH_TOKEN.SECRET as string) as { id: string }
-      const user = await prisma.user.findUnique({
-        where: { id: decryptedJwt.id },
-      })
-
-      if (!user || !user.isActive) {
-        return next()
-      }
-
-      const tokens = authUtils.issueTokens(user)
-      authUtils.setAuthCookies(res, tokens.accessToken, tokens.refreshToken)
-
-      req.user = {
-        id: user.id,
-        email: user.email,
-        role: toApiRole(user.role),
-      }
-
+  if (isTokenExpired(accessToken)) {
+    const refreshToken = req.cookies.refreshToken as string | undefined
+    if (!refreshToken) {
       return next()
     }
 
-    const payload = quicker.verifyAccessToken(accessToken) as { id: string; email: string; role?: string }
+    const decryptedJwt = jwt.verify(refreshToken, config.REFRESH_TOKEN.SECRET as string) as { id: string }
     const user = await prisma.user.findUnique({
-      where: { id: payload.id },
+      where: { id: decryptedJwt.id },
     })
 
-    if (user && user.isActive) {
-      req.user = {
-        id: user.id,
-        email: user.email,
-        role: toApiRole(user.role),
-      }
+    if (!user || !authUtils.isUserAccessible(user)) {
+      return next()
     }
-  } catch {
-    // Invalid session cookies — allow passwordSetupToken path to proceed.
+
+    const tokens = authUtils.issueTokens(user)
+    authUtils.setAuthCookies(res, tokens.accessToken, tokens.refreshToken)
+
+    req.user = toRequestUser(user)
+
+    return next()
+  }
+
+  const payload = quicker.verifyAccessToken(accessToken) as { id: string; email: string; role?: string }
+  const user = await prisma.user.findUnique({
+    where: { id: payload.id },
+  })
+
+  if (user && authUtils.isUserAccessible(user)) {
+    req.user = toRequestUser(user)
   }
 
   next()

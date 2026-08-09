@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "UserNote" ADD COLUMN IF NOT EXISTS "meta" JSONB;

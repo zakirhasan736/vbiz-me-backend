@@ -30,10 +30,14 @@ const userSelect = {
   name: true,
   avatar: true,
   role: true,
+  staffRole: true,
+  allowedModules: true,
   provider: true,
   password: true,
   isVerified: true,
   isActive: true,
+  accountStatus: true,
+  deletedAt: true,
   createdAt: true,
   updatedAt: true,
 } as const
@@ -44,10 +48,14 @@ type AuthUserRecord = {
   name: string | null
   avatar: string | null
   role: PrismaUserRole
+  staffRole?: string | null
+  allowedModules?: string[]
   provider: string
   password: string | null
   isVerified: boolean
   isActive: boolean
+  accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+  deletedAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -84,10 +92,13 @@ const mapUser = (user: AuthUserRecord): IAuthUser => ({
   name: user.name,
   avatar: user.avatar,
   role: toApiRole(user.role),
+  staffRole: user.staffRole ?? null,
+  allowedModules: user.allowedModules ?? [],
   provider: user.provider,
   hasPassword: Boolean(user.password),
   isVerified: user.isVerified,
   isActive: user.isActive,
+  accountStatus: user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED'),
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 })
@@ -147,10 +158,34 @@ const buildEmailNotVerifiedError = (
   })
 }
 
-const assertActiveUser = (user: { isActive: boolean }) => {
-  if (!user.isActive) {
+const assertActiveUser = (user: {
+  isActive: boolean
+  accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+  deletedAt?: Date | null
+}) => {
+  if (user.deletedAt) {
+    throw new AppError(403, 'Account has been deleted')
+  }
+  const status = user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED')
+  if (status === 'PAUSED') {
+    throw new AppError(403, 'Account is paused')
+  }
+  if (status === 'SUSPENDED') {
+    throw new AppError(403, 'Account is suspended')
+  }
+  if (!user.isActive || status !== 'ACTIVE') {
     throw new AppError(403, 'Account is deactivated')
   }
+}
+
+const isUserAccessible = (user: {
+  isActive: boolean
+  accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+  deletedAt?: Date | null
+}) => {
+  if (user.deletedAt) return false
+  const status = user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED')
+  return user.isActive && status === 'ACTIVE'
 }
 
 const readTemplate = (templateName: string): string => {
@@ -212,6 +247,7 @@ const authUtils = {
   buildPasswordSetupRequiredError,
   buildEmailNotVerifiedError,
   assertActiveUser,
+  isUserAccessible,
   readTemplate,
   applyTemplateVars,
   sendEmail,

@@ -1,4 +1,4 @@
-import { AuthProvider } from '../../generated/prisma/enums'
+import { AuthProvider, UserRole as PrismaUserRole } from '../../generated/prisma/enums'
 import config from '../configs/config'
 import { toPrismaRole } from '../constants/userRole'
 import authUtils from '../utils/auth.utils'
@@ -7,7 +7,7 @@ import { prisma } from '../utils/prisma'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MIN_PASSWORD_LENGTH = 8
-const ADMIN_NAME = 'Admin'
+const SUPER_ADMIN_NAME = 'Super Admin'
 
 const isUniqueConstraintError = (err: unknown): boolean => {
   return typeof err === 'object' && err !== null && 'code' in err && (err as { code: unknown }).code === 'P2002'
@@ -33,8 +33,8 @@ const resolveAdminCredentials = (): { email: string; password: string } | null =
 }
 
 /**
- * Idempotent startup seed: creates the env-configured admin only when missing.
- * Never overwrites password, role, or flags on an existing user.
+ * Idempotent startup seed: ensures the env-configured account is a SUPER_ADMIN.
+ * Creates when missing; promotes ADMIN → SUPER_ADMIN when present. Never overwrites password.
  */
 const seedAdmin = async (): Promise<void> => {
   let credentials: { email: string; password: string } | null
@@ -62,11 +62,32 @@ const seedAdmin = async (): Promise<void> => {
 
   const existing = await prisma.user.findUnique({
     where: { email },
-    select: { id: true },
+    select: { id: true, role: true },
   })
 
   if (existing) {
-    logger.info(`Admin seed skipped: user already exists for ${email}`)
+    if (existing.role === PrismaUserRole.SUPER_ADMIN) {
+      logger.info(`Super admin seed skipped: user already exists for ${email}`)
+      return
+    }
+
+    if (existing.role === PrismaUserRole.ADMIN) {
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          role: PrismaUserRole.SUPER_ADMIN,
+          staffRole: null,
+          allowedModules: [],
+          name: SUPER_ADMIN_NAME,
+          isVerified: true,
+          isActive: true,
+        },
+      })
+      logger.info(`Promoted admin to super admin: ${email}`)
+      return
+    }
+
+    logger.info(`Admin seed skipped: non-admin user already exists for ${email}`)
     return
   }
 
@@ -76,15 +97,17 @@ const seedAdmin = async (): Promise<void> => {
     await prisma.user.create({
       data: {
         email,
-        name: ADMIN_NAME,
+        name: SUPER_ADMIN_NAME,
         password: hashedPassword,
-        role: toPrismaRole('admin'),
+        role: toPrismaRole('super-admin'),
         provider: AuthProvider.LOCAL,
         isVerified: true,
         isActive: true,
+        staffRole: null,
+        allowedModules: [],
       },
     })
-    logger.info(`Admin user seeded: ${email}`)
+    logger.info(`Super admin user seeded: ${email}`)
   } catch (err) {
     if (isUniqueConstraintError(err)) {
       logger.info(`Admin seed skipped: user already exists for ${email}`)

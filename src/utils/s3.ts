@@ -102,7 +102,7 @@ const uploadFromUrl = async (
   options?: { folder?: string; resourceType?: 'image' | 'video' | 'raw' | 'auto' }
 ): Promise<S3UploadResult> => {
   ensureConfigured()
-  let fetchUrl = remoteUrl
+  let fetchUrl: string
   try {
     const u = new URL(remoteUrl.startsWith('//') ? `https:${remoteUrl}` : remoteUrl)
     u.pathname = u.pathname

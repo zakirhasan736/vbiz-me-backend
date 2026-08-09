@@ -60,7 +60,7 @@ const register = async (body: IRegisterBody): Promise<VerificationCooldown> => {
 }
 
 const login = async (body: ILoginBody): Promise<ILoginResult> => {
-  let user = await prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { email: body.email },
   })
 
@@ -87,11 +87,19 @@ const login = async (body: ILoginBody): Promise<ILoginResult> => {
     throw authUtils.buildEmailNotVerifiedError(user, cooldown)
   }
 
-  if (!user.isActive) {
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: { isActive: true },
-    })
+  if (user.deletedAt) {
+    throw new AppError(403, 'Account has been deleted')
+  }
+
+  const status = user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED')
+  if (status === 'PAUSED') {
+    throw new AppError(403, 'Account is paused. Contact an administrator to reactivate.')
+  }
+  if (status === 'SUSPENDED') {
+    throw new AppError(403, 'Account is suspended. Contact an administrator to restore access.')
+  }
+  if (!user.isActive || status !== 'ACTIVE') {
+    throw new AppError(403, 'Account is deactivated')
   }
 
   const tokens = authUtils.issueTokens(user)
@@ -544,7 +552,7 @@ const deactivateAccount = async (userId: string): Promise<null> => {
 
   await prisma.user.update({
     where: { id: userId },
-    data: { isActive: false },
+    data: { isActive: false, accountStatus: 'PAUSED' },
   })
 
   return null

@@ -17,8 +17,13 @@ const recentEngagementQuery = z.object({
   to: z.coerce.date().optional(),
 })
 
+const profileScopeQuery = z.object({
+  scope: z.enum(['created']).optional(),
+})
+
 const dashboardPeriodQuery = z.object({
   period: z.enum(['all', '7', '30', '90']).default('all'),
+  scope: z.enum(['created']).optional(),
 })
 
 const checkSlugQuery = z.object({
@@ -29,6 +34,7 @@ const checkSlugQuery = z.object({
 const ProfileZodSchema = {
   recentEngagementQuery,
   dashboardPeriodQuery,
+  profileScopeQuery,
   checkSlugQuery,
   ENGAGEMENT_EVENT_TYPES,
 }

@@ -24,7 +24,7 @@ export const assertProfileAccess = catchAsyncError(async (req: IUserInfoRequest,
     throw new AppError(403, 'Unauthorized')
   }
 
-  if (req.user.role === 'admin') {
+  if (req.user.role === 'admin' || req.user.role === 'super-admin') {
     const profile = await prisma.profile.findUnique({ where: { id: profileId } })
     if (!profile) throw new AppError(404, 'Profile not found')
     ;(req as IUserInfoRequest & { profile: typeof profile }).profile = profile

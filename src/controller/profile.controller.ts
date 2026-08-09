@@ -10,7 +10,8 @@ const param = (value: string | string[]): string => (Array.isArray(value) ? valu
 
 const list = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const data = await profileService.listForUser(req.user.id, req.user.role)
+  const { scope } = ProfileZodSchema.profileScopeQuery.parse(req.query)
+  const data = await profileService.listForUser(req.user.id, req.user.role, scope)
   sendResponse(res, { success: true, statusCode: 200, message: 'Profiles fetched', data })
 })
 
@@ -236,8 +237,8 @@ const deletePost = catchAsyncError(async (req, res) => {
 
 const dashboard = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const { period } = ProfileZodSchema.dashboardPeriodQuery.parse(req.query)
-  const data = await profileService.getDashboardStats(req.user.id, req.user.role, period)
+  const { period, scope } = ProfileZodSchema.dashboardPeriodQuery.parse(req.query)
+  const data = await profileService.getDashboardStats(req.user.id, req.user.role, period, scope)
   sendResponse(res, { success: true, statusCode: 200, message: 'Dashboard stats', data })
 })
 
@@ -292,7 +293,8 @@ const exportDashboard = catchAsyncError(async (req, res) => {
 
 const weeklyEngagement = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const data = await profileService.getWeeklyEngagement(req.user.id, req.user.role)
+  const { scope } = ProfileZodSchema.profileScopeQuery.parse(req.query)
+  const data = await profileService.getWeeklyEngagement(req.user.id, req.user.role, scope)
   sendResponse(res, { success: true, statusCode: 200, message: 'Weekly engagement', data })
 })
 

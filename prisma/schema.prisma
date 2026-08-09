@@ -17,20 +17,31 @@ enum UserRole {
   VCARD_OWNER     @map("vcard-owner")
   CORPORATE_OWNER @map("corporate-owner")
   ADMIN           @map("admin")
+  SUPER_ADMIN     @map("super-admin")
+}
+
+enum AccountStatus {
+  ACTIVE
+  PAUSED
+  SUSPENDED
 }
 
 model User {
-  id                String       @id @default(cuid())
-  legacyId          Int?         @unique
-  email             String       @unique
+  id                String        @id @default(cuid())
+  legacyId          Int?          @unique
+  email             String        @unique
   password          String?
   name              String?
   avatar            String?
-  role              UserRole     @default(VCARD_OWNER)
-  provider          AuthProvider @default(LOCAL)
+  role              UserRole      @default(VCARD_OWNER)
+  provider          AuthProvider  @default(LOCAL)
   providerId        String?
-  isVerified        Boolean      @default(false)
-  isActive          Boolean      @default(true)
+  isVerified        Boolean       @default(false)
+  isActive          Boolean       @default(true)
+  accountStatus     AccountStatus @default(ACTIVE)
+  companyName       String?
+  staffRole         String?
+  allowedModules    String[]      @default([])
   otpCode           Int?
   otpCoolDown       DateTime?
   otpExpiresAt      DateTime?
@@ -41,8 +52,8 @@ model User {
   trialEndsAt       DateTime?
   createdById       String?
   deletedAt         DateTime?
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   forgotPasswordTokens ForgotPasswordToken[]
   passwordSetupTokens  PasswordSetupToken[]
@@ -55,6 +66,10 @@ model User {
   transactions         Transaction[]
   createdPosts         Post[]                @relation("PostCreatedBy")
   updatedPosts         Post[]                @relation("PostUpdatedBy")
+  createdMeetings      Meeting[]             @relation("MeetingCreatedBy")
+  auditLogs            AuditLog[]            @relation("AuditLogActor")
+  supportTickets       SupportTicket[]       @relation("SupportTicketCreatedBy")
+  announcements        Announcement[]        @relation("AnnouncementCreatedBy")
 
   @@index([provider, providerId])
 }
@@ -231,6 +246,8 @@ model Profile {
   pushSubscriptions  PushSubscription[]
   menus              Menu[]
   attachments        Attachment[]
+  meetings           Meeting[]
+  auditLogs          AuditLog[]
 
   @@index([userId])
   @@index([companyUserId])
@@ -576,6 +593,7 @@ model UserNote {
   profileId String
   profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
   content   String
+  meta      Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -596,6 +614,106 @@ model EventLog {
   @@index([profileId])
   @@index([eventType])
   @@index([createdAt])
+}
+
+model Meeting {
+  id          String    @id @default(cuid())
+  host        String
+  type        String
+  date        String
+  time        String
+  startsAt    DateTime
+  location    String?
+  notes       String?
+  status      String    @default("Scheduled")
+  profileId   String?
+  profile     Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?     @relation("MeetingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([startsAt])
+  @@index([profileId])
+  @@index([type])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  details   String
+  type      String
+  actor     String?
+  actorId   String?
+  actorUser User?    @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+  profileId String?
+  profile   Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+  @@index([profileId])
+  @@index([actorId])
+}
+
+model SupportTicket {
+  id          String   @id @default(cuid())
+  channel     String
+  type        String
+  status      String   @default("open")
+  subject     String
+  details     String
+  rating      Int?
+  fromRole    String
+  fromName    String
+  fromEmail   String?
+  adminReply  String?
+  meta        Json?
+  createdById String?
+  createdBy   User?    @relation("SupportTicketCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([fromRole])
+  @@index([channel])
+}
+
+model Announcement {
+  id           String    @id @default(cuid())
+  kind         String
+  type         String
+  title        String
+  body         String
+  status       String    @default("active")
+  targetType   String    @default("all")
+  targetEmails String[]  @default([])
+  startsAt     DateTime?
+  endsAt       DateTime?
+  meta         Json?
+  createdById  String?
+  createdBy    User?     @relation("AnnouncementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([kind])
+}
+
+/// Catalog metadata for fixed vCard shells (v1 / v2 / v3). Shell UI lives in the frontend.
+model CardTemplate {
+  id          String   @id
+  name        String
+  description String
+  status      String   @default("active")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, sortOrder])
 }
 
 model PushSubscription {

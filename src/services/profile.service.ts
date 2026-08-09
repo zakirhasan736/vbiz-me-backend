@@ -100,13 +100,17 @@ const absolutizeListProfile = (profile: ListProfileRow): ListProfileRow => {
   return { ...profile, avatar, settings, attachments }
 }
 
-const listForUser = async (userId: string, role: string) => {
+export type ProfileListScope = 'created' | undefined
+
+const listForUser = async (userId: string, role: string, scope?: ProfileListScope) => {
   const where =
-    role === 'admin'
-      ? {}
-      : {
-          OR: [{ userId }, { companyUserId: userId }],
-        }
+    scope === 'created'
+      ? { createdById: userId }
+      : role === 'admin' || role === 'super-admin'
+        ? {}
+        : {
+            OR: [{ userId }, { companyUserId: userId }],
+          }
   const profiles = await prisma.profile.findMany({
     where,
     include: listInclude,
@@ -116,7 +120,7 @@ const listForUser = async (userId: string, role: string) => {
 }
 
 const getOwned = async (profileId: string, userId: string, role: string) => {
-  if (role === 'admin') {
+  if (role === 'admin' || role === 'super-admin') {
     const profile = await prisma.profile.findUnique({ where: { id: profileId }, include: profileInclude })
     if (!profile) throw new AppError(404, 'Profile not found')
     return profile
@@ -236,6 +240,7 @@ const create = async (
   const profile = await prisma.profile.create({
     data: {
       userId,
+      createdById: userId,
       name: String(raw.name),
       email: (raw.email as string) || user.email,
       slug,
@@ -694,8 +699,13 @@ const listPosts = async (profileId: string, userId: string, role: string, postTy
 
 const emptyProfileIds = (profileIds: string[]) => profileIds.length === 0
 
-const getDashboardStats = async (userId: string, role: string, period: DashboardPeriod = 'all') => {
-  const profiles = await listForUser(userId, role)
+const getDashboardStats = async (
+  userId: string,
+  role: string,
+  period: DashboardPeriod = 'all',
+  scope?: ProfileListScope
+) => {
+  const profiles = await listForUser(userId, role, scope)
   const profileIds = profiles.map((p) => p.id)
   const now = new Date()
   const windowDays = resolveDashboardWindowDays(period)
@@ -914,7 +924,7 @@ const listPackages = async () => {
 }
 
 const listSubscriptions = async (userId: string, role: string) => {
-  const where = role === 'admin' ? {} : { userId }
+  const where = role === 'admin' || role === 'super-admin' ? {} : { userId }
   return prisma.subscription.findMany({
     where,
     include: { package: { include: { features: true } }, items: true, transactions: true },
@@ -971,8 +981,8 @@ const notifyLiveSocialClicks = async (profileId: string) => {
 }
 
 /** Current UTC calendar week Mon–Sun: views / social clicks / CTR. */
-const getWeeklyEngagement = async (userId: string, role: string) => {
-  const profiles = await listForUser(userId, role)
+const getWeeklyEngagement = async (userId: string, role: string, scope?: ProfileListScope) => {
+  const profiles = await listForUser(userId, role, scope)
   const profileIds = profiles.map((p) => p.id)
   const profileName = profiles[0]?.name || 'Your card'
 

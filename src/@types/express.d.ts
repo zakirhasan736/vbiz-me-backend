@@ -7,6 +7,8 @@ declare global {
       id?: string
       email?: string
       role?: UserRole
+      staffRole?: string | null
+      allowedModules?: string[]
       accessToken?: string
       refreshToken?: string
       provider?: string
