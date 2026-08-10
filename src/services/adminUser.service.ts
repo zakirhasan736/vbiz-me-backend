@@ -12,6 +12,7 @@ import type {
   SetAdminUserStatusBody,
   UpdateAdminUserBody,
 } from '../zodValidation/adminUser.zod'
+import subscriptionService from './subscription.service'
 
 export type AdminUserRow = {
   id: string
@@ -181,6 +182,10 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
       _count: { select: { profiles: true } },
     },
   })
+
+  if (body.role === 'corporate-owner') {
+    await subscriptionService.ensureCorporateStarterSubscription(user.id)
+  }
 
   await writeAuditLog({
     action: 'User Created',

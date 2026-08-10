@@ -70,6 +70,7 @@ model User {
   auditLogs            AuditLog[]            @relation("AuditLogActor")
   supportTickets       SupportTicket[]       @relation("SupportTicketCreatedBy")
   announcements        Announcement[]        @relation("AnnouncementCreatedBy")
+  teamNotices          TeamNotice[]          @relation("TeamNoticeOwner")
 
   @@index([provider, providerId])
 }
@@ -701,6 +702,25 @@ model Announcement {
 
   @@index([status, createdAt])
   @@index([kind])
+}
+
+/// Corporate owner team announcements (directory banners / saver emails).
+model TeamNotice {
+  id              String   @id @default(cuid())
+  ownerId         String
+  owner           User     @relation("TeamNoticeOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  text            String
+  type            String   @default("broadcast")
+  audience        String   @default("all")
+  targetProfileId String?
+  recipientCount  Int?
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([ownerId, createdAt])
+  @@index([status, audience])
+  @@index([targetProfileId])
 }
 
 /// Catalog metadata for fixed vCard shells (v1 / v2 / v3). Shell UI lives in the frontend.

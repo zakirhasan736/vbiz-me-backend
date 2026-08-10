@@ -1,6 +1,7 @@
 import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
+import authUtils from '../utils/auth.utils'
 import {
   DASHBOARD_ALL_CHART_DAYS,
   SOCIAL_CHANNELS,
@@ -12,6 +13,7 @@ import {
   dayKey,
   eventTypeLabel,
   formatRelativeTime,
+  guestIdFromPayload,
   parsePlatformFromUa,
   resolveDashboardWindowDays,
   trendPercent,
@@ -20,9 +22,11 @@ import {
   type SocialChannel,
 } from '../utils/dashboardAnalytics'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
+import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 import pushService from './push.service'
+import subscriptionService from './subscription.service'
 
 const RECENT_ENGAGEMENT_LIMIT = 10
 
@@ -49,13 +53,28 @@ const profileInclude = {
 
 const listInclude = {
   profession: true,
+  status: true,
   profileSettings: true,
   settings: true,
   attachments: { include: { attachmentType: true } },
   _count: { select: { services: true, portfolios: true, posts: true } },
 } satisfies Prisma.ProfileInclude
 
+const MAX_CARDS_FEATURE_KEY = 'max_cards'
+
 type ListProfileRow = Prisma.ProfileGetPayload<{ include: typeof listInclude }>
+
+export type CardCapacity = {
+  limit: number
+  used: number
+  canCreate: boolean
+}
+
+export type ProfileListPage = {
+  items: ListProfileRow[]
+  total: number
+  capacity: CardCapacity
+}
 
 /** Absolutize avatar / media settings / attachment URLs for admin list responses. */
 const absolutizeListProfile = (profile: ListProfileRow): ListProfileRow => {
@@ -102,21 +121,157 @@ const absolutizeListProfile = (profile: ListProfileRow): ListProfileRow => {
 
 export type ProfileListScope = 'created' | undefined
 
+export type ListProfilesFilters = {
+  scope?: ProfileListScope
+  q?: string
+  status?: 'all' | 'active' | 'inactive' | 'suspended'
+  sortBy?: 'createdAt' | 'updatedAt' | 'name' | 'viewCount'
+  sortDir?: 'asc' | 'desc'
+  skip?: number
+  limit?: number
+}
+
+const isStaff = (role: string) => role === 'admin' || role === 'super-admin'
+
+const ownershipWhere = (userId: string, role: string, scope?: ProfileListScope): Prisma.ProfileWhereInput => {
+  if (scope === 'created') return { createdById: userId }
+  if (isStaff(role)) return {}
+  return { OR: [{ userId }, { companyUserId: userId }] }
+}
+
+const defaultCardLimitForRole = (role: string): number => {
+  if (role === 'vcard-owner') return 1
+  if (role === 'corporate-owner') return 0
+  return Number.MAX_SAFE_INTEGER
+}
+
+const resolvePackageCardLimit = async (userId: string, role: string): Promise<number> => {
+  if (isStaff(role)) return Number.MAX_SAFE_INTEGER
+
+  if (role === 'corporate-owner') {
+    await subscriptionService.ensureCorporateStarterSubscription(userId)
+  }
+
+  const now = new Date()
+  const subscription = await prisma.subscription.findFirst({
+    where: {
+      userId,
+      OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+    },
+    include: { package: { include: { features: true } } },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (subscription?.package?.features?.length) {
+    const feature = subscription.package.features.find(
+      (f) => f.featureKey.trim().toLowerCase() === MAX_CARDS_FEATURE_KEY
+    )
+    if (feature?.featureValue != null && String(feature.featureValue).trim() !== '') {
+      const parsed = Number.parseInt(String(feature.featureValue).trim(), 10)
+      if (Number.isFinite(parsed) && parsed >= 0) return parsed
+    }
+  }
+
+  if (subscription?.quantity != null && Number.isFinite(subscription.quantity) && subscription.quantity >= 0) {
+    return subscription.quantity
+  }
+
+  return defaultCardLimitForRole(role)
+}
+
+const getCardCapacity = async (userId: string, role: string): Promise<CardCapacity> => {
+  const [limit, used] = await Promise.all([
+    resolvePackageCardLimit(userId, role),
+    prisma.profile.count({ where: ownershipWhere(userId, role) }),
+  ])
+  return {
+    limit,
+    used,
+    canCreate: isStaff(role) || used < limit,
+  }
+}
+
+const assertCanCreateCard = async (userId: string, role: string) => {
+  if (isStaff(role)) return
+  const capacity = await getCardCapacity(userId, role)
+  if (capacity.canCreate) return
+  throw new AppError(
+    403,
+    `Card limit reached (${capacity.used}/${capacity.limit}). Upgrade your package to create more cards.`
+  )
+}
+
+const buildListFiltersWhere = (
+  userId: string,
+  role: string,
+  filters: ListProfilesFilters
+): Prisma.ProfileWhereInput => {
+  const where: Prisma.ProfileWhereInput = { ...ownershipWhere(userId, role, filters.scope) }
+
+  const q = filters.q?.trim()
+  if (q) {
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      {
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+          { companyName: { contains: q, mode: 'insensitive' } },
+          { designation: { contains: q, mode: 'insensitive' } },
+          { slug: { contains: q, mode: 'insensitive' } },
+          { phone: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+    ]
+  }
+
+  const status = filters.status && filters.status !== 'all' ? filters.status : undefined
+  if (status === 'active') {
+    where.isPublic = true
+  } else if (status === 'inactive' || status === 'suspended') {
+    where.isPublic = false
+  }
+
+  return where
+}
+
 const listForUser = async (userId: string, role: string, scope?: ProfileListScope) => {
-  const where =
-    scope === 'created'
-      ? { createdById: userId }
-      : role === 'admin' || role === 'super-admin'
-        ? {}
-        : {
-            OR: [{ userId }, { companyUserId: userId }],
-          }
   const profiles = await prisma.profile.findMany({
-    where,
+    where: ownershipWhere(userId, role, scope),
     include: listInclude,
     orderBy: { updatedAt: 'desc' },
   })
   return profiles.map(absolutizeListProfile)
+}
+
+const listProfilesPage = async (
+  userId: string,
+  role: string,
+  filters: ListProfilesFilters = {}
+): Promise<ProfileListPage> => {
+  const skip = filters.skip ?? 0
+  const limit = filters.limit ?? 24
+  const sortBy = filters.sortBy ?? 'updatedAt'
+  const sortDir = filters.sortDir ?? 'desc'
+  const where = buildListFiltersWhere(userId, role, filters)
+
+  const [rows, total, capacity] = await Promise.all([
+    prisma.profile.findMany({
+      where,
+      include: listInclude,
+      orderBy: { [sortBy]: sortDir },
+      skip,
+      take: limit,
+    }),
+    prisma.profile.count({ where }),
+    getCardCapacity(userId, role),
+  ])
+
+  return {
+    items: rows.map(absolutizeListProfile),
+    total,
+    capacity,
+  }
 }
 
 const getOwned = async (profileId: string, userId: string, role: string) => {
@@ -201,6 +356,7 @@ const upsertPrimaryAddress = async (
 
 const create = async (
   userId: string,
+  role: string,
   input: {
     name: string
     email?: string
@@ -234,6 +390,8 @@ const create = async (
 ) => {
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) throw new AppError(404, 'User not found')
+
+  await assertCanCreateCard(userId, role)
 
   const { settings, profileSettings, city: _city, state: _state, zipCode: _zipCode, ...raw } = input
   const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
@@ -840,15 +998,272 @@ const getDashboardStats = async (
   }
 }
 
-const listContacts = async (userId: string, role: string, profileId?: string) => {
+type OwnerContactMeta = {
+  privateNotes?: string
+  lastReply?: string
+  lastReplyAt?: string
+}
+
+function asMetaRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return {}
+}
+
+function readOwnerContactMeta(meta: unknown): OwnerContactMeta {
+  const root = asMetaRecord(meta)
+  const admin = asMetaRecord(root.admin)
+  return {
+    privateNotes: typeof admin.privateNotes === 'string' ? admin.privateNotes : undefined,
+    lastReply: typeof admin.lastReply === 'string' ? admin.lastReply : undefined,
+    lastReplyAt: typeof admin.lastReplyAt === 'string' ? admin.lastReplyAt : undefined,
+  }
+}
+
+function mergeOwnerContactMeta(
+  existingMeta: unknown,
+  patch: { privateNotes?: string; lastReply?: string }
+): Prisma.InputJsonValue {
+  const root = { ...asMetaRecord(existingMeta) }
+  const admin = { ...asMetaRecord(root.admin) }
+  if (patch.privateNotes !== undefined) admin.privateNotes = patch.privateNotes
+  if (patch.lastReply !== undefined) {
+    admin.lastReply = patch.lastReply
+    admin.lastReplyAt = new Date().toISOString()
+  }
+  root.admin = admin
+  return root as Prisma.InputJsonValue
+}
+
+function metaString(meta: unknown, ...keys: string[]): string | null {
+  const root = asMetaRecord(meta)
+  for (const key of keys) {
+    const value = root[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return null
+}
+
+export type OwnerContactRow = {
+  id: string
+  name: string | null
+  email: string | null
+  phone: string | null
+  message: string | null
+  createdAt: Date | string
+  profile: { id: string; name: string; slug: string | null } | null
+  source: 'guest_save' | 'contact' | 'note'
+  privateNotes?: string
+  lastReply?: string
+  lastReplyAt?: string
+}
+
+const listContacts = async (userId: string, role: string, profileId?: string): Promise<OwnerContactRow[]> => {
+  if (profileId) await getOwned(profileId, userId, role)
   const profiles = await listForUser(userId, role)
   const ids = profileId ? [profileId] : profiles.map((p) => p.id)
-  if (profileId) await getOwned(profileId, userId, role)
-  return prisma.contact.findMany({
-    where: { profileId: { in: ids } },
-    orderBy: { createdAt: 'desc' },
-    include: { profile: { select: { id: true, name: true, slug: true } } },
+  if (emptyProfileIds(ids)) return []
+
+  const profileSelect = { select: { id: true, name: true, slug: true } } as const
+
+  const [guests, contacts, notes] = await Promise.all([
+    prisma.guestUserData.findMany({
+      where: { profileId: { in: ids } },
+      orderBy: { createdAt: 'desc' },
+      include: { profile: profileSelect },
+    }),
+    prisma.contact.findMany({
+      where: { profileId: { in: ids } },
+      orderBy: { createdAt: 'desc' },
+      include: { profile: profileSelect },
+    }),
+    prisma.userNote.findMany({
+      where: { profileId: { in: ids } },
+      orderBy: { createdAt: 'desc' },
+      include: { profile: profileSelect },
+    }),
+  ])
+
+  const fromGuests: OwnerContactRow[] = guests.map((g) => {
+    const admin = readOwnerContactMeta(g.meta)
+    return {
+      id: g.id,
+      name: g.fullName,
+      email: g.email,
+      phone: g.phone,
+      message: null,
+      createdAt: g.createdAt,
+      profile: g.profile,
+      source: 'guest_save' as const,
+      privateNotes: admin.privateNotes,
+      lastReply: admin.lastReply,
+      lastReplyAt: admin.lastReplyAt,
+    }
   })
+
+  const fromContacts: OwnerContactRow[] = contacts.map((c) => {
+    const admin = readOwnerContactMeta(c.meta)
+    return {
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      phone: c.phone,
+      message: c.message,
+      createdAt: c.createdAt,
+      profile: c.profile,
+      source: 'contact' as const,
+      privateNotes: admin.privateNotes,
+      lastReply: admin.lastReply,
+      lastReplyAt: admin.lastReplyAt,
+    }
+  })
+
+  const fromNotes: OwnerContactRow[] = notes.map((n) => {
+    const admin = readOwnerContactMeta(n.meta)
+    return {
+      id: n.id,
+      name: metaString(n.meta, 'fullName', 'name') || 'Guest',
+      email: metaString(n.meta, 'email'),
+      phone: metaString(n.meta, 'phone', 'phoneNumber'),
+      message: n.content,
+      createdAt: n.createdAt,
+      profile: n.profile,
+      source: 'note' as const,
+      privateNotes: admin.privateNotes,
+      lastReply: admin.lastReply,
+      lastReplyAt: admin.lastReplyAt,
+    }
+  })
+
+  return [...fromGuests, ...fromContacts, ...fromNotes].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )
+}
+
+const patchContact = async (
+  userId: string,
+  role: string,
+  contactId: string,
+  body: { privateNotes?: string; lastReply?: string; source?: 'guest_save' | 'contact' | 'note' }
+): Promise<OwnerContactRow> => {
+  const source = body.source
+  const profiles = await listForUser(userId, role)
+  const ownedIds = new Set(profiles.map((p) => p.id))
+
+  const tryGuest = async () => {
+    const existing = await prisma.guestUserData.findUnique({
+      where: { id: contactId },
+      include: { profile: { select: { id: true, name: true, slug: true } } },
+    })
+    if (!existing || !ownedIds.has(existing.profileId)) return null
+    const updated = await prisma.guestUserData.update({
+      where: { id: contactId },
+      data: { meta: mergeOwnerContactMeta(existing.meta, body) },
+      include: { profile: { select: { id: true, name: true, slug: true } } },
+    })
+    const admin = readOwnerContactMeta(updated.meta)
+    return {
+      id: updated.id,
+      name: updated.fullName,
+      email: updated.email,
+      phone: updated.phone,
+      message: null,
+      createdAt: updated.createdAt,
+      profile: updated.profile,
+      source: 'guest_save' as const,
+      privateNotes: admin.privateNotes,
+      lastReply: admin.lastReply,
+      lastReplyAt: admin.lastReplyAt,
+    }
+  }
+
+  const tryContact = async () => {
+    const existing = await prisma.contact.findUnique({
+      where: { id: contactId },
+      include: { profile: { select: { id: true, name: true, slug: true } } },
+    })
+    if (!existing || !ownedIds.has(existing.profileId)) return null
+    const updated = await prisma.contact.update({
+      where: { id: contactId },
+      data: { meta: mergeOwnerContactMeta(existing.meta, body) },
+      include: { profile: { select: { id: true, name: true, slug: true } } },
+    })
+    const admin = readOwnerContactMeta(updated.meta)
+    return {
+      id: updated.id,
+      name: updated.name,
+      email: updated.email,
+      phone: updated.phone,
+      message: updated.message,
+      createdAt: updated.createdAt,
+      profile: updated.profile,
+      source: 'contact' as const,
+      privateNotes: admin.privateNotes,
+      lastReply: admin.lastReply,
+      lastReplyAt: admin.lastReplyAt,
+    }
+  }
+
+  const tryNote = async () => {
+    const existing = await prisma.userNote.findUnique({
+      where: { id: contactId },
+      include: { profile: { select: { id: true, name: true, slug: true } } },
+    })
+    if (!existing || !ownedIds.has(existing.profileId)) return null
+    const updated = await prisma.userNote.update({
+      where: { id: contactId },
+      data: { meta: mergeOwnerContactMeta(existing.meta, body) },
+      include: { profile: { select: { id: true, name: true, slug: true } } },
+    })
+    const admin = readOwnerContactMeta(updated.meta)
+    return {
+      id: updated.id,
+      name: metaString(updated.meta, 'fullName', 'name') || 'Guest',
+      email: metaString(updated.meta, 'email'),
+      phone: metaString(updated.meta, 'phone', 'phoneNumber'),
+      message: updated.content,
+      createdAt: updated.createdAt,
+      profile: updated.profile,
+      source: 'note' as const,
+      privateNotes: admin.privateNotes,
+      lastReply: admin.lastReply,
+      lastReplyAt: admin.lastReplyAt,
+    }
+  }
+
+  const row: OwnerContactRow | null =
+    source === 'guest_save'
+      ? await tryGuest()
+      : source === 'contact'
+        ? await tryContact()
+        : source === 'note'
+          ? await tryNote()
+          : (await tryGuest()) || (await tryContact()) || (await tryNote())
+
+  if (!row) throw new AppError(404, 'Contact not found')
+  return row
+}
+
+const csvEscape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`
+
+const exportContactsCsv = async (userId: string, role: string, profileId?: string) => {
+  const rows = await listContacts(userId, role, profileId)
+  const header = ['Name', 'Email', 'Phone', 'Card', 'Created', 'Source']
+  const lines = [
+    header.join(','),
+    ...rows.map((r) =>
+      [
+        csvEscape(r.name),
+        csvEscape(r.email),
+        csvEscape(r.phone),
+        csvEscape(r.profile?.name),
+        csvEscape(typeof r.createdAt === 'string' ? r.createdAt : r.createdAt.toISOString()),
+        csvEscape(r.source),
+      ].join(',')
+    ),
+  ]
+  return lines.join('\n')
 }
 
 type RecentEngagementQuery = {
@@ -936,9 +1351,15 @@ const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 const WEEKDAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
 
 /** All-time social click counts for channels with at least one click. */
-const getLiveSocialClicks = async (userId: string, role: string): Promise<LiveSocialClickRow[]> => {
-  const profiles = await listForUser(userId, role)
-  const profileIds = profiles.map((p) => p.id)
+const getLiveSocialClicks = async (userId: string, role: string, profileId?: string): Promise<LiveSocialClickRow[]> => {
+  let profileIds: string[]
+  if (profileId) {
+    const profile = await getOwned(profileId, userId, role)
+    profileIds = [profile.id]
+  } else {
+    const profiles = await listForUser(userId, role)
+    profileIds = profiles.map((p) => p.id)
+  }
   if (emptyProfileIds(profileIds)) return []
 
   const socialEvents = await prisma.eventLog.findMany({
@@ -981,10 +1402,19 @@ const notifyLiveSocialClicks = async (profileId: string) => {
 }
 
 /** Current UTC calendar week Mon–Sun: views / social clicks / CTR. */
-const getWeeklyEngagement = async (userId: string, role: string, scope?: ProfileListScope) => {
-  const profiles = await listForUser(userId, role, scope)
-  const profileIds = profiles.map((p) => p.id)
-  const profileName = profiles[0]?.name || 'Your card'
+const getWeeklyEngagement = async (userId: string, role: string, scope?: ProfileListScope, profileId?: string) => {
+  let profileIds: string[]
+  let profileName: string
+
+  if (profileId) {
+    const profile = await getOwned(profileId, userId, role)
+    profileIds = [profile.id]
+    profileName = profile.name || 'Your card'
+  } else {
+    const profiles = await listForUser(userId, role, scope)
+    profileIds = profiles.map((p) => p.id)
+    profileName = profiles.length > 1 ? 'All directory cards' : profiles[0]?.name || 'Your card'
+  }
 
   const now = new Date()
   const utcDay = now.getUTCDay() // 0 Sun … 6 Sat
@@ -1068,8 +1498,324 @@ const getWeeklyEngagement = async (userId: string, role: string, scope?: Profile
   }
 }
 
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
+const CONSOLIDATED_SERIES_COLORS = ['#4f46e5', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6', '#94a3b8'] as const
+const CONSOLIDATED_TOP_N = 5
+const CONSOLIDATED_OTHERS = 'Others'
+const CONSOLIDATED_UNSPECIFIED = 'Unspecified'
+const CONSOLIDATED_MONTHS = 6
+
+const normalizeDesignationLabel = (value?: string | null): string => {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  return trimmed || CONSOLIDATED_UNSPECIFIED
+}
+
+const monthBucketKey = (date: Date): string =>
+  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+
+/** Last 6 calendar months of profile views, rolled up by card designation (top 5 + Others). */
+const getConsolidatedEngagement = async (userId: string, role: string, scope?: ProfileListScope) => {
+  const now = new Date()
+  const startMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (CONSOLIDATED_MONTHS - 1), 1))
+
+  const monthSlots: Array<{ key: string; name: string }> = []
+  for (let i = 0; i < CONSOLIDATED_MONTHS; i++) {
+    const d = new Date(Date.UTC(startMonth.getUTCFullYear(), startMonth.getUTCMonth() + i, 1))
+    monthSlots.push({
+      key: monthBucketKey(d),
+      name: MONTH_SHORT[d.getUTCMonth()],
+    })
+  }
+
+  const profiles = await prisma.profile.findMany({
+    where: ownershipWhere(userId, role, scope),
+    select: { id: true, designation: true },
+  })
+
+  if (emptyProfileIds(profiles.map((p) => p.id))) {
+    return {
+      months: monthSlots.map((m) => ({ name: m.name, total: 0 })),
+      series: [] as Array<{ key: string; label: string; color: string }>,
+    }
+  }
+
+  const designationByProfileId = new Map(profiles.map((p) => [p.id, normalizeDesignationLabel(p.designation)] as const))
+  const profileIds = profiles.map((p) => p.id)
+
+  const viewEvents = await prisma.eventLog.findMany({
+    where: {
+      profileId: { in: profileIds },
+      eventType: 'profile_view',
+      createdAt: { gte: startMonth },
+    },
+    select: { createdAt: true, payload: true, profileId: true },
+  })
+
+  /** monthKey → designation → distinct guests */
+  const byMonthDesignation = new Map<string, Map<string, { guests: Set<string>; legacy: number }>>()
+
+  for (const row of viewEvents) {
+    if (!row.profileId) continue
+    const monthKey = monthBucketKey(row.createdAt)
+    const designation = designationByProfileId.get(row.profileId) || CONSOLIDATED_UNSPECIFIED
+    let byDesignation = byMonthDesignation.get(monthKey)
+    if (!byDesignation) {
+      byDesignation = new Map()
+      byMonthDesignation.set(monthKey, byDesignation)
+    }
+    let bucket = byDesignation.get(designation)
+    if (!bucket) {
+      bucket = { guests: new Set(), legacy: 0 }
+      byDesignation.set(designation, bucket)
+    }
+    const guestId = guestIdFromPayload(row.payload)
+    if (guestId) bucket.guests.add(guestId)
+    else bucket.legacy += 1
+  }
+
+  const totalsByDesignation = new Map<string, number>()
+  for (const byDesignation of byMonthDesignation.values()) {
+    for (const [designation, bucket] of byDesignation) {
+      const count = bucket.guests.size + bucket.legacy
+      totalsByDesignation.set(designation, (totalsByDesignation.get(designation) || 0) + count)
+    }
+  }
+
+  const ranked = [...totalsByDesignation.entries()].sort((a, b) => b[1] - a[1])
+  const topLabels = ranked.slice(0, CONSOLIDATED_TOP_N).map(([label]) => label)
+  const topSet = new Set(topLabels)
+  const hasOthers = ranked.slice(CONSOLIDATED_TOP_N).some(([, total]) => total > 0)
+
+  const seriesLabels = hasOthers ? [...topLabels, CONSOLIDATED_OTHERS] : topLabels
+  const series = seriesLabels.map((label, index) => ({
+    key: label,
+    label,
+    color: CONSOLIDATED_SERIES_COLORS[Math.min(index, CONSOLIDATED_SERIES_COLORS.length - 1)],
+  }))
+
+  const months = monthSlots.map((slot) => {
+    const row: Record<string, string | number> = { name: slot.name, total: 0 }
+    for (const label of seriesLabels) row[label] = 0
+
+    const byDesignation = byMonthDesignation.get(slot.key)
+    if (byDesignation) {
+      for (const [designation, bucket] of byDesignation) {
+        const count = bucket.guests.size + bucket.legacy
+        const target = topSet.has(designation) ? designation : CONSOLIDATED_OTHERS
+        if (!(target in row) || target === 'name' || target === 'total') continue
+        row[target] = (Number(row[target]) || 0) + count
+        row.total = (Number(row.total) || 0) + count
+      }
+    }
+
+    return row
+  })
+
+  return { months, series }
+}
+
+export type SocialClicksByCardRow = {
+  profileId: string
+  channels: LiveSocialClickRow[]
+}
+
+const getSocialClicksByCard = async (
+  userId: string,
+  role: string,
+  scope?: ProfileListScope
+): Promise<SocialClicksByCardRow[]> => {
+  const profiles = await listForUser(userId, role, scope)
+  const profileIds = profiles.map((p) => p.id)
+  if (emptyProfileIds(profileIds)) return []
+
+  const socialEvents = await prisma.eventLog.findMany({
+    where: { profileId: { in: profileIds }, eventType: 'social_click' },
+    select: { profileId: true, payload: true },
+  })
+
+  const byProfile = new Map<string, Array<{ payload: unknown }>>()
+  for (const row of socialEvents) {
+    if (!row.profileId) continue
+    let bucket = byProfile.get(row.profileId)
+    if (!bucket) {
+      bucket = []
+      byProfile.set(row.profileId, bucket)
+    }
+    bucket.push({ payload: row.payload })
+  }
+
+  const result: SocialClicksByCardRow[] = []
+  for (const profileId of profileIds) {
+    const events = byProfile.get(profileId) || []
+    const counts = countDistinctGuestsByChannel(events)
+    const channels: LiveSocialClickRow[] = []
+    for (const channel of SOCIAL_CHANNELS) {
+      const clickCount = counts.get(channel) || 0
+      if (clickCount <= 0) continue
+      channels.push({
+        channel,
+        label: SOCIAL_CHANNEL_LABELS[channel],
+        clickCount,
+      })
+    }
+    channels.sort((a, b) => b.clickCount - a.clickCount)
+    result.push({ profileId, channels })
+  }
+  return result
+}
+
+export type TeamNoticeRow = {
+  id: string
+  text: string
+  type: 'broadcast' | 'system'
+  audience: 'all' | 'savers'
+  targetCardId?: string
+  recipientCount?: number
+  createdAt: string
+  status: string
+}
+
+function serializeTeamNotice(row: {
+  id: string
+  text: string
+  type: string
+  audience: string
+  targetProfileId: string | null
+  recipientCount: number | null
+  createdAt: Date
+  status: string
+}): TeamNoticeRow {
+  return {
+    id: row.id,
+    text: row.text,
+    type: row.type === 'system' ? 'system' : 'broadcast',
+    audience: row.audience === 'savers' ? 'savers' : 'all',
+    targetCardId: row.targetProfileId || undefined,
+    recipientCount: row.recipientCount ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    status: row.status,
+  }
+}
+
+const listTeamNotices = async (userId: string): Promise<TeamNoticeRow[]> => {
+  const rows = await prisma.teamNotice.findMany({
+    where: { ownerId: userId },
+    orderBy: { createdAt: 'desc' },
+  })
+  return rows.map(serializeTeamNotice)
+}
+
+const createTeamNotice = async (
+  userId: string,
+  role: string,
+  input: {
+    text: string
+    type: 'broadcast' | 'system'
+    audience: 'all' | 'savers'
+    targetProfileId?: string
+  }
+): Promise<TeamNoticeRow> => {
+  const text = input.text.trim()
+  if (!text) throw new AppError(400, 'Announcement text is required')
+
+  let recipientCount: number | undefined
+  const targetProfileId = input.targetProfileId || undefined
+
+  if (targetProfileId) {
+    await getOwned(targetProfileId, userId, role)
+  }
+
+  if (input.audience === 'savers') {
+    const profiles = await listForUser(userId, role)
+    const ids = targetProfileId ? [targetProfileId] : profiles.map((p) => p.id)
+    if (!emptyProfileIds(ids)) {
+      const [guests, contacts] = await Promise.all([
+        prisma.guestUserData.findMany({
+          where: { profileId: { in: ids }, email: { not: null } },
+          select: { email: true },
+        }),
+        prisma.contact.findMany({
+          where: { profileId: { in: ids }, email: { not: null } },
+          select: { email: true },
+        }),
+      ])
+      const emails = [
+        ...new Set([...guests, ...contacts].map((r) => (r.email || '').trim().toLowerCase()).filter(Boolean)),
+      ]
+      recipientCount = emails.length
+      const subject =
+        input.type === 'system' ? 'System notice from your saved contact' : 'Announcement from a contact you saved'
+      const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br/>')}</p></div>`
+
+      await Promise.all(
+        emails.map((email) =>
+          authUtils.sendEmail({ receiverMail: email, subject, html }).catch((err) => {
+            // Best-effort delivery; notice is still persisted.
+            logger.error('Team notice email failed', email, err)
+          })
+        )
+      )
+    } else {
+      recipientCount = 0
+    }
+  }
+
+  const created = await prisma.teamNotice.create({
+    data: {
+      ownerId: userId,
+      text,
+      type: input.type,
+      audience: input.audience,
+      targetProfileId: targetProfileId || null,
+      recipientCount: recipientCount ?? null,
+      status: 'active',
+    },
+  })
+
+  return serializeTeamNotice(created)
+}
+
+const deleteTeamNotice = async (userId: string, noticeId: string) => {
+  const existing = await prisma.teamNotice.findFirst({
+    where: { id: noticeId, ownerId: userId },
+    select: { id: true },
+  })
+  if (!existing) throw new AppError(404, 'Notice not found')
+  await prisma.teamNotice.delete({ where: { id: noticeId } })
+  return { id: noticeId, deleted: true }
+}
+
+/** Active public-banner notices for a profile (audience=all from the card owner / company). */
+const listPublicTeamNoticesForProfile = async (profileId: string): Promise<TeamNoticeRow[]> => {
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { userId: true, companyUserId: true },
+  })
+  if (!profile) return []
+  const ownerIds = [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id))
+  if (!ownerIds.length) return []
+
+  const rows = await prisma.teamNotice.findMany({
+    where: {
+      ownerId: { in: ownerIds },
+      status: 'active',
+      audience: 'all',
+      OR: [{ targetProfileId: null }, { targetProfileId: profileId }],
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  })
+  return rows.map(serializeTeamNotice)
+}
+
 const profileService = {
   listForUser,
+  listProfilesPage,
+  getCardCapacity,
   getOwned,
   create,
   update,
@@ -1081,10 +1827,18 @@ const profileService = {
   listPosts,
   getDashboardStats,
   getLiveSocialClicks,
+  getSocialClicksByCard,
   notifyLiveSocialClicks,
   getWeeklyEngagement,
+  getConsolidatedEngagement,
   listRecentEngagement,
   listContacts,
+  patchContact,
+  exportContactsCsv,
+  listTeamNotices,
+  createTeamNotice,
+  deleteTeamNotice,
+  listPublicTeamNoticesForProfile,
   listPackages,
   listSubscriptions,
   ensureUniqueSlug,

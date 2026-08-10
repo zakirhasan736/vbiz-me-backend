@@ -2,6 +2,7 @@ import type { Attachment, Setting } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
+import profileService from './profile.service'
 
 const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
   profile: ['profile picture', 'profile pic', 'profile_pic', 'avatar', 'profile image', 'profile'],
@@ -454,7 +455,9 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
 const getMyCardBySlug = async (slug: string) => {
   const profile = await getProfileBySlugOrThrow(slug)
   // viewCount is incremented only when a unique guest is tracked via trackEvent(profile_view).
-  return buildMyCard(profile)
+  const card = await buildMyCard(profile)
+  const team_notices = await profileService.listPublicTeamNoticesForProfile(profile.id)
+  return { ...card, team_notices }
 }
 
 const getPostTypesForProfile = async (profileId: string) => {

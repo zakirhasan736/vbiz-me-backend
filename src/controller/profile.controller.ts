@@ -10,9 +10,15 @@ const param = (value: string | string[]): string => (Array.isArray(value) ? valu
 
 const list = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const { scope } = ProfileZodSchema.profileScopeQuery.parse(req.query)
-  const data = await profileService.listForUser(req.user.id, req.user.role, scope)
-  sendResponse(res, { success: true, statusCode: 200, message: 'Profiles fetched', data })
+  const query = ProfileZodSchema.listProfilesQuery.parse(req.query)
+  const data = await profileService.listProfilesPage(req.user.id, req.user.role, query)
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: 'Profiles fetched',
+    data,
+    totalDoc: data.total,
+  })
 })
 
 const getOne = catchAsyncError(async (req, res) => {
@@ -23,7 +29,7 @@ const getOne = catchAsyncError(async (req, res) => {
 
 const create = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const data = await profileService.create(req.user.id, req.body)
+  const data = await profileService.create(req.user.id, req.user.role, req.body)
   sendResponse(res, { success: true, statusCode: 201, message: 'Profile created', data })
 })
 
@@ -266,6 +272,45 @@ const contacts = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Contacts fetched', data })
 })
 
+const patchContact = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const body = ProfileZodSchema.patchContactBody.parse(req.body)
+  const data = await profileService.patchContact(req.user.id, req.user.role, String(req.params.id), body)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Contact updated', data })
+})
+
+const exportContacts = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const csv = await profileService.exportContactsCsv(
+    req.user.id,
+    req.user.role,
+    req.query.profileId ? String(req.query.profileId) : undefined
+  )
+  const stamp = new Date().toISOString().slice(0, 10)
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="corporate-leads_${stamp}.csv"`)
+  res.status(200).send(csv)
+})
+
+const listTeamNotices = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const data = await profileService.listTeamNotices(req.user.id)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Team notices fetched', data })
+})
+
+const createTeamNotice = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const body = ProfileZodSchema.createTeamNoticeBody.parse(req.body)
+  const data = await profileService.createTeamNotice(req.user.id, req.user.role, body)
+  sendResponse(res, { success: true, statusCode: 201, message: 'Team notice created', data })
+})
+
+const deleteTeamNotice = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const data = await profileService.deleteTeamNotice(req.user.id, String(req.params.id))
+  sendResponse(res, { success: true, statusCode: 200, message: 'Team notice deleted', data })
+})
+
 const packages = catchAsyncError(async (_req, res) => {
   const data = await profileService.listPackages()
   sendResponse(res, { success: true, statusCode: 200, message: 'Packages fetched', data })
@@ -293,9 +338,16 @@ const exportDashboard = catchAsyncError(async (req, res) => {
 
 const weeklyEngagement = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const { scope } = ProfileZodSchema.profileScopeQuery.parse(req.query)
-  const data = await profileService.getWeeklyEngagement(req.user.id, req.user.role, scope)
+  const { scope, profileId } = ProfileZodSchema.profileScopeQuery.parse(req.query)
+  const data = await profileService.getWeeklyEngagement(req.user.id, req.user.role, scope, profileId)
   sendResponse(res, { success: true, statusCode: 200, message: 'Weekly engagement', data })
+})
+
+const consolidatedEngagement = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const { scope } = ProfileZodSchema.profileScopeQuery.parse(req.query)
+  const data = await profileService.getConsolidatedEngagement(req.user.id, req.user.role, scope)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Consolidated engagement', data })
 })
 
 const liveClicks = catchAsyncError(async (req, res) => {
@@ -312,6 +364,20 @@ const liveClicks = catchAsyncError(async (req, res) => {
     throw err
   }
   // Connection stays open until client disconnects; do not call res.end().
+})
+
+const socialClicks = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const { profileId } = ProfileZodSchema.profileScopeQuery.parse(req.query)
+  const data = await profileService.getLiveSocialClicks(req.user.id, req.user.role, profileId)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Social clicks', data })
+})
+
+const socialClicksByCard = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const { scope } = ProfileZodSchema.profileScopeQuery.parse(req.query)
+  const data = await profileService.getSocialClicksByCard(req.user.id, req.user.role, scope)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Social clicks by card', data })
 })
 
 const profileController = {
@@ -334,10 +400,18 @@ const profileController = {
   dashboard,
   recentEngagement,
   weeklyEngagement,
+  consolidatedEngagement,
   liveClicks,
+  socialClicks,
+  socialClicksByCard,
   checkSlug,
   exportDashboard,
   contacts,
+  patchContact,
+  exportContacts,
+  listTeamNotices,
+  createTeamNotice,
+  deleteTeamNotice,
   packages,
   subscriptions,
 }

@@ -23,6 +23,7 @@ import {
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
+import subscriptionService from './subscription.service'
 
 type VerificationCooldown = {
   cooldownEnd: number
@@ -44,7 +45,7 @@ const register = async (body: IRegisterBody): Promise<VerificationCooldown> => {
 
   const hashedPassword = await authUtils.hashPassword(body.password)
 
-  await prisma.user.create({
+  const user = await prisma.user.create({
     data: {
       name: body.name,
       email: body.email,
@@ -55,6 +56,10 @@ const register = async (body: IRegisterBody): Promise<VerificationCooldown> => {
       isActive: true,
     },
   })
+
+  if (body.role === 'corporate-owner') {
+    await subscriptionService.ensureCorporateStarterSubscription(user.id)
+  }
 
   return queueOrSendVerificationEmail(body.email, { awaitSend: false })
 }

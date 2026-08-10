@@ -19,6 +19,17 @@ const recentEngagementQuery = z.object({
 
 const profileScopeQuery = z.object({
   scope: z.enum(['created']).optional(),
+  profileId: z.string().min(1).optional(),
+})
+
+const listProfilesQuery = z.object({
+  scope: z.enum(['created']).optional(),
+  q: z.string().trim().max(200).optional(),
+  status: z.enum(['all', 'active', 'inactive', 'suspended']).optional().default('all'),
+  sortBy: z.enum(['createdAt', 'updatedAt', 'name', 'viewCount']).default('updatedAt'),
+  sortDir: z.enum(['asc', 'desc']).default('desc'),
+  skip: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(100).default(24),
 })
 
 const dashboardPeriodQuery = z.object({
@@ -31,12 +42,32 @@ const checkSlugQuery = z.object({
   excludeId: z.string().min(1).optional(),
 })
 
+const patchContactBody = z.object({
+  privateNotes: z.string().max(5000).optional(),
+  lastReply: z.string().max(2000).optional(),
+  source: z.enum(['guest_save', 'contact', 'note']).optional(),
+})
+
+const createTeamNoticeBody = z.object({
+  text: z.string().trim().min(1).max(2000),
+  type: z.enum(['broadcast', 'system']).default('broadcast'),
+  audience: z.enum(['all', 'savers']).default('all'),
+  targetProfileId: z.string().min(1).optional(),
+})
+
 const ProfileZodSchema = {
   recentEngagementQuery,
   dashboardPeriodQuery,
   profileScopeQuery,
+  listProfilesQuery,
   checkSlugQuery,
+  patchContactBody,
+  createTeamNoticeBody,
   ENGAGEMENT_EVENT_TYPES,
 }
+
+export type ListProfilesQuery = z.infer<typeof listProfilesQuery>
+export type PatchContactBody = z.infer<typeof patchContactBody>
+export type CreateTeamNoticeBody = z.infer<typeof createTeamNoticeBody>
 
 export default ProfileZodSchema
