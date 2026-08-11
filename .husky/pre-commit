@@ -1,3 +1,12 @@
+# Prefer Yarn 4 via Corepack when global `yarn` is still classic v1.
+yarn_cmd() {
+  if command -v corepack >/dev/null 2>&1; then
+    corepack yarn "$@"
+  else
+    yarn "$@"
+  fi
+}
+
 echo ""
 echo "🔍 Running pre-commit checks..."
 echo ""
@@ -5,10 +14,10 @@ echo ""
 # ─── [1/3] Prettier (formatting) ───────────────────────────────────
 
 echo "▶ [1/3] Checking code formatting (Prettier)"
-yarn format:check || {
+yarn_cmd format:check || {
 echo ""
 echo "❌ Prettier check failed 💀💀 your code formatting sucks"
-echo "💡 Run 'yarn format' to auto-fix it, then 'git add' your files and commit again."
+echo "💡 Run 'corepack yarn format' (or 'npx prettier --write .'), then 'git add' and commit again."
 echo ""
 exit 1
 }
@@ -17,10 +26,10 @@ exit 1
 
 echo ""
 echo "▶ [2/3] Checking lint rules (ESLint)"
-yarn lint || {
+yarn_cmd lint || {
 echo ""
 echo "❌ ESLint failed 💀💀 your code has lint errors"
-echo "💡 Fix the rule violations shown above. Re-check with 'yarn lint'."
+echo "💡 Fix the rule violations shown above. Re-check with 'corepack yarn lint'."
 echo ""
 exit 1
 }
@@ -29,10 +38,10 @@ exit 1
 
 echo ""
 echo "▶ [3/3] Checking types (TypeScript)"
-yarn typecheck || {
+yarn_cmd typecheck || {
 echo ""
 echo "❌ TypeScript check failed 💀💀 your types are broken"
-echo "💡 Fix the type errors shown above. Re-check with 'yarn typecheck'."
+echo "💡 Fix the type errors shown above. Re-check with 'corepack yarn typecheck'."
 echo ""
 exit 1
 }

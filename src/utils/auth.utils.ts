@@ -1,4 +1,5 @@
 import argon2 from 'argon2'
+import bcrypt from 'bcryptjs'
 import { CookieOptions, Response } from 'express'
 import { readFileSync } from 'fs'
 import nodemailer from 'nodemailer'
@@ -69,9 +70,28 @@ const clearAuthCookies = (res: Response) => {
   res.clearCookie('accessToken', cookieOptions).clearCookie('refreshToken', cookieOptions)
 }
 
+/** Laravel stores bcrypt as $2y$ / $2x$; Node bcrypt expects $2a$ / $2b$. */
+const normalizeBcryptHash = (hash: string): string => hash.replace(/^\$2y\$/, '$2b$').replace(/^\$2x\$/, '$2b$')
+
+const isBcryptHash = (hash: string): boolean => /^\$2[abyx]\$/.test(hash)
+
+const isArgon2Hash = (hash: string): boolean => hash.startsWith('$argon2')
+
 const comparePassword = async (plainPassword: string, hashedPassword: string): Promise<boolean> => {
   try {
-    return await argon2.verify(hashedPassword, plainPassword)
+    if (isArgon2Hash(hashedPassword)) {
+      return await argon2.verify(hashedPassword, plainPassword)
+    }
+    if (isBcryptHash(hashedPassword)) {
+      return await bcrypt.compare(plainPassword, normalizeBcryptHash(hashedPassword))
+    }
+    // Unknown algorithm prefix — try argon2 then bcrypt for safety.
+    try {
+      if (await argon2.verify(hashedPassword, plainPassword)) return true
+    } catch {
+      /* not argon2 */
+    }
+    return await bcrypt.compare(plainPassword, normalizeBcryptHash(hashedPassword))
   } catch {
     return false
   }
@@ -242,6 +262,7 @@ const authUtils = {
   clearAuthCookies,
   comparePassword,
   hashPassword,
+  isBcryptHash,
   mapUser,
   issueTokens,
   buildPasswordSetupRequiredError,

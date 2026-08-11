@@ -1,4 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client'
+import { UserRole } from '../../generated/prisma/client'
+import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
 import authUtils from '../utils/auth.utils'
@@ -25,8 +27,12 @@ import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
+import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
 import pushService from './push.service'
 import subscriptionService from './subscription.service'
+
+/** Controllers pass API roles (`super-admin`); tolerate Prisma enum values too. */
+const isAdminRole = (role: string) => isStaffRole(role) || role === 'ADMIN' || role === 'SUPER_ADMIN'
 
 const RECENT_ENGAGEMENT_LIMIT = 10
 
@@ -52,10 +58,11 @@ const profileInclude = {
 } satisfies Prisma.ProfileInclude
 
 const listInclude = {
+  status: { select: { id: true, name: true } },
   profession: true,
-  status: true,
   profileSettings: true,
   settings: true,
+  socialLinks: { orderBy: { sortOrder: 'asc' as const } },
   attachments: { include: { attachmentType: true } },
   _count: { select: { services: true, portfolios: true, posts: true } },
 } satisfies Prisma.ProfileInclude
@@ -71,9 +78,16 @@ export type CardCapacity = {
 }
 
 export type ProfileListPage = {
-  items: ListProfileRow[]
+  items: EnrichedListProfile[]
   total: number
   capacity: CardCapacity
+}
+
+type EnrichedListProfile = ListProfileRow & {
+  clickCount: number
+  saveCount: number
+  shareCount: number
+  socialClicks: Array<{ channel: string; label: string; clickCount: number }>
 }
 
 /** Absolutize avatar / media settings / attachment URLs for admin list responses. */
@@ -133,9 +147,52 @@ export type ListProfilesFilters = {
 
 const isStaff = (role: string) => role === 'admin' || role === 'super-admin'
 
-const ownershipWhere = (userId: string, role: string, scope?: ProfileListScope): Prisma.ProfileWhereInput => {
-  if (scope === 'created') return { createdById: userId }
-  if (isStaff(role)) return {}
+const resolveAdminPortfolioUserIds = async (userId: string, role: string): Promise<string[]> => {
+  const ids = new Set<string>([userId])
+
+  const invited = await prisma.user.findMany({
+    where: {
+      createdById: userId,
+      role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+    },
+    select: { id: true },
+  })
+  for (const row of invited) ids.add(row.id)
+
+  if (role === 'super-admin' || role === 'SUPER_ADMIN') {
+    const staff = await prisma.user.findMany({
+      where: { role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] } },
+      select: { id: true },
+    })
+    for (const row of staff) ids.add(row.id)
+  }
+
+  return [...ids]
+}
+
+/** My Cards / scope=created: creator, owner, or company portfolio under this admin/team. */
+const resolveCreatedScopeWhere = async (userId: string, role: string): Promise<Prisma.ProfileWhereInput> => {
+  if (!isAdminRole(role)) {
+    return { createdById: userId }
+  }
+
+  const portfolioUserIds = await resolveAdminPortfolioUserIds(userId, role)
+  return {
+    OR: [
+      { createdById: { in: portfolioUserIds } },
+      { userId: { in: portfolioUserIds } },
+      { companyUserId: { in: portfolioUserIds } },
+    ],
+  }
+}
+
+const resolveOwnershipWhere = async (
+  userId: string,
+  role: string,
+  scope?: ProfileListScope
+): Promise<Prisma.ProfileWhereInput> => {
+  if (scope === 'created') return resolveCreatedScopeWhere(userId, role)
+  if (isAdminRole(role) || isStaff(role)) return {}
   return { OR: [{ userId }, { companyUserId: userId }] }
 }
 
@@ -180,14 +237,12 @@ const resolvePackageCardLimit = async (userId: string, role: string): Promise<nu
 }
 
 const getCardCapacity = async (userId: string, role: string): Promise<CardCapacity> => {
-  const [limit, used] = await Promise.all([
-    resolvePackageCardLimit(userId, role),
-    prisma.profile.count({ where: ownershipWhere(userId, role) }),
-  ])
+  const where = await resolveOwnershipWhere(userId, role)
+  const [limit, used] = await Promise.all([resolvePackageCardLimit(userId, role), prisma.profile.count({ where })])
   return {
     limit,
     used,
-    canCreate: isStaff(role) || used < limit,
+    canCreate: isStaff(role) || isAdminRole(role) || used < limit,
   }
 }
 
@@ -201,12 +256,12 @@ const assertCanCreateCard = async (userId: string, role: string) => {
   )
 }
 
-const buildListFiltersWhere = (
+const buildListFiltersWhere = async (
   userId: string,
   role: string,
   filters: ListProfilesFilters
-): Prisma.ProfileWhereInput => {
-  const where: Prisma.ProfileWhereInput = { ...ownershipWhere(userId, role, filters.scope) }
+): Promise<Prisma.ProfileWhereInput> => {
+  const where: Prisma.ProfileWhereInput = { ...(await resolveOwnershipWhere(userId, role, filters.scope)) }
 
   const q = filters.q?.trim()
   if (q) {
@@ -237,11 +292,22 @@ const buildListFiltersWhere = (
 
 const listForUser = async (userId: string, role: string, scope?: ProfileListScope) => {
   const profiles = await prisma.profile.findMany({
-    where: ownershipWhere(userId, role, scope),
+    where: await resolveOwnershipWhere(userId, role, scope),
     include: listInclude,
     orderBy: { updatedAt: 'desc' },
   })
-  return profiles.map(absolutizeListProfile)
+  const metricsByProfile = await loadProfileEngagementMetrics(profiles.map((p) => p.id))
+  return profiles.map((profile) => {
+    const base = absolutizeListProfile(profile)
+    const metrics = metricsByProfile.get(profile.id)
+    return {
+      ...base,
+      clickCount: metrics?.clickCount ?? 0,
+      saveCount: metrics?.saveCount ?? 0,
+      shareCount: metrics?.shareCount ?? 0,
+      socialClicks: metrics?.socialClicks ?? [],
+    } satisfies EnrichedListProfile
+  })
 }
 
 const listProfilesPage = async (
@@ -253,7 +319,7 @@ const listProfilesPage = async (
   const limit = filters.limit ?? 24
   const sortBy = filters.sortBy ?? 'updatedAt'
   const sortDir = filters.sortDir ?? 'desc'
-  const where = buildListFiltersWhere(userId, role, filters)
+  const where = await buildListFiltersWhere(userId, role, filters)
 
   const [rows, total, capacity] = await Promise.all([
     prisma.profile.findMany({
@@ -267,15 +333,27 @@ const listProfilesPage = async (
     getCardCapacity(userId, role),
   ])
 
+  const metricsByProfile = await loadProfileEngagementMetrics(rows.map((p) => p.id))
+
   return {
-    items: rows.map(absolutizeListProfile),
+    items: rows.map((profile) => {
+      const base = absolutizeListProfile(profile)
+      const metrics = metricsByProfile.get(profile.id)
+      return {
+        ...base,
+        clickCount: metrics?.clickCount ?? 0,
+        saveCount: metrics?.saveCount ?? 0,
+        shareCount: metrics?.shareCount ?? 0,
+        socialClicks: metrics?.socialClicks ?? [],
+      } satisfies EnrichedListProfile
+    }),
     total,
     capacity,
   }
 }
 
 const getOwned = async (profileId: string, userId: string, role: string) => {
-  if (role === 'admin' || role === 'super-admin') {
+  if (isAdminRole(role)) {
     const profile = await prisma.profile.findUnique({ where: { id: profileId }, include: profileInclude })
     if (!profile) throw new AppError(404, 'Profile not found')
     return profile
@@ -399,6 +477,8 @@ const create = async (
     data: {
       userId,
       createdById: userId,
+      // Admin-created cards stay on the admin/company portfolio (My Cards).
+      companyUserId: isAdminRole(user.role) ? userId : undefined,
       name: String(raw.name),
       email: (raw.email as string) || user.email,
       slug,
@@ -1339,7 +1419,7 @@ const listPackages = async () => {
 }
 
 const listSubscriptions = async (userId: string, role: string) => {
-  const where = role === 'admin' || role === 'super-admin' ? {} : { userId }
+  const where = isAdminRole(role) ? {} : { userId }
   return prisma.subscription.findMany({
     where,
     include: { package: { include: { features: true } }, items: true, transactions: true },
@@ -1401,36 +1481,54 @@ const notifyLiveSocialClicks = async (profileId: string) => {
   )
 }
 
-/** Current UTC calendar week Mon–Sun: views / social clicks / CTR. */
+/** Rolling last 7 days (ending now): views / social clicks / CTR from EventLog. */
 const getWeeklyEngagement = async (userId: string, role: string, scope?: ProfileListScope, profileId?: string) => {
-  let profileIds: string[]
-  let profileName: string
+  let profiles = await listForUser(userId, role, scope)
 
   if (profileId) {
-    const profile = await getOwned(profileId, userId, role)
-    profileIds = [profile.id]
-    profileName = profile.name || 'Your card'
-  } else {
-    const profiles = await listForUser(userId, role, scope)
-    profileIds = profiles.map((p) => p.id)
-    profileName = profiles.length > 1 ? 'All directory cards' : profiles[0]?.name || 'Your card'
+    const owned = profiles.find((p) => p.id === profileId)
+    if (!owned) {
+      if (isAdminRole(role)) {
+        const profile = await prisma.profile.findUnique({
+          where: { id: profileId },
+          select: { id: true, name: true },
+        })
+        if (!profile) throw new AppError(404, 'Profile not found')
+        profiles = [profile as (typeof profiles)[number]]
+      } else {
+        throw new AppError(403, 'You do not have access to this profile')
+      }
+    } else {
+      profiles = [owned]
+    }
   }
 
+  const profileIds = profiles.map((p) => p.id)
+  const profileName = profileId
+    ? profiles[0]?.name || 'Your card'
+    : isAdminRole(role)
+      ? scope === 'created'
+        ? 'My cards'
+        : 'All directory cards'
+      : profiles.length > 1
+        ? 'All cards'
+        : profiles[0]?.name || 'Your card'
+
   const now = new Date()
-  const utcDay = now.getUTCDay() // 0 Sun … 6 Sat
-  const daysFromMonday = utcDay === 0 ? 6 : utcDay - 1
-  const mondayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysFromMonday)
-  const weekStart = new Date(mondayUtc)
-  const weekEnd = new Date(mondayUtc + 7 * 24 * 60 * 60 * 1000)
+  // Align to UTC midnight for stable day buckets: today and the 6 prior days.
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  const rangeStart = new Date(todayUtc - 6 * 24 * 60 * 60 * 1000)
+  const rangeEnd = new Date(todayUtc + 24 * 60 * 60 * 1000)
 
   const emptyDays = () => {
     const days = []
     for (let i = 0; i < 7; i++) {
-      const d = new Date(mondayUtc + i * 24 * 60 * 60 * 1000)
+      const d = new Date(todayUtc - (6 - i) * 24 * 60 * 60 * 1000)
       const wd = d.getUTCDay()
       days.push({
         day: WEEKDAY_SHORT[wd],
         fullDay: WEEKDAY_FULL[wd],
+        date: d.toISOString().slice(0, 10),
         views: 0,
         clicks: 0,
         ctr: 0,
@@ -1440,6 +1538,7 @@ const getWeeklyEngagement = async (userId: string, role: string, scope?: Profile
       days,
       totals: { views: 0, clicks: 0, avgCtr: 0 },
       profileName,
+      range: { from: rangeStart.toISOString(), to: rangeEnd.toISOString() },
     }
   }
 
@@ -1450,7 +1549,7 @@ const getWeeklyEngagement = async (userId: string, role: string, scope?: Profile
       where: {
         profileId: { in: profileIds },
         eventType: 'profile_view',
-        createdAt: { gte: weekStart, lt: weekEnd },
+        createdAt: { gte: rangeStart, lt: rangeEnd },
       },
       select: { createdAt: true, payload: true },
     }),
@@ -1458,7 +1557,7 @@ const getWeeklyEngagement = async (userId: string, role: string, scope?: Profile
       where: {
         profileId: { in: profileIds },
         eventType: 'social_click',
-        createdAt: { gte: weekStart, lt: weekEnd },
+        createdAt: { gte: rangeStart, lt: rangeEnd },
       },
       select: { createdAt: true, payload: true },
     }),
@@ -1467,12 +1566,19 @@ const getWeeklyEngagement = async (userId: string, role: string, scope?: Profile
   const viewsByDay = countDistinctGuestsByDay(viewEvents)
   const clicksByDay = countDistinctGuestsByDay(clickEvents)
 
-  const days: Array<{ day: string; fullDay: string; views: number; clicks: number; ctr: number }> = []
+  const days: Array<{
+    day: string
+    fullDay: string
+    date: string
+    views: number
+    clicks: number
+    ctr: number
+  }> = []
   let viewsSum = 0
   let clicksSum = 0
 
   for (let i = 0; i < 7; i++) {
-    const d = new Date(mondayUtc + i * 24 * 60 * 60 * 1000)
+    const d = new Date(todayUtc - (6 - i) * 24 * 60 * 60 * 1000)
     const key = dayKey(d)
     const wd = d.getUTCDay()
     const views = viewsByDay.get(key) || 0
@@ -1483,6 +1589,7 @@ const getWeeklyEngagement = async (userId: string, role: string, scope?: Profile
     days.push({
       day: WEEKDAY_SHORT[wd],
       fullDay: WEEKDAY_FULL[wd],
+      date: d.toISOString().slice(0, 10),
       views,
       clicks,
       ctr,
@@ -1495,6 +1602,7 @@ const getWeeklyEngagement = async (userId: string, role: string, scope?: Profile
     days,
     totals: { views: viewsSum, clicks: clicksSum, avgCtr },
     profileName,
+    range: { from: rangeStart.toISOString(), to: rangeEnd.toISOString() },
   }
 }
 
@@ -1528,7 +1636,7 @@ const getConsolidatedEngagement = async (userId: string, role: string, scope?: P
   }
 
   const profiles = await prisma.profile.findMany({
-    where: ownershipWhere(userId, role, scope),
+    where: await resolveOwnershipWhere(userId, role, scope),
     select: { id: true, designation: true },
   })
 

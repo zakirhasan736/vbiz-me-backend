@@ -1,7 +1,5 @@
 import app from './app'
-import seedAdmin from './bootstrap/seedAdmin'
 import seedCardTemplates from './bootstrap/seedCardTemplates'
-import seedPackages from './bootstrap/seedPackages'
 import seedSupportTickets from './bootstrap/seedSupportTickets'
 import config from './configs/config'
 import logger from './utils/logger'
@@ -10,8 +8,7 @@ import { prisma } from './utils/prisma'
 const main = async () => {
   try {
     await prisma.$connect()
-    await seedAdmin()
-    await seedPackages()
+    // Admin/owner accounts come from Laravel import (yarn migrate:laravel), not env seed.
     await seedCardTemplates()
     await seedSupportTickets()
 

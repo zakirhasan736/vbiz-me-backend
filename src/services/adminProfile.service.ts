@@ -2,6 +2,7 @@ import type { Prisma } from '../../generated/prisma/client'
 import { toApiRole } from '../constants/userRole'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
+import { loadProfileEngagementMetrics, type ProfileSocialClickRow } from '../utils/profileListMetrics'
 import type {
   AdminProfileFiltersInput,
   ExportAdminProfilesQuery,
@@ -12,7 +13,8 @@ const adminListInclude = {
   status: { select: { id: true, name: true } },
   profession: { select: { id: true, name: true } },
   user: { select: { id: true, name: true, email: true, role: true } },
-  companyUser: { select: { id: true, name: true, email: true } },
+  companyUser: { select: { id: true, name: true, email: true, role: true } },
+  createdBy: { select: { id: true, name: true, email: true, role: true } },
 } satisfies Prisma.ProfileInclude
 
 type AdminListRow = Prisma.ProfileGetPayload<{ include: typeof adminListInclude }>
@@ -26,15 +28,29 @@ export type AdminProfileRow = {
   designation: string | null
   phone: string | null
   whatsapp: string | null
+  website: string | null
   avatar: string | null
   isPublic: boolean
   viewCount: number
+  clickCount: number
+  saveCount: number
+  shareCount: number
+  facebook: string | null
+  instagram: string | null
+  twitter: string | null
+  tiktok: string | null
+  youtube: string | null
+  linkedin: string | null
+  rumble: string | null
+  truth: string | null
+  socialClicks: ProfileSocialClickRow[]
   createdAt: Date
   updatedAt: Date
   status: { id: string; name: string } | null
   profession: { id: string; name: string } | null
   user: { id: string; name: string | null; email: string; role: string } | null
-  companyUser: { id: string; name: string | null; email: string } | null
+  companyUser: { id: string; name: string | null; email: string; role: string } | null
+  createdBy: { id: string; name: string | null; email: string; role: string } | null
 }
 
 function buildWhere(filters: AdminProfileFiltersInput): Prisma.ProfileWhereInput {
@@ -72,7 +88,15 @@ function buildOrderBy(
   return { [sortBy]: sortDir }
 }
 
-function mapRow(profile: AdminListRow): AdminProfileRow {
+function mapRow(
+  profile: AdminListRow,
+  metrics?: {
+    clickCount: number
+    saveCount: number
+    shareCount: number
+    socialClicks: ProfileSocialClickRow[]
+  }
+): AdminProfileRow {
   const avatar =
     ensureAbsoluteMediaUrl(profile.avatar, {
       docName: profile.avatar,
@@ -91,9 +115,22 @@ function mapRow(profile: AdminListRow): AdminProfileRow {
     designation: profile.designation,
     phone: profile.phone,
     whatsapp: profile.whatsapp,
+    website: profile.website,
     avatar,
     isPublic: profile.isPublic,
     viewCount: profile.viewCount,
+    clickCount: metrics?.clickCount ?? 0,
+    saveCount: metrics?.saveCount ?? 0,
+    shareCount: metrics?.shareCount ?? 0,
+    facebook: profile.facebook,
+    instagram: profile.instagram,
+    twitter: profile.twitter,
+    tiktok: profile.tiktok,
+    youtube: profile.youtube,
+    linkedin: profile.linkedin,
+    rumble: profile.rumble,
+    truth: profile.truth,
+    socialClicks: metrics?.socialClicks ?? [],
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
     status: profile.status,
@@ -106,7 +143,22 @@ function mapRow(profile: AdminListRow): AdminProfileRow {
           role: toApiRole(profile.user.role),
         }
       : null,
-    companyUser: profile.companyUser,
+    companyUser: profile.companyUser
+      ? {
+          id: profile.companyUser.id,
+          name: profile.companyUser.name,
+          email: profile.companyUser.email,
+          role: toApiRole(profile.companyUser.role),
+        }
+      : null,
+    createdBy: profile.createdBy
+      ? {
+          id: profile.createdBy.id,
+          name: profile.createdBy.name,
+          email: profile.createdBy.email,
+          role: toApiRole(profile.createdBy.role),
+        }
+      : null,
   }
 }
 
@@ -130,8 +182,10 @@ const list = async (query: ListAdminProfilesQuery) => {
     }),
   ])
 
+  const metricsByProfile = await loadProfileEngagementMetrics(rows.map((r) => r.id))
+
   return {
-    items: rows.map(mapRow),
+    items: rows.map((row) => mapRow(row, metricsByProfile.get(row.id))),
     total,
     skip: showAll ? 0 : query.skip,
     limit: showAll ? null : query.limit,

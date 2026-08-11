@@ -34,8 +34,6 @@ const {
   PUBLIC_RATE_LIMIT_MAX,
   LARAVEL_MYSQL_URL,
   MEDIA_BASE_URL,
-  ADMIN_EMAIL,
-  ADMIN_PASSWORD,
 } = process.env
 
 export default {
@@ -87,8 +85,4 @@ export default {
   },
   LARAVEL_MYSQL_URL,
   MEDIA_BASE_URL: MEDIA_BASE_URL || 'https://app.vbizme.com',
-  ADMIN: {
-    EMAIL: ADMIN_EMAIL,
-    PASSWORD: ADMIN_PASSWORD,
-  },
 }
