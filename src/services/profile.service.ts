@@ -138,7 +138,7 @@ export type ProfileListScope = 'created' | undefined
 export type ListProfilesFilters = {
   scope?: ProfileListScope
   q?: string
-  status?: 'all' | 'active' | 'inactive' | 'suspended'
+  status?: 'all' | 'active' | 'inactive' | 'suspended' | 'draft'
   sortBy?: 'createdAt' | 'updatedAt' | 'name' | 'viewCount'
   sortDir?: 'asc' | 'desc'
   skip?: number
@@ -281,9 +281,13 @@ const buildListFiltersWhere = async (
   }
 
   const status = filters.status && filters.status !== 'all' ? filters.status : undefined
-  if (status === 'active') {
+  if (status === 'draft') {
+    where.isDraft = true
+  } else if (status === 'active') {
+    where.isDraft = false
     where.isPublic = true
   } else if (status === 'inactive' || status === 'suspended') {
+    where.isDraft = false
     where.isPublic = false
   }
 
@@ -448,6 +452,7 @@ const create = async (
     about?: string
     prof?: string
     isPublic?: boolean
+    isDraft?: boolean
     template?: string
     facebook?: string
     instagram?: string
@@ -492,7 +497,9 @@ const create = async (
       prof: raw.prof as string | undefined,
       dob: raw.dob ? new Date(String(raw.dob)) : undefined,
       template: (raw.template as string) || 'default',
-      isPublic: raw.isPublic !== false,
+      isPublic: raw.isDraft === true ? false : raw.isPublic !== false,
+      // New cards start as drafts until the owner activates / completes them.
+      isDraft: raw.isDraft !== false,
       facebook: raw.facebook as string | undefined,
       instagram: raw.instagram as string | undefined,
       twitter: raw.twitter as string | undefined,
@@ -559,6 +566,16 @@ const update = async (
 
   if (typeof profileData.slug === 'string') {
     profileData.slug = await ensureUniqueSlug(profileData.slug, profileId)
+  }
+
+  if ('isDraft' in raw) {
+    const nextDraft = Boolean(raw.isDraft)
+    profileData.isDraft = nextDraft
+    if (nextDraft) {
+      profileData.isPublic = false
+    } else if (!('isPublic' in raw)) {
+      profileData.isPublic = true
+    }
   }
 
   await prisma.profile.update({
@@ -1775,7 +1792,7 @@ const getSocialClicksByCard = async (
 export type TeamNoticeRow = {
   id: string
   text: string
-  type: 'broadcast' | 'system'
+  type: 'broadcast' | 'system' | 'info' | 'warning' | 'success'
   audience: 'all' | 'savers'
   targetCardId?: string
   recipientCount?: number
@@ -1793,10 +1810,12 @@ function serializeTeamNotice(row: {
   createdAt: Date
   status: string
 }): TeamNoticeRow {
+  const allowed = new Set(['broadcast', 'system', 'info', 'warning', 'success'])
+  const type = allowed.has(row.type) ? (row.type as TeamNoticeRow['type']) : 'broadcast'
   return {
     id: row.id,
     text: row.text,
-    type: row.type === 'system' ? 'system' : 'broadcast',
+    type,
     audience: row.audience === 'savers' ? 'savers' : 'all',
     targetCardId: row.targetProfileId || undefined,
     recipientCount: row.recipientCount ?? undefined,
@@ -1818,7 +1837,7 @@ const createTeamNotice = async (
   role: string,
   input: {
     text: string
-    type: 'broadcast' | 'system'
+    type: 'broadcast' | 'system' | 'info' | 'warning' | 'success'
     audience: 'all' | 'savers'
     targetProfileId?: string
   }
@@ -1828,6 +1847,11 @@ const createTeamNotice = async (
 
   let recipientCount: number | undefined
   const targetProfileId = input.targetProfileId || undefined
+
+  // Public card banners must target one card — never publish globally without a card id.
+  if (input.audience === 'all' && !targetProfileId) {
+    throw new AppError(400, 'Select a specific card for this announcement. Global all-card banners are disabled.')
+  }
 
   if (targetProfileId) {
     await getOwned(targetProfileId, userId, role)
@@ -1852,7 +1876,9 @@ const createTeamNotice = async (
       ]
       recipientCount = emails.length
       const subject =
-        input.type === 'system' ? 'System notice from your saved contact' : 'Announcement from a contact you saved'
+        input.type === 'system' || input.type === 'warning'
+          ? 'System notice from your saved contact'
+          : 'Announcement from a contact you saved'
       const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -1862,7 +1888,6 @@ const createTeamNotice = async (
       await Promise.all(
         emails.map((email) =>
           authUtils.sendEmail({ receiverMail: email, subject, html }).catch((err) => {
-            // Best-effort delivery; notice is still persisted.
             logger.error('Team notice email failed', email, err)
           })
         )
@@ -1870,6 +1895,19 @@ const createTeamNotice = async (
     } else {
       recipientCount = 0
     }
+  }
+
+  // Replace prior active banner for the same card so only one notice shows per card.
+  if (targetProfileId && input.audience === 'all') {
+    await prisma.teamNotice.updateMany({
+      where: {
+        ownerId: userId,
+        targetProfileId,
+        audience: 'all',
+        status: 'active',
+      },
+      data: { status: 'archived' },
+    })
   }
 
   const created = await prisma.teamNotice.create({
@@ -1897,7 +1935,7 @@ const deleteTeamNotice = async (userId: string, noticeId: string) => {
   return { id: noticeId, deleted: true }
 }
 
-/** Active public-banner notices for a profile (audience=all from the card owner / company). */
+/** Active public-banner notices for a profile — only notices targeted at this card. */
 const listPublicTeamNoticesForProfile = async (profileId: string): Promise<TeamNoticeRow[]> => {
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
@@ -1912,7 +1950,8 @@ const listPublicTeamNoticesForProfile = async (profileId: string): Promise<TeamN
       ownerId: { in: ownerIds },
       status: 'active',
       audience: 'all',
-      OR: [{ targetProfileId: null }, { targetProfileId: profileId }],
+      // Never fan out null-target notices to every card — announcements are per-card.
+      targetProfileId: profileId,
     },
     orderBy: { createdAt: 'desc' },
     take: 10,

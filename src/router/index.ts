@@ -7,6 +7,7 @@ import adminTeamRoute from './adminTeam.route'
 import adminUserRoute from './adminUser.route'
 import { announcementActiveRoute, announcementAdminRoute } from './announcement.route'
 import authRoute from './auth.route'
+import cardAgentRoute from './cardAgent.route'
 import healthRoute from './health.route'
 import mediaRoute from './media.route'
 import meetingRoute from './meeting.route'
@@ -24,6 +25,7 @@ const modulePaths = [
   { path: '/profiles', route: profileRoute },
   { path: '/media', route: mediaRoute },
   { path: '/meetings', route: meetingRoute },
+  { path: '/ai/card-agent', route: cardAgentRoute },
   { path: '/announcements', route: announcementActiveRoute },
   { path: '/templates', route: templateActiveRoute },
   { path: '/admin', route: adminActivityRoute },

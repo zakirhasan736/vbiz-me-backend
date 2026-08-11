@@ -25,7 +25,7 @@ const profileScopeQuery = z.object({
 const listProfilesQuery = z.object({
   scope: z.enum(['created']).optional(),
   q: z.string().trim().max(200).optional(),
-  status: z.enum(['all', 'active', 'inactive', 'suspended']).optional().default('all'),
+  status: z.enum(['all', 'active', 'inactive', 'suspended', 'draft']).optional().default('all'),
   sortBy: z.enum(['createdAt', 'updatedAt', 'name', 'viewCount']).default('updatedAt'),
   sortDir: z.enum(['asc', 'desc']).default('desc'),
   skip: z.coerce.number().int().min(0).default(0),
@@ -50,7 +50,7 @@ const patchContactBody = z.object({
 
 const createTeamNoticeBody = z.object({
   text: z.string().trim().min(1).max(2000),
-  type: z.enum(['broadcast', 'system']).default('broadcast'),
+  type: z.enum(['broadcast', 'system', 'info', 'warning', 'success']).default('broadcast'),
   audience: z.enum(['all', 'savers']).default('all'),
   targetProfileId: z.string().min(1).optional(),
 })

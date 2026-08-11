@@ -10,6 +10,7 @@ const adminProfileFilters = z.object({
   q: z.string().trim().max(200).optional(),
   status: z.string().trim().max(100).optional(),
   profession: z.string().trim().max(100).optional(),
+  lifecycle: z.enum(['active', 'draft']).optional(),
 })
 
 const listAdminProfilesQuery = adminProfileFilters.extend({

@@ -1,3 +1,5 @@
+import { UserRole as PrismaUserRole } from '../../generated/prisma/enums'
+import subscriptionService from '../services/subscription.service'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 
@@ -7,7 +9,8 @@ const DEFAULT_PACKAGES = [
   {
     slug: 'corporate-starter',
     name: 'Corporate Starter',
-    description: 'Default free package for corporate owners. Includes a fixed team card capacity.',
+    description:
+      'Temporary free starter for corporate owners (pre-Stripe). Includes a fixed team card capacity for testing.',
     sortOrder: 0,
     maxCards: '15',
   },
@@ -59,6 +62,26 @@ const seedPackages = async (): Promise<void> => {
   }
 
   logger.info('Package seed ensured (corporate-starter, single-starter)')
+
+  // Repair corporate accounts that signed up before packages existed
+  const owners = await prisma.user.findMany({
+    where: {
+      role: PrismaUserRole.CORPORATE_OWNER,
+      deletedAt: null,
+      isActive: true,
+    },
+    select: { id: true },
+  })
+
+  let linked = 0
+  for (const owner of owners) {
+    const sub = await subscriptionService.ensureCorporateStarterSubscription(owner.id)
+    if (sub?.packageId) linked += 1
+  }
+
+  if (owners.length) {
+    logger.info(`Corporate starter subscriptions ensured for ${linked}/${owners.length} corporate owners`)
+  }
 }
 
 export default seedPackages

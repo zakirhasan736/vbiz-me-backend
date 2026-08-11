@@ -31,6 +31,7 @@ export type AdminProfileRow = {
   website: string | null
   avatar: string | null
   isPublic: boolean
+  isDraft: boolean
   viewCount: number
   clickCount: number
   saveCount: number
@@ -54,31 +55,43 @@ export type AdminProfileRow = {
 }
 
 function buildWhere(filters: AdminProfileFiltersInput): Prisma.ProfileWhereInput {
-  const where: Prisma.ProfileWhereInput = {}
+  const and: Prisma.ProfileWhereInput[] = []
 
   const q = filters.q?.trim()
   if (q) {
-    where.OR = [
-      { name: { contains: q, mode: 'insensitive' } },
-      { email: { contains: q, mode: 'insensitive' } },
-      { companyName: { contains: q, mode: 'insensitive' } },
-      { designation: { contains: q, mode: 'insensitive' } },
-      { slug: { contains: q, mode: 'insensitive' } },
-      { phone: { contains: q, mode: 'insensitive' } },
-    ]
+    and.push({
+      OR: [
+        { name: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { companyName: { contains: q, mode: 'insensitive' } },
+        { designation: { contains: q, mode: 'insensitive' } },
+        { slug: { contains: q, mode: 'insensitive' } },
+        { phone: { contains: q, mode: 'insensitive' } },
+      ],
+    })
   }
 
   const statusName = filters.status?.trim()
   if (statusName && statusName.toLowerCase() !== 'all') {
-    where.status = { name: { equals: statusName, mode: 'insensitive' } }
+    and.push({ status: { name: { equals: statusName, mode: 'insensitive' } } })
+  }
+
+  // Lifecycle tabs: isDraft flag OR legacy Status.name === "Draft"
+  if (filters.lifecycle === 'draft') {
+    and.push({
+      OR: [{ isDraft: true }, { status: { name: { equals: 'draft', mode: 'insensitive' } } }],
+    })
+  } else if (filters.lifecycle === 'active') {
+    and.push({ isDraft: false })
+    and.push({ NOT: { status: { name: { equals: 'draft', mode: 'insensitive' } } } })
   }
 
   const professionName = filters.profession?.trim()
   if (professionName && professionName.toLowerCase() !== 'all') {
-    where.profession = { name: { equals: professionName, mode: 'insensitive' } }
+    and.push({ profession: { name: { equals: professionName, mode: 'insensitive' } } })
   }
 
-  return where
+  return and.length ? { AND: and } : {}
 }
 
 function buildOrderBy(
@@ -118,6 +131,7 @@ function mapRow(
     website: profile.website,
     avatar,
     isPublic: profile.isPublic,
+    isDraft: profile.isDraft,
     viewCount: profile.viewCount,
     clickCount: metrics?.clickCount ?? 0,
     saveCount: metrics?.saveCount ?? 0,
@@ -196,6 +210,7 @@ const list = async (query: ListAdminProfilesQuery) => {
 const getFilterOptions = async () => {
   const [statuses, professions] = await Promise.all([
     prisma.status.findMany({
+      where: { NOT: { name: { equals: 'draft', mode: 'insensitive' } } },
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     }),

@@ -1,3 +1,4 @@
+import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 
 const MAX_CARDS_FEATURE_KEY = 'max_cards'
@@ -51,6 +52,7 @@ const findCorporateStarterPackage = async () => {
  * Ensures a corporate owner has an active free subscription with a real card limit.
  * Prefers the seeded `corporate-starter` package. Repairs existing subscriptions that
  * have no max_cards / quantity so capacity is not stuck at 0.
+ * Temporary until Stripe checkout assigns paid packages at signup.
  */
 const ensureCorporateStarterSubscription = async (userId: string) => {
   const now = new Date()
@@ -65,7 +67,12 @@ const ensureCorporateStarterSubscription = async (userId: string) => {
   }
 
   const starterPackage = await findCorporateStarterPackage()
-  if (!starterPackage) return existing ?? null
+  if (!starterPackage) {
+    logger.warn(
+      `No active package found for corporate starter subscription (user ${userId}). Run package seed / create corporate-starter.`
+    )
+    return existing ?? null
+  }
 
   const quantity = parseMaxCardsQuantity(starterPackage.features)
 

@@ -32,6 +32,52 @@ const toDate = (v: unknown): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+/** Laravel Cashier subscriptions have no package_id — match by plan name / provider / Stripe price. */
+async function resolvePackageIdForSubscription(input: {
+  name?: unknown
+  provider?: unknown
+  stripePrice?: unknown
+}): Promise<string | null> {
+  const packages = await prisma.package.findMany({
+    select: { id: true, slug: true, name: true },
+  })
+  const needle = String(input.name || input.provider || '')
+    .trim()
+    .toLowerCase()
+  if (needle) {
+    const bySlug = packages.find((p) => (p.slug || '').trim().toLowerCase() === needle)
+    if (bySlug) return bySlug.id
+    const byName = packages.find((p) => p.name.trim().toLowerCase() === needle)
+    if (byName) return byName.id
+  }
+
+  const stripePrice = String(input.stripePrice || '').trim()
+  if (stripePrice) {
+    // Known Laravel stripe_price_id → package slug
+    const stripeToSlug: Record<string, string> = {
+      free_189: 'free',
+      price_1ssanqhq8b3mdyv38gd8kaxw: 'professional',
+      price_1tx021hq8b3mdyv36ilofqnk: 'professional-concierge',
+      price_corporate_monthly: 'corporate',
+    }
+    const slug = stripeToSlug[stripePrice.toLowerCase()]
+    if (slug) {
+      const hit = packages.find((p) => (p.slug || '').trim().toLowerCase() === slug)
+      if (hit) return hit.id
+    }
+    if (stripePrice.toLowerCase().startsWith('corporate_')) {
+      const hit = packages.find((p) => (p.slug || '').trim().toLowerCase() === 'corporate')
+      if (hit) return hit.id
+    }
+    if (stripePrice.toLowerCase().startsWith('free_')) {
+      const hit = packages.find((p) => (p.slug || '').trim().toLowerCase() === 'free')
+      if (hit) return hit.id
+    }
+  }
+
+  return null
+}
+
 const roleFromSpatie = (roleName?: string | null): UserRole => {
   const n = (roleName || '').toLowerCase()
   // Laravel platform admins become SUPER_ADMIN so they retain full panel access.
@@ -170,14 +216,22 @@ async function importLookups(conn: mysql.Connection) {
       where: { legacyId: Number(row.id) },
       create: {
         legacyId: Number(row.id),
-        name: String(row.name),
-        slug: row.slug ? String(row.slug) : null,
+        name: String(row.name).trim(),
+        slug: row.slug ? String(row.slug).trim() : null,
         description: row.description ? String(row.description) : null,
         monthlyPrice: row.monthly_price != null ? Number(row.monthly_price) : 0,
+        // Laravel packages table has no yearly_price column.
         yearlyPrice: row.yearly_price != null ? Number(row.yearly_price) : 0,
-        isActive: true,
+        isActive: row.is_active == null ? true : Boolean(Number(row.is_active)),
+        sortOrder: row.display_order != null ? Number(row.display_order) : 0,
       },
-      update: { name: String(row.name) },
+      update: {
+        name: String(row.name).trim(),
+        slug: row.slug ? String(row.slug).trim() : undefined,
+        monthlyPrice: row.monthly_price != null ? Number(row.monthly_price) : undefined,
+        isActive: row.is_active == null ? undefined : Boolean(Number(row.is_active)),
+        sortOrder: row.display_order != null ? Number(row.display_order) : undefined,
+      },
     })
     packageMap.set(Number(row.id), created.id)
   }
@@ -186,17 +240,27 @@ async function importLookups(conn: mysql.Connection) {
     const packageId = mapOrNull(packageMap, row.package_id as number)
     if (!packageId) continue
     const featureKey = String(row.feature_key || row.key || row.name || `feature-${row.id}`)
+    const featureType = String(row.feature_type || '').toLowerCase()
+    let featureValue: string | null = null
+    if (featureType === 'unlimited') {
+      featureValue = 'unlimited'
+    } else if (row.limit_value != null) {
+      featureValue = String(row.limit_value)
+    } else if (row.feature_value != null) {
+      featureValue = String(row.feature_value)
+    } else if (row.value != null) {
+      featureValue = String(row.value)
+    }
     await prisma.packageFeature.upsert({
       where: { packageId_featureKey: { packageId, featureKey } },
       create: {
         legacyId: Number(row.id),
         packageId,
         featureKey,
-        featureValue:
-          row.feature_value != null ? String(row.feature_value) : row.value != null ? String(row.value) : null,
+        featureValue,
       },
       update: {
-        featureValue: row.feature_value != null ? String(row.feature_value) : undefined,
+        featureValue,
       },
     })
   }
@@ -603,12 +667,20 @@ async function importContent(
   for (const row of await loadRows(conn, 'subscriptions')) {
     const userId = mapOrNull(userMap, row.user_id as number)
     if (!userId) continue
+    // Laravel subscriptions have no package_id — resolve via name / provider / stripe_price.
+    let packageId =
+      mapOrNull(maps.packageMap, row.package_id as number) ||
+      (await resolvePackageIdForSubscription({
+        name: row.name,
+        provider: row.provider,
+        stripePrice: row.stripe_price,
+      }))
     await prisma.subscription.upsert({
       where: { legacyId: Number(row.id) },
       create: {
         legacyId: Number(row.id),
         userId,
-        packageId: mapOrNull(maps.packageMap, row.package_id as number),
+        packageId,
         name: row.name ? String(row.name) : null,
         stripeId: row.stripe_id ? String(row.stripe_id) : null,
         stripeStatus: row.stripe_status ? String(row.stripe_status) : null,
@@ -618,7 +690,10 @@ async function importContent(
         endsAt: toDate(row.ends_at),
         provider: row.provider ? String(row.provider) : null,
       },
-      update: {},
+      update: {
+        packageId: packageId || undefined,
+        stripeStatus: row.stripe_status ? String(row.stripe_status) : undefined,
+      },
     })
   }
 

@@ -223,6 +223,8 @@ model Profile {
   referralCount Int      @default(0)
   referralCode String?   @unique
   isPublic     Boolean   @default(true)
+  /** Incomplete / not yet published cards show under Draft tabs in the dashboard. */
+  isDraft      Boolean   @default(false)
   viewCount    Int       @default(0)
   template     String    @default("default")
   themeConfig  Json?
@@ -254,6 +256,7 @@ model Profile {
   @@index([companyUserId])
   @@index([slug])
   @@index([isPublic])
+  @@index([isDraft])
 }
 
 model Address {
