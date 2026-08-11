@@ -15,23 +15,63 @@ Node.js + Express + TypeScript API with PostgreSQL (Prisma ORM 7), JWT cookie au
 ## Folder structure
 
 ```text
-src/
-  app.ts
-  server.ts
-  configs/          # env + passport
-  controller/       # HTTP handlers
-  services/         # business logic + Prisma
-  router/           # Express routes (/api/v1)
-  middlewares/
-  interfaces/
-  zodValidation/
-  error/
-  utils/
-  constants/
-prisma/
-  schema.prisma
-generated/prisma/   # prisma generate output
+.
+├── prisma/
+│   ├── schema.prisma
+│   └── migrations/
+├── generated/prisma/          # prisma generate output
+├── scripts/                   # one-off migrations (Laravel, S3 media)
+├── prisma.config.ts
+└── src/
+    ├── app.ts
+    ├── server.ts
+    ├── copy.assets.ts         # copy HTML templates into dist on build
+    ├── @types/                # Express type augmentations
+    ├── bootstrap/             # startup seeders (admin, packages, templates, tickets)
+    ├── configs/               # env + passport
+    ├── constants/
+    ├── controller/            # HTTP handlers
+    │   ├── auth.controller.ts
+    │   ├── profile.controller.ts
+    │   ├── public.controller.ts
+    │   ├── meeting.controller.ts
+    │   ├── announcement.controller.ts
+    │   ├── support.controller.ts
+    │   ├── template.controller.ts
+    │   └── admin*.controller.ts
+    ├── services/              # business logic + Prisma
+    ├── router/                # Express routes mounted under /api/v1
+    │   ├── index.ts
+    │   ├── auth.route.ts
+    │   ├── health.route.ts
+    │   ├── public.route.ts
+    │   ├── profile.route.ts
+    │   ├── media.route.ts
+    │   ├── meeting.route.ts
+    │   ├── announcement.route.ts
+    │   ├── template.route.ts
+    │   └── admin*.route.ts
+    ├── middlewares/           # auth, ownership, Zod validator, global errors
+    ├── zodValidation/
+    ├── interfaces/
+    ├── error/
+    ├── utils/                 # prisma, s3, jwt, logger, audit, analytics, …
+    └── templates/             # HTML email / verification pages
 ```
+
+### API modules (`/api/v1`)
+
+| Prefix           | Purpose                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| `/auth`          | Register, login, OAuth, tokens                                                             |
+| `/health`        | Health check                                                                               |
+| `/public`        | Public digital cards                                                                       |
+| `/profiles`      | Authenticated profile management                                                           |
+| `/media`         | Media uploads (S3)                                                                         |
+| `/meetings`      | Meetings                                                                                   |
+| `/announcements` | Active announcements                                                                       |
+| `/templates`     | Active card templates                                                                      |
+| `/admin`         | Admin: users, profiles, leads, packages, team, support, activity, announcements, templates |
 
 ## Setup
 
