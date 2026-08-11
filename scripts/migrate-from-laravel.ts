@@ -8,7 +8,7 @@
  *   yarn tsx --env-file=.env scripts/migrate-from-laravel.ts
  */
 import mysql from 'mysql2/promise'
-import { AuthProvider, UserRole } from '../generated/prisma/client'
+import { AuthProvider, Prisma, UserRole } from '../generated/prisma/client'
 import config from '../src/configs/config'
 import logger from '../src/utils/logger'
 import { resolveMediaUrl } from '../src/utils/mediaUrl'
@@ -34,7 +34,9 @@ const toDate = (v: unknown): Date | null => {
 
 const roleFromSpatie = (roleName?: string | null): UserRole => {
   const n = (roleName || '').toLowerCase()
-  if (n.includes('admin') && !n.includes('corporate')) return UserRole.ADMIN
+  // Laravel platform admins become SUPER_ADMIN so they retain full panel access.
+  if (n.includes('super') && n.includes('admin')) return UserRole.SUPER_ADMIN
+  if (n === 'admin' || (n.includes('admin') && !n.includes('corporate'))) return UserRole.SUPER_ADMIN
   if (n.includes('corporate')) return UserRole.CORPORATE_OWNER
   return UserRole.VCARD_OWNER
 }
@@ -236,10 +238,12 @@ async function importUsers(conn: mysql.Connection) {
       legacyId: Number(row.id),
       email,
       name: String(row.name || email),
+      // Keep Laravel bcrypt payload; Node login normalizes $2y$/$2x$ → $2b$ on compare.
       password: row.password ? String(row.password) : null,
       role,
       provider: AuthProvider.LOCAL,
-      isVerified: Boolean(row.email_verified_at),
+      // Legacy accounts already used Laravel login; keep their bcrypt hash and treat as verified.
+      isVerified: Boolean(row.email_verified_at) || Boolean(row.password),
       isActive: true,
       stripeId: row.stripe_id ? String(row.stripe_id) : null,
       pmType: row.pm_type ? String(row.pm_type) : null,
@@ -271,6 +275,8 @@ async function importProfiles(conn: mysql.Connection, userMap: IdMap, maps: Awai
       legacyId: Number(row.id),
       userId,
       companyUserId: mapOrNull(userMap, row.company_user_id as number),
+      createdById:
+        mapOrNull(userMap, row.created_by as number) || mapOrNull(userMap, row.company_user_id as number) || userId,
       statusId: mapOrNull(maps.statusMap, 1),
       genderId: mapOrNull(maps.genderMap, row.gender_id as number),
       maritalStatusId: mapOrNull(maps.maritalMap, row.marital_status_id as number),
@@ -639,6 +645,111 @@ async function importContent(
   return postMap
 }
 
+const SOCIAL_EVENT_CHANNEL: Record<string, string> = {
+  my_instagram: 'instagram',
+  my_facebook: 'facebook',
+  my_whatsapp: 'whatsapp',
+  my_linkedin: 'linkedin',
+  my_tiktok: 'tiktok',
+  my_twitter: 'twitter',
+  my_youtube: 'youtube',
+  my_truth: 'truth',
+  my_rumble: 'rumble',
+  my_pinterest: 'pinterest',
+  click_website: 'website',
+  about_me: 'website',
+}
+
+const mapLaravelEvent = (event: string): { eventType: string; channel?: string } | null => {
+  const raw = String(event || '').trim()
+  const key = raw.toLowerCase().replace(/\s+/g, '_')
+  if (raw === 'Profile Viewed' || key === 'profile_viewed' || key === 'profile_view') {
+    return { eventType: 'profile_view' }
+  }
+  if (key === 'save_contact' || key === 'save_contact_download') {
+    return { eventType: 'save_contact_download' }
+  }
+  if (SOCIAL_EVENT_CHANNEL[key]) {
+    return { eventType: 'social_click', channel: SOCIAL_EVENT_CHANNEL[key] }
+  }
+  if (key.startsWith('my_') || key.startsWith('click_')) {
+    const channel = key.replace(/^my_/, '').replace(/^click_/, '')
+    return { eventType: 'social_click', channel: channel || 'website' }
+  }
+  return null
+}
+
+async function importEventLogs(conn: mysql.Connection, profileMap: IdMap) {
+  const rows = await loadRows(conn, 'event_logs')
+  const batchSize = 1000
+  let imported = 0
+  let skipped = 0
+  const batch: Prisma.EventLogCreateManyInput[] = []
+
+  const flush = async () => {
+    if (!batch.length) return
+    const chunk = batch.splice(0, batch.length)
+    const result = await prisma.eventLog.createMany({
+      data: chunk,
+      skipDuplicates: true,
+    })
+    imported += result.count
+  }
+
+  for (const row of rows) {
+    const mapped = mapLaravelEvent(String(row.event || ''))
+    if (!mapped) {
+      skipped += 1
+      continue
+    }
+    const legacyProfileId = Number(row.profile_id)
+    const profileId = mapOrNull(profileMap, legacyProfileId)
+    const createdAt = toDate(row.timestamp) || toDate(row.created_at) || new Date()
+    const payload: Record<string, unknown> = {
+      name: row.name ? String(row.name) : 'Guest',
+      viewer: row.name ? String(row.name) : 'Guest',
+      device: row.device ? String(row.device) : null,
+      browser: row.browser ? String(row.browser) : null,
+      platform: row.platform ? String(row.platform) : null,
+      device_type: row.device_type ? String(row.device_type) : null,
+      legacyUserId: row.user_id != null ? Number(row.user_id) : null,
+    }
+    if (mapped.channel) payload.channel = mapped.channel
+
+    batch.push({
+      legacyId: Number(row.id),
+      profileId,
+      eventType: mapped.eventType,
+      payload: payload as Prisma.InputJsonValue,
+      ip: row.ip_address ? String(row.ip_address) : null,
+      userAgent: [row.browser, row.device, row.platform].filter(Boolean).join(' ') || null,
+      createdAt,
+    })
+
+    if (batch.length >= batchSize) await flush()
+  }
+  await flush()
+
+  // Backfill Profile.viewCount from imported profile_view events.
+  const viewGroups = await prisma.eventLog.groupBy({
+    by: ['profileId'],
+    where: { eventType: 'profile_view', profileId: { not: null } },
+    _count: { _all: true },
+  })
+  for (const group of viewGroups) {
+    if (!group.profileId) continue
+    await prisma.profile.update({
+      where: { id: group.profileId },
+      data: { viewCount: group._count._all },
+    })
+  }
+
+  logger.info(
+    `Event logs imported: ${imported} (skipped unmapped: ${skipped}, viewCount profiles: ${viewGroups.length})`
+  )
+  return { imported, skipped }
+}
+
 async function main() {
   if (!config.LARAVEL_MYSQL_URL) {
     throw new Error(
@@ -660,6 +771,9 @@ async function main() {
 
   await importContent(conn, profileMap, userMap, maps)
   logger.info('Content imported')
+
+  await importEventLogs(conn, profileMap)
+  logger.info('Event logs imported')
 
   await conn.end()
   logger.info('Done. Next: yarn migrate:media')

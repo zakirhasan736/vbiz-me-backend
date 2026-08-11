@@ -19,6 +19,7 @@ const recentEngagementQuery = z.object({
 
 const profileScopeQuery = z.object({
   scope: z.enum(['created']).optional(),
+  profileId: z.string().min(1).optional(),
 })
 
 const dashboardPeriodQuery = z.object({

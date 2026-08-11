@@ -82,6 +82,16 @@ const login = async (body: ILoginBody): Promise<ILoginResult> => {
     throw new AppError(401, 'Invalid login credentials')
   }
 
+  // Transparent upgrade: Laravel bcrypt → Argon2 so future logins use the new hasher.
+  let storedPassword = existingPassword
+  if (authUtils.isBcryptHash(existingPassword)) {
+    storedPassword = await authUtils.hashPassword(body.password)
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: storedPassword },
+    })
+  }
+
   if (!user.isVerified) {
     const cooldown = await queueOrSendVerificationEmail(user.email, { awaitSend: false })
     throw authUtils.buildEmailNotVerifiedError(user, cooldown)
@@ -105,7 +115,7 @@ const login = async (body: ILoginBody): Promise<ILoginResult> => {
   const tokens = authUtils.issueTokens(user)
 
   return {
-    profile: authUtils.mapUser({ ...user, password: existingPassword }),
+    profile: authUtils.mapUser({ ...user, password: storedPassword }),
     ...tokens,
   }
 }

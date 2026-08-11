@@ -293,9 +293,16 @@ const exportDashboard = catchAsyncError(async (req, res) => {
 
 const weeklyEngagement = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const { scope } = ProfileZodSchema.profileScopeQuery.parse(req.query)
-  const data = await profileService.getWeeklyEngagement(req.user.id, req.user.role, scope)
+  const { scope, profileId } = ProfileZodSchema.profileScopeQuery.parse(req.query)
+  const data = await profileService.getWeeklyEngagement(req.user.id, req.user.role, scope, profileId)
   sendResponse(res, { success: true, statusCode: 200, message: 'Weekly engagement', data })
+})
+
+const socialClicks = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const { profileId } = ProfileZodSchema.profileScopeQuery.parse(req.query)
+  const data = await profileService.getLiveSocialClicks(req.user.id, req.user.role, profileId)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Social clicks', data })
 })
 
 const liveClicks = catchAsyncError(async (req, res) => {
@@ -334,6 +341,7 @@ const profileController = {
   dashboard,
   recentEngagement,
   weeklyEngagement,
+  socialClicks,
   liveClicks,
   checkSlug,
   exportDashboard,
