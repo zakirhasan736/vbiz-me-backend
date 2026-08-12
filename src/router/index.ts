@@ -8,6 +8,7 @@ import adminUserRoute from './adminUser.route'
 import { announcementActiveRoute, announcementAdminRoute } from './announcement.route'
 import authRoute from './auth.route'
 import cardAgentRoute from './cardAgent.route'
+import fontsRoute from './fonts.route'
 import healthRoute from './health.route'
 import mediaRoute from './media.route'
 import meetingRoute from './meeting.route'
@@ -21,6 +22,7 @@ const router = Router()
 const modulePaths = [
   { path: '/auth', route: authRoute },
   { path: '/health', route: healthRoute },
+  { path: '/fonts', route: fontsRoute },
   { path: '/public', route: publicRoute },
   { path: '/profiles', route: profileRoute },
   { path: '/media', route: mediaRoute },
