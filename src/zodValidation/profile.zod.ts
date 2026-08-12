@@ -55,6 +55,13 @@ const createTeamNoticeBody = z.object({
   targetProfileId: z.string().min(1).optional(),
 })
 
+/** Staff may assign ownership on create; other create fields pass through unchanged. */
+const createProfileBody = z
+  .object({
+    ownerUserId: z.string().trim().min(1).optional(),
+  })
+  .passthrough()
+
 const ProfileZodSchema = {
   recentEngagementQuery,
   dashboardPeriodQuery,
@@ -63,6 +70,7 @@ const ProfileZodSchema = {
   checkSlugQuery,
   patchContactBody,
   createTeamNoticeBody,
+  createProfileBody,
   ENGAGEMENT_EVENT_TYPES,
 }
 

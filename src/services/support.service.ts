@@ -2,6 +2,7 @@ import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { writeAuditLog } from '../utils/auditLog'
 import { prisma } from '../utils/prisma'
+import type { AuditType } from '../zodValidation/audit.zod'
 import type {
   CreateSupportTicketInput,
   ListSupportTicketsQuery,
@@ -24,6 +25,7 @@ function serializeTicket(row: {
   fromName: string
   fromEmail: string | null
   adminReply: string | null
+  blocked: boolean
   meta: Prisma.JsonValue | null
   createdById: string | null
   createdAt: Date
@@ -41,6 +43,7 @@ function serializeTicket(row: {
     fromName: row.fromName,
     fromEmail: row.fromEmail ?? undefined,
     adminReply: row.adminReply ?? undefined,
+    blocked: row.blocked,
     meta:
       row.meta && typeof row.meta === 'object' && !Array.isArray(row.meta)
         ? (row.meta as Record<string, string>)
@@ -58,6 +61,7 @@ const list = async (query: ListSupportTicketsQuery) => {
   const where: Prisma.SupportTicketWhereInput = {
     ...(query.status ? { status: query.status } : {}),
     ...(query.channel ? { channel: query.channel } : {}),
+    ...(query.blocked !== undefined ? { blocked: query.blocked } : {}),
     fromRole: { in: ['single', 'corporate'] },
   }
 
@@ -94,6 +98,13 @@ const create = async (
   input: CreateSupportTicketInput,
   fromRole: TicketRole
 ) => {
+  const blockedCount = await prisma.supportTicket.count({
+    where: { createdById: actor.id, blocked: true },
+  })
+  if (blockedCount > 0) {
+    throw new AppError(403, 'Your support access is blocked. Contact an administrator.')
+  }
+
   const row = await prisma.supportTicket.create({
     data: {
       channel: input.channel,
@@ -135,6 +146,7 @@ const update = async (
     data: {
       ...(input.status !== undefined ? { status: input.status } : {}),
       ...(input.adminReply !== undefined ? { adminReply: input.adminReply } : {}),
+      ...(input.blocked !== undefined ? { blocked: input.blocked } : {}),
     },
   })
 
@@ -145,17 +157,43 @@ const update = async (
   if (input.adminReply !== undefined) {
     parts.push(input.adminReply ? 'reply saved' : 'reply cleared')
   }
+  if (input.blocked !== undefined && input.blocked !== existing.blocked) {
+    parts.push(input.blocked ? 'blocked' : 'unblocked')
+  }
+
+  let auditType: AuditType = 'update'
+  if (input.status !== undefined && input.status !== existing.status) {
+    auditType = 'status'
+  }
 
   await writeAuditLog({
     action: 'Support ticket updated',
     details: parts.length ? `${existing.subject}: ${parts.join(', ')}` : existing.subject,
-    type: input.status !== undefined && input.status !== existing.status ? 'status' : 'update',
+    type: auditType,
     actor: actor.name || actor.email,
     actorId: actor.id,
-    meta: { ticketId: row.id, status: row.status },
+    meta: { ticketId: row.id, status: row.status, blocked: row.blocked },
   })
 
   return serializeTicket(row)
+}
+
+const remove = async (id: string, actor: { id: string; email: string; name?: string | null }) => {
+  const existing = await prisma.supportTicket.findUnique({ where: { id } })
+  if (!existing) throw new AppError(404, 'Support ticket not found')
+
+  await prisma.supportTicket.delete({ where: { id } })
+
+  await writeAuditLog({
+    action: 'Support ticket deleted',
+    details: existing.subject,
+    type: 'delete',
+    actor: actor.name || actor.email,
+    actorId: actor.id,
+    meta: { ticketId: existing.id, channel: existing.channel, type: existing.type },
+  })
+
+  return { id }
 }
 
 const supportService = {
@@ -163,6 +201,7 @@ const supportService = {
   getOne,
   create,
   update,
+  remove,
 }
 
 export default supportService

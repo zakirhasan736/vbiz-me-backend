@@ -31,12 +31,14 @@ const updateSupportTicket = z
   .object({
     status: ticketStatus.optional(),
     adminReply: z.string().trim().max(5000).optional().nullable(),
+    blocked: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: 'At least one field is required' })
 
 const listSupportTicketsQuery = z.object({
   status: ticketStatus.optional(),
   channel: ticketChannel.optional(),
+  blocked: z.coerce.boolean().optional(),
   skip: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 })

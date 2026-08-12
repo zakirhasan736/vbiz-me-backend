@@ -105,6 +105,11 @@ const pushStatus = catchAsyncError(async (req, res) => {
   sendPublicResponse(res, { success: true, data })
 })
 
+const pushVapidPublicKey = catchAsyncError(async (_req, res) => {
+  const data = pushService.getVapidPublicKey()
+  sendPublicResponse(res, { success: true, data })
+})
+
 const pushSubscribe = catchAsyncError(async (req, res) => {
   const body = req.body as {
     profile_slug?: string
@@ -193,6 +198,7 @@ const publicController = {
   saveContact,
   googleWallet,
   pushStatus,
+  pushVapidPublicKey,
   pushSubscribe,
   pushPreferences,
   pushUnsubscribe,

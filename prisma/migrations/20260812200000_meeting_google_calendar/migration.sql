@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Meeting" ADD COLUMN IF NOT EXISTS "googleEventId" TEXT;
+ALTER TABLE "Meeting" ADD COLUMN IF NOT EXISTS "meetLink" TEXT;

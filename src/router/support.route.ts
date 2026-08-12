@@ -12,5 +12,6 @@ router.get('/support-tickets', supportController.list)
 router.post('/support-tickets', validSchema(SupportZodSchema.createSupportTicket), supportController.create)
 router.get('/support-tickets/:id', supportController.getOne)
 router.patch('/support-tickets/:id', validSchema(SupportZodSchema.updateSupportTicket), supportController.update)
+router.delete('/support-tickets/:id', supportController.remove)
 
 export default router

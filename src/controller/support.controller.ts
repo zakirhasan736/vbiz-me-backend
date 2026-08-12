@@ -62,11 +62,20 @@ const update = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Support ticket updated', data })
 })
 
+const remove = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  assertSupportAccess(req.user)
+  const actor = await resolveActor(req.user.id)
+  const data = await supportService.remove(param(req.params.id), actor)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Support ticket deleted', data })
+})
+
 const supportController = {
   list,
   getOne,
   create,
   update,
+  remove,
 }
 
 export default supportController

@@ -71,6 +71,15 @@ const ensureVapid = () => {
   vapidConfigured = true
 }
 
+/** Public half only — safe to expose to browsers for PushManager.subscribe. */
+const getVapidPublicKey = () => {
+  const publicKey = config.VAPID.PUBLIC_KEY?.trim()
+  if (!publicKey) {
+    throw new AppError(503, 'Push notifications are not configured on the server (missing VAPID keys).')
+  }
+  return { publicKey }
+}
+
 const hashEndpoint = (endpoint: string) => crypto.createHash('sha256').update(endpoint).digest('hex')
 
 export const preferencesToSnake = (prefs: PushNotificationPreference | null | undefined): SnakeCasePreferences => {
@@ -157,6 +166,9 @@ const subscribe = async (input: {
   browser?: string
   platform?: string
 }) => {
+  if (!config.VAPID.PUBLIC_KEY || !config.VAPID.PRIVATE_KEY) {
+    throw new AppError(503, 'Push notifications are not configured on the server (missing VAPID keys).')
+  }
   if (!input.endpoint?.trim() || !input.keys?.p256dh || !input.keys?.auth) {
     throw new AppError(400, 'endpoint and keys are required')
   }
@@ -339,7 +351,7 @@ const buildProfilePayload = async (
   return {
     ...partial,
     slug: partial.slug || profile.slug,
-    url: partial.url || `/${profile.slug}`,
+    url: partial.url || `/v/${profile.slug}`,
     businessName: partial.businessName || businessName,
     icon: partial.icon || media.icon,
     avatarUrl: partial.avatarUrl || media.avatarUrl,
@@ -419,7 +431,7 @@ const sendTest = async (input: {
     body: input.body?.trim() || `${businessName} sent a test push notification.`,
     type: 'service_updates',
     slug: profile.slug || undefined,
-    url: profile.slug ? `/${profile.slug}` : '/',
+    url: profile.slug ? `/v/${profile.slug}` : '/',
     businessName,
     ...media,
     profile_id: profile.id,
@@ -459,6 +471,7 @@ export const preferenceKeyForCollection = (
 }
 
 const pushService = {
+  getVapidPublicKey,
   subscribe,
   subscriptionStatus,
   updatePreferences,

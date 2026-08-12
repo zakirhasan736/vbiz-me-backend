@@ -29,7 +29,12 @@ const getOne = catchAsyncError(async (req, res) => {
 
 const create = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const data = await profileService.create(req.user.id, req.user.role, req.body)
+  const body = ProfileZodSchema.createProfileBody.parse(req.body) as {
+    name: string
+    ownerUserId?: string
+    [key: string]: unknown
+  }
+  const data = await profileService.create(req.user.id, req.user.role, body)
   sendResponse(res, { success: true, statusCode: 201, message: 'Profile created', data })
 })
 
@@ -307,7 +312,7 @@ const createTeamNotice = catchAsyncError(async (req, res) => {
 
 const deleteTeamNotice = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const data = await profileService.deleteTeamNotice(req.user.id, String(req.params.id))
+  const data = await profileService.deleteTeamNotice(req.user.id, req.user.role, String(req.params.id))
   sendResponse(res, { success: true, statusCode: 200, message: 'Team notice deleted', data })
 })
 

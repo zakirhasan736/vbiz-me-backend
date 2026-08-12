@@ -1,6 +1,7 @@
 import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
-import { isStaffRole } from '../constants/userRole'
+import { AccountStatus } from '../../generated/prisma/enums'
+import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
 import authUtils from '../utils/auth.utils'
@@ -460,6 +461,7 @@ const create = async (
     tiktok?: string
     youtube?: string
     linkedin?: string
+    ownerUserId?: string
     settings?: Record<string, string>
     profileSettings?: {
       profileTemplate?: string
@@ -471,21 +473,61 @@ const create = async (
     [key: string]: unknown
   }
 ) => {
-  const user = await prisma.user.findUnique({ where: { id: userId } })
-  if (!user) throw new AppError(404, 'User not found')
+  const actor = await prisma.user.findUnique({ where: { id: userId } })
+  if (!actor) throw new AppError(404, 'User not found')
 
-  await assertCanCreateCard(userId, role)
+  const {
+    ownerUserId: requestedOwnerUserId,
+    settings,
+    profileSettings,
+    city: _city,
+    state: _state,
+    zipCode: _zipCode,
+    ...raw
+  } = input
 
-  const { settings, profileSettings, city: _city, state: _state, zipCode: _zipCode, ...raw } = input
+  let profileOwnerId = userId
+  let profileOwnerEmail = actor.email
+  let createdById = userId
+  // Admin self-created cards stay on the admin/company portfolio (My Cards).
+  let companyUserId: string | undefined = isAdminRole(actor.role) || isAdminRole(role) ? userId : undefined
+  let capacityUserId = userId
+  let capacityRole = role
+
+  const assignOwnerId = isStaff(role) && typeof requestedOwnerUserId === 'string' ? requestedOwnerUserId.trim() : ''
+
+  if (assignOwnerId) {
+    const target = await prisma.user.findFirst({
+      where: { id: assignOwnerId, deletedAt: null },
+    })
+    if (!target) throw new AppError(404, 'Owner user not found')
+
+    const targetApiRole = toApiRole(target.role)
+    if (targetApiRole !== 'vcard-owner' && targetApiRole !== 'corporate-owner') {
+      throw new AppError(400, 'Owner must be a single or corporate card owner')
+    }
+    if (!target.isActive || target.accountStatus !== AccountStatus.ACTIVE) {
+      throw new AppError(400, 'Owner account is not active')
+    }
+
+    profileOwnerId = target.id
+    profileOwnerEmail = target.email
+    createdById = userId
+    companyUserId = targetApiRole === 'corporate-owner' ? target.id : undefined
+    capacityUserId = target.id
+    capacityRole = targetApiRole
+  }
+
+  await assertCanCreateCard(capacityUserId, capacityRole)
+
   const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
   const profile = await prisma.profile.create({
     data: {
-      userId,
-      createdById: userId,
-      // Admin-created cards stay on the admin/company portfolio (My Cards).
-      companyUserId: isAdminRole(user.role) ? userId : undefined,
+      userId: profileOwnerId,
+      createdById,
+      companyUserId,
       name: String(raw.name),
-      email: (raw.email as string) || user.email,
+      email: (raw.email as string) || profileOwnerEmail,
       slug,
       companyName: raw.companyName as string | undefined,
       designation: raw.designation as string | undefined,
@@ -1842,6 +1884,14 @@ const createTeamNotice = async (
     targetProfileId?: string
   }
 ): Promise<TeamNoticeRow> => {
+  // Public card notices are owner/corporate only — admins use targeted Announcements for back office.
+  if (isStaffRole(role) || role === 'ADMIN' || role === 'SUPER_ADMIN') {
+    throw new AppError(403, 'Staff cannot create public card notices. Use admin announcements for back-office notices.')
+  }
+  if (role !== 'vcard-owner' && role !== 'corporate-owner' && role !== 'VCARD_OWNER' && role !== 'CORPORATE_OWNER') {
+    throw new AppError(403, 'Only card owners can publish card notices')
+  }
+
   const text = input.text.trim()
   if (!text) throw new AppError(400, 'Announcement text is required')
 
@@ -1925,12 +1975,22 @@ const createTeamNotice = async (
   return serializeTeamNotice(created)
 }
 
-const deleteTeamNotice = async (userId: string, noticeId: string) => {
+const deleteTeamNotice = async (userId: string, role: string, noticeId: string) => {
+  if (isStaffRole(role) || role === 'ADMIN' || role === 'SUPER_ADMIN') {
+    throw new AppError(403, 'Staff cannot delete public card notices')
+  }
+
   const existing = await prisma.teamNotice.findFirst({
-    where: { id: noticeId, ownerId: userId },
-    select: { id: true },
+    where: { id: noticeId },
+    select: { id: true, ownerId: true, targetProfileId: true },
   })
   if (!existing) throw new AppError(404, 'Notice not found')
+
+  if (existing.ownerId !== userId) {
+    if (!existing.targetProfileId) throw new AppError(403, 'Not allowed to delete this notice')
+    await getOwned(existing.targetProfileId, userId, role)
+  }
+
   await prisma.teamNotice.delete({ where: { id: noticeId } })
   return { id: noticeId, deleted: true }
 }

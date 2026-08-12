@@ -64,14 +64,57 @@ function serializeAnnouncement(row: AnnouncementRow) {
   }
 }
 
-async function archiveActiveBanners(tx: Prisma.TransactionClient, exceptId?: string) {
+async function archiveActiveAllBanners(tx: Prisma.TransactionClient, exceptId?: string) {
   await tx.announcement.updateMany({
     where: {
       status: 'active',
+      targetType: 'all',
       ...(exceptId ? { id: { not: exceptId } } : {}),
     },
     data: { status: 'archived' },
   })
+}
+
+/** Archive active specific-targeted notices that overlap emails or the same profileId in meta. */
+async function archiveOverlappingSpecificBanners(
+  tx: Prisma.TransactionClient,
+  opts: { emails: string[]; profileId?: string; exceptId?: string }
+) {
+  const emailSet = new Set(opts.emails.map((e) => e.toLowerCase()))
+  const activeSpecific = await tx.announcement.findMany({
+    where: {
+      status: 'active',
+      targetType: 'specific',
+      ...(opts.exceptId ? { id: { not: opts.exceptId } } : {}),
+    },
+    select: { id: true, targetEmails: true, meta: true },
+  })
+
+  const toArchive = activeSpecific
+    .filter((row) => {
+      if (row.targetEmails.some((e) => emailSet.has(e.toLowerCase()))) return true
+      if (opts.profileId && row.meta && typeof row.meta === 'object' && !Array.isArray(row.meta)) {
+        const meta = row.meta as Record<string, unknown>
+        return meta.profileId === opts.profileId
+      }
+      return false
+    })
+    .map((row) => row.id)
+
+  if (toArchive.length) {
+    await tx.announcement.updateMany({
+      where: { id: { in: toArchive } },
+      data: { status: 'archived' },
+    })
+  }
+}
+
+function profileIdFromMeta(
+  meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined
+): string | undefined {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return undefined
+  const profileId = (meta as Record<string, unknown>).profileId
+  return typeof profileId === 'string' && profileId.trim() ? profileId.trim() : undefined
 }
 
 function normalizeEmails(emails?: string[]): string[] {
@@ -118,10 +161,15 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
   const targetType = input.targetType ?? 'all'
   const targetEmails = targetType === 'specific' ? normalizeEmails(input.targetEmails) : []
   const status = input.status ?? 'active'
+  const profileId = profileIdFromMeta(input.meta)
 
   const row = await prisma.$transaction(async (tx) => {
     if (status === 'active') {
-      await archiveActiveBanners(tx)
+      if (targetType === 'all') {
+        await archiveActiveAllBanners(tx)
+      } else {
+        await archiveOverlappingSpecificBanners(tx, { emails: targetEmails, profileId })
+      }
     }
 
     return tx.announcement.create({
@@ -142,14 +190,21 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
   })
 
   await writeAuditLog({
-    action: status === 'active' ? 'Global Announcement Published' : 'Global Announcement Created',
+    action:
+      targetType === 'specific'
+        ? status === 'active'
+          ? 'Card Backoffice Notice Published'
+          : 'Card Backoffice Notice Created'
+        : status === 'active'
+          ? 'Global Announcement Published'
+          : 'Global Announcement Created',
     details: `Pushed [${type}] to ${
       targetType === 'all' ? 'all users' : `specific emails (${targetEmails.join(', ')})`
     }`,
     type: 'create',
     actor: actor.name || actor.email,
     actorId: actor.id,
-    meta: { announcementId: row.id, kind, type, status, targetType },
+    meta: { announcementId: row.id, kind, type, status, targetType, profileId: profileId || '' },
   })
 
   return serializeAnnouncement(row)
@@ -178,7 +233,15 @@ const update = async (id: string, actor: Actor, input: UpdateAnnouncementInput) 
 
   const row = await prisma.$transaction(async (tx) => {
     if (nextStatus === 'active' && existing.status !== 'active') {
-      await archiveActiveBanners(tx, id)
+      if (nextTargetType === 'all') {
+        await archiveActiveAllBanners(tx, id)
+      } else {
+        await archiveOverlappingSpecificBanners(tx, {
+          emails: nextEmails,
+          profileId: profileIdFromMeta(input.meta ?? existing.meta),
+          exceptId: id,
+        })
+      }
     }
 
     return tx.announcement.update({
@@ -230,13 +293,13 @@ const remove = async (id: string, actor: Actor) => {
 
 const clearLive = async (actor: Actor) => {
   const result = await prisma.announcement.updateMany({
-    where: { status: 'active' },
+    where: { status: 'active', targetType: 'all' },
     data: { status: 'archived' },
   })
 
   await writeAuditLog({
     action: 'Global Banner Cleared',
-    details: `Archived ${result.count} active announcement(s)`,
+    details: `Archived ${result.count} active global announcement(s)`,
     type: 'status',
     actor: actor.name || actor.email,
     actorId: actor.id,
@@ -259,15 +322,16 @@ const getActiveForUser = async (user: { email: string; role?: string }) => {
       ],
     },
     orderBy: { createdAt: 'desc' },
-    take: 20,
+    take: 40,
   })
 
-  const match = candidates.find((row) => {
-    if (row.targetType === 'all') return true
-    return row.targetEmails.map((e) => e.toLowerCase()).includes(email)
-  })
+  const specific = candidates.find(
+    (row) => row.targetType === 'specific' && row.targetEmails.map((e) => e.toLowerCase()).includes(email)
+  )
+  if (specific) return serializeAnnouncement(specific)
 
-  return match ? serializeAnnouncement(match) : null
+  const global = candidates.find((row) => row.targetType === 'all')
+  return global ? serializeAnnouncement(global) : null
 }
 
 const announcementService = {
