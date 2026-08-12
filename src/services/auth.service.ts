@@ -31,9 +31,12 @@ type VerificationCooldown = {
   remainingSecond: number
 }
 
+const normalizeEmail = (email: string) => email.trim().toLowerCase()
+
 const register = async (body: IRegisterBody): Promise<VerificationCooldown> => {
+  const email = normalizeEmail(body.email)
   const existing = await prisma.user.findUnique({
-    where: { email: body.email },
+    where: { email },
   })
 
   if (existing) {
@@ -48,7 +51,7 @@ const register = async (body: IRegisterBody): Promise<VerificationCooldown> => {
   const user = await prisma.user.create({
     data: {
       name: body.name,
-      email: body.email,
+      email,
       password: hashedPassword,
       role: toPrismaRole(body.role),
       provider: 'LOCAL',
@@ -61,12 +64,13 @@ const register = async (body: IRegisterBody): Promise<VerificationCooldown> => {
     await subscriptionService.ensureCorporateStarterSubscription(user.id)
   }
 
-  return queueOrSendVerificationEmail(body.email, { awaitSend: false })
+  return queueOrSendVerificationEmail(email, { awaitSend: false })
 }
 
 const login = async (body: ILoginBody): Promise<ILoginResult> => {
+  const email = normalizeEmail(body.email)
   const user = await prisma.user.findUnique({
-    where: { email: body.email },
+    where: { email },
   })
 
   if (!user) {

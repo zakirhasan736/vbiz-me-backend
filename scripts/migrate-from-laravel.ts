@@ -8,7 +8,7 @@
  *   yarn tsx --env-file=.env scripts/migrate-from-laravel.ts
  */
 import mysql from 'mysql2/promise'
-import { AuthProvider, Prisma, UserRole } from '../generated/prisma/client'
+import { AccountStatus, AuthProvider, Prisma, UserRole } from '../generated/prisma/client'
 import config from '../src/configs/config'
 import logger from '../src/utils/logger'
 import { resolveMediaUrl } from '../src/utils/mediaUrl'
@@ -302,13 +302,15 @@ async function importUsers(conn: mysql.Connection) {
       legacyId: Number(row.id),
       email,
       name: String(row.name || email),
-      // Keep Laravel bcrypt payload; Node login normalizes $2y$/$2x$ → $2b$ on compare.
+      // Keep Laravel bcrypt payload; Node login normalizes $2y$/$2x$ → $2b$ on compare,
+      // then upgrades to Argon2 on the first successful login.
       password: row.password ? String(row.password) : null,
       role,
       provider: AuthProvider.LOCAL,
       // Legacy accounts already used Laravel login; keep their bcrypt hash and treat as verified.
       isVerified: Boolean(row.email_verified_at) || Boolean(row.password),
       isActive: true,
+      accountStatus: AccountStatus.ACTIVE,
       stripeId: row.stripe_id ? String(row.stripe_id) : null,
       pmType: row.pm_type ? String(row.pm_type) : null,
       pmLastFour: row.pm_last_four ? String(row.pm_last_four) : null,
