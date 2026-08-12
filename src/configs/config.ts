@@ -10,6 +10,7 @@ const {
   REFRESH_TOKEN_SECRET,
   ACCESS_TOKEN_SECRET,
   FRONTEND_URL,
+  CORS_ORIGINS,
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   FACEBOOK_APP_ID,
@@ -41,6 +42,12 @@ const {
   CANVA_SCOPES,
 } = process.env
 
+const parseCommaSeparatedList = (value?: string): string[] =>
+  value
+    ?.split(',')
+    .map((item) => item.trim())
+    .filter(Boolean) ?? []
+
 export default {
   NODE_ENV: NODE_ENV || 'development',
   PORT: PORT || '5000',
@@ -61,6 +68,7 @@ export default {
     EXPIRY: '1h',
   },
   FRONTEND_URL: NODE_ENV === 'production' ? FRONTEND_URL : FRONTEND_URL || 'http://localhost:3000',
+  CORS_ORIGINS: parseCommaSeparatedList(CORS_ORIGINS),
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   FACEBOOK_APP_ID,
