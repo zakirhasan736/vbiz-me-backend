@@ -71,6 +71,8 @@ model User {
   supportTickets       SupportTicket[]       @relation("SupportTicketCreatedBy")
   announcements        Announcement[]        @relation("AnnouncementCreatedBy")
   teamNotices          TeamNotice[]          @relation("TeamNoticeOwner")
+  canvaConnection      CanvaConnection?
+  canvaOAuthPendings   CanvaOAuthPending[]
 
   @@index([provider, providerId])
 }
@@ -93,6 +95,35 @@ model PasswordSetupToken {
   createdAt DateTime @default(now())
 
   @@index([userId])
+}
+
+/** Encrypted Canva OAuth tokens for a card owner (Connect API). */
+model CanvaConnection {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessTokenEnc  String
+  refreshTokenEnc String
+  tokenIv         String
+  tokenTag        String
+  expiresAt       DateTime
+  scope           String?
+  connectedAt     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/** Short-lived PKCE state for Canva OAuth (cleared after callback). */
+model CanvaOAuthPending {
+  state        String   @id
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeVerifier String
+  returnTo     String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Status {

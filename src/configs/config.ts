@@ -10,6 +10,7 @@ const {
   REFRESH_TOKEN_SECRET,
   ACCESS_TOKEN_SECRET,
   FRONTEND_URL,
+  CORS_ORIGINS,
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_FONTS_API_KEY,
@@ -35,7 +36,18 @@ const {
   PUBLIC_RATE_LIMIT_MAX,
   LARAVEL_MYSQL_URL,
   MEDIA_BASE_URL,
+  CANVA_CLIENT_ID,
+  CANVA_CLIENT_SECRET,
+  CANVA_REDIRECT_URI,
+  CANVA_TOKEN_ENCRYPTION_KEY,
+  CANVA_SCOPES,
 } = process.env
+
+const parseCommaSeparatedList = (value?: string): string[] =>
+  value
+    ?.split(',')
+    .map((item) => item.trim())
+    .filter(Boolean) ?? []
 
 export default {
   NODE_ENV: NODE_ENV || 'development',
@@ -57,6 +69,7 @@ export default {
     EXPIRY: '1h',
   },
   FRONTEND_URL: NODE_ENV === 'production' ? FRONTEND_URL : FRONTEND_URL || 'http://localhost:3000',
+  CORS_ORIGINS: parseCommaSeparatedList(CORS_ORIGINS),
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_FONTS_API_KEY,
@@ -87,4 +100,9 @@ export default {
   },
   LARAVEL_MYSQL_URL,
   MEDIA_BASE_URL: MEDIA_BASE_URL || 'https://app.vbizme.com',
+  CANVA_CLIENT_ID,
+  CANVA_CLIENT_SECRET,
+  CANVA_REDIRECT_URI,
+  CANVA_TOKEN_ENCRYPTION_KEY,
+  CANVA_SCOPES,
 }
