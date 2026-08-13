@@ -81,6 +81,7 @@ router.post(
     const data = await cardAgentService.fillSection({
       section: String(req.body?.section || ''),
       text: String(req.body?.text || ''),
+      websiteUrl: String(req.body?.websiteUrl || ''),
       currentDraft: String(req.body?.currentDraft || ''),
       files,
     })

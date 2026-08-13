@@ -150,6 +150,7 @@ Rules:
 export async function fillSection(input: {
   section: string
   text?: string
+  websiteUrl?: string
   currentDraft?: string
   files?: UploadedPart[]
 }) {
@@ -162,13 +163,26 @@ export async function fillSection(input: {
   }
 
   const text = (input.text || '').trim()
+  const websiteUrl = (input.websiteUrl || '').trim()
   const files = input.files || []
-  if (!text && files.length === 0) {
-    throw new AppError(400, 'Provide text and/or files to fill this section.')
+  if (!text && !websiteUrl && files.length === 0) {
+    throw new AppError(400, 'Provide text, a website URL, and/or files to fill this section.')
   }
 
   const parts: string[] = []
   const images: Array<{ mimeType: string; base64: string }> = []
+  if (websiteUrl) {
+    try {
+      const crawled = await crawlWebsiteDeep(websiteUrl, section)
+      parts.push(
+        `WEBSITE URL: ${websiteUrl}\nFOCUSED SECTION: ${section}\nCRAWLED ${crawled.pages.length} PAGE(S):\n${crawled.combined}`
+      )
+    } catch (e) {
+      parts.push(
+        `WEBSITE URL: ${websiteUrl}\n(Could not re-crawl site for ${section}: ${e instanceof Error ? e.message : 'error'}.)`
+      )
+    }
+  }
   if (text) parts.push(`USER TEXT:\n${text}`)
   for (const file of files) {
     const extracted = await extractTextFromBuffer(file)
@@ -189,7 +203,7 @@ export async function fillSection(input: {
   }
 
   const payload = await chatJson<Record<string, unknown>>({
-    system: `You fill one vCard section from user materials (including OCR from images). Return ONLY JSON matching: ${schemaHint[section]}. Create multiple high-quality entries when the source supports it.`,
+    system: `You fill one vCard section from user materials, website crawls, embedded JSON, and OCR from images. Return ONLY JSON matching: ${schemaHint[section]}. Create multiple high-quality entries when the source supports it. For reviews/testimonials and slider/carousel/list content, include all distinct credible items present in the source, up to 30. If the approved section is not supported by the sources, return an empty array/object for that section instead of inventing specific facts.`,
     user: `Fill section “${section}”.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nSources:\n${parts.join('\n\n---\n\n')}`,
     images,
   })
