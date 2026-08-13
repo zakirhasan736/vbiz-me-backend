@@ -5,7 +5,7 @@ import handleZodError from '../error/zodError'
 import { IErrorSources } from '../interfaces/error.interface'
 import logger from '../utils/logger'
 
-const globalErrorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   let message = error.message || 'Something went wrong!'
   let statusCode = 500
   let code: string | undefined
@@ -17,7 +17,9 @@ const globalErrorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
     },
   ]
 
-  logger.error(error)
+  logger.error(`${req.method} ${req.originalUrl} ${error.message || 'Error'}`, {
+    statusCode: error.statusCode ?? 500,
+  })
 
   if (error instanceof AppError) {
     statusCode = error.statusCode || 400

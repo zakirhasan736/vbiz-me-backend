@@ -49,6 +49,7 @@ const pushSubscribe = z
     keys: pushKeys,
     browser: z.string().optional(),
     platform: z.string().optional(),
+    preferences: pushPreferencesShape.optional(),
   })
   .refine((data) => Boolean(data.profile_id || data.profile_slug || data.cardSlug), {
     message: 'profile_slug or profile_id is required',

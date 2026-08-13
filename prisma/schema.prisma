@@ -256,6 +256,8 @@ model Profile {
   isPublic     Boolean   @default(true)
   /** Incomplete / not yet published cards show under Draft tabs in the dashboard. */
   isDraft      Boolean   @default(false)
+  /** Snapshot of status/isPublic/isDraft before account pause/suspend cascade; cleared on restore. */
+  accountLockSnapshot Json?
   viewCount    Int       @default(0)
   template     String    @default("default")
   themeConfig  Json?
@@ -810,7 +812,7 @@ model PushNotificationPreference {
   news                 Boolean          @default(true)
   eventUpdates         Boolean          @default(true)
   announcementUpdates  Boolean          @default(true)
-  themeUpdates         Boolean          @default(false)
+  themeUpdates         Boolean          @default(true)
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 }

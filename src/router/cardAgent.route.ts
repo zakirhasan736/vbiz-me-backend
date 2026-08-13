@@ -16,6 +16,8 @@ const upload = multer({
 const router = Router()
 
 router.use(authMiddleware.isAuthenticateUser)
+router.use(authMiddleware.requireNotSuspended)
+router.use(authMiddleware.requireVcardMutable)
 
 function rateLimitOrThrow(req: IUserInfoRequest, action: string, limit: number) {
   const userKey = req.user?.id || req.ip || 'anon'

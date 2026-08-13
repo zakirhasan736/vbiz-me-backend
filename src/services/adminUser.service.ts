@@ -1,9 +1,18 @@
 import type { Prisma } from '../../generated/prisma/client'
+import { Prisma as PrismaRuntime } from '../../generated/prisma/client'
 import { AccountStatus, AuthProvider, UserRole as PrismaUserRole } from '../../generated/prisma/enums'
 import { toApiRole, toPrismaRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
+import {
+  ensureStatusByName,
+  lifecycleStatusFlags,
+  normalizeCardStatusName,
+  parseAccountLockSnapshot,
+  type AccountLockSnapshot,
+} from '../utils/cardStatus'
+import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import type {
   AccountStatusValue,
@@ -12,6 +21,7 @@ import type {
   SetAdminUserStatusBody,
   UpdateAdminUserBody,
 } from '../zodValidation/adminUser.zod'
+import announcementService from './announcement.service'
 import subscriptionService from './subscription.service'
 
 export type AdminUserRow = {
@@ -49,6 +59,142 @@ type ActorContext = {
 
 function syncIsActive(status: AccountStatusValue): boolean {
   return status === 'ACTIVE'
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+async function cascadeOwnedCardsForAccountStatus(userId: string, accountStatus: AccountStatusValue): Promise<void> {
+  const owned = await prisma.profile.findMany({
+    where: {
+      OR: [{ userId }, { companyUserId: userId }],
+    },
+    select: {
+      id: true,
+      isPublic: true,
+      isDraft: true,
+      accountLockSnapshot: true,
+      status: { select: { name: true } },
+    },
+  })
+
+  if (!owned.length) return
+
+  if (accountStatus === 'ACTIVE') {
+    for (const profile of owned) {
+      const snap = parseAccountLockSnapshot(profile.accountLockSnapshot)
+      if (!snap) continue
+      const statusRow = await ensureStatusByName(snap.statusName || 'draft')
+      await prisma.profile.update({
+        where: { id: profile.id },
+        data: {
+          status: { connect: { id: statusRow.id } },
+          isPublic: snap.isPublic,
+          isDraft: snap.isDraft,
+          accountLockSnapshot: PrismaRuntime.DbNull,
+        },
+      })
+    }
+    return
+  }
+
+  if (accountStatus !== 'PAUSED' && accountStatus !== 'SUSPENDED') return
+
+  const lifecycle = accountStatus === 'PAUSED' ? 'paused' : 'suspended'
+  const flags = lifecycleStatusFlags(lifecycle)
+  const statusRow = await ensureStatusByName(lifecycle)
+
+  for (const profile of owned) {
+    const existingSnap = parseAccountLockSnapshot(profile.accountLockSnapshot)
+    const snapshot: AccountLockSnapshot =
+      existingSnap ??
+      ({
+        statusName: normalizeCardStatusName(profile.status?.name) || (profile.isDraft ? 'draft' : 'active'),
+        isPublic: profile.isPublic,
+        isDraft: profile.isDraft,
+      } satisfies AccountLockSnapshot)
+
+    await prisma.profile.update({
+      where: { id: profile.id },
+      data: {
+        status: { connect: { id: statusRow.id } },
+        isPublic: flags.isPublic,
+        isDraft: flags.isDraft,
+        ...(existingSnap ? {} : { accountLockSnapshot: snapshot as unknown as Prisma.InputJsonValue }),
+      },
+    })
+  }
+}
+
+async function notifyAccountPausedOrSuspended(
+  actor: ActorContext,
+  user: { id: string; email: string; name: string | null; role: PrismaUserRole },
+  action: 'paused' | 'suspended'
+): Promise<void> {
+  try {
+    const apiRole = toApiRole(user.role)
+    const isCorporate = apiRole === 'corporate-owner'
+    const ownerEmail = user.email.trim().toLowerCase()
+    const actionLabel = action
+
+    const bodyText =
+      action === 'paused'
+        ? `Your account has been paused by an administrator. Your vCards are no longer public and have been moved to draft. You can still manage account settings (including password). Please contact support to re-enable card publishing.`
+        : `Your account has been suspended by an administrator. Your vCards are disabled and account actions are locked. Please contact an administrator to restore access.`
+
+    const subject = `Your VBizMe account has been ${actionLabel}`
+
+    let emailRecipients: string[] = []
+    const announcementEmails: string[] = [ownerEmail].filter(Boolean)
+
+    if (isCorporate) {
+      const cards = await prisma.profile.findMany({
+        where: { OR: [{ userId: user.id }, { companyUserId: user.id }] },
+        select: { email: true },
+      })
+      const cardEmails = cards.map((c) => c.email?.trim().toLowerCase()).filter((e): e is string => Boolean(e))
+      emailRecipients = [...new Set([ownerEmail, ...cardEmails].filter(Boolean))]
+    } else {
+      emailRecipients = [...new Set([ownerEmail].filter(Boolean))]
+    }
+
+    const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${escapeHtml(bodyText)}</p></div>`
+
+    await Promise.all(
+      emailRecipients.map((email) =>
+        authUtils.sendEmail({ receiverMail: email, subject, html }).catch((err) => {
+          logger.error(`Failed to send account ${action} email`, email, err)
+        })
+      )
+    )
+
+    if (announcementEmails.length) {
+      try {
+        await announcementService.create(
+          {
+            id: actor.actorId,
+            email: actor.actorEmail || 'admin',
+            name: actor.actorName,
+          },
+          {
+            type: 'warning',
+            kind: 'warning',
+            title: `Account ${actionLabel}`,
+            body: bodyText,
+            status: 'active',
+            targetType: 'specific',
+            targetEmails: announcementEmails,
+            meta: { userId: user.id, action: actionLabel },
+          }
+        )
+      } catch (error) {
+        logger.error(`Failed to create account ${action} announcement`, error)
+      }
+    }
+  } catch (error) {
+    logger.error(`Failed to notify account ${action}`, error)
+  }
 }
 
 function buildWhere(query: ListAdminUsersQuery): Prisma.UserWhereInput {
@@ -279,11 +425,14 @@ const setStatus = async (id: string, body: SetAdminUserStatusBody, actor: ActorC
     throw new AppError(400, 'Cannot pause or suspend your own account')
   }
 
+  const previousStatus = existing.accountStatus
+  const nextStatus = body.accountStatus
+
   const user = await prisma.user.update({
     where: { id },
     data: {
-      accountStatus: body.accountStatus as AccountStatus,
-      isActive: syncIsActive(body.accountStatus),
+      accountStatus: nextStatus as AccountStatus,
+      isActive: syncIsActive(nextStatus),
     },
     select: {
       id: true,
@@ -299,13 +448,19 @@ const setStatus = async (id: string, body: SetAdminUserStatusBody, actor: ActorC
     },
   })
 
+  await cascadeOwnedCardsForAccountStatus(user.id, nextStatus)
+
+  if ((nextStatus === 'PAUSED' || nextStatus === 'SUSPENDED') && previousStatus !== nextStatus) {
+    void notifyAccountPausedOrSuspended(actor, user, nextStatus === 'PAUSED' ? 'paused' : 'suspended')
+  }
+
   await writeAuditLog({
     action: 'User Toggle Status',
-    details: `Changed account status for ${user.name ?? user.email} to ${body.accountStatus}`,
+    details: `Changed account status for ${user.name ?? user.email} to ${nextStatus}`,
     type: 'status',
     actorId: actor.actorId,
     actor: actor.actorName || actor.actorEmail || null,
-    meta: { userId: user.id, accountStatus: body.accountStatus },
+    meta: { userId: user.id, accountStatus: nextStatus },
   })
 
   return mapRow(user)

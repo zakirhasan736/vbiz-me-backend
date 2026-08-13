@@ -178,7 +178,13 @@ const buildEmailNotVerifiedError = (
   })
 }
 
-const assertActiveUser = (user: {
+const resolveAccountStatus = (user: {
+  isActive: boolean
+  accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+}): 'ACTIVE' | 'PAUSED' | 'SUSPENDED' => user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED')
+
+/** Allows ACTIVE, PAUSED, and SUSPENDED users to authenticate (login/session). Blocks deleted. */
+const assertCanAuthenticate = (user: {
   isActive: boolean
   accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
   deletedAt?: Date | null
@@ -186,7 +192,44 @@ const assertActiveUser = (user: {
   if (user.deletedAt) {
     throw new AppError(403, 'Account has been deleted')
   }
-  const status = user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED')
+}
+
+/** Blocks SUSPENDED accounts from mutations (password, avatar, non-session APIs). */
+const assertNotSuspended = (user: {
+  isActive: boolean
+  accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+  deletedAt?: Date | null
+}) => {
+  assertCanAuthenticate(user)
+  if (resolveAccountStatus(user) === 'SUSPENDED') {
+    throw new AppError(403, 'Account is suspended. Contact an administrator to restore access.')
+  }
+}
+
+/** Blocks PAUSED and SUSPENDED from vCard create/edit/publish. */
+const assertVcardMutable = (user: {
+  isActive: boolean
+  accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+  deletedAt?: Date | null
+}) => {
+  assertCanAuthenticate(user)
+  const status = resolveAccountStatus(user)
+  if (status === 'PAUSED') {
+    throw new AppError(403, 'Account is paused. You cannot create or edit vCards. Please contact support.')
+  }
+  if (status === 'SUSPENDED') {
+    throw new AppError(403, 'Account is suspended. Contact an administrator to restore access.')
+  }
+}
+
+/** @deprecated Prefer assertCanAuthenticate / assertNotSuspended / assertVcardMutable */
+const assertActiveUser = (user: {
+  isActive: boolean
+  accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+  deletedAt?: Date | null
+}) => {
+  assertCanAuthenticate(user)
+  const status = resolveAccountStatus(user)
   if (status === 'PAUSED') {
     throw new AppError(403, 'Account is paused')
   }
@@ -204,8 +247,8 @@ const isUserAccessible = (user: {
   deletedAt?: Date | null
 }) => {
   if (user.deletedAt) return false
-  const status = user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED')
-  return user.isActive && status === 'ACTIVE'
+  const status = resolveAccountStatus(user)
+  return status === 'ACTIVE' || status === 'PAUSED' || status === 'SUSPENDED'
 }
 
 const readTemplate = (templateName: string): string => {
@@ -267,6 +310,10 @@ const authUtils = {
   issueTokens,
   buildPasswordSetupRequiredError,
   buildEmailNotVerifiedError,
+  resolveAccountStatus,
+  assertCanAuthenticate,
+  assertNotSuspended,
+  assertVcardMutable,
   assertActiveUser,
   isUserAccessible,
   readTemplate,

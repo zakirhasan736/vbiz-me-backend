@@ -1,4 +1,5 @@
 import type { Server as HttpServer } from 'http'
+import jwt from 'jsonwebtoken'
 import { Server, type Socket } from 'socket.io'
 import config from '../configs/config'
 import { isStaffRole, toApiRole } from '../constants/userRole'
@@ -16,6 +17,15 @@ type SocketUser = {
   role: string
   isStaff: boolean
 }
+
+const socketUserSelect = {
+  id: true,
+  email: true,
+  role: true,
+  isActive: true,
+  accountStatus: true,
+  deletedAt: true,
+} as const
 
 declare module 'socket.io' {
   interface SocketData {
@@ -55,33 +65,52 @@ const getHandshakeAccessToken = (socket: Socket): string | undefined => {
   return readCookie(socket.handshake.headers.cookie, 'accessToken')
 }
 
+const toSocketUser = (user: { id: string; email: string; role: Parameters<typeof toApiRole>[0] }): SocketUser => {
+  const role = toApiRole(user.role)
+  return {
+    id: user.id,
+    email: user.email,
+    role,
+    isStaff: isStaffRole(role),
+  }
+}
+
+const loadUserById = (id: string) =>
+  prisma.user.findUnique({
+    where: { id },
+    select: socketUserSelect,
+  })
+
+/** Mirror REST auth: valid access token, or refresh cookie when access is missing/expired. */
 const authenticateSocket = async (socket: Socket, next: (err?: Error) => void) => {
   try {
     const accessToken = getHandshakeAccessToken(socket)
-    if (!accessToken || isTokenExpired(accessToken)) {
+    const refreshToken = readCookie(socket.handshake.headers.cookie, 'refreshToken')
+
+    if (accessToken && !isTokenExpired(accessToken)) {
+      const payload = quicker.verifyAccessToken(accessToken) as { id: string; email: string; role?: string }
+      const user = await loadUserById(payload.id)
+      if (!user) {
+        return next(new Error('Unauthorized'))
+      }
+      authUtils.assertCanAuthenticate(user)
+      socket.data.user = toSocketUser(user)
+      return next()
+    }
+
+    if (!refreshToken) {
       return next(new Error('Unauthorized'))
     }
 
-    const payload = quicker.verifyAccessToken(accessToken) as { id: string; email: string; role?: string }
-    const user = await prisma.user.findUnique({
-      where: { id: payload.id },
-      select: { id: true, email: true, role: true, isActive: true, accountStatus: true, deletedAt: true },
-    })
-
+    const decryptedJwt = jwt.verify(refreshToken, config.REFRESH_TOKEN.SECRET as string) as { id: string }
+    const user = await loadUserById(decryptedJwt.id)
     if (!user) {
       return next(new Error('Unauthorized'))
     }
 
-    authUtils.assertActiveUser(user)
-
-    const role = toApiRole(user.role)
-    const socketUser: SocketUser = {
-      id: user.id,
-      email: user.email,
-      role,
-      isStaff: isStaffRole(role),
-    }
-    socket.data.user = socketUser
+    authUtils.assertCanAuthenticate(user)
+    // Cookie refresh authenticates the socket; HTTP middleware will rotate cookies on the next API call.
+    socket.data.user = toSocketUser(user)
     next()
   } catch (err) {
     logger.warn(`Socket handshake rejected: ${err instanceof Error ? err.message : String(err)}`)

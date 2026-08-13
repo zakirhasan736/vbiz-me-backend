@@ -16,6 +16,7 @@ const upload = multer({
 const router = Router()
 
 router.use(authMiddleware.isAuthenticateUser)
+router.use(authMiddleware.requireNotSuspended)
 
 router.post(
   '/upload',
@@ -35,6 +36,9 @@ router.post(
 
     let attachment = null
     if (attachableId && profileId && req.user) {
+      if (req.user.accountStatus === 'PAUSED') {
+        throw new AppError(403, 'Account is paused. You cannot create or edit vCards. Please contact support.')
+      }
       await profileService.getOwned(profileId, req.user.id, req.user.role)
       let attachmentTypeId: string | undefined
       if (attachmentTypeName) {

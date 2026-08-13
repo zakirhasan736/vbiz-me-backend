@@ -7,6 +7,7 @@ import MeetingZodSchema from '../zodValidation/meeting.zod'
 const router = Router()
 
 router.use(authMiddleware.isAuthenticateUser)
+router.use(authMiddleware.requireNotSuspended)
 
 router.get('/', meetingController.list)
 router.post('/', validSchema(MeetingZodSchema.createMeeting), meetingController.create)

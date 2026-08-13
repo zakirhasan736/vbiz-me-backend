@@ -14,6 +14,7 @@ adminRouter.patch('/templates/:id', validSchema(CardTemplateZodSchema.updateCard
 const activeRouter = Router()
 
 activeRouter.use(authMiddleware.isAuthenticateUser)
+activeRouter.use(authMiddleware.requireNotSuspended)
 activeRouter.get('/', templateController.listActive)
 
 export { activeRouter as templateActiveRoute, adminRouter as templateAdminRoute }

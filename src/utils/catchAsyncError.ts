@@ -6,6 +6,9 @@ export interface IUserInfoRequest extends Request {
     id: string
     email: string
     role: UserRole
+    staffRole?: string | null
+    allowedModules?: string[]
+    accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
   }
 }
 

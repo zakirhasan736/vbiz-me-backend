@@ -8,6 +8,12 @@ export const CARD_STATUS_SEED_NAMES = ['active', 'inactive', 'paused', 'suspende
 
 const HIDDEN_PUBLIC_STATUS_NAMES = ['paused', 'suspended', 'inactive', 'draft'] as const
 
+export type AccountLockSnapshot = {
+  statusName: string
+  isPublic: boolean
+  isDraft: boolean
+}
+
 export const normalizeCardStatusName = (name?: string | null): string =>
   String(name || '')
     .trim()
@@ -28,6 +34,26 @@ export const ensureStatusByName = async (name: string) => {
 export const seedCardStatuses = async () => {
   for (const name of CARD_STATUS_SEED_NAMES) {
     await ensureStatusByName(name)
+  }
+}
+
+/** Flags applied when an admin sets a card (or account-cascade) lifecycle status. */
+export const lifecycleStatusFlags = (status: CardLifecycleStatus): { isDraft: boolean; isPublic: boolean } => {
+  if (status === 'paused') return { isDraft: true, isPublic: false }
+  if (status === 'suspended') return { isDraft: false, isPublic: false }
+  if (status === 'active') return { isDraft: false, isPublic: true }
+  return { isDraft: false, isPublic: false }
+}
+
+export const parseAccountLockSnapshot = (raw: unknown): AccountLockSnapshot | null => {
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+  if (typeof obj.statusName !== 'string') return null
+  if (typeof obj.isPublic !== 'boolean' || typeof obj.isDraft !== 'boolean') return null
+  return {
+    statusName: normalizeCardStatusName(obj.statusName) || 'draft',
+    isPublic: obj.isPublic,
+    isDraft: obj.isDraft,
   }
 }
 

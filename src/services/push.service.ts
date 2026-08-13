@@ -55,7 +55,7 @@ const DEFAULT_PREFERENCES: SnakeCasePreferences = {
   news: true,
   event_updates: true,
   announcement_updates: true,
-  theme_updates: false,
+  theme_updates: true,
 }
 
 let vapidConfigured = false
@@ -165,6 +165,7 @@ const subscribe = async (input: {
   keys: { p256dh: string; auth: string }
   browser?: string
   platform?: string
+  preferences?: Partial<SnakeCasePreferences>
 }) => {
   if (!config.VAPID.PUBLIC_KEY || !config.VAPID.PRIVATE_KEY) {
     throw new AppError(503, 'Push notifications are not configured on the server (missing VAPID keys).')
@@ -178,6 +179,8 @@ const subscribe = async (input: {
 
   const profile = await resolvePublicProfile(input)
   const endpointHash = hashEndpoint(input.endpoint)
+  const preferenceData = snakeToPrismaData(input.preferences || {})
+  const hasPreferencePayload = Object.keys(preferenceData).length > 0
 
   const sub = await prisma.pushSubscription.upsert({
     where: {
@@ -196,7 +199,7 @@ const subscribe = async (input: {
       platform: input.platform,
       isActive: true,
       lastUsedAt: new Date(),
-      preferences: { create: {} },
+      preferences: { create: preferenceData },
     },
     update: {
       endpoint: input.endpoint,
@@ -210,14 +213,20 @@ const subscribe = async (input: {
     include: { preferences: true },
   })
 
-  if (!sub.preferences) {
-    const preferences = await prisma.pushNotificationPreference.create({
-      data: { pushSubscriptionId: sub.id },
+  let preferences = sub.preferences
+  if (!preferences) {
+    preferences = await prisma.pushNotificationPreference.create({
+      data: { pushSubscriptionId: sub.id, ...preferenceData },
     })
-    return { id: sub.id, subscribed: true, preferences: preferencesToSnake(preferences) }
+  } else if (hasPreferencePayload) {
+    // Re-enable / re-subscribe with explicit choices overwrites stored toggles.
+    preferences = await prisma.pushNotificationPreference.update({
+      where: { id: preferences.id },
+      data: preferenceData,
+    })
   }
 
-  return { id: sub.id, subscribed: true, preferences: preferencesToSnake(sub.preferences) }
+  return { id: sub.id, subscribed: true, preferences: preferencesToSnake(preferences) }
 }
 
 const subscriptionStatus = async (slug: string, endpoint?: string) => {

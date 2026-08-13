@@ -43,12 +43,15 @@ const toRequestUser = (user: {
   role: Parameters<typeof toApiRole>[0]
   staffRole?: string | null
   allowedModules?: string[]
+  accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+  isActive: boolean
 }) => ({
   id: user.id,
   email: user.email,
   role: toApiRole(user.role),
   staffRole: user.staffRole ?? null,
   allowedModules: user.allowedModules ?? [],
+  accountStatus: authUtils.resolveAccountStatus(user),
 })
 
 const isAuthenticateUser = catchAsyncError(async (req, res, next) => {
@@ -74,7 +77,7 @@ const isAuthenticateUser = catchAsyncError(async (req, res, next) => {
       throw new AppError(403, 'Unauthorized')
     }
 
-    authUtils.assertActiveUser(user)
+    authUtils.assertCanAuthenticate(user)
 
     const tokens = authUtils.issueTokens(user)
     authUtils.setAuthCookies(res, tokens.accessToken, tokens.refreshToken)
@@ -93,10 +96,29 @@ const isAuthenticateUser = catchAsyncError(async (req, res, next) => {
     throw new AppError(403, 'Unauthorized')
   }
 
-  authUtils.assertActiveUser(user)
+  authUtils.assertCanAuthenticate(user)
 
   req.user = toRequestUser(user)
 
+  next()
+})
+
+const requireNotSuspended = catchAsyncError(async (req, _res, next) => {
+  const status = req.user?.accountStatus
+  if (status === 'SUSPENDED') {
+    throw new AppError(403, 'Account is suspended. Contact an administrator to restore access.')
+  }
+  next()
+})
+
+const requireVcardMutable = catchAsyncError(async (req, _res, next) => {
+  const status = req.user?.accountStatus
+  if (status === 'PAUSED') {
+    throw new AppError(403, 'Account is paused. You cannot create or edit vCards. Please contact support.')
+  }
+  if (status === 'SUSPENDED') {
+    throw new AppError(403, 'Account is suspended. Contact an administrator to restore access.')
+  }
   next()
 })
 
@@ -156,6 +178,8 @@ const authMiddleware = {
   optionalAuthenticateUser,
   requireGoogleOAuth,
   requireFacebookOAuth,
+  requireNotSuspended,
+  requireVcardMutable,
   authorizeRoles,
 }
 

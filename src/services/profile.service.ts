@@ -5,7 +5,12 @@ import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
 import authUtils from '../utils/auth.utils'
-import { ensureStatusByName, isCardLifecycleStatus, normalizeCardStatusName } from '../utils/cardStatus'
+import {
+  ensureStatusByName,
+  isCardLifecycleStatus,
+  lifecycleStatusFlags,
+  normalizeCardStatusName,
+} from '../utils/cardStatus'
 import {
   DASHBOARD_ALL_CHART_DAYS,
   SOCIAL_CHANNELS,
@@ -30,8 +35,125 @@ import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
+import announcementService from './announcement.service'
 import pushService from './push.service'
 import subscriptionService from './subscription.service'
+
+/** Digits-only phone key for suspended-number reuse checks. */
+const normalizePhoneDigits = (phone?: string | null): string => {
+  if (!phone) return ''
+  return String(phone).replace(/\D/g, '')
+}
+
+const assertPhoneNotOnSuspendedCard = async (phone: string | null | undefined, excludeProfileId?: string) => {
+  const digits = normalizePhoneDigits(phone)
+  if (!digits || digits.length < 7) return
+
+  const candidates = await prisma.profile.findMany({
+    where: {
+      status: { name: { equals: 'suspended', mode: 'insensitive' } },
+      phone: { not: null },
+      ...(excludeProfileId ? { id: { not: excludeProfileId } } : {}),
+    },
+    select: { id: true, phone: true },
+    take: 500,
+  })
+
+  const conflict = candidates.find((row) => normalizePhoneDigits(row.phone) === digits)
+  if (conflict) {
+    throw new AppError(
+      403,
+      'This phone number belongs to a suspended card and cannot be used to create or update another card.'
+    )
+  }
+}
+
+type LifecycleNotifyActor = { id: string; email: string; name?: string | null }
+
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/** Email + backoffice announcement when admin pauses or suspends a card. */
+const notifyCardPausedOrSuspended = async (
+  actor: LifecycleNotifyActor,
+  profileId: string,
+  action: 'paused' | 'suspended'
+) => {
+  try {
+    const profile = await prisma.profile.findUnique({
+      where: { id: profileId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        email: true,
+        userId: true,
+        companyUserId: true,
+        user: { select: { email: true, name: true, role: true } },
+        companyUser: { select: { email: true, name: true, role: true } },
+      },
+    })
+    if (!profile) return
+
+    const userRole = profile.user?.role ? toApiRole(profile.user.role) : null
+    const companyRole = profile.companyUser?.role ? toApiRole(profile.companyUser.role) : null
+    const isCorporate = companyRole === 'corporate-owner' || userRole === 'corporate-owner'
+
+    const cardEmail = profile.email?.trim().toLowerCase() || ''
+    const ownerEmail = (profile.user?.email || '').trim().toLowerCase()
+    const corporateOwnerEmail = (profile.companyUser?.email || (userRole === 'corporate-owner' ? ownerEmail : '') || '')
+      .trim()
+      .toLowerCase()
+
+    const cardLabel = profile.name?.trim() || profile.slug?.trim() || 'your card'
+    const actionLabel = action === 'paused' ? 'paused' : 'suspended'
+    const subject = `Your vCard has been ${actionLabel}`
+    const bodyText =
+      action === 'paused'
+        ? `Your card "${cardLabel}" has been paused by an administrator. It is no longer public and has been moved to draft. Please contact support to re-enable it.`
+        : `Your card "${cardLabel}" has been suspended by an administrator. It is disabled and counts toward your package capacity. Please contact support to restore access.`
+
+    let emailRecipients: string[] = []
+    let announcementEmails: string[] = []
+
+    if (isCorporate) {
+      emailRecipients = [...new Set([cardEmail, corporateOwnerEmail || ownerEmail].filter(Boolean))]
+      announcementEmails = [...new Set([corporateOwnerEmail || ownerEmail].filter(Boolean))]
+    } else {
+      emailRecipients = [...new Set([cardEmail || ownerEmail].filter(Boolean))]
+      announcementEmails = [...new Set([ownerEmail || cardEmail].filter(Boolean))]
+    }
+
+    const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${escapeHtml(bodyText)}</p></div>`
+
+    await Promise.all(
+      emailRecipients.map((email) =>
+        authUtils.sendEmail({ receiverMail: email, subject, html }).catch((err) => {
+          logger.error(`Failed to send card ${action} email`, email, err)
+        })
+      )
+    )
+
+    if (announcementEmails.length) {
+      try {
+        await announcementService.create(actor, {
+          type: 'warning',
+          kind: 'warning',
+          title: `Card ${actionLabel}: ${cardLabel}`,
+          body: bodyText,
+          status: 'active',
+          targetType: 'specific',
+          targetEmails: announcementEmails,
+          meta: { profileId: profile.id, action },
+        })
+      } catch (error) {
+        logger.error(`Failed to create card ${action} announcement`, error)
+      }
+    }
+  } catch (error) {
+    logger.error(`Failed to notify card ${action}`, error)
+  }
+}
 
 /** Controllers pass API roles (`super-admin`); tolerate Prisma enum values too. */
 const isAdminRole = (role: string) => isStaffRole(role) || role === 'ADMIN' || role === 'SUPER_ADMIN'
@@ -385,6 +507,24 @@ const getOwned = async (profileId: string, userId: string, role: string) => {
   return profile
 }
 
+const assertOwnerAccountCanMutateVcards = async (userId: string, role: string) => {
+  if (isAdminRole(role)) return
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { accountStatus: true, isActive: true, deletedAt: true },
+  })
+  if (!user || user.deletedAt) {
+    throw new AppError(403, 'Account is not available')
+  }
+  const status = user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED')
+  if (status === 'PAUSED') {
+    throw new AppError(403, 'Account is paused. You cannot create or edit vCards. Please contact support.')
+  }
+  if (status === 'SUSPENDED') {
+    throw new AppError(403, 'Account is suspended. Contact an administrator to restore access.')
+  }
+}
+
 const assertOwnerCanMutateCard = (profile: { status?: { name?: string | null } | null }, role: string) => {
   if (isAdminRole(role)) return
   if (normalizeCardStatusName(profile.status?.name) === 'suspended') {
@@ -393,6 +533,7 @@ const assertOwnerCanMutateCard = (profile: { status?: { name?: string | null } |
 }
 
 const getOwnedForWrite = async (profileId: string, userId: string, role: string) => {
+  await assertOwnerAccountCanMutateVcards(userId, role)
   const profile = await getOwned(profileId, userId, role)
   assertOwnerCanMutateCard(profile, role)
   return profile
@@ -503,6 +644,8 @@ const create = async (
   const actor = await prisma.user.findUnique({ where: { id: userId } })
   if (!actor) throw new AppError(404, 'User not found')
 
+  await assertOwnerAccountCanMutateVcards(userId, role)
+
   const {
     ownerUserId: requestedOwnerUserId,
     settings,
@@ -558,6 +701,7 @@ const create = async (
   }
 
   await assertCanCreateCard(capacityUserId, capacityRole)
+  await assertPhoneNotOnSuspendedCard(raw.phone as string | undefined)
 
   const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
   const draftStatus = await ensureStatusByName('draft')
@@ -641,6 +785,8 @@ const update = async (
   const staff = isAdminRole(role)
   const currentName = normalizeCardStatusName(owned.status?.name)
 
+  await assertOwnerAccountCanMutateVcards(userId, role)
+
   if (!staff && currentName === 'suspended') {
     throw new AppError(403, 'This card is suspended. Contact an administrator to restore access.')
   }
@@ -658,6 +804,11 @@ const update = async (
     profileData.slug = await ensureUniqueSlug(profileData.slug, profileId)
   }
 
+  if ('phone' in raw) {
+    const nextPhone = raw.phone === null || raw.phone === undefined || raw.phone === '' ? null : String(raw.phone)
+    await assertPhoneNotOnSuspendedCard(nextPhone, profileId)
+  }
+
   if (requestedStatus) {
     if (!isCardLifecycleStatus(requestedStatus)) {
       throw new AppError(400, 'Invalid card status')
@@ -672,8 +823,9 @@ const update = async (
     }
     const statusRow = await ensureStatusByName(requestedStatus)
     profileData.status = { connect: { id: statusRow.id } }
-    profileData.isDraft = false
-    profileData.isPublic = requestedStatus === 'active'
+    const flags = lifecycleStatusFlags(requestedStatus)
+    profileData.isDraft = flags.isDraft
+    profileData.isPublic = flags.isPublic
   }
 
   if ('isPublic' in raw && !requestedStatus) {
@@ -760,6 +912,16 @@ const update = async (
 
   const updated = await prisma.profile.findUniqueOrThrow({ where: { id: profileId }, include: profileInclude })
 
+  if (staff && (requestedStatus === 'paused' || requestedStatus === 'suspended') && requestedStatus !== currentName) {
+    const actor = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true },
+    })
+    if (actor) {
+      void notifyCardPausedOrSuspended(actor, profileId, requestedStatus)
+    }
+  }
+
   const themeTouched = Boolean(
     profileSettings &&
     (profileSettings.profileTemplate !== undefined ||
@@ -789,6 +951,7 @@ const update = async (
     'countryCode',
   ]
   const contactTouched = contactKeys.some((key) => key in raw)
+  const lifecycleStatusChange = Boolean(requestedStatus)
 
   if (themeTouched) {
     pushService.notifyProfileUpdate(profileId, {
@@ -802,7 +965,7 @@ const update = async (
       title: 'Contact info updated',
       body: `${updated.companyName || updated.name} updated their contact info.`,
     })
-  } else {
+  } else if (!lifecycleStatusChange) {
     pushService.notifyProfileUpdate(profileId, {
       type: 'business_hours',
       title: 'Profile updated',

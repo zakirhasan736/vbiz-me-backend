@@ -7,6 +7,7 @@ import SupportZodSchema from '../zodValidation/support.zod'
 const router = Router()
 
 router.use(authMiddleware.isAuthenticateUser)
+router.use(authMiddleware.requireNotSuspended)
 
 router.get('/support-tickets', supportController.list)
 router.post('/support-tickets', validSchema(SupportZodSchema.createSupportTicket), supportController.create)

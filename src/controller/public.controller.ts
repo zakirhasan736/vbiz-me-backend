@@ -119,6 +119,7 @@ const pushSubscribe = catchAsyncError(async (req, res) => {
     keys: { p256dh: string; auth: string }
     browser?: string
     platform?: string
+    preferences?: Parameters<typeof pushService.subscribe>[0]['preferences']
   }
   const data = await pushService.subscribe({
     ...body,

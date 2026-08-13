@@ -22,6 +22,7 @@ adminRouter.delete('/announcements/:id', announcementController.remove)
 const activeRouter = Router()
 
 activeRouter.use(authMiddleware.isAuthenticateUser)
+activeRouter.use(authMiddleware.requireNotSuspended)
 activeRouter.get('/active', announcementController.getActive)
 
 export { activeRouter as announcementActiveRoute, adminRouter as announcementAdminRoute }

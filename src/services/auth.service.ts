@@ -110,16 +110,7 @@ const login = async (body: ILoginBody): Promise<ILoginResult> => {
     throw new AppError(403, 'Account has been deleted')
   }
 
-  const status = user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED')
-  if (status === 'PAUSED') {
-    throw new AppError(403, 'Account is paused. Contact an administrator to reactivate.')
-  }
-  if (status === 'SUSPENDED') {
-    throw new AppError(403, 'Account is suspended. Contact an administrator to restore access.')
-  }
-  if (!user.isActive || status !== 'ACTIVE') {
-    throw new AppError(403, 'Account is deactivated')
-  }
+  // PAUSED and SUSPENDED users may still log in; API middleware gates their actions.
 
   const tokens = authUtils.issueTokens(user)
 
@@ -147,7 +138,7 @@ const refreshToken = async (userId: string): Promise<{ accessToken: string; refr
     throw new AppError(404, 'User not found')
   }
 
-  authUtils.assertActiveUser(user)
+  authUtils.assertCanAuthenticate(user)
 
   return authUtils.issueTokens(user)
 }
@@ -209,7 +200,7 @@ const updateUser = async (
     throw new AppError(404, 'User not found')
   }
 
-  authUtils.assertActiveUser(user)
+  authUtils.assertNotSuspended(user)
 
   if (viaSetupToken && user.password) {
     if (setupTokenId) {
@@ -391,7 +382,7 @@ const forgotPassword = async (body: IForgotPasswordBody): Promise<null> => {
     throw new AppError(400, 'Account is not verified!')
   }
 
-  authUtils.assertActiveUser(user)
+  authUtils.assertNotSuspended(user)
 
   if (!user.password) {
     await requirePasswordSetup(user)
@@ -440,6 +431,8 @@ const verifyForgotPassword = async (body: IVerifyForgotPasswordBody): Promise<IF
           email: true,
           password: true,
           isActive: true,
+          accountStatus: true,
+          deletedAt: true,
         },
       },
     },
@@ -455,7 +448,7 @@ const verifyForgotPassword = async (body: IVerifyForgotPasswordBody): Promise<IF
   }
 
   const { user } = resetToken
-  authUtils.assertActiveUser(user)
+  authUtils.assertNotSuspended(user)
 
   if (!user.password) {
     await prisma.forgotPasswordToken.deleteMany({ where: { userId: resetToken.userId } })
@@ -489,6 +482,8 @@ const resetPassword = async (body: IResetPasswordBody): Promise<null> => {
     throw new AppError(400, 'Invalid Session or Session Expired. Try again.')
   }
 
+  authUtils.assertNotSuspended(user)
+
   const hashedPassword = await authUtils.hashPassword(newPassword)
 
   await prisma.$transaction([
@@ -521,6 +516,8 @@ const changePassword = async (body: IChangePasswordBody, userId: string): Promis
   if (!user) {
     throw new AppError(404, 'Account not found!')
   }
+
+  authUtils.assertNotSuspended(user)
 
   if (!user.password) {
     throw new AppError(400, 'Password is not set for this account')
@@ -564,6 +561,8 @@ const deactivateAccount = async (userId: string): Promise<null> => {
   if (!user) {
     throw new AppError(404, 'Account not found')
   }
+
+  authUtils.assertNotSuspended(user)
 
   if (!user.isActive) {
     throw new AppError(400, 'Account is already deactivated')
@@ -618,10 +617,11 @@ const findOrCreateSocialUser = async (input: {
         name: user.name || input.name || null,
         avatar: user.avatar || input.avatar || null,
         isVerified: true,
-        isActive: true,
       },
     })
   }
+
+  authUtils.assertCanAuthenticate(user)
 
   const tokens = authUtils.issueTokens(user)
 
@@ -670,8 +670,10 @@ const requirePasswordSetup = async (user: {
   email: string
   provider: string
   isActive: boolean
+  accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+  deletedAt?: Date | null
 }): Promise<never> => {
-  authUtils.assertActiveUser(user)
+  authUtils.assertNotSuspended(user)
 
   try {
     await sendPasswordSetupEmail(user)
@@ -692,6 +694,8 @@ const verifyPasswordSetup = async (body: IVerifyPasswordSetupBody): Promise<IPas
           provider: true,
           password: true,
           isActive: true,
+          accountStatus: true,
+          deletedAt: true,
         },
       },
     },
@@ -707,7 +711,7 @@ const verifyPasswordSetup = async (body: IVerifyPasswordSetupBody): Promise<IPas
   }
 
   const { user } = setupToken
-  authUtils.assertActiveUser(user)
+  authUtils.assertNotSuspended(user)
 
   if (user.password) {
     await prisma.passwordSetupToken.deleteMany({ where: { userId: setupToken.userId } })
@@ -730,7 +734,7 @@ const resendPasswordSetupEmail = async (body: IResendPasswordSetupBody): Promise
     return null
   }
 
-  authUtils.assertActiveUser(user)
+  authUtils.assertNotSuspended(user)
 
   const result = await sendPasswordSetupEmail(user)
   if (!result.sent) {

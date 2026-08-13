@@ -1,6 +1,7 @@
 import type { Attachment, Setting } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { publicVisibleWhere } from '../utils/cardStatus'
+import { liveDashboardHub } from '../utils/liveDashboardHub'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 import profileService from './profile.service'
@@ -1094,7 +1095,7 @@ const saveGuestUser = async (
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
 
-  void import('../utils/liveDashboardHub').then((mod) => mod.liveDashboardHub.emitKpi('save')).catch(() => undefined)
+  liveDashboardHub.emitKpi('save')
 
   return {
     id: row.id,
@@ -1129,7 +1130,7 @@ const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; u
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
 
-  void import('../utils/liveDashboardHub').then((mod) => mod.liveDashboardHub.emitKpi('save')).catch(() => undefined)
+  liveDashboardHub.emitKpi('save')
 
   return {
     action_buttons: {
@@ -1251,7 +1252,7 @@ const trackEvent = async (
       where: { id: profile.id },
       data: { viewCount: { increment: 1 } },
     })
-    void import('../utils/liveDashboardHub').then((mod) => mod.liveDashboardHub.emitKpi('view')).catch(() => undefined)
+    liveDashboardHub.emitKpi('view')
   }
 
   if (eventType === 'social_click') {

@@ -8,6 +8,8 @@ const router = Router()
 router.get('/callback', canvaController.callback)
 
 router.use(authMiddleware.isAuthenticateUser)
+router.use(authMiddleware.requireNotSuspended)
+router.use(authMiddleware.requireVcardMutable)
 
 router.get('/status', canvaController.status)
 router.get('/authorize-url', canvaController.authorizeUrl)

@@ -36,10 +36,16 @@ router.post(
 router.put(
   '/change-password',
   authMiddleware.isAuthenticateUser,
+  authMiddleware.requireNotSuspended,
   validSchema(AuthZodSchema.changePassword),
   authController.changePassword
 )
-router.post('/deactivate', authMiddleware.isAuthenticateUser, authController.deactivateAccount)
+router.post(
+  '/deactivate',
+  authMiddleware.isAuthenticateUser,
+  authMiddleware.requireNotSuspended,
+  authController.deactivateAccount
+)
 router.patch(
   '/update',
   validSchema(AuthZodSchema.update),
