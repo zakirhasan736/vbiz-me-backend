@@ -1,7 +1,6 @@
 import app from './app'
 import seedCardTemplates from './bootstrap/seedCardTemplates'
 import seedPackages from './bootstrap/seedPackages'
-import seedSupportTickets from './bootstrap/seedSupportTickets'
 import config from './configs/config'
 import logger from './utils/logger'
 import { prisma } from './utils/prisma'
@@ -13,7 +12,6 @@ const main = async () => {
     // Starter packages must exist before corporate register can attach subscriptions.
     await seedPackages()
     await seedCardTemplates()
-    await seedSupportTickets()
 
     app.listen(config.PORT, () => {
       logger.info(`🔗 Database connected && server running on port ${config.PORT}`)
