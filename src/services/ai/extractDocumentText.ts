@@ -160,14 +160,52 @@ function extractAttributeText(html: string): string {
   }
 
   for (const attr of html.matchAll(
-    /\b(?:alt|aria-label|title|data-title|data-name|data-description)\s*=\s*["']([^"']{3,600})["']/gi
+    /\b(?:alt|aria-label|title|data-title|data-name|data-description|data-content|data-text|data-review|data-testimonial|data-comment|data-author|data-rating)\s*=\s*["']([^"']{3,900})["']/gi
   )) {
     chunks.push(attr[1])
   }
   return chunks.map(cleanText).filter(Boolean).join(' ')
 }
 
+function stripHtmlFragment(fragment: string): string {
+  return cleanText(
+    fragment
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+  )
+}
+
+function extractCarouselAndReviewBlocks(html: string): string {
+  const chunks: string[] = []
+  const seen = new Set<string>()
+  const marker =
+    /review|reviews|testimonial|testimonials|rating|ratings|feedback|client|swiper-slide|slick-slide|carousel-item|splide__slide|glide__slide/i
+  const blockRe = /<([a-z][\w:-]*)\b([^>]*)>([\s\S]*?)<\/\1>/gi
+
+  for (const match of html.matchAll(blockRe)) {
+    if (chunks.length >= 90) break
+    const attrs = match[2] || ''
+    if (!marker.test(attrs)) continue
+
+    const text = stripHtmlFragment(match[3] || '')
+    if (text.length < 20) continue
+
+    const key = text.toLowerCase().slice(0, 220)
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    const label = /review|testimonial|rating|feedback/i.test(`${attrs} ${text}`)
+      ? 'REVIEW_TESTIMONIAL_BLOCK'
+      : 'SLIDER_BLOCK'
+    chunks.push(`${label} ${chunks.length + 1}: ${text.slice(0, 1200)}`)
+  }
+
+  return chunks.join(' ')
+}
+
 function htmlToText(html: string): string {
+  const carouselBlocks = extractCarouselAndReviewBlocks(html)
   const embedded = extractEmbeddedDataText(html)
   const attributes = extractAttributeText(html)
   const visible = html
@@ -175,11 +213,11 @@ function htmlToText(html: string): string {
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
-  return cleanText([visible, attributes, embedded].filter(Boolean).join(' '))
+  return cleanText([carouselBlocks, visible, attributes, embedded].filter(Boolean).join(' '))
 }
 
 const SECTION_LINK_RE =
-  /(?:about|service|services|offer|product|portfolio|project|work|case.?stud|gallery|blog|news|article|post|faq|question|review|testimonial|client|contact|team|career|pricing|solution|detail|details)/i
+  /(?:about|service|services|offer|product|portfolio|project|work|case.?stud|gallery|blog|news|article|post|faq|question|review|testimonial|client|feedback|rating|contact|team|career|pricing|solution|detail|details|success|story|stories)/i
 
 function focusRe(focus?: string): RegExp | null {
   const key = String(focus || '').toLowerCase()
