@@ -1117,12 +1117,7 @@ const getDashboardStats = async (
       shares: 0,
       period,
       visitsChart: { total: 0, trendPercent: 0, points: buildDailyPoints(now, chartDays, new Map()) },
-      socialChannels: SOCIAL_CHANNELS.map((channel) => ({
-        channel,
-        label: SOCIAL_CHANNEL_LABELS[channel],
-        count: 0,
-        trendPercent: 0,
-      })),
+      socialChannels: [],
       recentEngagement: [] as Array<{
         id: string
         event: string
@@ -1184,6 +1179,12 @@ const getDashboardStats = async (
   const currentSocial = countDistinctGuestsByChannel(socialEvents)
   const prevSocial = countDistinctGuestsByChannel(prevSocialEvents)
   const shares = SOCIAL_CHANNELS.reduce((sum, channel) => sum + (currentSocial.get(channel) || 0), 0)
+  const socialChannels = SOCIAL_CHANNELS.map((channel) => ({
+    channel,
+    label: SOCIAL_CHANNEL_LABELS[channel],
+    count: currentSocial.get(channel) || 0,
+    trendPercent: since ? trendPercent(currentSocial.get(channel) || 0, prevSocial.get(channel) || 0) : 0,
+  })).filter((row) => row.count > 0)
 
   const totalViews = profiles.reduce((sum, p) => sum + p.viewCount, 0)
 
@@ -1202,12 +1203,7 @@ const getDashboardStats = async (
       trendPercent: since ? trendPercent(views, prevViews) : 0,
       points: visitsPoints,
     },
-    socialChannels: SOCIAL_CHANNELS.map((channel) => ({
-      channel,
-      label: SOCIAL_CHANNEL_LABELS[channel],
-      count: currentSocial.get(channel) || 0,
-      trendPercent: since ? trendPercent(currentSocial.get(channel) || 0, prevSocial.get(channel) || 0) : 0,
-    })),
+    socialChannels,
     recentEngagement: recentLogs.map((row) => {
       const payload = row.payload && typeof row.payload === 'object' ? (row.payload as Record<string, unknown>) : null
       return {

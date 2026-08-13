@@ -168,7 +168,7 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
     "pushNotifications": true, "emailNotifications": true
   }
 }
-Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, you MUST populate those arrays with multiple real items. Prefer accurate facts from the source; invent minimal professional placeholders only when needed to make a usable card. Dates as YYYY-MM-DD when known.
+Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, you MUST populate those arrays with multiple real items. For reviews/testimonials and any slider/carousel/list section, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture ALL distinct items present in the crawl or embedded JSON, not just the first visible slide. If there are many reviews, include every credible review up to 30 and preserve author names/ratings when available. Prefer accurate facts from the source; invent minimal professional placeholders only when needed to make a usable card. Dates as YYYY-MM-DD when known.
 enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal is present. Never put Global Connection or My Info in enabledTabs — the product pins those last automatically. Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, News/Blogs, Profile, Portfolio, Certifications/Licenses, FAQ).`
 
 export const TAB_CATALOG = [

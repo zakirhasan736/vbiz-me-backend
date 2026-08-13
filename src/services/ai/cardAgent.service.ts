@@ -90,8 +90,8 @@ export async function analyzeBusinessSources(input: {
   const catalog = TAB_CATALOG.map((t) => `${t.name} (navId=${t.navId}): ${t.description}`).join('\n')
 
   const raw = await chatJson<unknown>({
-    system: `You are the vBiz digital business card creation agent. Build a COMPLETE multi-tab vCard blueprint from the sources. When the crawl includes services, portfolio, blog, FAQ, or review pages, FILL those arrays with real extracted items (titles + descriptions). Prefer many concrete entries over empty arrays. Enable every tab that has content. Only use tabs from this catalog:\n${catalog}\n\n${BLUEPRINT_JSON_INSTRUCTION}`,
-    user: `Create a full vCard blueprint from these sources. Extract services, portfolio projects, blog posts, FAQs, and reviews whenever the text supports it.\n\n${parts.join('\n\n---\n\n')}`,
+    system: `You are the vBiz digital business card creation agent. Build a COMPLETE multi-tab vCard blueprint from the sources. When the crawl includes services, portfolio, blog, FAQ, or review pages, FILL those arrays with real extracted items (titles + descriptions). Treat labeled REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK text as separate carousel/list items. Prefer many concrete entries over empty arrays. Enable every tab that has content. Only use tabs from this catalog:\n${catalog}\n\n${BLUEPRINT_JSON_INSTRUCTION}`,
+    user: `Create a full vCard blueprint from these sources. Extract services, portfolio projects, blog posts, FAQs, and reviews whenever the text supports it. If reviews/testimonials/sliders are present, include every distinct item found up to 30, not only the first visible slide.\n\n${parts.join('\n\n---\n\n')}`,
     images,
   })
 
@@ -150,6 +150,7 @@ Rules:
 export async function fillSection(input: {
   section: string
   text?: string
+  websiteUrl?: string
   currentDraft?: string
   files?: UploadedPart[]
 }) {
@@ -162,13 +163,26 @@ export async function fillSection(input: {
   }
 
   const text = (input.text || '').trim()
+  const websiteUrl = (input.websiteUrl || '').trim()
   const files = input.files || []
-  if (!text && files.length === 0) {
-    throw new AppError(400, 'Provide text and/or files to fill this section.')
+  if (!text && !websiteUrl && files.length === 0) {
+    throw new AppError(400, 'Provide text, a website URL, and/or files to fill this section.')
   }
 
   const parts: string[] = []
   const images: Array<{ mimeType: string; base64: string }> = []
+  if (websiteUrl) {
+    try {
+      const crawled = await crawlWebsiteDeep(websiteUrl, section)
+      parts.push(
+        `WEBSITE URL: ${websiteUrl}\nFOCUSED SECTION: ${section}\nCRAWLED ${crawled.pages.length} PAGE(S):\n${crawled.combined}`
+      )
+    } catch (e) {
+      parts.push(
+        `WEBSITE URL: ${websiteUrl}\n(Could not re-crawl site for ${section}: ${e instanceof Error ? e.message : 'error'}.)`
+      )
+    }
+  }
   if (text) parts.push(`USER TEXT:\n${text}`)
   for (const file of files) {
     const extracted = await extractTextFromBuffer(file)
@@ -189,7 +203,7 @@ export async function fillSection(input: {
   }
 
   const payload = await chatJson<Record<string, unknown>>({
-    system: `You fill one vCard section from user materials (including OCR from images). Return ONLY JSON matching: ${schemaHint[section]}. Create multiple high-quality entries when the source supports it.`,
+    system: `You fill one vCard section from user materials, website crawls, embedded JSON, and OCR from images. Return ONLY JSON matching: ${schemaHint[section]}. Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. For reviews/testimonials and slider/carousel/list content, include all distinct credible items present in the source, up to 30. If the approved section is not supported by the sources, return an empty array/object for that section instead of inventing specific facts.`,
     user: `Fill section “${section}”.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nSources:\n${parts.join('\n\n---\n\n')}`,
     images,
   })

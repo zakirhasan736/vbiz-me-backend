@@ -3,7 +3,6 @@ import app from './app'
 import seedCardStatuses from './bootstrap/seedCardStatuses'
 import seedCardTemplates from './bootstrap/seedCardTemplates'
 import seedPackages from './bootstrap/seedPackages'
-import seedSupportTickets from './bootstrap/seedSupportTickets'
 import config from './configs/config'
 import logger from './utils/logger'
 import { prisma } from './utils/prisma'
@@ -17,7 +16,6 @@ const main = async () => {
     await seedPackages()
     await seedCardStatuses()
     await seedCardTemplates()
-    await seedSupportTickets()
 
     const httpServer = createServer(app)
     attachSocket(httpServer)
