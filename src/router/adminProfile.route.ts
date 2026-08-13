@@ -6,6 +6,7 @@ const router = Router()
 
 router.use(authMiddleware.isAuthenticateUser)
 
+router.get('/portfolio-members', adminProfileController.listPortfolioMembers)
 router.get('/profiles/filters', adminProfileController.filters)
 router.get('/profiles/export', adminProfileController.exportCsv)
 router.get('/profiles', adminProfileController.list)

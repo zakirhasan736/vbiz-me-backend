@@ -52,6 +52,21 @@ const parseCommaSeparatedList = (value?: string): string[] =>
     .map((item) => item.trim())
     .filter(Boolean) ?? []
 
+const frontendUrl = NODE_ENV === 'production' ? FRONTEND_URL : FRONTEND_URL || 'http://localhost:3000'
+const corsOrigins = parseCommaSeparatedList(CORS_ORIGINS)
+const allowedCorsOrigins = Array.from(
+  new Set(
+    [
+      frontendUrl,
+      ...corsOrigins,
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:5173',
+      'http://127.0.0.1:3000',
+    ].filter((origin): origin is string => Boolean(origin))
+  )
+)
+
 export default {
   NODE_ENV: NODE_ENV || 'development',
   PORT: PORT || '5000',
@@ -71,8 +86,9 @@ export default {
     SECRET: ACCESS_TOKEN_SECRET,
     EXPIRY: '1h',
   },
-  FRONTEND_URL: NODE_ENV === 'production' ? FRONTEND_URL : FRONTEND_URL || 'http://localhost:3000',
-  CORS_ORIGINS: parseCommaSeparatedList(CORS_ORIGINS),
+  FRONTEND_URL: frontendUrl,
+  CORS_ORIGINS: corsOrigins,
+  ALLOWED_CORS_ORIGINS: allowedCorsOrigins,
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_FONTS_API_KEY,

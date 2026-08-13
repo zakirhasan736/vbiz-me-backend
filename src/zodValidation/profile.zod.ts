@@ -25,7 +25,7 @@ const profileScopeQuery = z.object({
 const listProfilesQuery = z.object({
   scope: z.enum(['created']).optional(),
   q: z.string().trim().max(200).optional(),
-  status: z.enum(['all', 'active', 'inactive', 'suspended', 'draft']).optional().default('all'),
+  status: z.enum(['all', 'active', 'inactive', 'paused', 'suspended', 'draft']).optional().default('all'),
   sortBy: z.enum(['createdAt', 'updatedAt', 'name', 'viewCount']).default('updatedAt'),
   sortDir: z.enum(['asc', 'desc']).default('desc'),
   skip: z.coerce.number().int().min(0).default(0),

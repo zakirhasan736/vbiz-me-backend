@@ -1,5 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
+import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
 import { prisma } from '../utils/prisma'
 import type {
@@ -163,6 +164,10 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
   const status = input.status ?? 'active'
   const profileId = profileIdFromMeta(input.meta)
 
+  if (profileId) {
+    await assertAdminCanContactProfile(actor.id, profileId)
+  }
+
   const row = await prisma.$transaction(async (tx) => {
     if (status === 'active') {
       if (targetType === 'all') {
@@ -229,6 +234,11 @@ const update = async (id: string, actor: Actor, input: UpdateAnnouncementInput) 
 
   if (nextTargetType === 'specific' && nextEmails.length === 0) {
     throw new AppError(400, 'At least one target email is required when targetType is specific')
+  }
+
+  const profileId = profileIdFromMeta(input.meta ?? existing.meta)
+  if (profileId) {
+    await assertAdminCanContactProfile(actor.id, profileId)
   }
 
   const row = await prisma.$transaction(async (tx) => {

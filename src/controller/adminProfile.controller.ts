@@ -1,5 +1,6 @@
 import AppError from '../error/AppError'
 import adminProfileService from '../services/adminProfile.service'
+import profileService from '../services/profile.service'
 import catchAsyncError from '../utils/catchAsyncError'
 import sendResponse from '../utils/sendResponse'
 import AdminProfileZodSchema from '../zodValidation/adminProfile.zod'
@@ -8,6 +9,10 @@ import { assertModule } from '../utils/adminAccess'
 
 function assertVcardsAccess(user: Express.User) {
   assertModule(user.role, user.allowedModules, 'vcards')
+}
+
+function assertMycardsAccess(user: Express.User) {
+  assertModule(user.role, user.allowedModules, 'mycards')
 }
 
 const list = catchAsyncError(async (req, res) => {
@@ -36,10 +41,18 @@ const exportCsv = catchAsyncError(async (req, res) => {
   res.status(200).send(csv)
 })
 
+const listPortfolioMembers = catchAsyncError(async (req, res) => {
+  if (!req.user?.id || !req.user.role) throw new AppError(403, 'Unauthorized')
+  assertMycardsAccess(req.user)
+  const data = await profileService.listPortfolioMembers(req.user.id, req.user.role)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Portfolio members fetched', data })
+})
+
 const adminProfileController = {
   list,
   filters,
   exportCsv,
+  listPortfolioMembers,
 }
 
 export default adminProfileController

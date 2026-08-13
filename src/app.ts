@@ -9,18 +9,6 @@ import router from './router/index'
 import sendResponse from './utils/sendResponse'
 
 const app: Application = express()
-const allowedCorsOrigins = Array.from(
-  new Set(
-    [
-      config.FRONTEND_URL,
-      ...config.CORS_ORIGINS,
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:5173',
-      'http://127.0.0.1:3000',
-    ].filter((origin): origin is string => Boolean(origin))
-  )
-)
 
 app.use(helmet())
 app.use(cookieParser())
@@ -28,7 +16,7 @@ app.use(cookieParser())
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowedCorsOrigins.includes(origin)) {
+      if (!origin || config.ALLOWED_CORS_ORIGINS.includes(origin)) {
         callback(null, true)
         return
       }

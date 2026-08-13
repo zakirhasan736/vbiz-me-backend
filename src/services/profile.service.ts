@@ -5,6 +5,7 @@ import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
 import authUtils from '../utils/auth.utils'
+import { ensureStatusByName, isCardLifecycleStatus, normalizeCardStatusName } from '../utils/cardStatus'
 import {
   DASHBOARD_ALL_CHART_DAYS,
   SOCIAL_CHANNELS,
@@ -139,7 +140,7 @@ export type ProfileListScope = 'created' | undefined
 export type ListProfilesFilters = {
   scope?: ProfileListScope
   q?: string
-  status?: 'all' | 'active' | 'inactive' | 'suspended' | 'draft'
+  status?: 'all' | 'active' | 'inactive' | 'paused' | 'suspended' | 'draft'
   sortBy?: 'createdAt' | 'updatedAt' | 'name' | 'viewCount'
   sortDir?: 'asc' | 'desc'
   skip?: number
@@ -287,9 +288,22 @@ const buildListFiltersWhere = async (
   } else if (status === 'active') {
     where.isDraft = false
     where.isPublic = true
-  } else if (status === 'inactive' || status === 'suspended') {
+    where.NOT = {
+      status: { name: { in: ['paused', 'suspended', 'inactive', 'draft'], mode: 'insensitive' } },
+    }
+  } else if (status === 'inactive') {
     where.isDraft = false
-    where.isPublic = false
+    where.OR = [
+      { status: { name: { equals: 'inactive', mode: 'insensitive' } } },
+      {
+        isPublic: false,
+        NOT: { status: { name: { in: ['paused', 'suspended', 'draft'], mode: 'insensitive' } } },
+      },
+    ]
+  } else if (status === 'paused') {
+    where.status = { name: { equals: 'paused', mode: 'insensitive' } }
+  } else if (status === 'suspended') {
+    where.status = { name: { equals: 'suspended', mode: 'insensitive' } }
   }
 
   return where
@@ -368,6 +382,19 @@ const getOwned = async (profileId: string, userId: string, role: string) => {
     include: profileInclude,
   })
   if (!profile) throw new AppError(404, 'Profile not found')
+  return profile
+}
+
+const assertOwnerCanMutateCard = (profile: { status?: { name?: string | null } | null }, role: string) => {
+  if (isAdminRole(role)) return
+  if (normalizeCardStatusName(profile.status?.name) === 'suspended') {
+    throw new AppError(403, 'This card is suspended. Contact an administrator to restore access.')
+  }
+}
+
+const getOwnedForWrite = async (profileId: string, userId: string, role: string) => {
+  const profile = await getOwned(profileId, userId, role)
+  assertOwnerCanMutateCard(profile, role)
   return profile
 }
 
@@ -503,24 +530,37 @@ const create = async (
     if (!target) throw new AppError(404, 'Owner user not found')
 
     const targetApiRole = toApiRole(target.role)
-    if (targetApiRole !== 'vcard-owner' && targetApiRole !== 'corporate-owner') {
-      throw new AppError(400, 'Owner must be a single or corporate card owner')
-    }
     if (!target.isActive || target.accountStatus !== AccountStatus.ACTIVE) {
       throw new AppError(400, 'Owner account is not active')
     }
 
-    profileOwnerId = target.id
-    profileOwnerEmail = target.email
-    createdById = userId
-    companyUserId = targetApiRole === 'corporate-owner' ? target.id : undefined
-    capacityUserId = target.id
-    capacityRole = targetApiRole
+    if (isStaffRole(targetApiRole)) {
+      const portfolioIds = await resolveAdminPortfolioUserIds(userId, role)
+      if (!portfolioIds.includes(target.id)) {
+        throw new AppError(400, 'Owner must be you or a team member in your portfolio')
+      }
+      profileOwnerId = target.id
+      profileOwnerEmail = target.email
+      createdById = userId
+      companyUserId = userId
+      capacityUserId = userId
+      capacityRole = role
+    } else if (targetApiRole === 'vcard-owner' || targetApiRole === 'corporate-owner') {
+      profileOwnerId = target.id
+      profileOwnerEmail = target.email
+      createdById = userId
+      companyUserId = targetApiRole === 'corporate-owner' ? target.id : undefined
+      capacityUserId = target.id
+      capacityRole = targetApiRole
+    } else {
+      throw new AppError(400, 'Owner must be a single or corporate card owner')
+    }
   }
 
   await assertCanCreateCard(capacityUserId, capacityRole)
 
   const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
+  const draftStatus = await ensureStatusByName('draft')
   const profile = await prisma.profile.create({
     data: {
       userId: profileOwnerId,
@@ -539,6 +579,7 @@ const create = async (
       prof: raw.prof as string | undefined,
       dob: raw.dob ? new Date(String(raw.dob)) : undefined,
       template: (raw.template as string) || 'default',
+      statusId: draftStatus.id,
       isPublic: raw.isDraft === true ? false : raw.isPublic !== false,
       // New cards start as drafts until the owner activates / completes them.
       isDraft: raw.isDraft !== false,
@@ -596,10 +637,17 @@ const update = async (
     [key: string]: unknown
   }
 ) => {
-  await getOwned(profileId, userId, role)
-  // Strip non-Profile scalars / removed address fields before Prisma update
-  const { settings, profileSettings, city: _city, state: _state, zipCode: _zipCode, ...raw } = data
+  const owned = await getOwned(profileId, userId, role)
+  const staff = isAdminRole(role)
+  const currentName = normalizeCardStatusName(owned.status?.name)
+
+  if (!staff && currentName === 'suspended') {
+    throw new AppError(403, 'This card is suspended. Contact an administrator to restore access.')
+  }
+
+  const { settings, profileSettings, city: _city, state: _state, zipCode: _zipCode, status: rawStatus, ...raw } = data
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
+  const requestedStatus = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : undefined
 
   if ('dob' in raw) {
     const dobValue = raw.dob
@@ -610,13 +658,59 @@ const update = async (
     profileData.slug = await ensureUniqueSlug(profileData.slug, profileId)
   }
 
-  if ('isDraft' in raw) {
+  if (requestedStatus) {
+    if (!isCardLifecycleStatus(requestedStatus)) {
+      throw new AppError(400, 'Invalid card status')
+    }
+    if (!staff) {
+      if (requestedStatus === 'paused' || requestedStatus === 'suspended') {
+        throw new AppError(403, 'Only administrators can pause or suspend a card.')
+      }
+      if (currentName === 'paused' || currentName === 'suspended') {
+        throw new AppError(403, 'This card is locked by an administrator.')
+      }
+    }
+    const statusRow = await ensureStatusByName(requestedStatus)
+    profileData.status = { connect: { id: statusRow.id } }
+    profileData.isDraft = false
+    profileData.isPublic = requestedStatus === 'active'
+  }
+
+  if ('isPublic' in raw && !requestedStatus) {
+    const nextPublic = Boolean(raw.isPublic)
+    if (!staff && nextPublic && (currentName === 'paused' || currentName === 'suspended')) {
+      throw new AppError(403, 'This card is hidden by an administrator and cannot be made public.')
+    }
+    if (!staff) {
+      if (nextPublic && (currentName === 'inactive' || currentName === 'draft' || currentName === '')) {
+        const statusRow = await ensureStatusByName('active')
+        profileData.status = { connect: { id: statusRow.id } }
+        profileData.isDraft = false
+      } else if (!nextPublic && (currentName === 'active' || currentName === 'draft' || currentName === '')) {
+        const statusRow = await ensureStatusByName('inactive')
+        profileData.status = { connect: { id: statusRow.id } }
+        profileData.isDraft = false
+      }
+    }
+  }
+
+  if ('isDraft' in raw && !requestedStatus) {
     const nextDraft = Boolean(raw.isDraft)
     profileData.isDraft = nextDraft
     if (nextDraft) {
       profileData.isPublic = false
-    } else if (!('isPublic' in raw)) {
-      profileData.isPublic = true
+      if (currentName !== 'paused' && currentName !== 'suspended') {
+        const statusRow = await ensureStatusByName('draft')
+        profileData.status = { connect: { id: statusRow.id } }
+      }
+    } else if (currentName === 'paused' || currentName === 'suspended' || currentName === 'inactive') {
+      if (!('isPublic' in raw)) profileData.isPublic = false
+    } else {
+      if (!('isPublic' in raw)) profileData.isPublic = true
+      if (!('isPublic' in raw) || Boolean(raw.isPublic)) {
+        const statusRow = await ensureStatusByName('active')
+        profileData.status = { connect: { id: statusRow.id } }
+      }
     }
   }
 
@@ -720,7 +814,7 @@ const update = async (
 }
 
 const remove = async (profileId: string, userId: string, role: string) => {
-  await getOwned(profileId, userId, role)
+  await getOwnedForWrite(profileId, userId, role)
   await prisma.profile.delete({ where: { id: profileId } })
   return { id: profileId, deleted: true }
 }
@@ -746,7 +840,7 @@ const replaceCollection = async <T extends Record<string, unknown>>(
   items: T[],
   mapItem: (item: T) => Record<string, unknown>
 ) => {
-  await getOwned(profileId, userId, role)
+  await getOwnedForWrite(profileId, userId, role)
   const delegate = COLLECTION_DELEGATE[kind]
   await prisma.$transaction(async (tx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -840,7 +934,7 @@ const createPost = async (
     documents?: PostDocumentInput[]
   }
 ) => {
-  await getOwned(profileId, userId, role)
+  await getOwnedForWrite(profileId, userId, role)
   let postTypeId = input.postTypeId
   if (!postTypeId && input.postTypeName) {
     const existing = await prisma.postType.findFirst({
@@ -914,7 +1008,7 @@ const updatePost = async (
 ) => {
   const post = await prisma.post.findUnique({ where: { id: postId } })
   if (!post) throw new AppError(404, 'Post not found')
-  await getOwned(post.profileId, userId, role)
+  await getOwnedForWrite(post.profileId, userId, role)
 
   const primaryDocUrl = Array.isArray(data.documents)
     ? data.documents.find((d) => d?.url?.trim())?.url?.trim()
@@ -976,7 +1070,7 @@ const updatePost = async (
 const deletePost = async (postId: string, userId: string, role: string) => {
   const post = await prisma.post.findUnique({ where: { id: postId } })
   if (!post) throw new AppError(404, 'Post not found')
-  await getOwned(post.profileId, userId, role)
+  await getOwnedForWrite(post.profileId, userId, role)
   await prisma.post.update({ where: { id: postId }, data: { deletedAt: new Date(), status: '0' } })
   return { id: postId, deleted: true }
 }
@@ -2019,6 +2113,52 @@ const listPublicTeamNoticesForProfile = async (profileId: string): Promise<TeamN
   return rows.map(serializeTeamNotice)
 }
 
+export type PortfolioMemberRow = {
+  id: string
+  name: string | null
+  email: string
+  role: string
+  staffRole: string | null
+}
+
+const listPortfolioMembers = async (userId: string, role: string): Promise<PortfolioMemberRow[]> => {
+  const ids = await resolveAdminPortfolioUserIds(userId, role)
+  const rows = await prisma.user.findMany({
+    where: {
+      id: { in: ids },
+      deletedAt: null,
+      isActive: true,
+      accountStatus: AccountStatus.ACTIVE,
+      role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      staffRole: true,
+    },
+  })
+
+  const mapped = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: toApiRole(row.role),
+    staffRole: row.staffRole,
+  }))
+
+  mapped.sort((a, b) => {
+    if (a.id === userId) return -1
+    if (b.id === userId) return 1
+    const aLabel = (a.name || a.email).toLowerCase()
+    const bLabel = (b.name || b.email).toLowerCase()
+    return aLabel.localeCompare(bLabel)
+  })
+
+  return mapped
+}
+
 const profileService = {
   listForUser,
   listProfilesPage,
@@ -2050,6 +2190,7 @@ const profileService = {
   listSubscriptions,
   ensureUniqueSlug,
   checkSlugAvailability,
+  listPortfolioMembers,
 }
 
 export default profileService

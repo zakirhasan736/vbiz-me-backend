@@ -1,5 +1,6 @@
 import type { Attachment, Setting } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
+import { publicVisibleWhere } from '../utils/cardStatus'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 import profileService from './profile.service'
@@ -180,7 +181,7 @@ function toMediaBlock(
 
 async function getProfileBySlugOrThrow(slug: string) {
   const profile = await prisma.profile.findFirst({
-    where: { slug, isPublic: true },
+    where: { slug, ...publicVisibleWhere() },
     include: {
       gender: true,
       maritalStatus: true,
@@ -461,7 +462,7 @@ const getMyCardBySlug = async (slug: string) => {
 }
 
 const getPostTypesForProfile = async (profileId: string) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, isPublic: true } })
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicVisibleWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
 
   const settings = await prisma.setting.findMany({ where: { profileId } })
@@ -591,7 +592,7 @@ const getPostTypesForProfile = async (profileId: string) => {
 
 const getProfileSettings = async (profileId: string) => {
   const profile = await prisma.profile.findFirst({
-    where: { id: profileId, isPublic: true },
+    where: { id: profileId, ...publicVisibleWhere() },
     include: { profileSettings: true },
   })
   if (!profile) throw new AppError(404, 'Profile not found')
@@ -609,7 +610,7 @@ const getProfileSettings = async (profileId: string) => {
 
 const getProfileAiData = async (profileId: string) => {
   const profile = await prisma.profile.findFirst({
-    where: { id: profileId, isPublic: true },
+    where: { id: profileId, ...publicVisibleWhere() },
     include: {
       profession: true,
       education: { orderBy: { sortOrder: 'asc' } },
@@ -698,7 +699,7 @@ const getProfileAiData = async (profileId: string) => {
 }
 
 const getDynamicSection = async (sectionName: string, profileId: string) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, isPublic: true } })
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicVisibleWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
   const legacyId = profile.legacyId
 
@@ -932,7 +933,7 @@ const getPublicCards = async (query: {
   const page = Math.max(1, Number(query.page) || 1)
   const perPage = Math.min(50, Math.max(1, Number(query.per_page) || 12))
   const where = {
-    isPublic: true,
+    ...publicVisibleWhere(),
     slug: { not: null },
     ...(query.profession_id ? { professionId: query.profession_id } : {}),
     ...(query.search
@@ -1039,7 +1040,7 @@ const saveGuestUser = async (
     throw new AppError(400, 'full_name, phone, email, and profile_id are required')
   }
 
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, isPublic: true } })
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicVisibleWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
 
   let clientMeta: Record<string, unknown> = {}
@@ -1093,6 +1094,8 @@ const saveGuestUser = async (
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
 
+  void import('../utils/liveDashboardHub').then((mod) => mod.liveDashboardHub.emitKpi('save')).catch(() => undefined)
+
   return {
     id: row.id,
     full_name: row.fullName,
@@ -1107,7 +1110,7 @@ const saveGuestUser = async (
 }
 
 const saveNote = async (profileId: string, content: string) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, isPublic: true } })
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicVisibleWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
   const note = await prisma.userNote.create({
     data: { profileId, content },
@@ -1116,7 +1119,7 @@ const saveNote = async (profileId: string, content: string) => {
 }
 
 const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; userAgent?: string }) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, isPublic: true } })
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicVisibleWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
 
   await logEvent(
@@ -1125,6 +1128,8 @@ const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; u
     { profileId: profile.id, profileSlug: profile.slug, ownerName: profile.name },
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
+
+  void import('../utils/liveDashboardHub').then((mod) => mod.liveDashboardHub.emitKpi('save')).catch(() => undefined)
 
   return {
     action_buttons: {
@@ -1178,7 +1183,7 @@ const trackEvent = async (
   const profileId = input.profileId || input.profile_id
   const slug = input.slug || input.profile_slug
   const profile = await prisma.profile.findFirst({
-    where: profileId ? { id: profileId, isPublic: true } : { slug, isPublic: true },
+    where: profileId ? { id: profileId, ...publicVisibleWhere() } : { slug, ...publicVisibleWhere() },
     select: { id: true, slug: true },
   })
   if (!profile) throw new AppError(404, 'Profile not found')
@@ -1246,6 +1251,7 @@ const trackEvent = async (
       where: { id: profile.id },
       data: { viewCount: { increment: 1 } },
     })
+    void import('../utils/liveDashboardHub').then((mod) => mod.liveDashboardHub.emitKpi('view')).catch(() => undefined)
   }
 
   if (eventType === 'social_click') {

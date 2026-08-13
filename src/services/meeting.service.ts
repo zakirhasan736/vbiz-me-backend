@@ -1,5 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
+import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
@@ -191,8 +192,7 @@ const getOne = async (id: string) => {
 
 const create = async (actor: Actor, input: CreateMeetingInput) => {
   if (input.profileId) {
-    const profile = await prisma.profile.findUnique({ where: { id: input.profileId }, select: { id: true } })
-    if (!profile) throw new AppError(404, 'Profile not found')
+    await assertAdminCanContactProfile(actor.id, input.profileId)
   }
 
   const status = input.status ?? 'Scheduled'
@@ -266,8 +266,7 @@ const update = async (id: string, actor: Actor, input: UpdateMeetingInput) => {
   if (!existing) throw new AppError(404, 'Meeting not found')
 
   if (input.profileId) {
-    const profile = await prisma.profile.findUnique({ where: { id: input.profileId }, select: { id: true } })
-    if (!profile) throw new AppError(404, 'Profile not found')
+    await assertAdminCanContactProfile(actor.id, input.profileId)
   }
 
   const nextDate = input.date ?? existing.date
