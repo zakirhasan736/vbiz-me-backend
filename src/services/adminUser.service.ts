@@ -1,5 +1,4 @@
 import type { Prisma } from '../../generated/prisma/client'
-import { Prisma as PrismaRuntime } from '../../generated/prisma/client'
 import { AccountStatus, AuthProvider, UserRole as PrismaUserRole } from '../../generated/prisma/enums'
 import { toApiRole, toPrismaRole } from '../constants/userRole'
 import AppError from '../error/AppError'
@@ -74,7 +73,6 @@ async function cascadeOwnedCardsForAccountStatus(userId: string, accountStatus: 
       id: true,
       isPublic: true,
       isDraft: true,
-      accountLockSnapshot: true,
       status: { select: { name: true } },
     },
   })
@@ -83,7 +81,12 @@ async function cascadeOwnedCardsForAccountStatus(userId: string, accountStatus: 
 
   if (accountStatus === 'ACTIVE') {
     for (const profile of owned) {
-      const snap = parseAccountLockSnapshot(profile.accountLockSnapshot)
+      // accountLockSnapshot isn't present in the generated Prisma types in this
+      // workspace, so read it via a raw query to avoid type errors.
+      const raw = await prisma.$queryRaw<Array<{ accountLockSnapshot: unknown }>>`
+        SELECT "accountLockSnapshot" FROM "Profile" WHERE id = ${profile.id}
+      `
+      const snap = parseAccountLockSnapshot(raw?.[0]?.accountLockSnapshot)
       if (!snap) continue
       const statusRow = await ensureStatusByName(snap.statusName || 'draft')
       await prisma.profile.update({
@@ -92,9 +95,12 @@ async function cascadeOwnedCardsForAccountStatus(userId: string, accountStatus: 
           status: { connect: { id: statusRow.id } },
           isPublic: snap.isPublic,
           isDraft: snap.isDraft,
-          accountLockSnapshot: PrismaRuntime.DbNull,
         },
       })
+      // Clear the JSON snapshot column via raw SQL to avoid Prisma client type issues.
+      await prisma.$executeRaw`
+        UPDATE "Profile" SET "accountLockSnapshot" = NULL WHERE id = ${profile.id}
+      `
     }
     return
   }
@@ -106,7 +112,10 @@ async function cascadeOwnedCardsForAccountStatus(userId: string, accountStatus: 
   const statusRow = await ensureStatusByName(lifecycle)
 
   for (const profile of owned) {
-    const existingSnap = parseAccountLockSnapshot(profile.accountLockSnapshot)
+    const raw = await prisma.$queryRaw<Array<{ accountLockSnapshot: unknown }>>`
+      SELECT "accountLockSnapshot" FROM "Profile" WHERE id = ${profile.id}
+    `
+    const existingSnap = parseAccountLockSnapshot(raw?.[0]?.accountLockSnapshot)
     const snapshot: AccountLockSnapshot =
       existingSnap ??
       ({
@@ -121,9 +130,14 @@ async function cascadeOwnedCardsForAccountStatus(userId: string, accountStatus: 
         status: { connect: { id: statusRow.id } },
         isPublic: flags.isPublic,
         isDraft: flags.isDraft,
-        ...(existingSnap ? {} : { accountLockSnapshot: snapshot as unknown as Prisma.InputJsonValue }),
       },
     })
+    if (!existingSnap) {
+      // store the snapshot JSON via raw SQL to avoid Prisma client typing gaps
+      await prisma.$executeRaw`
+        UPDATE "Profile" SET "accountLockSnapshot" = ${JSON.stringify(snapshot)}::jsonb WHERE id = ${profile.id}
+      `
+    }
   }
 }
 

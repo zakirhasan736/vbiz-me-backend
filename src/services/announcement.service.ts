@@ -12,6 +12,7 @@ import type {
   ListAnnouncementsQuery,
   UpdateAnnouncementInput,
 } from '../zodValidation/announcement.zod'
+import pushService from './push.service'
 
 type Actor = { id: string; email: string; name?: string | null }
 
@@ -211,6 +212,59 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
     actorId: actor.id,
     meta: { announcementId: row.id, kind, type, status, targetType, profileId: profileId || '' },
   })
+
+  // Background: if admin requested push delivery (via meta), send push notifications.
+  try {
+    const meta = input.meta ?? {}
+    const wantsPush =
+      typeof meta === 'object' &&
+      meta !== null &&
+      ('sendPush' in meta || (meta.sendTo && String(meta.sendTo).includes('push')))
+
+    if (wantsPush) {
+      void (async () => {
+        try {
+          const profileIds = new Set<string>()
+
+          // If targeted to specific emails, resolve profiles by email
+          if (targetType === 'specific' && targetEmails.length) {
+            for (const e of targetEmails) {
+              const p = await prisma.profile.findFirst({ where: { email: e }, select: { id: true } })
+              if (p) profileIds.add(p.id)
+            }
+          }
+
+          // If meta contains a profileId (explicit card owner), include it
+          if (profileId) profileIds.add(profileId)
+
+          // If global, send to all profiles that have active push subscriptions
+          if (targetType === 'all') {
+            const subs = await prisma.pushSubscription.findMany({
+              where: { isActive: true },
+              select: { profileId: true },
+            })
+            for (const s of subs) profileIds.add(s.profileId)
+          }
+
+          const payloadPartial = {
+            title: row.title || defaultTitle(row.type as AnnouncementType),
+            body: row.body,
+            type: 'announcement_updates',
+          }
+
+          for (const pid of profileIds) {
+            await pushService.sendToProfile(pid, payloadPartial)
+          }
+        } catch (err) {
+          // swallow background errors
+          // eslint-disable-next-line no-console
+          console.error('Announcement push broadcast failed', err)
+        }
+      })()
+    }
+  } catch {
+    /* ignore */
+  }
 
   return serializeAnnouncement(row)
 }
