@@ -90,7 +90,7 @@ router.post(
     sendResponse(res, {
       success: true,
       statusCode: 200,
-      message: 'Section filled',
+      message: data.message || 'Section filled',
       data,
     })
   })

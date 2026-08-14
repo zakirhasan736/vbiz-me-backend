@@ -1,6 +1,14 @@
 import { z } from 'zod'
 import AppError from '../../error/AppError'
-import { BLUEPRINT_JSON_INSTRUCTION, TAB_CATALOG, cardBlueprintSchema } from './cardBlueprint.schema'
+import {
+  BLUEPRINT_JSON_INSTRUCTION,
+  FILL_SECTION_SCHEMA_HINTS,
+  TAB_CATALOG,
+  cardBlueprintSchema,
+  countFillEntries,
+  fillSectionSchemas,
+  type FillSectionId,
+} from './cardBlueprint.schema'
 import { crawlWebsiteDeep, extractTextFromBuffer, type UploadedPart } from './extractDocumentText'
 import { chatJson, getOpenAiApiKey } from './openai.client'
 
@@ -44,6 +52,31 @@ function resolveCatalogTab(tab?: string, navId?: string) {
 
 function ensureOpenAiConfigured() {
   getOpenAiApiKey()
+}
+
+function coerceServiceTypes(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw
+  const obj = raw as Record<string, unknown>
+  if (!Array.isArray(obj.services)) return raw
+  const allowed = new Set(['Web Development', 'App Design', 'SEO', 'Marketing', 'Other'])
+  return {
+    ...obj,
+    services: obj.services.map((row) => {
+      if (!row || typeof row !== 'object') return row
+      const s = row as Record<string, unknown>
+      const typeRaw = String(s.type || '').trim()
+      let type = 'Other'
+      if (allowed.has(typeRaw)) type = typeRaw
+      else {
+        const lower = typeRaw.toLowerCase()
+        if (/web|frontend|backend|full.?stack/.test(lower)) type = 'Web Development'
+        else if (/app|mobile|ios|android|ui.?ux/.test(lower)) type = 'App Design'
+        else if (/seo|search/.test(lower)) type = 'SEO'
+        else if (/market|ads|social|brand/.test(lower)) type = 'Marketing'
+      }
+      return { ...s, type }
+    }),
+  }
 }
 
 export async function analyzeBusinessSources(input: {
@@ -95,7 +128,7 @@ export async function analyzeBusinessSources(input: {
     images,
   })
 
-  const blueprint = cardBlueprintSchema.parse(raw)
+  const blueprint = cardBlueprintSchema.parse(coerceServiceTypes(raw))
   return {
     blueprint,
     businessSummary: blueprint.businessSummary,
@@ -161,6 +194,7 @@ export async function fillSection(input: {
   if (!SECTIONS.includes(section as CardAgentSection)) {
     throw new AppError(400, `Unsupported section. Use one of: ${SECTIONS.join(', ')}`)
   }
+  const sectionId = section as FillSectionId
 
   const text = (input.text || '').trim()
   const websiteUrl = (input.websiteUrl || '').trim()
@@ -190,23 +224,40 @@ export async function fillSection(input: {
     images.push(...extracted.images)
   }
 
-  const schemaHint: Record<string, string> = {
-    services: `{ "services": [{ "title": "", "description": "", "url": "" }] }`,
-    blogs: `{ "blogs": [{ "title": "", "description": "", "category": "News" }] }`,
-    portfolio: `{ "portfolio": [{ "title": "", "description": "", "url": "" }] }`,
-    reviews: `{ "reviews": [{ "author": "", "text": "", "rating": 5 }] }`,
-    skills: `{ "skills": [{ "type": "Core", "skills": [""] }] }`,
-    education: `{ "education": [{ "institute": "", "degree": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
-    experience: `{ "experience": [{ "company": "", "jobTitle": "", "description": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
-    faqs: `{ "faqs": [{ "question": "", "answer": "" }] }`,
-    personal: `{ "personal": { "fullName": "", "email": "", "phone": "", "designation": "", "company": "", "about": "", "website": "", "address": "" }, "socialHandles": {} }`,
+  const schemaHint = FILL_SECTION_SCHEMA_HINTS[sectionId]
+  let raw: unknown
+  try {
+    raw = await chatJson<unknown>({
+      system: `You fill one vCard section from user materials, website crawls, embedded JSON, and OCR from images. Return ONLY JSON matching: ${schemaHint}. Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. For reviews/testimonials and slider/carousel/list content, include all distinct credible items present in the source, up to 30. If the requested section is not supported by the sources, return an empty array/object for that section instead of inventing specific facts. For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other.`,
+      user: `Fill section “${section}”.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nSources:\n${parts.join('\n\n---\n\n')}`,
+      images,
+    })
+  } catch (e) {
+    throw new AppError(
+      502,
+      e instanceof Error ? e.message : 'AI failed to generate section content. Try again with clearer material.',
+      { code: 'AI_FILL_FAILED' }
+    )
   }
 
-  const payload = await chatJson<Record<string, unknown>>({
-    system: `You fill one vCard section from user materials, website crawls, embedded JSON, and OCR from images. Return ONLY JSON matching: ${schemaHint[section]}. Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. For reviews/testimonials and slider/carousel/list content, include all distinct credible items present in the source, up to 30. If the approved section is not supported by the sources, return an empty array/object for that section instead of inventing specific facts.`,
-    user: `Fill section “${section}”.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nSources:\n${parts.join('\n\n---\n\n')}`,
-    images,
-  })
+  const schema = fillSectionSchemas[sectionId]
+  let payload: Record<string, unknown>
+  try {
+    const coerced = sectionId === 'services' ? coerceServiceTypes(raw) : raw
+    payload = schema.parse(coerced) as Record<string, unknown>
+  } catch {
+    throw new AppError(
+      502,
+      'AI returned an invalid structure for this section. Try again or paste the content as text.',
+      { code: 'AI_FILL_INVALID' }
+    )
+  }
 
-  return { section, payload }
+  const count = countFillEntries(sectionId, payload)
+  const message =
+    count === 0
+      ? `No ${section} found in the provided sources. Try a clearer document, image, or paste the list as text.`
+      : undefined
+
+  return { section: sectionId, payload, ...(message ? { message } : {}), count }
 }
