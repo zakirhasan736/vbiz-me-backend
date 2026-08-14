@@ -170,7 +170,7 @@ const list = async (query: ListMeetingsQuery) => {
     prisma.meeting.count({ where }),
     prisma.meeting.findMany({
       where,
-      orderBy: { startsAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
     }),

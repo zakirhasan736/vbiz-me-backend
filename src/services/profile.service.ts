@@ -155,6 +155,64 @@ const notifyCardPausedOrSuspended = async (
   }
 }
 
+/** Inbox-only (navbar/push) notice when admin resumes a locked card. */
+const notifyCardActivated = async (actor: LifecycleNotifyActor, profileId: string) => {
+  try {
+    const profile = await prisma.profile.findUnique({
+      where: { id: profileId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        email: true,
+        userId: true,
+        companyUserId: true,
+        user: { select: { email: true, name: true, role: true } },
+        companyUser: { select: { email: true, name: true, role: true } },
+      },
+    })
+    if (!profile) return
+
+    const userRole = profile.user?.role ? toApiRole(profile.user.role) : null
+    const companyRole = profile.companyUser?.role ? toApiRole(profile.companyUser.role) : null
+    const isCorporate = companyRole === 'corporate-owner' || userRole === 'corporate-owner'
+
+    const cardEmail = profile.email?.trim().toLowerCase() || ''
+    const ownerEmail = (profile.user?.email || '').trim().toLowerCase()
+    const corporateOwnerEmail = (profile.companyUser?.email || (userRole === 'corporate-owner' ? ownerEmail : '') || '')
+      .trim()
+      .toLowerCase()
+
+    const announcementEmails = isCorporate
+      ? [...new Set([corporateOwnerEmail || ownerEmail].filter(Boolean))]
+      : [...new Set([ownerEmail || cardEmail].filter(Boolean))]
+
+    if (!announcementEmails.length) return
+
+    const cardLabel = profile.name?.trim() || profile.slug?.trim() || 'your card'
+    const bodyText = `Your card "${cardLabel}" has been reactivated by an administrator and is public again.`
+
+    await announcementService.archiveLockNotices({ profileId: profile.id })
+
+    try {
+      await announcementService.create(actor, {
+        type: 'success',
+        kind: 'announcement',
+        title: `Card resumed: ${cardLabel}`,
+        body: bodyText,
+        status: 'active',
+        targetType: 'specific',
+        targetEmails: announcementEmails,
+        meta: { profileId: profile.id, action: 'activated', channel: 'inbox', sendPush: '1' },
+      })
+    } catch (error) {
+      logger.error('Failed to create card activated announcement', error)
+    }
+  } catch (error) {
+    logger.error('Failed to notify card activated', error)
+  }
+}
+
 /** Controllers pass API roles (`super-admin`); tolerate Prisma enum values too. */
 const isAdminRole = (role: string) => isStaffRole(role) || role === 'ADMIN' || role === 'SUPER_ADMIN'
 
@@ -833,16 +891,10 @@ const update = async (
     if (!staff && nextPublic && (currentName === 'paused' || currentName === 'suspended')) {
       throw new AppError(403, 'This card is hidden by an administrator and cannot be made public.')
     }
-    if (!staff) {
-      if (nextPublic && (currentName === 'inactive' || currentName === 'draft' || currentName === '')) {
-        const statusRow = await ensureStatusByName('active')
-        profileData.status = { connect: { id: statusRow.id } }
-        profileData.isDraft = false
-      } else if (!nextPublic && (currentName === 'active' || currentName === 'draft' || currentName === '')) {
-        const statusRow = await ensureStatusByName('inactive')
-        profileData.status = { connect: { id: statusRow.id } }
-        profileData.isDraft = false
-      }
+    if (currentName !== 'paused' && currentName !== 'suspended') {
+      const statusRow = await ensureStatusByName(nextPublic ? 'active' : 'inactive')
+      profileData.status = { connect: { id: statusRow.id } }
+      profileData.isDraft = false
     }
   }
 
@@ -912,13 +964,17 @@ const update = async (
 
   const updated = await prisma.profile.findUniqueOrThrow({ where: { id: profileId }, include: profileInclude })
 
-  if (staff && (requestedStatus === 'paused' || requestedStatus === 'suspended') && requestedStatus !== currentName) {
+  if (staff && requestedStatus && requestedStatus !== currentName) {
     const actor = await prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, email: true, name: true },
     })
     if (actor) {
-      void notifyCardPausedOrSuspended(actor, profileId, requestedStatus)
+      if (requestedStatus === 'paused' || requestedStatus === 'suspended') {
+        void notifyCardPausedOrSuspended(actor, profileId, requestedStatus)
+      } else if (requestedStatus === 'active' && (currentName === 'paused' || currentName === 'suspended')) {
+        void notifyCardActivated(actor, profileId)
+      }
     }
   }
 
@@ -2127,6 +2183,22 @@ const listTeamNotices = async (userId: string): Promise<TeamNoticeRow[]> => {
   return rows.map(serializeTeamNotice)
 }
 
+/** Personal ownership only — never use admin getOwned bypass for public TeamNotices. */
+const assertPersonallyOwnsProfile = async (profileId: string, userId: string) => {
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { id: true, userId: true, companyUserId: true },
+  })
+  if (!profile) throw new AppError(404, 'Profile not found')
+  if (profile.userId !== userId && profile.companyUserId !== userId) {
+    throw new AppError(403, 'You can only publish public notices on cards you personally own')
+  }
+  return profile
+}
+
+const isOwnerOrCorporateRole = (role: string) =>
+  role === 'vcard-owner' || role === 'corporate-owner' || role === 'VCARD_OWNER' || role === 'CORPORATE_OWNER'
+
 const createTeamNotice = async (
   userId: string,
   role: string,
@@ -2137,11 +2209,8 @@ const createTeamNotice = async (
     targetProfileId?: string
   }
 ): Promise<TeamNoticeRow> => {
-  // Public card notices are owner/corporate only — admins use targeted Announcements for back office.
-  if (isStaffRole(role) || role === 'ADMIN' || role === 'SUPER_ADMIN') {
-    throw new AppError(403, 'Staff cannot create public card notices. Use admin announcements for back-office notices.')
-  }
-  if (role !== 'vcard-owner' && role !== 'corporate-owner' && role !== 'VCARD_OWNER' && role !== 'CORPORATE_OWNER') {
+  const staff = isAdminRole(role)
+  if (!staff && !isOwnerOrCorporateRole(role)) {
     throw new AppError(403, 'Only card owners can publish card notices')
   }
 
@@ -2157,7 +2226,14 @@ const createTeamNotice = async (
   }
 
   if (targetProfileId) {
-    await getOwned(targetProfileId, userId, role)
+    // Staff: only personally owned cards (My Cards). Owners: normal getOwned.
+    if (staff) {
+      await assertPersonallyOwnsProfile(targetProfileId, userId)
+    } else {
+      await getOwned(targetProfileId, userId, role)
+    }
+  } else if (staff) {
+    throw new AppError(403, 'Staff can only publish public notices on a specific card they own')
   }
 
   if (input.audience === 'savers') {
@@ -2229,19 +2305,22 @@ const createTeamNotice = async (
 }
 
 const deleteTeamNotice = async (userId: string, role: string, noticeId: string) => {
-  if (isStaffRole(role) || role === 'ADMIN' || role === 'SUPER_ADMIN') {
-    throw new AppError(403, 'Staff cannot delete public card notices')
-  }
-
   const existing = await prisma.teamNotice.findFirst({
     where: { id: noticeId },
     select: { id: true, ownerId: true, targetProfileId: true },
   })
   if (!existing) throw new AppError(404, 'Notice not found')
 
-  if (existing.ownerId !== userId) {
+  if (existing.ownerId === userId) {
+    // Creator may always delete their own notice.
+  } else if (isAdminRole(role)) {
+    // Staff may delete only when they personally own the target card.
     if (!existing.targetProfileId) throw new AppError(403, 'Not allowed to delete this notice')
+    await assertPersonallyOwnsProfile(existing.targetProfileId, userId)
+  } else if (existing.targetProfileId) {
     await getOwned(existing.targetProfileId, userId, role)
+  } else {
+    throw new AppError(403, 'Not allowed to delete this notice')
   }
 
   await prisma.teamNotice.delete({ where: { id: noticeId } })

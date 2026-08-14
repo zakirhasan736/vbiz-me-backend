@@ -1,3 +1,4 @@
+import announcementService from '../services/announcement.service'
 import publicCardService from '../services/publicCard.service'
 import pushService from '../services/push.service'
 import catchAsyncError from '../utils/catchAsyncError'
@@ -22,6 +23,11 @@ const getPostTypes = catchAsyncError(async (req, res) => {
 
 const getSettings = catchAsyncError(async (req, res) => {
   const data = await publicCardService.getProfileSettings(param(req.params.id))
+  sendPublicResponse(res, { success: true, data })
+})
+
+const getProfileAnnouncement = catchAsyncError(async (req, res) => {
+  const data = await announcementService.getActiveForPublicCard(param(req.params.id))
   sendPublicResponse(res, { success: true, data })
 })
 
@@ -191,6 +197,7 @@ const publicController = {
   getMyCard,
   getPostTypes,
   getSettings,
+  getProfileAnnouncement,
   getAiData,
   getDynamicSection,
   getPublicCards,

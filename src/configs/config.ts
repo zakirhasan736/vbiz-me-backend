@@ -14,6 +14,9 @@ const {
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_FONTS_API_KEY,
+  GOOGLE_CALENDAR_CLIENT_ID,
+  GOOGLE_CALENDAR_CLIENT_SECRET,
+  GOOGLE_CALENDAR_REDIRECT_URI,
   GOOGLE_CALENDAR_REFRESH_TOKEN,
   GOOGLE_CALENDAR_ID,
   GOOGLE_CALENDAR_TIMEZONE,
@@ -44,6 +47,9 @@ const {
   CANVA_REDIRECT_URI,
   CANVA_TOKEN_ENCRYPTION_KEY,
   CANVA_SCOPES,
+  BIRTHDAY_CRON_ENABLED,
+  BIRTHDAY_CRON_TZ,
+  BIRTHDAY_CRON_EXPR,
 } = process.env
 
 const parseCommaSeparatedList = (value?: string): string[] =>
@@ -93,6 +99,9 @@ export default {
   GOOGLE_CLIENT_SECRET,
   GOOGLE_FONTS_API_KEY,
   GOOGLE_CALENDAR: {
+    CLIENT_ID: (GOOGLE_CALENDAR_CLIENT_ID || '').trim() || undefined,
+    CLIENT_SECRET: (GOOGLE_CALENDAR_CLIENT_SECRET || '').trim() || undefined,
+    REDIRECT_URI: (GOOGLE_CALENDAR_REDIRECT_URI || '').trim() || undefined,
     REFRESH_TOKEN: (GOOGLE_CALENDAR_REFRESH_TOKEN || '').trim() || undefined,
     CALENDAR_ID: (GOOGLE_CALENDAR_ID || 'primary').trim(),
     TIMEZONE: (GOOGLE_CALENDAR_TIMEZONE || 'UTC').trim(),
@@ -129,4 +138,9 @@ export default {
   CANVA_REDIRECT_URI,
   CANVA_TOKEN_ENCRYPTION_KEY,
   CANVA_SCOPES,
+  BIRTHDAY_CRON: {
+    ENABLED: (BIRTHDAY_CRON_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
+    TZ: (BIRTHDAY_CRON_TZ || 'Asia/Dhaka').trim() || 'Asia/Dhaka',
+    EXPR: (BIRTHDAY_CRON_EXPR || '0 9 * * *').trim() || '0 9 * * *',
+  },
 }

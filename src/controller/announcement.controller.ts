@@ -73,15 +73,17 @@ const clearLive = catchAsyncError(async (req, res) => {
 const getActive = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const actor = await resolveActor(req.user.id)
-  const data = await announcementService.getActiveForUser({
+  const { banner, inbox } = await announcementService.getActiveForUser({
     email: actor.email,
     role: req.user.role,
   })
-  sendResponse(res, {
+  res.setHeader('Cache-Control', 'no-store')
+  res.status(200).json({
     success: true,
     statusCode: 200,
-    message: data ? 'Active announcement fetched' : 'No active announcement',
-    data,
+    message: banner || inbox.length ? 'Active announcement fetched' : 'No active announcement',
+    data: banner,
+    inbox,
   })
 })
 

@@ -211,6 +211,38 @@ async function notifyAccountPausedOrSuspended(
   }
 }
 
+async function notifyAccountActivated(
+  actor: ActorContext,
+  user: { id: string; email: string; name: string | null; role: PrismaUserRole }
+): Promise<void> {
+  try {
+    const ownerEmail = user.email.trim().toLowerCase()
+    if (!ownerEmail) return
+
+    await announcementService.archiveLockNotices({ userId: user.id })
+
+    await announcementService.create(
+      {
+        id: actor.actorId,
+        email: actor.actorEmail || 'admin',
+        name: actor.actorName,
+      },
+      {
+        type: 'success',
+        kind: 'announcement',
+        title: 'Account activated',
+        body: 'Your account has been reactivated by an administrator. Your vCards have been restored to their previous state.',
+        status: 'active',
+        targetType: 'specific',
+        targetEmails: [ownerEmail],
+        meta: { userId: user.id, action: 'activated', channel: 'inbox', sendPush: '1' },
+      }
+    )
+  } catch (error) {
+    logger.error('Failed to notify account activated', error)
+  }
+}
+
 function buildWhere(query: ListAdminUsersQuery): Prisma.UserWhereInput {
   const where: Prisma.UserWhereInput = {
     deletedAt: null,
@@ -466,6 +498,14 @@ const setStatus = async (id: string, body: SetAdminUserStatusBody, actor: ActorC
 
   if ((nextStatus === 'PAUSED' || nextStatus === 'SUSPENDED') && previousStatus !== nextStatus) {
     void notifyAccountPausedOrSuspended(actor, user, nextStatus === 'PAUSED' ? 'paused' : 'suspended')
+  }
+
+  if (
+    nextStatus === 'ACTIVE' &&
+    previousStatus !== nextStatus &&
+    (previousStatus === 'PAUSED' || previousStatus === 'SUSPENDED')
+  ) {
+    void notifyAccountActivated(actor, user)
   }
 
   await writeAuditLog({

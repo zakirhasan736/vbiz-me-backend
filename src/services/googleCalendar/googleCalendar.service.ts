@@ -20,19 +20,23 @@ export type CalendarMeetingResult = {
 }
 
 function isConfigured(): boolean {
-  return Boolean(config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET && config.GOOGLE_CALENDAR.REFRESH_TOKEN)
+  return Boolean(
+    config.GOOGLE_CALENDAR.CLIENT_ID && config.GOOGLE_CALENDAR.CLIENT_SECRET && config.GOOGLE_CALENDAR.REFRESH_TOKEN
+  )
 }
 
 async function getAccessToken(): Promise<string | null> {
   if (!isConfigured()) {
-    logger.warn(
-      'Google Calendar skipped: missing client id/secret or refresh token (set GOOGLE_CALENDAR_REFRESH_TOKEN)'
-    )
+    logger.warn('Google Calendar skipped: missing GOOGLE_CALENDAR_CLIENT_ID/SECRET or GOOGLE_CALENDAR_REFRESH_TOKEN')
     return null
   }
 
   try {
-    const client = new OAuth2Client(config.GOOGLE_CLIENT_ID?.trim(), config.GOOGLE_CLIENT_SECRET?.trim())
+    const client = new OAuth2Client(
+      config.GOOGLE_CALENDAR.CLIENT_ID,
+      config.GOOGLE_CALENDAR.CLIENT_SECRET,
+      config.GOOGLE_CALENDAR.REDIRECT_URI
+    )
     client.setCredentials({ refresh_token: config.GOOGLE_CALENDAR.REFRESH_TOKEN })
     const { token } = await client.getAccessToken()
     if (!token) {
@@ -44,7 +48,7 @@ async function getAccessToken(): Promise<string | null> {
     const message = error instanceof Error ? error.message : String(error)
     if (/invalid_grant/i.test(message)) {
       logger.error(
-        'Google Calendar token refresh failed (invalid_grant). Regenerated refresh token must match GOOGLE_CLIENT_ID/SECRET, include calendar.events scope, and not be revoked. Also remove duplicate GOOGLE_CLIENT_* lines in .env (first value wins).',
+        'Google Calendar token refresh failed (invalid_grant). Regenerated refresh token must match GOOGLE_CALENDAR_CLIENT_ID/SECRET, include calendar.events scope, and not be revoked.',
         error
       )
     } else {

@@ -14,7 +14,7 @@ export const MEETING_STATUSES = ['Scheduled', 'Completed', 'Cancelled'] as const
 export type MeetingType = (typeof MEETING_TYPES)[number]
 export type MeetingStatus = (typeof MEETING_STATUSES)[number]
 
-const meetingType = z.enum(MEETING_TYPES)
+const meetingType = z.string().trim().min(1).max(100)
 const meetingStatus = z.enum(MEETING_STATUSES)
 
 const createMeeting = z.object({

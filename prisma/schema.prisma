@@ -284,6 +284,7 @@ model Profile {
   attachments        Attachment[]
   meetings           Meeting[]
   auditLogs          AuditLog[]
+  birthdayWishLogs   BirthdayWishLog[]
 
   @@index([userId])
   @@index([companyUserId])
@@ -742,6 +743,18 @@ model Announcement {
 
   @@index([status, createdAt])
   @@index([kind])
+}
+
+/// Idempotency log for annual birthday wish emails / inbox notices.
+model BirthdayWishLog {
+  id        String   @id @default(cuid())
+  profileId String
+  year      Int
+  sentAt    DateTime @default(now())
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, year])
+  @@index([year])
 }
 
 /// Corporate owner team announcements (directory banners / saver emails).

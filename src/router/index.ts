@@ -7,6 +7,7 @@ import adminTeamRoute from './adminTeam.route'
 import adminUserRoute from './adminUser.route'
 import { announcementActiveRoute, announcementAdminRoute } from './announcement.route'
 import authRoute from './auth.route'
+import birthdayWishRoute from './birthdayWish.route'
 import canvaRoute from './canva.route'
 import cardAgentRoute from './cardAgent.route'
 import fontsRoute from './fonts.route'
@@ -41,6 +42,7 @@ const modulePaths = [
   { path: '/admin', route: supportRoute },
   { path: '/admin', route: announcementAdminRoute },
   { path: '/admin', route: templateAdminRoute },
+  { path: '/admin', route: birthdayWishRoute },
 ]
 
 modulePaths.forEach(({ path, route }) => {

@@ -94,6 +94,7 @@ async function archiveOverlappingSpecificBanners(
 
   const toArchive = activeSpecific
     .filter((row) => {
+      if (isBirthdayNotice(row.meta)) return false
       if (row.targetEmails.some((e) => emailSet.has(e.toLowerCase()))) return true
       if (opts.profileId && row.meta && typeof row.meta === 'object' && !Array.isArray(row.meta)) {
         const meta = row.meta as Record<string, unknown>
@@ -111,12 +112,61 @@ async function archiveOverlappingSpecificBanners(
   }
 }
 
+function metaRecord(
+  meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined
+): Record<string, unknown> | null {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null
+  return meta as Record<string, unknown>
+}
+
 function profileIdFromMeta(
   meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined
 ): string | undefined {
-  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return undefined
-  const profileId = (meta as Record<string, unknown>).profileId
+  const profileId = metaRecord(meta)?.profileId
   return typeof profileId === 'string' && profileId.trim() ? profileId.trim() : undefined
+}
+
+function isInboxOnly(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
+  return metaRecord(meta)?.channel === 'inbox'
+}
+
+function isBirthdayNotice(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
+  return metaRecord(meta)?.kind === 'birthday'
+}
+
+const LOCK_ACTIONS = new Set(['paused', 'suspended'])
+
+/** Archive pause/suspend banners for a user account or a specific card. */
+const archiveLockNotices = async (opts: { userId?: string; profileId?: string }) => {
+  const userId = opts.userId?.trim()
+  const profileId = opts.profileId?.trim()
+  if (!userId && !profileId) return { archivedCount: 0 }
+
+  const activeSpecific = await prisma.announcement.findMany({
+    where: { status: 'active', targetType: 'specific' },
+    select: { id: true, meta: true },
+  })
+
+  const toArchive = activeSpecific
+    .filter((row) => {
+      const meta = metaRecord(row.meta)
+      if (!meta) return false
+      const action = typeof meta.action === 'string' ? meta.action : ''
+      if (!LOCK_ACTIONS.has(action)) return false
+      if (userId && meta.userId === userId) return true
+      if (profileId && meta.profileId === profileId) return true
+      return false
+    })
+    .map((row) => row.id)
+
+  if (toArchive.length) {
+    await prisma.announcement.updateMany({
+      where: { id: { in: toArchive } },
+      data: { status: 'archived' },
+    })
+  }
+
+  return { archivedCount: toArchive.length }
 }
 
 function normalizeEmails(emails?: string[]): string[] {
@@ -128,11 +178,18 @@ const list = async (query: ListAnnouncementsQuery) => {
   const where: Prisma.AnnouncementWhereInput = {
     ...(query.status ? { status: query.status } : {}),
     ...(query.kind ? { kind: query.kind } : {}),
+    // System birthday wishes are owner-inbox only — hide from admin announcements UI.
+    NOT: { meta: { path: ['kind'], equals: 'birthday' } },
   }
 
   const [total, activeCount, rows] = await Promise.all([
     prisma.announcement.count({ where }),
-    prisma.announcement.count({ where: { status: 'active' } }),
+    prisma.announcement.count({
+      where: {
+        status: 'active',
+        NOT: { meta: { path: ['kind'], equals: 'birthday' } },
+      },
+    }),
     prisma.announcement.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -169,8 +226,10 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
     await assertAdminCanContactProfile(actor.id, profileId)
   }
 
+  const inboxOnly = isInboxOnly(input.meta)
+
   const row = await prisma.$transaction(async (tx) => {
-    if (status === 'active') {
+    if (status === 'active' && !inboxOnly) {
       if (targetType === 'all') {
         await archiveActiveAllBanners(tx)
       } else {
@@ -237,6 +296,15 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
           // If meta contains a profileId (explicit card owner), include it
           if (profileId) profileIds.add(profileId)
 
+          const metaUserId = metaRecord(meta)?.userId
+          if (typeof metaUserId === 'string' && metaUserId.trim()) {
+            const owned = await prisma.profile.findMany({
+              where: { OR: [{ userId: metaUserId }, { companyUserId: metaUserId }] },
+              select: { id: true },
+            })
+            for (const p of owned) profileIds.add(p.id)
+          }
+
           // If global, send to all profiles that have active push subscriptions
           if (targetType === 'all') {
             const subs = await prisma.pushSubscription.findMany({
@@ -295,8 +363,10 @@ const update = async (id: string, actor: Actor, input: UpdateAnnouncementInput) 
     await assertAdminCanContactProfile(actor.id, profileId)
   }
 
+  const inboxOnly = isInboxOnly(input.meta ?? existing.meta)
+
   const row = await prisma.$transaction(async (tx) => {
-    if (nextStatus === 'active' && existing.status !== 'active') {
+    if (nextStatus === 'active' && existing.status !== 'active' && !inboxOnly) {
       if (nextTargetType === 'all') {
         await archiveActiveAllBanners(tx, id)
       } else {
@@ -389,13 +459,61 @@ const getActiveForUser = async (user: { email: string; role?: string }) => {
     take: 40,
   })
 
-  const specific = candidates.find(
-    (row) => row.targetType === 'specific' && row.targetEmails.map((e) => e.toLowerCase()).includes(email)
-  )
-  if (specific) return serializeAnnouncement(specific)
+  const matchesEmail = (row: AnnouncementRow) =>
+    row.targetType === 'specific' && row.targetEmails.map((e) => e.toLowerCase()).includes(email)
 
-  const global = candidates.find((row) => row.targetType === 'all')
-  return global ? serializeAnnouncement(global) : null
+  const inbox = candidates.filter(matchesEmail).map(serializeAnnouncement)
+
+  const bannerRow =
+    candidates.find((row) => !isInboxOnly(row.meta) && matchesEmail(row)) ??
+    candidates.find((row) => row.targetType === 'all' && !isInboxOnly(row.meta))
+
+  return {
+    banner: bannerRow ? serializeAnnouncement(bannerRow) : null,
+    inbox,
+  }
+}
+
+function isShowPublic(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
+  return metaRecord(meta)?.showPublic === '1'
+}
+
+const getActiveForPublicCard = async (profileId: string) => {
+  const id = profileId.trim()
+  if (!id) return null
+
+  const profile = await prisma.profile.findUnique({
+    where: { id },
+    select: { id: true, email: true },
+  })
+  if (!profile) return null
+
+  const email = (profile.email ?? '').trim().toLowerCase()
+  const now = new Date()
+
+  const candidates = await prisma.announcement.findMany({
+    where: {
+      status: 'active',
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+        { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 40,
+  })
+
+  const matchesTarget = (row: AnnouncementRow) => {
+    if (row.targetType === 'all') return true
+    if (row.targetType === 'specific' && email) {
+      return row.targetEmails.map((e) => e.toLowerCase()).includes(email)
+    }
+    return false
+  }
+
+  const bannerRow = candidates.find((row) => isShowPublic(row.meta) && !isInboxOnly(row.meta) && matchesTarget(row))
+
+  return bannerRow ? serializeAnnouncement(bannerRow) : null
 }
 
 const announcementService = {
@@ -405,7 +523,9 @@ const announcementService = {
   update,
   remove,
   clearLive,
+  archiveLockNotices,
   getActiveForUser,
+  getActiveForPublicCard,
 }
 
 export default announcementService
