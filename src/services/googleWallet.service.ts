@@ -57,7 +57,7 @@ function publicSiteBase(): string {
 function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' | 'wide' = 'card'): string | undefined {
   const base = publicSiteBase()
   if (!/^https:\/\//i.test(base)) return undefined
-  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=face2`
+  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=metal1`
 }
 
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
@@ -70,27 +70,52 @@ function firstHex(...values: Array<string | null | undefined>): string | undefin
   return undefined
 }
 
-function hexFromTheme(themeConfig: unknown): string {
-  if (!themeConfig || typeof themeConfig !== 'object') return '#EED677'
+function expandHex(hex: string): string {
+  let h = hex.replace('#', '')
+  if (h.length === 3) {
+    h = h
+      .split('')
+      .map((c) => c + c)
+      .join('')
+  }
+  return `#${h}`
+}
+
+function hexLuminance(hex: string): number {
+  const h = expandHex(hex).slice(1)
+  const r = Number.parseInt(h.slice(0, 2), 16) / 255
+  const g = Number.parseInt(h.slice(2, 4), 16) / 255
+  const b = Number.parseInt(h.slice(4, 6), 16) / 255
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4))
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+
+function faceBackgroundFromTheme(themeConfig: unknown): string {
+  if (!themeConfig || typeof themeConfig !== 'object') return '#0A0A0A'
   const colors = (
     themeConfig as {
       colors?: {
         defaultMode?: string
         themeMode?: string
-        dark?: { primary?: string; accent?: string }
-        light?: { primary?: string; accent?: string }
+        dark?: { primary?: string; accent?: string; background?: string }
+        light?: { primary?: string; accent?: string; background?: string }
       }
     }
   ).colors
   const mode = colors?.defaultMode === 'light' || colors?.themeMode === 'light' ? 'light' : 'dark'
   const set = mode === 'light' ? colors?.light : colors?.dark
-  const other = mode === 'light' ? colors?.dark : colors?.light
-  return firstHex(set?.primary, set?.accent, other?.primary, other?.accent) || '#EED677'
+  const brand = firstHex(set?.primary, set?.accent)
+  const page = firstHex(set?.background)
+  if (page && hexLuminance(page) <= 0.48) return page
+  if (brand && hexLuminance(brand) <= 0.48) return brand
+  return '#0A0A0A'
 }
 
 function buildGenericClass(classId: string) {
   return { id: classId }
 }
+
+const ISSUER_NAME = 'vBiz Me LLC'
 
 function buildGenericObject(input: {
   objectId: string
@@ -105,12 +130,12 @@ function buildGenericObject(input: {
     state: 'ACTIVE',
     genericType: 'GENERIC_TYPE_UNSPECIFIED',
     hexBackgroundColor: input.background,
-    cardTitle: localized('vBiz'),
-    header: localized(input.name || 'Card'),
+    cardTitle: localized(ISSUER_NAME),
+    header: localized(ISSUER_NAME),
     heroImage: input.heroUrl
       ? {
           sourceUri: { uri: input.heroUrl },
-          contentDescription: localized(input.name || 'Digital card'),
+          contentDescription: localized(input.name || ISSUER_NAME),
         }
       : undefined,
   }
@@ -132,8 +157,8 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
   if (!profile) throw new AppError(404, 'Card not found')
 
   const slugForPass = profile.slug?.trim() || trimmed
-  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-face3`)
-  const objectSuffix = sanitizeWalletSuffix(`face3-${slugForPass || profile.id}`)
+  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-metal1`)
+  const objectSuffix = sanitizeWalletSuffix(`metal1-${slugForPass || profile.id}`)
   const classId = `${issuerId}.${classSuffix}`
   const objectId = `${issuerId}.${objectSuffix}`
 
@@ -150,7 +175,7 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
           objectId,
           classId,
           name: profile.name?.trim() || slugForPass,
-          background: hexFromTheme(profile.themeConfig),
+          background: faceBackgroundFromTheme(profile.themeConfig),
           heroUrl: walletArtUrl(slugForPass, 'card'),
         }),
       ],

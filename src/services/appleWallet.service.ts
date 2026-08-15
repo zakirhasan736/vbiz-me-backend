@@ -101,7 +101,7 @@ function publicCardUrl(slug: string): string {
 }
 
 function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' = 'strip'): string {
-  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=face2`
+  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=metal1`
 }
 
 function hexToRgbCss(hex: string, fallback = 'rgb(11, 31, 58)'): string {
@@ -148,25 +148,24 @@ function hexToRgb(hex: string): [number, number, number] {
 }
 
 function primaryFromTheme(themeConfig: unknown): string {
-  if (!themeConfig || typeof themeConfig !== 'object') return '#EED677'
+  if (!themeConfig || typeof themeConfig !== 'object') return '#0A0A0A'
   const colors = (
     themeConfig as {
       colors?: {
         defaultMode?: string
         themeMode?: string
-        dark?: { primary?: string; accent?: string }
-        light?: { primary?: string; accent?: string }
+        dark?: { primary?: string; accent?: string; background?: string }
+        light?: { primary?: string; accent?: string; background?: string }
       }
     }
   ).colors
   const mode = colors?.defaultMode === 'light' || colors?.themeMode === 'light' ? 'light' : 'dark'
   const set = mode === 'light' ? colors?.light : colors?.dark
-  const other = mode === 'light' ? colors?.dark : colors?.light
-  const candidates = [set?.primary, set?.accent, other?.primary, other?.accent]
-  for (const value of candidates) {
-    if (typeof value === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim())) return value.trim()
-  }
-  return '#EED677'
+  const page = set?.background?.trim()
+  if (page && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(page) && hexLuminance(page) <= 0.48) return page
+  const brand = set?.primary?.trim()
+  if (brand && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(brand) && hexLuminance(brand) <= 0.48) return brand
+  return '#0A0A0A'
 }
 
 async function fetchPng(url: string): Promise<Buffer | undefined> {
