@@ -8,6 +8,11 @@ import PublicZodSchema from '../zodValidation/public.zod'
 const router = Router()
 const formData = multer()
 
+// Wallet saves are one-off user actions. Do not share the public GET budget
+// with the vCard page (which can fire many section requests in one visit).
+router.get('/profiles/:slug/google-wallet', publicController.googleWallet)
+router.get('/profiles/:slug/apple-wallet', publicController.appleWallet)
+
 router.use(publicRateLimiter)
 
 router.get('/v/:slug', publicController.getMyCard)
@@ -20,8 +25,6 @@ router.get('/public-cards', publicController.getPublicCards)
 router.post('/save-guest-user', formData.none(), publicController.saveGuestUser)
 router.post('/save-note', publicController.saveNote)
 router.get('/save-contact/:id', publicController.saveContact)
-router.get('/profiles/:slug/google-wallet', publicController.googleWallet)
-router.get('/profiles/:slug/apple-wallet', publicController.appleWallet)
 router.post('/track-event', validSchema(PublicZodSchema.trackEvent), publicController.trackEvent)
 
 router.get('/push/subscription-status/:slug', publicController.pushStatus)
