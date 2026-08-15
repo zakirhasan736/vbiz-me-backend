@@ -21,6 +21,7 @@ router.post('/save-guest-user', formData.none(), publicController.saveGuestUser)
 router.post('/save-note', publicController.saveNote)
 router.get('/save-contact/:id', publicController.saveContact)
 router.get('/profiles/:slug/google-wallet', publicController.googleWallet)
+router.get('/profiles/:slug/apple-wallet', publicController.appleWallet)
 router.post('/track-event', validSchema(PublicZodSchema.trackEvent), publicController.trackEvent)
 
 router.get('/push/subscription-status/:slug', publicController.pushStatus)

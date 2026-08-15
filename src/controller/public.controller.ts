@@ -1,4 +1,6 @@
 import announcementService from '../services/announcement.service'
+import appleWalletService from '../services/appleWallet.service'
+import googleWalletService from '../services/googleWallet.service'
 import publicCardService from '../services/publicCard.service'
 import pushService from '../services/push.service'
 import catchAsyncError from '../utils/catchAsyncError'
@@ -95,12 +97,17 @@ const saveContact = catchAsyncError(async (req, res) => {
   sendPublicResponse(res, { success: true, data })
 })
 
-const googleWallet = catchAsyncError(async (_req, res) => {
-  sendPublicResponse(
-    res,
-    { success: false, data: null, error: 'Google Wallet is not configured on the new backend yet' },
-    501
-  )
+const googleWallet = catchAsyncError(async (req, res) => {
+  const data = await googleWalletService.createSaveUrl(param(req.params.slug))
+  sendPublicResponse(res, { success: true, data, wallet_url: data.wallet_url })
+})
+
+const appleWallet = catchAsyncError(async (req, res) => {
+  const { buffer, filename } = await appleWalletService.createPass(param(req.params.slug))
+  res.setHeader('Content-Type', 'application/vnd.apple.pkpass')
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  res.setHeader('Content-Length', String(buffer.length))
+  res.status(200).send(buffer)
 })
 
 const pushStatus = catchAsyncError(async (req, res) => {
@@ -205,6 +212,7 @@ const publicController = {
   saveNote,
   saveContact,
   googleWallet,
+  appleWallet,
   pushStatus,
   pushVapidPublicKey,
   pushSubscribe,
