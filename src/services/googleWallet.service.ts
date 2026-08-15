@@ -60,6 +60,24 @@ function publicSiteBase(): string {
   return (config.FRONTEND_URL || config.SERVER_URL || 'https://app.vbizme.com').replace(/\/$/, '')
 }
 
+function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' | 'wide' = 'hero'): string | undefined {
+  const base = publicSiteBase()
+  if (!/^https:\/\//i.test(base)) return undefined
+  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=w1`
+}
+
+function hexFromTheme(themeConfig: unknown): string {
+  if (!themeConfig || typeof themeConfig !== 'object') return '#0B1F3A'
+  const colors = (
+    themeConfig as { colors?: { defaultMode?: string; dark?: { primary?: string }; light?: { primary?: string } } }
+  ).colors
+  const mode = colors?.defaultMode === 'light' ? 'light' : 'dark'
+  const primary = mode === 'light' ? colors?.light?.primary : colors?.dark?.primary
+  return typeof primary === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(primary.trim())
+    ? primary.trim()
+    : '#0B1F3A'
+}
+
 function stillImageUrl(candidates: Array<string | null | undefined>, legacyId?: number | null): string | undefined {
   for (const raw of candidates) {
     if (!raw?.trim()) continue
@@ -81,20 +99,35 @@ function buildGenericObject(input: {
   name: string
   title: string
   cardUrl: string
+  background: string
   logoUrl?: string
+  heroUrl?: string
+  wideLogoUrl?: string
 }) {
   return {
     id: input.objectId,
     classId: input.classId,
     state: 'ACTIVE',
     genericType: 'GENERIC_TYPE_UNSPECIFIED',
-    hexBackgroundColor: '#1C1C1E',
+    hexBackgroundColor: input.background,
     cardTitle: localized(input.name || 'Digital Card'),
     header: localized(input.title || 'Digital Card'),
     logo: input.logoUrl
       ? {
           sourceUri: { uri: input.logoUrl },
           contentDescription: localized(input.name || 'Card'),
+        }
+      : undefined,
+    wideLogo: input.wideLogoUrl
+      ? {
+          sourceUri: { uri: input.wideLogoUrl },
+          contentDescription: localized(input.name || 'Card'),
+        }
+      : undefined,
+    heroImage: input.heroUrl
+      ? {
+          sourceUri: { uri: input.heroUrl },
+          contentDescription: localized(input.name || 'Digital card'),
         }
       : undefined,
     barcode: {
@@ -130,8 +163,8 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
   )
 
   const slugForPass = profile.slug?.trim() || trimmed
-  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-basic`)
-  const objectSuffix = sanitizeWalletSuffix(`basic-${slugForPass || profile.id}`)
+  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-v1`)
+  const objectSuffix = sanitizeWalletSuffix(`v1-${slugForPass || profile.id}`)
   const classId = `${issuerId}.${classSuffix}`
   const objectId = `${issuerId}.${objectSuffix}`
   const title = profile.designation?.trim() || profile.companyName?.trim() || 'Digital Card'
@@ -152,7 +185,10 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
           name: profile.name?.trim() || slugForPass,
           title,
           cardUrl,
+          background: hexFromTheme(profile.themeConfig),
           logoUrl,
+          heroUrl: walletArtUrl(slugForPass, 'hero'),
+          wideLogoUrl: walletArtUrl(slugForPass, 'wide'),
         }),
       ],
     },
