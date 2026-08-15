@@ -12,6 +12,7 @@ export const publicRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, data: null, error: 'Too many requests' },
+  validate: { xForwardedForHeader: false },
 })
 
 /** Resolve a profile the current user may manage (owner, company parent, or admin). */

@@ -1,6 +1,6 @@
 import type { Attachment, Setting } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
-import { publicVisibleWhere } from '../utils/cardStatus'
+import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
@@ -182,7 +182,7 @@ function toMediaBlock(
 
 async function getProfileBySlugOrThrow(slug: string) {
   const profile = await prisma.profile.findFirst({
-    where: { slug, ...publicVisibleWhere() },
+    where: { slug: slugEquals(slug), ...publicReadableWhere() },
     include: {
       gender: true,
       maritalStatus: true,
@@ -463,7 +463,7 @@ const getMyCardBySlug = async (slug: string) => {
 }
 
 const getPostTypesForProfile = async (profileId: string) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicVisibleWhere() } })
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
 
   const settings = await prisma.setting.findMany({ where: { profileId } })
@@ -593,7 +593,7 @@ const getPostTypesForProfile = async (profileId: string) => {
 
 const getProfileSettings = async (profileId: string) => {
   const profile = await prisma.profile.findFirst({
-    where: { id: profileId, ...publicVisibleWhere() },
+    where: { id: profileId, ...publicReadableWhere() },
     include: { profileSettings: true },
   })
   if (!profile) throw new AppError(404, 'Profile not found')
@@ -611,7 +611,7 @@ const getProfileSettings = async (profileId: string) => {
 
 const getProfileAiData = async (profileId: string) => {
   const profile = await prisma.profile.findFirst({
-    where: { id: profileId, ...publicVisibleWhere() },
+    where: { id: profileId, ...publicReadableWhere() },
     include: {
       profession: true,
       education: { orderBy: { sortOrder: 'asc' } },
@@ -700,7 +700,7 @@ const getProfileAiData = async (profileId: string) => {
 }
 
 const getDynamicSection = async (sectionName: string, profileId: string) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicVisibleWhere() } })
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
   const legacyId = profile.legacyId
 
@@ -1041,7 +1041,7 @@ const saveGuestUser = async (
     throw new AppError(400, 'full_name, phone, email, and profile_id are required')
   }
 
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicVisibleWhere() } })
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
 
   let clientMeta: Record<string, unknown> = {}
@@ -1111,7 +1111,7 @@ const saveGuestUser = async (
 }
 
 const saveNote = async (profileId: string, content: string) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicVisibleWhere() } })
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
   const note = await prisma.userNote.create({
     data: { profileId, content },
@@ -1120,7 +1120,7 @@ const saveNote = async (profileId: string, content: string) => {
 }
 
 const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; userAgent?: string }) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicVisibleWhere() } })
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
 
   await logEvent(
@@ -1184,7 +1184,9 @@ const trackEvent = async (
   const profileId = input.profileId || input.profile_id
   const slug = input.slug || input.profile_slug
   const profile = await prisma.profile.findFirst({
-    where: profileId ? { id: profileId, ...publicVisibleWhere() } : { slug, ...publicVisibleWhere() },
+    where: profileId
+      ? { id: profileId, ...publicReadableWhere() }
+      : { slug: slugEquals(String(slug || '')), ...publicReadableWhere() },
     select: { id: true, slug: true },
   })
   if (!profile) throw new AppError(404, 'Profile not found')

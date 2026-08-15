@@ -10,6 +10,9 @@ import sendResponse from './utils/sendResponse'
 
 const app: Application = express()
 
+// Nginx / TLS terminator sets X-Forwarded-For. Required by express-rate-limit.
+app.set('trust proxy', 1)
+
 app.use(helmet())
 app.use(cookieParser())
 

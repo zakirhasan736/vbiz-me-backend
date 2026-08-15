@@ -7,6 +7,8 @@ export type CardLifecycleStatus = (typeof CARD_LIFECYCLE_STATUSES)[number]
 export const CARD_STATUS_SEED_NAMES = ['active', 'inactive', 'paused', 'suspended', 'draft'] as const
 
 const HIDDEN_PUBLIC_STATUS_NAMES = ['paused', 'suspended', 'inactive', 'draft'] as const
+/** Blocked even when someone already has the /v/{slug} link. */
+const BLOCKED_DIRECT_STATUS_NAMES = ['paused', 'suspended'] as const
 
 export type AccountLockSnapshot = {
   statusName: string
@@ -57,7 +59,7 @@ export const parseAccountLockSnapshot = (raw: unknown): AccountLockSnapshot | nu
   }
 }
 
-/** Public pages must not serve paused, suspended, inactive, or draft cards. */
+/** Public directory / search — only fully published cards. */
 export const publicVisibleWhere = (): Prisma.ProfileWhereInput => ({
   isPublic: true,
   isDraft: false,
@@ -69,4 +71,21 @@ export const publicVisibleWhere = (): Prisma.ProfileWhereInput => ({
       },
     },
   },
+})
+
+/** Direct /v/{slug} links, wallet passes, and card sections. Drafts stay reachable by URL. */
+export const publicReadableWhere = (): Prisma.ProfileWhereInput => ({
+  NOT: {
+    status: {
+      name: {
+        in: [...BLOCKED_DIRECT_STATUS_NAMES],
+        mode: 'insensitive',
+      },
+    },
+  },
+})
+
+export const slugEquals = (slug: string): Prisma.StringFilter => ({
+  equals: slug.trim(),
+  mode: 'insensitive',
 })

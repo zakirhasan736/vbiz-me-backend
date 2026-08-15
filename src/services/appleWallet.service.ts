@@ -1,7 +1,7 @@
 import { PKPass } from 'passkit-generator'
 import config from '../configs/config'
 import AppError from '../error/AppError'
-import { publicVisibleWhere } from '../utils/cardStatus'
+import { publicReadableWhere, slugEquals } from '../utils/cardStatus'
 import { prisma } from '../utils/prisma'
 import { createSolidPng, createUsaCardStripPng } from '../utils/solidPng'
 
@@ -170,7 +170,7 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
   }
 
   const profile = await prisma.profile.findFirst({
-    where: { slug: trimmed, ...publicVisibleWhere() },
+    where: { slug: slugEquals(trimmed), ...publicReadableWhere() },
   })
   if (!profile) throw new AppError(404, 'Card not found')
 

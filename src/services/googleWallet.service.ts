@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken'
 import config from '../configs/config'
 import AppError from '../error/AppError'
-import { publicVisibleWhere } from '../utils/cardStatus'
+import { publicReadableWhere, slugEquals } from '../utils/cardStatus'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 
@@ -190,7 +190,7 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
   }
 
   const profile = await prisma.profile.findFirst({
-    where: { slug: trimmed, ...publicVisibleWhere() },
+    where: { slug: slugEquals(trimmed), ...publicReadableWhere() },
     include: {
       settings: true,
     },
