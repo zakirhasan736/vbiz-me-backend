@@ -2,8 +2,9 @@ import { PKPass } from 'passkit-generator'
 import config from '../configs/config'
 import AppError from '../error/AppError'
 import { publicReadableWhere, slugEquals } from '../utils/cardStatus'
+import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
-import { createSolidPng, createUsaCardStripPng } from '../utils/solidPng'
+import { createSolidPng } from '../utils/solidPng'
 
 /** Apple WWDR G4 intermediate — public CA cert, bundled so deploys do not need a certs folder. */
 const APPLE_WWDR_G4_PEM = `-----BEGIN CERTIFICATE-----
@@ -100,31 +101,6 @@ function publicCardUrl(slug: string): string {
   return `${publicSiteBase()}/v/${encodeURIComponent(slug)}`
 }
 
-function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' = 'strip'): string {
-  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=3`
-}
-
-function hexToRgbCss(hex: string, fallback = 'rgb(201, 162, 74)'): string {
-  const raw = hex.trim()
-  const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(raw)
-  if (!match) return fallback
-  let h = match[1]
-  if (h.length === 3)
-    h = h
-      .split('')
-      .map((c) => c + c)
-      .join('')
-  const n = Number.parseInt(h, 16)
-  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
-}
-
-function extractAccentHex(themeConfig: unknown): string {
-  if (!themeConfig || typeof themeConfig !== 'object') return '#C9A24A'
-  const colors = (themeConfig as { colors?: { dark?: { accent?: string }; light?: { accent?: string } } }).colors
-  const accent = colors?.dark?.accent || colors?.light?.accent
-  return typeof accent === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(accent.trim()) ? accent.trim() : '#C9A24A'
-}
-
 async function fetchPng(url: string): Promise<Buffer | undefined> {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(8000) })
@@ -176,11 +152,17 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
 
   const slugForPass = profile.slug?.trim() || trimmed
   const name = profile.name?.trim() || slugForPass
+  const title = profile.designation?.trim() || profile.companyName?.trim() || ''
   const cardUrl = publicCardUrl(slugForPass)
-  const accent = extractAccentHex(profile.themeConfig)
-  const strip = (await fetchPng(walletArtUrl(slugForPass, 'strip'))) || createUsaCardStripPng(1125, 432)
-  const icon = createSolidPng(180, 180, [10, 10, 10])
-  const logo = createSolidPng(320, 100, [10, 10, 10])
+  const avatarUrl = profile.avatar
+    ? ensureAbsoluteMediaUrl(profile.avatar.trim(), {
+        docName: profile.avatar.trim(),
+        profileLegacyId: profile.legacyId,
+      })
+    : undefined
+  const photo = (avatarUrl && (await fetchPng(avatarUrl))) || createSolidPng(180, 180, [28, 28, 30])
+  const icon = createSolidPng(58, 58, [28, 28, 30])
+  const logo = createSolidPng(160, 50, [28, 28, 30])
 
   const pass = new PKPass(
     {
@@ -188,9 +170,8 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
       'icon@2x.png': icon,
       'logo.png': logo,
       'logo@2x.png': logo,
-      'strip.png': strip,
-      'strip@2x.png': strip,
-      'strip@3x.png': strip,
+      'thumbnail.png': photo,
+      'thumbnail@2x.png': photo,
     },
     {
       wwdr: loadWwdrPem(),
@@ -202,21 +183,29 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
       formatVersion: 1,
       passTypeIdentifier: passTypeId,
       teamIdentifier: teamId,
-      serialNumber: `card-exact-${profile.id}`.slice(0, 64),
+      serialNumber: `card-basic-${profile.id}`.slice(0, 64),
       organizationName: config.APPLE_WALLET.ORGANIZATION,
       description: `${name} digital card`,
-      logoText: '',
-      foregroundColor: hexToRgbCss(accent, 'rgb(201, 162, 74)'),
-      backgroundColor: 'rgb(5, 5, 5)',
-      labelColor: hexToRgbCss(accent, 'rgb(201, 162, 74)'),
+      logoText: name,
+      foregroundColor: 'rgb(255, 255, 255)',
+      backgroundColor: 'rgb(28, 28, 30)',
+      labelColor: 'rgb(174, 174, 178)',
       sharingProhibited: false,
     }
   )
 
-  pass.type = 'storeCard'
+  pass.type = 'generic'
+  pass.primaryFields.push({ key: 'name', label: 'NAME', value: name })
+  pushField(pass.secondaryFields, 'title', 'TITLE', title)
   pushField(pass.backFields, 'card', 'Open digital card', cardUrl)
   pushField(pass.backFields, 'phone', 'Phone', profile.phone)
   pushField(pass.backFields, 'email', 'Email', profile.email)
+  pass.setBarcodes({
+    message: cardUrl,
+    format: 'PKBarcodeFormatQR',
+    messageEncoding: 'iso-8859-1',
+    altText: name,
+  })
 
   const filename = `${slugForPass.replace(/[^a-zA-Z0-9._-]/g, '-') || 'vbiz-card'}.pkpass`
   return { buffer: pass.getAsBuffer(), filename }

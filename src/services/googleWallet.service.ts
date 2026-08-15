@@ -60,12 +60,6 @@ function publicSiteBase(): string {
   return (config.FRONTEND_URL || config.SERVER_URL || 'https://app.vbizme.com').replace(/\/$/, '')
 }
 
-function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' | 'wide' = 'hero'): string | undefined {
-  const base = publicSiteBase()
-  if (!/^https:\/\//i.test(base)) return undefined
-  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=3`
-}
-
 function stillImageUrl(candidates: Array<string | null | undefined>, legacyId?: number | null): string | undefined {
   for (const raw of candidates) {
     if (!raw?.trim()) continue
@@ -88,15 +82,13 @@ function buildGenericObject(input: {
   title: string
   cardUrl: string
   logoUrl?: string
-  wideLogoUrl?: string
-  heroUrl?: string
 }) {
   return {
     id: input.objectId,
     classId: input.classId,
     state: 'ACTIVE',
     genericType: 'GENERIC_TYPE_UNSPECIFIED',
-    hexBackgroundColor: '#000000',
+    hexBackgroundColor: '#1C1C1E',
     cardTitle: localized(input.name || 'Digital Card'),
     header: localized(input.title || 'Digital Card'),
     logo: input.logoUrl
@@ -105,22 +97,10 @@ function buildGenericObject(input: {
           contentDescription: localized(input.name || 'Card'),
         }
       : undefined,
-    wideLogo: input.wideLogoUrl
-      ? {
-          sourceUri: { uri: input.wideLogoUrl },
-          contentDescription: localized(input.name || 'Card'),
-        }
-      : undefined,
-    heroImage: input.heroUrl
-      ? {
-          sourceUri: { uri: input.heroUrl },
-          contentDescription: localized(input.name || 'Digital card'),
-        }
-      : undefined,
     barcode: {
       type: 'QR_CODE',
       value: input.cardUrl,
-      alternateText: 'Scan to Connect',
+      alternateText: input.name || 'Card',
     },
   }
 }
@@ -145,16 +125,16 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
 
   const settings = Object.fromEntries(profile.settings.map((row) => [row.key, row.value ?? '']))
   const logoUrl = stillImageUrl(
-    [settings.company_icon_url, settings.profile_media_url, profile.avatar, config.GOOGLE_WALLET.LOGO_URL],
+    [settings.profile_media_url, profile.avatar, settings.company_icon_url, config.GOOGLE_WALLET.LOGO_URL],
     profile.legacyId
   )
 
   const slugForPass = profile.slug?.trim() || trimmed
-  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-credit`)
-  const objectSuffix = sanitizeWalletSuffix(`credit-${slugForPass || profile.id}`)
+  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-basic`)
+  const objectSuffix = sanitizeWalletSuffix(`basic-${slugForPass || profile.id}`)
   const classId = `${issuerId}.${classSuffix}`
   const objectId = `${issuerId}.${objectSuffix}`
-  const title = [profile.designation, profile.companyName].filter(Boolean).join(' | ')
+  const title = profile.designation?.trim() || profile.companyName?.trim() || 'Digital Card'
   const cardUrl = `${publicSiteBase()}/v/${encodeURIComponent(slugForPass)}`
 
   const claims = {
@@ -173,8 +153,6 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
           title,
           cardUrl,
           logoUrl,
-          wideLogoUrl: walletArtUrl(slugForPass, 'wide'),
-          heroUrl: walletArtUrl(slugForPass, 'hero'),
         }),
       ],
     },
