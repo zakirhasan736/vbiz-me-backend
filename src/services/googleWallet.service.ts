@@ -60,14 +60,10 @@ function publicSiteBase(): string {
   return (config.FRONTEND_URL || config.SERVER_URL || 'https://app.vbizme.com').replace(/\/$/, '')
 }
 
-function publicCardUrl(slug: string): string {
-  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}`
-}
-
-function walletHeroArtUrl(slug: string): string | undefined {
+function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' = 'hero'): string | undefined {
   const base = publicSiteBase()
   if (!/^https:\/\//i.test(base)) return undefined
-  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=hero`
+  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}`
 }
 
 function stillImageUrl(candidates: Array<string | null | undefined>, legacyId?: number | null): string | undefined {
@@ -82,35 +78,7 @@ function stillImageUrl(candidates: Array<string | null | undefined>, legacyId?: 
 }
 
 function buildGenericClass(classId: string) {
-  return {
-    id: classId,
-    classTemplateInfo: {
-      cardTemplateOverride: {
-        cardRowTemplateInfos: [
-          {
-            twoItems: {
-              startItem: {
-                firstValue: { fields: [{ fieldPath: "object.textModulesData['holder']" }] },
-              },
-              endItem: {
-                firstValue: { fields: [{ fieldPath: "object.textModulesData['network']" }] },
-              },
-            },
-          },
-          {
-            twoItems: {
-              startItem: {
-                firstValue: { fields: [{ fieldPath: "object.textModulesData['phone']" }] },
-              },
-              endItem: {
-                firstValue: { fields: [{ fieldPath: "object.textModulesData['email']" }] },
-              },
-            },
-          },
-        ],
-      },
-    },
-  }
+  return { id: classId }
 }
 
 function buildGenericObject(input: {
@@ -118,45 +86,17 @@ function buildGenericObject(input: {
   classId: string
   name: string
   title: string
-  company: string
-  phone: string
-  email: string
-  website: string
-  cardUrl: string
   logoUrl?: string
   heroUrl?: string
+  cardUrl?: string
 }) {
-  const textModulesData = [
-    { id: 'holder', header: 'Cardholder', body: input.name },
-    { id: 'network', header: 'Network', body: 'USA · Digital' },
-    input.title ? { id: 'title', header: 'Title', body: input.title } : null,
-    input.phone ? { id: 'phone', header: 'Phone', body: input.phone } : null,
-    input.email ? { id: 'email', header: 'Email', body: input.email } : null,
-    input.company ? { id: 'company', header: 'Company', body: input.company } : null,
-    input.website ? { id: 'website', header: 'Website', body: input.website } : null,
-  ].filter(Boolean)
-
-  const uris = [
-    { uri: input.cardUrl, description: 'Open digital card', id: 'vcard' },
-    input.phone ? { uri: `tel:${input.phone.replace(/\s+/g, '')}`, description: 'Call', id: 'call' } : null,
-    input.email ? { uri: `mailto:${input.email}`, description: 'Email', id: 'mail' } : null,
-    input.website
-      ? {
-          uri: /^https?:\/\//i.test(input.website) ? input.website : `https://${input.website}`,
-          description: 'Website',
-          id: 'web',
-        }
-      : null,
-  ].filter(Boolean)
-
   return {
     id: input.objectId,
     classId: input.classId,
     genericType: 'GENERIC_TYPE_UNSPECIFIED',
-    hexBackgroundColor: '#0A0A0A',
-    cardTitle: localized(input.company || 'vBiz Member'),
-    header: localized(input.name || 'Digital Card'),
-    subheader: localized(input.title || 'USA Digital Card'),
+    hexBackgroundColor: '#050505',
+    cardTitle: localized(input.name || 'Digital Card'),
+    header: localized(input.title || 'Digital Card'),
     logo: input.logoUrl
       ? {
           sourceUri: { uri: input.logoUrl },
@@ -169,13 +109,17 @@ function buildGenericObject(input: {
           contentDescription: localized('Digital card'),
         }
       : undefined,
-    textModulesData,
-    linksModuleData: uris.length ? { uris } : undefined,
-    barcode: {
-      type: 'QR_CODE',
-      value: input.cardUrl,
-      alternateText: 'Open card',
-    },
+    imageModulesData: input.cardUrl
+      ? [
+          {
+            id: 'card',
+            mainImage: {
+              sourceUri: { uri: input.cardUrl },
+              contentDescription: localized('Digital card'),
+            },
+          },
+        ]
+      : undefined,
   }
 }
 
@@ -204,11 +148,10 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
   )
 
   const slugForPass = profile.slug?.trim() || trimmed
-  const classSuffix = sanitizeWalletSuffix(config.GOOGLE_WALLET.CLASS_SUFFIX)
-  const objectSuffix = sanitizeWalletSuffix(`card-${slugForPass || profile.id}`)
+  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-exact`)
+  const objectSuffix = sanitizeWalletSuffix(`exact-${slugForPass || profile.id}`)
   const classId = `${issuerId}.${classSuffix}`
   const objectId = `${issuerId}.${objectSuffix}`
-  const cardUrl = publicCardUrl(slugForPass)
   const title = [profile.designation, profile.companyName].filter(Boolean).join(' | ')
 
   const claims = {
@@ -225,13 +168,9 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
           classId,
           name: profile.name?.trim() || slugForPass,
           title,
-          company: profile.companyName || '',
-          phone: profile.phone || '',
-          email: profile.email || '',
-          website: profile.website || '',
-          cardUrl,
           logoUrl,
-          heroUrl: walletHeroArtUrl(slugForPass),
+          heroUrl: walletArtUrl(slugForPass, 'hero'),
+          cardUrl: walletArtUrl(slugForPass, 'card'),
         }),
       ],
     },

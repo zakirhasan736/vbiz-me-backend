@@ -176,10 +176,9 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
 
   const slugForPass = profile.slug?.trim() || trimmed
   const name = profile.name?.trim() || slugForPass
-  const title = [profile.designation, profile.companyName].filter(Boolean).join(' | ')
   const cardUrl = publicCardUrl(slugForPass)
   const accent = extractAccentHex(profile.themeConfig)
-  const strip = (await fetchPng(walletArtUrl(slugForPass, 'strip'))) || createUsaCardStripPng(750, 246)
+  const strip = (await fetchPng(walletArtUrl(slugForPass, 'strip'))) || createUsaCardStripPng(1125, 432)
   const icon = createSolidPng(180, 180, [10, 10, 10])
   const logo = createSolidPng(320, 100, [10, 10, 10])
 
@@ -191,6 +190,7 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
       'logo@2x.png': logo,
       'strip.png': strip,
       'strip@2x.png': strip,
+      'strip@3x.png': strip,
     },
     {
       wwdr: loadWwdrPem(),
@@ -202,33 +202,21 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
       formatVersion: 1,
       passTypeIdentifier: passTypeId,
       teamIdentifier: teamId,
-      serialNumber: `card-${profile.id}`.slice(0, 64),
+      serialNumber: `card-exact-${profile.id}`.slice(0, 64),
       organizationName: config.APPLE_WALLET.ORGANIZATION,
       description: `${name} digital card`,
-      logoText: profile.companyName?.trim() || 'vBIZ',
+      logoText: '',
       foregroundColor: hexToRgbCss(accent, 'rgb(201, 162, 74)'),
-      backgroundColor: 'rgb(10, 10, 10)',
+      backgroundColor: 'rgb(5, 5, 5)',
       labelColor: hexToRgbCss(accent, 'rgb(201, 162, 74)'),
       sharingProhibited: false,
     }
   )
 
   pass.type = 'storeCard'
-  pass.primaryFields.push({ key: 'holder', label: 'CARDHOLDER', value: name })
-  pushField(pass.secondaryFields, 'title', 'TITLE', title)
-  pushField(pass.auxiliaryFields, 'phone', 'PHONE', profile.phone)
-  pushField(pass.auxiliaryFields, 'email', 'EMAIL', profile.email)
-  pushField(pass.backFields, 'company', 'Company', profile.companyName)
-  pushField(pass.backFields, 'website', 'Website', profile.website)
   pushField(pass.backFields, 'card', 'Open digital card', cardUrl)
-  pushField(pass.backFields, 'valid', 'Valid', 'USA Digital Member')
-
-  pass.setBarcodes({
-    message: cardUrl,
-    format: 'PKBarcodeFormatQR',
-    messageEncoding: 'iso-8859-1',
-    altText: 'Open card',
-  })
+  pushField(pass.backFields, 'phone', 'Phone', profile.phone)
+  pushField(pass.backFields, 'email', 'Email', profile.email)
 
   const filename = `${slugForPass.replace(/[^a-zA-Z0-9._-]/g, '-') || 'vbiz-card'}.pkpass`
   return { buffer: pass.getAsBuffer(), filename }
