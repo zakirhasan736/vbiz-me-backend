@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import multer from 'multer'
+import { MEDIA_UPLOAD_MAX_BYTES } from '../constants/mediaUpload'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import profileService from '../services/profile.service'
@@ -10,7 +11,7 @@ import sendResponse from '../utils/sendResponse'
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: MEDIA_UPLOAD_MAX_BYTES },
 })
 
 const router = Router()

@@ -39,35 +39,6 @@ import announcementService from './announcement.service'
 import pushService from './push.service'
 import subscriptionService from './subscription.service'
 
-/** Digits-only phone key for suspended-number reuse checks. */
-const normalizePhoneDigits = (phone?: string | null): string => {
-  if (!phone) return ''
-  return String(phone).replace(/\D/g, '')
-}
-
-const assertPhoneNotOnSuspendedCard = async (phone: string | null | undefined, excludeProfileId?: string) => {
-  const digits = normalizePhoneDigits(phone)
-  if (!digits || digits.length < 7) return
-
-  const candidates = await prisma.profile.findMany({
-    where: {
-      status: { name: { equals: 'suspended', mode: 'insensitive' } },
-      phone: { not: null },
-      ...(excludeProfileId ? { id: { not: excludeProfileId } } : {}),
-    },
-    select: { id: true, phone: true },
-    take: 500,
-  })
-
-  const conflict = candidates.find((row) => normalizePhoneDigits(row.phone) === digits)
-  if (conflict) {
-    throw new AppError(
-      403,
-      'This phone number belongs to a suspended card and cannot be used to create or update another card.'
-    )
-  }
-}
-
 type LifecycleNotifyActor = { id: string; email: string; name?: string | null }
 
 const escapeHtml = (value: string) =>
@@ -759,7 +730,6 @@ const create = async (
   }
 
   await assertCanCreateCard(capacityUserId, capacityRole)
-  await assertPhoneNotOnSuspendedCard(raw.phone as string | undefined)
 
   const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
   const draftStatus = await ensureStatusByName('draft')
@@ -860,11 +830,6 @@ const update = async (
 
   if (typeof profileData.slug === 'string') {
     profileData.slug = await ensureUniqueSlug(profileData.slug, profileId)
-  }
-
-  if ('phone' in raw) {
-    const nextPhone = raw.phone === null || raw.phone === undefined || raw.phone === '' ? null : String(raw.phone)
-    await assertPhoneNotOnSuspendedCard(nextPhone, profileId)
   }
 
   if (requestedStatus) {
@@ -2230,7 +2195,8 @@ const createTeamNotice = async (
     if (staff) {
       await assertPersonallyOwnsProfile(targetProfileId, userId)
     } else {
-      await getOwned(targetProfileId, userId, role)
+      const owned = await getOwned(targetProfileId, userId, role)
+      assertOwnerCanMutateCard(owned, role)
     }
   } else if (staff) {
     throw new AppError(403, 'Staff can only publish public notices on a specific card they own')
@@ -2311,14 +2277,24 @@ const deleteTeamNotice = async (userId: string, role: string, noticeId: string) 
   })
   if (!existing) throw new AppError(404, 'Notice not found')
 
+  const staff = isAdminRole(role)
+
   if (existing.ownerId === userId) {
-    // Creator may always delete their own notice.
-  } else if (isAdminRole(role)) {
+    // Creator may always delete their own notice — unless the target card is suspended (owners only).
+    if (!staff && existing.targetProfileId) {
+      const profile = await prisma.profile.findUnique({
+        where: { id: existing.targetProfileId },
+        select: { status: { select: { name: true } } },
+      })
+      if (profile) assertOwnerCanMutateCard(profile, role)
+    }
+  } else if (staff) {
     // Staff may delete only when they personally own the target card.
     if (!existing.targetProfileId) throw new AppError(403, 'Not allowed to delete this notice')
     await assertPersonallyOwnsProfile(existing.targetProfileId, userId)
   } else if (existing.targetProfileId) {
-    await getOwned(existing.targetProfileId, userId, role)
+    const owned = await getOwned(existing.targetProfileId, userId, role)
+    assertOwnerCanMutateCard(owned, role)
   } else {
     throw new AppError(403, 'Not allowed to delete this notice')
   }

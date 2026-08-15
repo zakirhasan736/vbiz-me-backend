@@ -632,7 +632,7 @@ const getProfileAiData = async (profileId: string) => {
   return {
     slug: profile.slug,
     ownerName: profile.name,
-    title: profile.designation,
+    title: profile.prof || profile.designation,
     profession: profile.profession?.name || profile.prof,
     company: profile.companyName,
     email: profile.email,

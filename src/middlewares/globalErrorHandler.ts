@@ -1,5 +1,7 @@
 import { ErrorRequestHandler } from 'express'
+import multer from 'multer'
 import { ZodError } from 'zod'
+import { MEDIA_UPLOAD_TOO_LARGE_MESSAGE } from '../constants/mediaUpload'
 import AppError from '../error/AppError'
 import handleZodError from '../error/zodError'
 import { IErrorSources } from '../interfaces/error.interface'
@@ -17,10 +19,6 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     },
   ]
 
-  logger.error(`${req.method} ${req.originalUrl} ${error.message || 'Error'}`, {
-    statusCode: error.statusCode ?? 500,
-  })
-
   if (error instanceof AppError) {
     statusCode = error.statusCode || 400
     message = error.message
@@ -32,12 +30,26 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
         message: error.message,
       },
     ]
+  } else if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      statusCode = 413
+      message = MEDIA_UPLOAD_TOO_LARGE_MESSAGE
+      errorMessages = [{ path: 'file', message }]
+    } else {
+      statusCode = 400
+      message = error.message
+      errorMessages = [{ path: error.field || 'file', message }]
+    }
   } else if (error instanceof ZodError) {
     const simpleErr = handleZodError(error)
     statusCode = simpleErr.statusCode
     message = simpleErr.message
     errorMessages = simpleErr.errorSources
   }
+
+  logger.error(`${req.method} ${req.originalUrl} ${message}`, {
+    statusCode,
+  })
 
   return res.status(statusCode).json({
     success: false,

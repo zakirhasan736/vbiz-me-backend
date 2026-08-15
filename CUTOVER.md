@@ -7,6 +7,9 @@
 - [ ] Temporary MySQL with `vbizme_app_backup.sql` loaded
 - [ ] `LARAVEL_MYSQL_URL` pointing at that MySQL
 - [ ] `MEDIA_BASE_URL` set to the old public media host (default `https://app.vbizme.com`)
+- [ ] Reverse proxy body limit ≥ **50MB** (matches multer on `POST /api/v1/media/upload`). Without this, production returns `413 Request entity too large` while local Node works.
+  - Nginx: `client_max_body_size 50m;` in the API `server` / `http` block, then reload Nginx
+  - Also raise any CDN / WAF / PaaS upload limit to ≥ 50MB if applicable
 - [ ] Frontend envs ready:
   - `NEXT_PUBLIC_API_URL=https://<node-api>/api/v1`
   - `NEXT_PUBLIC_PUBLIC_API_URL=https://<node-api>/api/v1/public`
