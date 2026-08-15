@@ -101,7 +101,7 @@ function publicCardUrl(slug: string): string {
 }
 
 function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' = 'strip'): string {
-  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}`
+  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=3`
 }
 
 function hexToRgbCss(hex: string, fallback = 'rgb(201, 162, 74)'): string {
