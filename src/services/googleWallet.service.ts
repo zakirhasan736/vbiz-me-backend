@@ -2,7 +2,6 @@ import jwt from 'jsonwebtoken'
 import config from '../configs/config'
 import AppError from '../error/AppError'
 import { publicReadableWhere, slugEquals } from '../utils/cardStatus'
-import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 
 type WalletServiceAccount = {
@@ -25,12 +24,6 @@ function sanitizeWalletSuffix(value: string): string {
     .replace(/-+/g, '-')
     .replace(/^[.-]+|[.-]+$/g, '')
   return (cleaned || 'card').slice(0, 64)
-}
-
-function isHttpsImageUrl(url?: string | null): boolean {
-  if (!url?.trim()) return false
-  if (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) || url.includes('/backgroundVideos/')) return false
-  return /^https:\/\//i.test(url.trim())
 }
 
 function parseServiceAccount(): WalletServiceAccount | null {
@@ -60,49 +53,60 @@ function publicSiteBase(): string {
   return (config.FRONTEND_URL || config.SERVER_URL || 'https://app.vbizme.com').replace(/\/$/, '')
 }
 
-function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' | 'wide' = 'hero'): string | undefined {
+function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' | 'wide' = 'card'): string | undefined {
   const base = publicSiteBase()
   if (!/^https:\/\//i.test(base)) return undefined
-  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=w1`
+  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=face2`
 }
 
-function hexFromTheme(themeConfig: unknown): string {
-  if (!themeConfig || typeof themeConfig !== 'object') return '#0B1F3A'
-  const colors = (
-    themeConfig as { colors?: { defaultMode?: string; dark?: { primary?: string }; light?: { primary?: string } } }
-  ).colors
-  const mode = colors?.defaultMode === 'light' ? 'light' : 'dark'
-  const primary = mode === 'light' ? colors?.light?.primary : colors?.dark?.primary
-  return typeof primary === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(primary.trim())
-    ? primary.trim()
-    : '#0B1F3A'
-}
+const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 
-function stillImageUrl(candidates: Array<string | null | undefined>, legacyId?: number | null): string | undefined {
-  for (const raw of candidates) {
-    if (!raw?.trim()) continue
-    const absolute =
-      ensureAbsoluteMediaUrl(raw.trim(), { docName: raw.trim(), profileLegacyId: legacyId }) || raw.trim()
-    if (isHttpsImageUrl(absolute)) return absolute
+function firstHex(...values: Array<string | null | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim()
+    if (trimmed && HEX_RE.test(trimmed)) return trimmed
   }
-  if (isHttpsImageUrl(config.GOOGLE_WALLET.LOGO_URL)) return config.GOOGLE_WALLET.LOGO_URL
   return undefined
 }
 
+function hexFromTheme(themeConfig: unknown): string {
+  if (!themeConfig || typeof themeConfig !== 'object') return '#EED677'
+  const colors = (
+    themeConfig as {
+      colors?: {
+        defaultMode?: string
+        themeMode?: string
+        dark?: { primary?: string; accent?: string }
+        light?: { primary?: string; accent?: string }
+      }
+    }
+  ).colors
+  const mode = colors?.defaultMode === 'light' || colors?.themeMode === 'light' ? 'light' : 'dark'
+  const set = mode === 'light' ? colors?.light : colors?.dark
+  const other = mode === 'light' ? colors?.dark : colors?.light
+  return firstHex(set?.primary, set?.accent, other?.primary, other?.accent) || '#EED677'
+}
+
 function buildGenericClass(classId: string) {
-  return { id: classId }
+  return {
+    id: classId,
+    classTemplateInfo: {
+      cardTemplateOverride: {
+        cardRowTemplateInfos: [],
+      },
+      detailsTemplateOverride: {
+        detailsItemInfos: [],
+      },
+    },
+  }
 }
 
 function buildGenericObject(input: {
   objectId: string
   classId: string
   name: string
-  title: string
-  cardUrl: string
   background: string
-  logoUrl?: string
   heroUrl?: string
-  wideLogoUrl?: string
 }) {
   return {
     id: input.objectId,
@@ -110,31 +114,14 @@ function buildGenericObject(input: {
     state: 'ACTIVE',
     genericType: 'GENERIC_TYPE_UNSPECIFIED',
     hexBackgroundColor: input.background,
-    cardTitle: localized(input.name || 'Digital Card'),
-    header: localized(input.title || 'Digital Card'),
-    logo: input.logoUrl
-      ? {
-          sourceUri: { uri: input.logoUrl },
-          contentDescription: localized(input.name || 'Card'),
-        }
-      : undefined,
-    wideLogo: input.wideLogoUrl
-      ? {
-          sourceUri: { uri: input.wideLogoUrl },
-          contentDescription: localized(input.name || 'Card'),
-        }
-      : undefined,
+    cardTitle: localized('\u00a0'),
+    header: localized('\u00a0'),
     heroImage: input.heroUrl
       ? {
           sourceUri: { uri: input.heroUrl },
           contentDescription: localized(input.name || 'Digital card'),
         }
       : undefined,
-    barcode: {
-      type: 'QR_CODE',
-      value: input.cardUrl,
-      alternateText: input.name || 'Card',
-    },
   }
 }
 
@@ -150,25 +137,14 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
 
   const profile = await prisma.profile.findFirst({
     where: { slug: slugEquals(trimmed), ...publicReadableWhere() },
-    include: {
-      settings: true,
-    },
   })
   if (!profile) throw new AppError(404, 'Card not found')
 
-  const settings = Object.fromEntries(profile.settings.map((row) => [row.key, row.value ?? '']))
-  const logoUrl = stillImageUrl(
-    [settings.profile_media_url, profile.avatar, settings.company_icon_url, config.GOOGLE_WALLET.LOGO_URL],
-    profile.legacyId
-  )
-
   const slugForPass = profile.slug?.trim() || trimmed
-  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-v1`)
-  const objectSuffix = sanitizeWalletSuffix(`v1-${slugForPass || profile.id}`)
+  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-face2`)
+  const objectSuffix = sanitizeWalletSuffix(`face2-${slugForPass || profile.id}`)
   const classId = `${issuerId}.${classSuffix}`
   const objectId = `${issuerId}.${objectSuffix}`
-  const title = profile.designation?.trim() || profile.companyName?.trim() || 'Digital Card'
-  const cardUrl = `${publicSiteBase()}/v/${encodeURIComponent(slugForPass)}`
 
   const claims = {
     iss: account.email,
@@ -183,12 +159,8 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
           objectId,
           classId,
           name: profile.name?.trim() || slugForPass,
-          title,
-          cardUrl,
           background: hexFromTheme(profile.themeConfig),
-          logoUrl,
-          heroUrl: walletArtUrl(slugForPass, 'hero'),
-          wideLogoUrl: walletArtUrl(slugForPass, 'wide'),
+          heroUrl: walletArtUrl(slugForPass, 'card'),
         }),
       ],
     },

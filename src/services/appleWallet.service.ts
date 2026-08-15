@@ -101,7 +101,7 @@ function publicCardUrl(slug: string): string {
 }
 
 function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' = 'strip'): string {
-  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=w1`
+  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=face2`
 }
 
 function hexToRgbCss(hex: string, fallback = 'rgb(11, 31, 58)'): string {
@@ -134,16 +134,39 @@ function hexLuminance(hex: string): number {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
 }
 
+function hexToRgb(hex: string): [number, number, number] {
+  const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim())
+  if (!match) return [238, 214, 119]
+  let h = match[1]
+  if (h.length === 3)
+    h = h
+      .split('')
+      .map((c) => c + c)
+      .join('')
+  const n = Number.parseInt(h, 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
 function primaryFromTheme(themeConfig: unknown): string {
-  if (!themeConfig || typeof themeConfig !== 'object') return '#0B1F3A'
+  if (!themeConfig || typeof themeConfig !== 'object') return '#EED677'
   const colors = (
-    themeConfig as { colors?: { defaultMode?: string; dark?: { primary?: string }; light?: { primary?: string } } }
+    themeConfig as {
+      colors?: {
+        defaultMode?: string
+        themeMode?: string
+        dark?: { primary?: string; accent?: string }
+        light?: { primary?: string; accent?: string }
+      }
+    }
   ).colors
-  const mode = colors?.defaultMode === 'light' ? 'light' : 'dark'
-  const primary = mode === 'light' ? colors?.light?.primary : colors?.dark?.primary
-  return typeof primary === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(primary.trim())
-    ? primary.trim()
-    : '#0B1F3A'
+  const mode = colors?.defaultMode === 'light' || colors?.themeMode === 'light' ? 'light' : 'dark'
+  const set = mode === 'light' ? colors?.light : colors?.dark
+  const other = mode === 'light' ? colors?.dark : colors?.light
+  const candidates = [set?.primary, set?.accent, other?.primary, other?.accent]
+  for (const value of candidates) {
+    if (typeof value === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim())) return value.trim()
+  }
+  return '#EED677'
 }
 
 async function fetchPng(url: string): Promise<Buffer | undefined> {
@@ -197,20 +220,17 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
 
   const slugForPass = profile.slug?.trim() || trimmed
   const name = profile.name?.trim() || slugForPass
-  const title = profile.designation?.trim() || profile.companyName?.trim() || ''
   const cardUrl = publicCardUrl(slugForPass)
   const primary = primaryFromTheme(profile.themeConfig)
   const darkBg = hexLuminance(primary) <= 0.55
-  const strip = (await fetchPng(walletArtUrl(slugForPass, 'strip'))) || createSolidPng(1125, 432, [11, 31, 58])
-  const icon = createSolidPng(58, 58, [11, 31, 58])
-  const logo = createSolidPng(160, 50, [11, 31, 58])
+  const brandRgb = hexToRgb(primary)
+  const strip = (await fetchPng(walletArtUrl(slugForPass, 'strip'))) || createSolidPng(1125, 432, brandRgb)
+  const icon = createSolidPng(58, 58, brandRgb)
 
   const pass = new PKPass(
     {
       'icon.png': icon,
       'icon@2x.png': icon,
-      'logo.png': logo,
-      'logo@2x.png': logo,
       'strip.png': strip,
       'strip@2x.png': strip,
       'strip@3x.png': strip,
@@ -225,10 +245,10 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
       formatVersion: 1,
       passTypeIdentifier: passTypeId,
       teamIdentifier: teamId,
-      serialNumber: `card-v1-${profile.id}`.slice(0, 64),
+      serialNumber: `card-face2-${profile.id}`.slice(0, 64),
       organizationName: config.APPLE_WALLET.ORGANIZATION,
       description: `${name} digital card`,
-      logoText: name,
+      logoText: '',
       foregroundColor: darkBg ? 'rgb(255, 255, 255)' : 'rgb(17, 17, 17)',
       backgroundColor: hexToRgbCss(primary),
       labelColor: darkBg ? 'rgb(220, 220, 220)' : 'rgb(80, 80, 80)',
@@ -237,17 +257,9 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
   )
 
   pass.type = 'storeCard'
-  pass.primaryFields.push({ key: 'name', label: 'NAME', value: name })
-  pushField(pass.secondaryFields, 'title', 'TITLE', title)
   pushField(pass.backFields, 'card', 'Open digital card', cardUrl)
   pushField(pass.backFields, 'phone', 'Phone', profile.phone)
   pushField(pass.backFields, 'email', 'Email', profile.email)
-  pass.setBarcodes({
-    message: cardUrl,
-    format: 'PKBarcodeFormatQR',
-    messageEncoding: 'iso-8859-1',
-    altText: name,
-  })
 
   const filename = `${slugForPass.replace(/[^a-zA-Z0-9._-]/g, '-') || 'vbiz-card'}.pkpass`
   return { buffer: pass.getAsBuffer(), filename }
