@@ -14,7 +14,8 @@ type Localized = {
 }
 
 function localized(value: string, language = 'en'): Localized {
-  return { defaultValue: { language, value } }
+  const text = value.trim()
+  return { defaultValue: { language, value: text || 'vBiz' } }
 }
 
 function sanitizeWalletSuffix(value: string): string {
@@ -88,17 +89,7 @@ function hexFromTheme(themeConfig: unknown): string {
 }
 
 function buildGenericClass(classId: string) {
-  return {
-    id: classId,
-    classTemplateInfo: {
-      cardTemplateOverride: {
-        cardRowTemplateInfos: [],
-      },
-      detailsTemplateOverride: {
-        detailsItemInfos: [],
-      },
-    },
-  }
+  return { id: classId }
 }
 
 function buildGenericObject(input: {
@@ -114,8 +105,8 @@ function buildGenericObject(input: {
     state: 'ACTIVE',
     genericType: 'GENERIC_TYPE_UNSPECIFIED',
     hexBackgroundColor: input.background,
-    cardTitle: localized('\u00a0'),
-    header: localized('\u00a0'),
+    cardTitle: localized('vBiz'),
+    header: localized(input.name || 'Card'),
     heroImage: input.heroUrl
       ? {
           sourceUri: { uri: input.heroUrl },
@@ -141,8 +132,8 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
   if (!profile) throw new AppError(404, 'Card not found')
 
   const slugForPass = profile.slug?.trim() || trimmed
-  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-face2`)
-  const objectSuffix = sanitizeWalletSuffix(`face2-${slugForPass || profile.id}`)
+  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-face3`)
+  const objectSuffix = sanitizeWalletSuffix(`face3-${slugForPass || profile.id}`)
   const classId = `${issuerId}.${classSuffix}`
   const objectId = `${issuerId}.${objectSuffix}`
 
