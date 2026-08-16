@@ -19,7 +19,13 @@ import fs from 'fs'
 import path from 'path'
 import config from '../src/configs/config'
 import logger from '../src/utils/logger'
-import { isAbsoluteMediaUrl, isAlreadyOnS3 } from '../src/utils/mediaUrl'
+import {
+  encodeUrlPath,
+  isAbsoluteMediaUrl,
+  isAlreadyOnS3,
+  legacySourceUrlCandidates,
+  mediaFilename,
+} from '../src/utils/mediaUrl'
 import { prisma } from '../src/utils/prisma'
 import s3Utils from '../src/utils/s3'
 
@@ -50,6 +56,7 @@ type MediaHit = {
   section: string
   itemLegacyId: number | null
   attachmentLegacyId: number | null
+  attachmentTypeLegacyId: number | null
   kind: 'profile' | 'post' | 'service' | 'portfolio' | 'attachment'
   field: string
   url: string
@@ -141,10 +148,64 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 
-function pushUrl(hits: MediaHit[], hit: MediaHit) {
+function pushUrl(
+  hits: MediaHit[],
+  hit: Omit<MediaHit, 'attachmentTypeLegacyId'> & { attachmentTypeLegacyId?: number | null }
+) {
   if (!hit.url || !isAbsoluteMediaUrl(hit.url)) return
   if (SKIP_HOST.test(hit.url)) return
-  hits.push(hit)
+  hits.push({ ...hit, attachmentTypeLegacyId: hit.attachmentTypeLegacyId ?? null })
+}
+
+function fileKey(url: string): string {
+  const name = mediaFilename(url, null) || url
+  return name.trim().toLowerCase()
+}
+
+async function fetchOk(url: string): Promise<boolean> {
+  try {
+    const encoded = encodeUrlPath(url)
+    const get = await fetch(encoded, {
+      method: 'GET',
+      headers: {
+        Range: 'bytes=0-0',
+        'User-Agent': USER_AGENT,
+        Accept: '*/*',
+        Referer: 'https://app.vbizme.com/',
+      },
+      redirect: 'follow',
+    })
+    if (!(get.ok || get.status === 206)) return false
+    const ct = get.headers.get('content-type') || ''
+    return !ct.includes('text/html')
+  } catch {
+    return false
+  }
+}
+
+async function resolveWorkingUrl(
+  urls: string[],
+  laravelId: number,
+  typeLegacyId?: number | null
+): Promise<string | null> {
+  const candidates: string[] = []
+  for (const url of urls) {
+    for (const c of legacySourceUrlCandidates(
+      {
+        url,
+        docName: mediaFilename(url, null),
+        attachmentTypeLegacyId: typeLegacyId ?? null,
+        profileLegacyId: laravelId,
+      },
+      { mode: 'exhaustive' }
+    )) {
+      if (!candidates.includes(c)) candidates.push(c)
+    }
+  }
+  for (const candidate of candidates) {
+    if (await fetchOk(candidate)) return encodeUrlPath(candidate)
+  }
+  return null
 }
 
 function collectFeaturedAndAttachments(
@@ -188,10 +249,12 @@ function collectFeaturedAndAttachments(
       const rec = asRecord(att)
       if (!rec || typeof rec.url !== 'string') continue
       const attId = Number(rec.id)
+      const typeId = Number(rec.attachment_type_id)
       pushUrl(hits, {
         section,
         itemLegacyId,
         attachmentLegacyId: Number.isFinite(attId) ? attId : null,
+        attachmentTypeLegacyId: Number.isFinite(typeId) ? typeId : 8,
         kind: 'attachment',
         field: 'attachments',
         url: rec.url,
@@ -326,28 +389,30 @@ async function syncSlug(slug: string, dryRun: boolean): Promise<SyncResult> {
   const tabsRes = await laravelGet(`/post-types?profile_id=${laravelId}`)
   const tabsData = envelope(tabsRes.json) || {}
   const postTypes = Array.isArray(tabsData.post_types) ? tabsData.post_types : []
-  const names = new Set<string>()
+  const names = new Map<string, 'nav' | 'extra'>()
   for (const row of postTypes) {
     const rec = asRecord(row)
     const name = String(rec?.name || rec?.title || '')
     if (name.trim() && !/^home$/i.test(name) && !/^cards$/i.test(name) && !/^public cards$/i.test(name)) {
-      names.add(name)
+      names.set(name, 'nav')
     }
   }
   for (const extra of EXTRA_TABS) {
-    if (![...names].some((n) => n.trim().toLowerCase() === extra.toLowerCase())) names.add(extra)
+    if (![...names.keys()].some((n) => n.trim().toLowerCase() === extra.toLowerCase())) {
+      names.set(extra, 'extra')
+    }
   }
 
   const hits: MediaHit[] = collectProfileMedia(card)
   let tabsOk = 0
-  for (const name of names) {
+  for (const [name, source] of names) {
     await sleep(120)
     const encoded = encodeURIComponent(name)
     const sec = await laravelGet(`/dynamic-section/${encoded}?profile_id=${laravelId}`)
     const data = envelope(sec.json)
     const items = Array.isArray(data?.items) ? data.items : []
     if (sec.status !== 200) {
-      errors.push(`tab ${name}: HTTP ${sec.status}`)
+      if (source === 'nav') errors.push(`tab ${name}: HTTP ${sec.status}`)
       continue
     }
     tabsOk += 1
@@ -359,47 +424,56 @@ async function syncSlug(slug: string, dryRun: boolean): Promise<SyncResult> {
     }
   }
 
-  const uniqueByUrl = new Map<string, MediaHit[]>()
+  const uniqueByFile = new Map<string, MediaHit[]>()
   for (const hit of hits) {
-    const list = uniqueByUrl.get(hit.url) || []
+    const key = fileKey(hit.url)
+    const list = uniqueByFile.get(key) || []
     list.push(hit)
-    uniqueByUrl.set(hit.url, list)
+    uniqueByFile.set(key, list)
   }
 
   let uploaded = 0
   let skipped = 0
   let failed = 0
-  const urlMap = new Map<string, string>()
 
-  const entries = [...uniqueByUrl.entries()]
+  const entries = [...uniqueByFile.entries()]
   for (let i = 0; i < entries.length; i += CONCURRENCY) {
     const chunk = entries.slice(i, i + CONCURRENCY)
     await Promise.all(
-      chunk.map(async ([sourceUrl, related]) => {
-        if (isAlreadyOnS3(sourceUrl)) {
+      chunk.map(async ([key, related]) => {
+        const urls = [...new Set(related.map((h) => h.url))]
+        if (urls.every((u) => isAlreadyOnS3(u))) {
           skipped += related.length
-          urlMap.set(sourceUrl, sourceUrl)
+          const s3Url = urls.find((u) => isAlreadyOnS3(u)) || urls[0]
+          for (const hit of related) await rewriteRow(hit, dbProfile.id, s3Url)
           return
         }
         if (dryRun) {
-          logger.info(`[dry-run] ${slug} ${related[0].section} ${sourceUrl}`)
+          logger.info(`[dry-run] ${slug} ${related[0].section} ${key}`)
           uploaded += related.length
+          return
+        }
+        const typeId = related.find((h) => h.attachmentTypeLegacyId != null)?.attachmentTypeLegacyId
+        const working = await resolveWorkingUrl(urls, laravelId, typeId)
+        if (!working) {
+          failed += related.length
+          errors.push(`${related[0].section} ${urls[0]}: SOURCE_MISSING after folder fallbacks`)
+          logger.error(`[fail] ${slug} no working URL for ${key} (tried posts/featuredImages/...)`)
           return
         }
         try {
           const folder = s3Folder(related[0].kind, related[0].section)
-          const uploadedFile = await s3Utils.uploadFromUrl(sourceUrl, { folder })
-          urlMap.set(sourceUrl, uploadedFile.url)
+          const uploadedFile = await s3Utils.uploadFromUrl(working, { folder })
           for (const hit of related) {
             await rewriteRow(hit, dbProfile.id, uploadedFile.url)
           }
           uploaded += related.length
-          logger.info(`[ok] ${slug} ${related[0].section} -> ${uploadedFile.url}`)
+          logger.info(`[ok] ${slug} ${related[0].section} ${key} -> ${uploadedFile.url}`)
         } catch (err) {
           failed += related.length
           const message = err instanceof Error ? err.message : String(err)
-          errors.push(`${related[0].section} ${sourceUrl}: ${message}`)
-          logger.error(`[fail] ${slug} ${sourceUrl}`, err)
+          errors.push(`${related[0].section} ${working}: ${message}`)
+          logger.error(`[fail] ${slug} ${working}`, err)
         }
       })
     )
