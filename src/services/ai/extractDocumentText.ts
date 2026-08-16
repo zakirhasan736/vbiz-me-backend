@@ -1,11 +1,31 @@
+import { createHash } from 'crypto'
 import mammoth from 'mammoth'
 import AppError from '../../error/AppError'
+import { cacheGet, cacheKey, cacheSet } from './extractionCache'
 import { MAX_FILES, MAX_UPLOAD_BYTES } from './openai.client'
+
+export type WebsitePageCategory =
+  | 'home'
+  | 'about'
+  | 'services'
+  | 'products'
+  | 'team'
+  | 'faq'
+  | 'reviews'
+  | 'contact'
+  | 'locations'
+  | 'certifications'
+  | 'blog'
+  | 'social'
+  | 'other'
 
 export type ExtractedSource = {
   label: string
   text: string
   images: Array<{ mimeType: string; base64: string }>
+  extractionMethod: 'native' | 'ocr' | 'ocr_needed' | 'unsupported' | 'empty'
+  warning?: string
+  sha256?: string
 }
 
 export type UploadedPart = {
@@ -40,6 +60,63 @@ function cleanText(text: string): string {
   return decodeHtmlEntities(text).replace(/\s+/g, ' ').trim()
 }
 
+const BOILERPLATE_RE =
+  /we use cookies|accept (all )?cookies|cookie (policy|settings|banner)|this website uses cookies|all rights reserved|privacy policy|terms of (use|service)|subscribe to our newsletter|sign up for (our )?newsletter|manage (your )?preferences/gi
+
+export function stripWebsiteBoilerplate(text: string): string {
+  const withoutCookies = text.replace(BOILERPLATE_RE, ' ')
+  const parts = withoutCookies.split(/\s{2,}|\s\|\s/)
+  const counts = new Map<string, number>()
+  for (const part of parts) {
+    const key = part.trim().toLowerCase()
+    if (key.length < 24 || key.length > 180) continue
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+  const dupes = new Set([...counts.entries()].filter(([, n]) => n >= 3).map(([k]) => k))
+  if (!dupes.size) return cleanText(withoutCookies)
+  return cleanText(
+    parts
+      .filter((part) => {
+        const key = part.trim().toLowerCase()
+        return !dupes.has(key)
+      })
+      .join(' ')
+  )
+}
+
+export function classifyWebsitePage(url: string, text = ''): WebsitePageCategory {
+  const hay = `${url} ${text.slice(0, 500)}`.toLowerCase()
+  if (/\/(faq|faqs|help|support)\b/.test(hay) || /\bfrequently asked\b/.test(hay)) return 'faq'
+  if (/review|testimonial|feedback/.test(hay)) return 'reviews'
+  if (/\/(about|our-story|who-we-are)\b/.test(hay) || /\babout (us|me)\b/.test(hay)) return 'about'
+  if (/service|offer|package|solution/.test(hay)) return 'services'
+  if (/product|shop|store/.test(hay)) return 'products'
+  if (/team|staff|our people/.test(hay)) return 'team'
+  if (/contact|get in touch/.test(hay)) return 'contact'
+  if (/location|offices|service area/.test(hay)) return 'locations'
+  if (/certif|licen[cs]e|accreditation|insured/.test(hay)) return 'certifications'
+  if (/blog|news|article|press/.test(hay)) return 'blog'
+  if (/facebook|instagram|linkedin|youtube|tiktok/.test(hay)) return 'social'
+  try {
+    const parsed = new URL(url.startsWith('http') ? url : `https://${url}`)
+    if (parsed.pathname === '/' || parsed.pathname === '') return 'home'
+  } catch {
+    /* ignore */
+  }
+  return 'other'
+}
+
+export function hashBuffer(buffer: Buffer): string {
+  return createHash('sha256').update(buffer).digest('hex')
+}
+
+export function pdfTextLooksScanned(text: string, byteLength: number): boolean {
+  const letters = (text.match(/[A-Za-z0-9]/g) || []).length
+  if (letters < 80) return true
+  if (byteLength > 80_000 && letters < 240) return true
+  return false
+}
+
 export function assertUploadLimits(files: UploadedPart[]) {
   if (files.length > MAX_FILES) {
     throw new AppError(400, `Too many files (max ${MAX_FILES}).`)
@@ -54,32 +131,91 @@ export function assertUploadLimits(files: UploadedPart[]) {
 export async function extractTextFromBuffer(file: UploadedPart): Promise<ExtractedSource> {
   const mime = (file.mimeType || '').toLowerCase()
   const name = file.name || 'upload'
+  const sha256 = hashBuffer(file.buffer)
+  const cached = cacheGet<ExtractedSource>(cacheKey(['file', sha256, mime, name]))
+  if (cached) return cached
+
+  if (!file.buffer.byteLength) {
+    return { label: name, text: '', images: [], extractionMethod: 'empty', warning: 'File was empty.', sha256 }
+  }
 
   if (mime.startsWith('text/') || name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.csv')) {
-    return { label: name, text: truncate(file.buffer.toString('utf8')), images: [] }
+    const text = truncate(file.buffer.toString('utf8'))
+    const result: ExtractedSource = {
+      label: name,
+      text,
+      images: [],
+      extractionMethod: text.trim() ? 'native' : 'empty',
+      sha256,
+    }
+    cacheSet(cacheKey(['file', sha256, mime, name]), result)
+    return result
   }
 
   if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || name.endsWith('.docx')) {
     const result = await mammoth.extractRawText({ buffer: file.buffer })
-    return { label: name, text: truncate(result.value || ''), images: [] }
+    const extracted: ExtractedSource = {
+      label: name,
+      text: truncate(result.value || ''),
+      images: [],
+      extractionMethod: (result.value || '').trim() ? 'native' : 'empty',
+      sha256,
+    }
+    cacheSet(cacheKey(['file', sha256, mime, name]), extracted)
+    return extracted
   }
 
   if (mime === 'application/pdf' || name.endsWith('.pdf')) {
-    const pdfParseMod = await import('pdf-parse')
-    const pdfParse = (pdfParseMod as { default?: (b: Buffer) => Promise<{ text: string }> }).default || pdfParseMod
-    const parsed = await (pdfParse as (b: Buffer) => Promise<{ text: string }>)(file.buffer)
-    return { label: name, text: truncate(parsed.text || ''), images: [] }
-  }
-
-  if (mime.startsWith('image/')) {
-    return {
-      label: name,
-      text: `[Image attached: ${name}. Use vision to OCR / extract business details.]`,
-      images: [{ mimeType: mime || 'image/jpeg', base64: file.buffer.toString('base64') }],
+    try {
+      const pdfParseMod = await import('pdf-parse')
+      const pdfParse = (pdfParseMod as { default?: (b: Buffer) => Promise<{ text: string }> }).default || pdfParseMod
+      const parsed = await (pdfParse as (b: Buffer) => Promise<{ text: string }>)(file.buffer)
+      const text = truncate(parsed.text || '')
+      const scanned = pdfTextLooksScanned(parsed.text || '', file.buffer.byteLength)
+      const extracted: ExtractedSource = scanned
+        ? {
+            label: name,
+            text:
+              text ||
+              `[Scanned PDF attached: ${name}. Native text was too thin; vision OCR should be used if page images are available.]`,
+            images: [],
+            extractionMethod: text.trim() && !scanned ? 'native' : 'ocr_needed',
+            warning:
+              'This PDF looks scanned. Native text was limited, so the system will treat it as image-based content.',
+            sha256,
+          }
+        : { label: name, text, images: [], extractionMethod: 'native', sha256 }
+      cacheSet(cacheKey(['file', sha256, mime, name]), extracted)
+      return extracted
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'PDF parse failed'
+      if (/password|encrypt/i.test(message)) {
+        throw new AppError(400, `“${name}” is password-protected. Upload an unlocked PDF or paste the text.`)
+      }
+      throw new AppError(400, `Could not read PDF “${name}”. Try a text PDF, DOCX, or images.`)
     }
   }
 
-  return { label: name, text: truncate(file.buffer.toString('utf8')), images: [] }
+  if (mime.startsWith('image/')) {
+    const extracted: ExtractedSource = {
+      label: name,
+      text: `[Image attached: ${name}. Use vision to OCR / extract business details.]`,
+      images: [{ mimeType: mime || 'image/jpeg', base64: file.buffer.toString('base64') }],
+      extractionMethod: 'ocr',
+      sha256,
+    }
+    cacheSet(cacheKey(['file', sha256, mime, name]), extracted)
+    return extracted
+  }
+
+  return {
+    label: name,
+    text: truncate(file.buffer.toString('utf8')),
+    images: [],
+    extractionMethod: 'unsupported',
+    warning: `“${name}” may not be a supported document type.`,
+    sha256,
+  }
 }
 
 async function fetchHtml(url: string): Promise<string> {
@@ -213,7 +349,7 @@ function htmlToText(html: string): string {
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
-  return cleanText([carouselBlocks, visible, attributes, embedded].filter(Boolean).join(' '))
+  return stripWebsiteBoilerplate(cleanText([carouselBlocks, visible, attributes, embedded].filter(Boolean).join(' ')))
 }
 
 const SECTION_LINK_RE =
@@ -289,11 +425,20 @@ function extractSameOriginLinks(html: string, baseUrl: string, focus?: string, l
 export async function crawlWebsiteDeep(
   url: string,
   focus?: string
-): Promise<{ pages: Array<{ url: string; text: string }>; combined: string }> {
+): Promise<{ pages: Array<{ url: string; text: string; category: WebsitePageCategory }>; combined: string }> {
   const home = url.startsWith('http') ? url : `https://${url}`
+  const cacheId = cacheKey(['crawl', home, focus || ''])
+  const cached = cacheGet<{
+    pages: Array<{ url: string; text: string; category: WebsitePageCategory }>
+    combined: string
+  }>(cacheId)
+  if (cached) return cached
+
   const homeHtml = await fetchHtml(home)
   const homeText = htmlToText(homeHtml)
-  const pages: Array<{ url: string; text: string }> = [{ url: home, text: truncate(homeText, 14000) }]
+  const pages: Array<{ url: string; text: string; category: WebsitePageCategory }> = [
+    { url: home, text: truncate(homeText, 14000), category: classifyWebsitePage(home, homeText) },
+  ]
   const visited = new Set<string>([home])
   const maxPages = focus ? 18 : 14
 
@@ -313,7 +458,9 @@ export async function crawlWebsiteDeep(
   for (const result of firstResults) {
     if (result.status !== 'fulfilled') continue
     const page = result.value
-    if (page.text.length > 80) pages.push({ url: page.url, text: page.text })
+    if (page.text.length > 80) {
+      pages.push({ url: page.url, text: page.text, category: classifyWebsitePage(page.url, page.text) })
+    }
     childLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 8))
   }
 
@@ -328,14 +475,22 @@ export async function crawlWebsiteDeep(
     const secondResults = await Promise.allSettled(remaining.map(fetchPage))
     for (const result of secondResults) {
       if (result.status === 'fulfilled' && result.value.text.length > 80) {
-        pages.push({ url: result.value.url, text: result.value.text })
+        pages.push({
+          url: result.value.url,
+          text: result.value.text,
+          category: classifyWebsitePage(result.value.url, result.value.text),
+        })
       }
     }
   }
 
-  const combined = pages.map((p, i) => `=== PAGE ${i + 1}: ${p.url} ===\n${p.text}`).join('\n\n')
+  const combined = pages
+    .map((p, i) => `=== PAGE ${i + 1} [${p.category.toUpperCase()}]: ${p.url} ===\n${p.text}`)
+    .join('\n\n')
 
-  return { pages, combined: truncate(combined, focus ? 90000 : 70000) }
+  const result = { pages, combined: truncate(combined, focus ? 90000 : 70000) }
+  cacheSet(cacheId, result)
+  return result
 }
 
 /** @deprecated Prefer crawlWebsiteDeep for analyze. */
