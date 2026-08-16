@@ -73,6 +73,8 @@ model User {
   teamNotices          TeamNotice[]          @relation("TeamNoticeOwner")
   canvaConnection      CanvaConnection?
   canvaOAuthPendings   CanvaOAuthPending[]
+  aiGenerationLogs     AiGenerationLog[]
+  aiCardSessions       AiCardSession[]
 
   @@index([provider, providerId])
 }
@@ -285,6 +287,7 @@ model Profile {
   meetings           Meeting[]
   auditLogs          AuditLog[]
   birthdayWishLogs   BirthdayWishLog[]
+  aiGenerationLogs   AiGenerationLog[]
 
   @@index([userId])
   @@index([companyUserId])
@@ -931,4 +934,69 @@ model CompanyEmployee {
 
   @@unique([userId, companyId])
   @@index([companyId])
+}
+
+/** AI card-agent usage for cost and routing analytics. */
+model AiGenerationLog {
+  id                 String   @id @default(cuid())
+  userId             String?
+  user               User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  profileId          String?
+  profile            Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  sessionId          String?
+  jobId              String?
+  stage              String?
+  task               String
+  model              String
+  tier               String
+  inputTokens        Int      @default(0)
+  cachedInputTokens  Int      @default(0)
+  outputTokens       Int      @default(0)
+  estimatedCost      Float    @default(0)
+  latencyMs          Int      @default(0)
+  retryNumber        Int      @default(0)
+  success            Boolean  @default(true)
+  escalatedFrom      String?
+  error              String?
+  createdAt          DateTime @default(now())
+
+  @@index([userId])
+  @@index([profileId])
+  @@index([sessionId])
+  @@index([jobId])
+  @@index([tier])
+  @@index([createdAt])
+}
+
+/** One Auto AI card-build job per user run (extract → SOL → fields → apply). */
+model AiCardSession {
+  id                   String    @id @default(cuid())
+  userId               String?
+  user                 User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  profileId            String?
+  websiteUrl           String?
+  sourceHash           String?
+  status               String    @default("QUEUED")
+  rawSources           Json?
+  normalizedSources    Json?
+  businessProfile      Json?
+  generatedContent     Json?
+  finalBlueprint       Json?
+  architecture         Json?
+  selectedNavIds       Json?
+  fieldGraph           Json?
+  fieldDecisions       Json?
+  assembledDraft       Json?
+  userProgress         Json?
+  errorMessage         String?
+  architectureVersion  Int       @default(1)
+  expiresAt            DateTime
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([profileId])
+  @@index([status])
+  @@index([sourceHash])
+  @@index([expiresAt])
 }

@@ -1,16 +1,28 @@
 import { z } from 'zod'
 import AppError from '../../error/AppError'
+import { logAiUsage, logChatMeta } from './aiUsageLog.service'
+import { analyzeMasterProfile } from './businessAnalyzer.service'
 import {
-  BLUEPRINT_JSON_INSTRUCTION,
   FILL_SECTION_SCHEMA_HINTS,
   TAB_CATALOG,
   cardBlueprintSchema,
+  coerceServiceTypes,
   countFillEntries,
   fillSectionSchemas,
+  type CardBlueprint,
   type FillSectionId,
 } from './cardBlueprint.schema'
+import { getCardSession, putCardSession } from './cardSession.store'
+import { buildCompletenessReport } from './completeness.service'
+import { generateCardContent, generateSectionFromProfile, profileToBlueprintFacts } from './contentGenerator.service'
 import { crawlWebsiteDeep, extractTextFromBuffer, type UploadedPart } from './extractDocumentText'
+import { buildFieldGraph, buildTabPlan } from './fieldGraph.service'
+import { assessComplexity, routeAiTier } from './modelRouter.service'
 import { chatJson, getOpenAiApiKey } from './openai.client'
+import { runSolArchitect } from './solArchitect.service'
+import { normalizeSources } from './sourceNormalizer.service'
+import { decideRecommendedTabs, type RecommendedTab } from './tabDecision.service'
+import { sanitizeBlueprint } from './validation.service'
 
 const suggestResponseSchema = z.object({
   recommendations: z.array(
@@ -54,38 +66,102 @@ function ensureOpenAiConfigured() {
   getOpenAiApiKey()
 }
 
-function coerceServiceTypes(raw: unknown): unknown {
-  if (!raw || typeof raw !== 'object') return raw
-  const obj = raw as Record<string, unknown>
-  if (!Array.isArray(obj.services)) return raw
-  const allowed = new Set(['Web Development', 'App Design', 'SEO', 'Marketing', 'Other'])
+function mergeBlueprint(base: Partial<CardBlueprint>, generated: CardBlueprint): CardBlueprint {
+  return cardBlueprintSchema.parse({
+    ...generated,
+    personal: {
+      ...generated.personal,
+      ...Object.fromEntries(Object.entries(base.personal || {}).filter(([, v]) => v)),
+    },
+    socialHandles: { ...(generated.socialHandles || {}), ...(base.socialHandles || {}) },
+    education: generated.education?.length ? generated.education : base.education || [],
+    experience: generated.experience?.length ? generated.experience : base.experience || [],
+    skills: generated.skills?.length ? generated.skills : base.skills || [],
+    services: generated.services?.length ? generated.services : base.services || [],
+    portfolio: generated.portfolio?.length ? generated.portfolio : base.portfolio || [],
+    reviews: base.reviews || [],
+    blogs: generated.blogs || [],
+    faqs: generated.faqs || [],
+    enabledTabs: generated.enabledTabs?.length ? generated.enabledTabs : base.enabledTabs || ['Personal'],
+    recommendedTabs: generated.recommendedTabs?.length ? generated.recommendedTabs : base.recommendedTabs || [],
+    businessSummary: generated.businessSummary || base.businessSummary || '',
+    suggestedSlug: generated.suggestedSlug || base.suggestedSlug || 'my-card',
+  })
+}
+
+export type ExtractionUserStep = {
+  id: string
+  label: string
+  status: 'done' | 'skipped' | 'failed'
+  detail?: string
+}
+
+export function summarizeExtraction(normalized: Awaited<ReturnType<typeof normalizeSources>>) {
+  const websiteFailed = Boolean(normalized.website.scrapeFailed)
+  const websitePages = normalized.website.pages.length
+  const websiteStep: ExtractionUserStep = !normalized.website.url
+    ? { id: 'website', label: 'Reading your website', status: 'skipped', detail: 'No website was provided.' }
+    : websiteFailed
+      ? {
+          id: 'website',
+          label: 'Reading your website',
+          status: 'failed',
+          detail: 'The website could not be read. Your notes and files will still be used.',
+        }
+      : {
+          id: 'website',
+          label: 'Reading your website',
+          status: 'done',
+          detail: `Read ${websitePages} page${websitePages === 1 ? '' : 's'}${
+            normalized.website.pages.length
+              ? ` (${[...new Set(normalized.website.pages.map((p) => p.category))].slice(0, 6).join(', ')})`
+              : ''
+          }.`,
+        }
+
+  const docCount = normalized.documents.length + normalized.ocrResults.length
+  const imageCount = normalized.ocrResults.filter((d) => d.extractionMethod === 'ocr').length
+  const scannedCount = normalized.ocrResults.filter((d) => d.extractionMethod === 'ocr_needed').length
+  const documentsStep: ExtractionUserStep =
+    docCount === 0
+      ? { id: 'documents', label: 'Reading your documents', status: 'skipped', detail: 'No files were uploaded.' }
+      : {
+          id: 'documents',
+          label: 'Reading your documents',
+          status: 'done',
+          detail:
+            [
+              `Read ${docCount} file${docCount === 1 ? '' : 's'}`,
+              imageCount ? `${imageCount} image${imageCount === 1 ? '' : 's'}` : null,
+              scannedCount ? `${scannedCount} scanned file${scannedCount === 1 ? '' : 's'}` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ') + '.',
+        }
+
   return {
-    ...obj,
-    services: obj.services.map((row) => {
-      if (!row || typeof row !== 'object') return row
-      const s = row as Record<string, unknown>
-      const typeRaw = String(s.type || '').trim()
-      let type = 'Other'
-      if (allowed.has(typeRaw)) type = typeRaw
-      else {
-        const lower = typeRaw.toLowerCase()
-        if (/web|frontend|backend|full.?stack/.test(lower)) type = 'Web Development'
-        else if (/app|mobile|ios|android|ui.?ux/.test(lower)) type = 'App Design'
-        else if (/seo|search/.test(lower)) type = 'SEO'
-        else if (/market|ads|social|brand/.test(lower)) type = 'Marketing'
-      }
-      return { ...s, type }
-    }),
+    website: {
+      url: normalized.website.url,
+      pageCount: websitePages,
+      categories: [...new Set(normalized.website.pages.map((p) => p.category))],
+      failed: websiteFailed,
+    },
+    documents: [...normalized.documents, ...normalized.ocrResults].map((d) => ({
+      label: d.label,
+      method: d.extractionMethod,
+    })),
+    warnings: normalized.warnings,
+    steps: [websiteStep, documentsStep],
   }
 }
 
-export async function analyzeBusinessSources(input: {
+export async function extractBusinessSources(input: {
   websiteUrl?: string
   businessText?: string
   files?: UploadedPart[]
+  userId?: string
+  sessionId?: string
 }) {
-  ensureOpenAiConfigured()
-
   const websiteUrl = (input.websiteUrl || '').trim()
   const businessText = (input.businessText || '').trim()
   const files = input.files || []
@@ -94,47 +170,201 @@ export async function analyzeBusinessSources(input: {
     throw new AppError(400, 'Provide a website URL, business text, and/or document uploads.')
   }
 
-  const parts: string[] = []
-  const images: Array<{ mimeType: string; base64: string }> = []
+  const normalized = await normalizeSources({ websiteUrl, businessText, files })
+  const session = putCardSession({
+    id: input.sessionId || undefined,
+    userId: input.userId,
+    websiteUrl,
+    status: 'EXTRACTING',
+    normalized,
+    businessProfile: null,
+    blueprint: null,
+    selectedNavIds: ['home'],
+    fieldGraph: [],
+    recommendedTabs: [],
+    userProgress: [],
+    architectureVersion: 1,
+  })
+  const extraction = summarizeExtraction(normalized)
 
-  if (websiteUrl) {
-    try {
-      const crawled = await crawlWebsiteDeep(websiteUrl)
-      parts.push(
-        `WEBSITE URL: ${websiteUrl}\nCRAWLED ${crawled.pages.length} PAGE(S) (home + related services/portfolio/blog/faq/reviews/about when found):\n${crawled.combined}`
-      )
-    } catch (e) {
-      parts.push(
-        `WEBSITE URL: ${websiteUrl}\n(Could not crawl site: ${e instanceof Error ? e.message : 'error'}. Infer from the domain name and any other sources.)`
-      )
+  return {
+    sessionId: session.id,
+    extraction,
+    next: 'Understanding your business...',
+  }
+}
+
+export async function analyzeBusinessSources(input: {
+  websiteUrl?: string
+  businessText?: string
+  files?: UploadedPart[]
+  userId?: string
+  sessionId?: string
+}) {
+  ensureOpenAiConfigured()
+
+  const websiteUrl = (input.websiteUrl || '').trim()
+  const businessText = (input.businessText || '').trim()
+  const files = input.files || []
+
+  let sessionId = input.sessionId?.trim() || ''
+  let normalized = getCardSession(sessionId)?.normalized
+
+  if (!normalized) {
+    if (!websiteUrl && !businessText && files.length === 0) {
+      throw new AppError(400, 'Provide a website URL, business text, and/or document uploads.')
+    }
+    const extracted = await extractBusinessSources({
+      websiteUrl,
+      businessText,
+      files,
+      userId: input.userId,
+      sessionId,
+    })
+    sessionId = extracted.sessionId
+    normalized = getCardSession(sessionId)?.normalized
+  }
+
+  if (!normalized) {
+    throw new AppError(400, 'Could not read your sources. Try the website or files again.')
+  }
+
+  const existing = getCardSession(sessionId)
+  let profile = existing?.businessProfile
+  let tabs: RecommendedTab[]
+  let escalatedFrom: string | null = null
+  let tier: string = 'sol'
+
+  if (existing?.architecture && profile) {
+    tabs = existing.recommendedTabs || []
+  } else {
+    const architecture = await runSolArchitect({
+      normalized,
+      userId: input.userId,
+      sessionId,
+    })
+    profile = architecture.masterBusinessProfile
+    tabs = architecture.recommendedTabs
+    if (existing) {
+      putCardSession({
+        ...existing,
+        architecture,
+        businessProfile: profile,
+        recommendedTabs: tabs,
+        status: 'MAPPING_FIELDS',
+      })
     }
   }
 
-  if (businessText) {
-    parts.push(`USER BUSINESS DESCRIPTION:\n${businessText}`)
+  if (!profile) {
+    const analyzed = await analyzeMasterProfile({
+      normalized,
+      userId: input.userId,
+      sessionId,
+    })
+    profile = analyzed.profile
+    tier = analyzed.tier
+    escalatedFrom = analyzed.escalatedFrom
+    tabs = decideRecommendedTabs(profile)
+  }
+  const factBlueprint = profileToBlueprintFacts(profile, tabs)
+
+  let generated: CardBlueprint
+  try {
+    generated = await generateCardContent({
+      profile,
+      factBlueprint,
+      userId: input.userId,
+    })
+  } catch {
+    generated = cardBlueprintSchema.parse({
+      ...factBlueprint,
+      businessSummary: factBlueprint.businessSummary || profile.businessDescription || '',
+      suggestedSlug: factBlueprint.suggestedSlug || 'my-card',
+      personal: factBlueprint.personal,
+    })
   }
 
-  for (const file of files) {
-    const extracted = await extractTextFromBuffer(file)
-    parts.push(`DOCUMENT “${extracted.label}”:\n${extracted.text}`)
-    images.push(...extracted.images)
+  let { blueprint, issues } = (() => {
+    try {
+      return sanitizeBlueprint(mergeBlueprint(factBlueprint, coerceServiceTypes(generated) as CardBlueprint))
+    } catch {
+      return {
+        blueprint: cardBlueprintSchema.parse({
+          ...factBlueprint,
+          businessSummary: factBlueprint.businessSummary || profile.businessDescription || '',
+          suggestedSlug: factBlueprint.suggestedSlug || 'my-card',
+          personal: factBlueprint.personal,
+        }),
+        issues: [{ code: 'invalid_json', message: 'Content pass was repaired from the business profile.' }],
+      }
+    }
+  })()
+
+  if (issues.some((i) => i.code === 'unsupported_tab' || i.code === 'invalid_email')) {
+    const retryRoute = routeAiTier({
+      confidence: profile.confidence?.overall,
+      complexity: 'complex',
+      validationFailed: true,
+    })
+    if (retryRoute.tier !== 'luna') {
+      try {
+        const repaired = await generateCardContent({
+          profile,
+          factBlueprint: blueprint,
+          userId: input.userId,
+          instruction: `Fix validation issues: ${issues.map((i) => i.message).join('; ')}. Keep facts unchanged.`,
+        })
+        const second = sanitizeBlueprint(mergeBlueprint(blueprint, coerceServiceTypes(repaired) as CardBlueprint))
+        blueprint = second.blueprint
+        issues = second.issues
+      } catch {
+        /* keep first validated blueprint */
+      }
+    }
   }
 
-  const catalog = TAB_CATALOG.map((t) => `${t.name} (navId=${t.navId}): ${t.description}`).join('\n')
-
-  const raw = await chatJson<unknown>({
-    system: `You are the vBiz digital business card creation agent. Build a COMPLETE multi-tab vCard blueprint from the sources. When the crawl includes services, portfolio, blog, FAQ, or review pages, FILL those arrays with real extracted items (titles + descriptions). Treat labeled REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK text as separate carousel/list items. Prefer many concrete entries over empty arrays. Enable every tab that has content. Only use tabs from this catalog:\n${catalog}\n\n${BLUEPRINT_JSON_INSTRUCTION}`,
-    user: `Create a full vCard blueprint from these sources. Extract services, portfolio projects, blog posts, FAQs, and reviews whenever the text supports it. If reviews/testimonials/sliders are present, include every distinct item found up to 30, not only the first visible slide.\n\n${parts.join('\n\n---\n\n')}`,
-    images,
+  const completeness = buildCompletenessReport({ profile, blueprint })
+  const selectedNavIds = ['home', ...tabs.map((t) => t.navId)].filter((id, i, all) => all.indexOf(id) === i)
+  const fieldGraph = buildFieldGraph({ profile, recommendedTabs: tabs, selectedNavIds })
+  const session = putCardSession({
+    id: sessionId,
+    userId: input.userId,
+    websiteUrl: websiteUrl || getCardSession(sessionId)?.websiteUrl,
+    status: 'WAITING_FOR_USER_INPUT',
+    normalized,
+    businessProfile: profile,
+    blueprint,
+    selectedNavIds,
+    fieldGraph,
+    recommendedTabs: tabs,
+    architecture: getCardSession(sessionId)?.architecture,
+    userProgress: [],
+    architectureVersion: 1,
   })
 
-  const blueprint = cardBlueprintSchema.parse(coerceServiceTypes(raw))
   return {
     blueprint,
     businessSummary: blueprint.businessSummary,
     recommendedTabs: blueprint.recommendedTabs || [],
     optionalFeatures: blueprint.optionalFeatures || {},
     enabledTabs: blueprint.enabledTabs || ['Personal'],
+    sessionId: session.id,
+    businessProfile: profile,
+    completion: completeness,
+    conflicts: profile.conflicts || [],
+    warnings: [...normalized.warnings, ...profile.warnings, ...issues.map((i) => i.message)],
+    missingInformation: profile.missingInformation || [],
+    modelTier: tier,
+    escalatedFrom,
+    jobId: session.id,
+    status: session.status,
+    cardPlan: buildTabPlan({
+      recommendedTabs: tabs,
+      selectedNavIds,
+      fields: fieldGraph,
+    }),
+    nextField: fieldGraph.find((f) => f.status === 'EMPTY' || f.status === 'PARTIAL') || null,
   }
 }
 
@@ -142,13 +372,31 @@ export async function suggestTabs(input: {
   businessSummary?: string
   enabledNavIds?: string[]
   draftSummary?: string
+  sessionId?: string
+  userId?: string
 }) {
   ensureOpenAiConfigured()
+  const session = getCardSession(input.sessionId)
+  if (session?.businessProfile) {
+    const enabled = new Set(input.enabledNavIds || [])
+    const recs = decideRecommendedTabs(session.businessProfile)
+      .filter((t) => !PINNED_SUGGEST_BLOCK.has(t.navId) && !enabled.has(t.navId) && t.navId !== 'home')
+      .slice(0, 6)
+      .map((t) => ({
+        tab: t.name,
+        navId: t.navId,
+        reason: t.reason,
+        priority: t.priority,
+      }))
+    if (recs.length) return { recommendations: recs }
+  }
+
   const enabled = new Set(input.enabledNavIds || [])
   const available = TAB_CATALOG.filter((t) => !PINNED_SUGGEST_BLOCK.has(t.navId) && !enabled.has(t.navId))
   const catalog = available.map((t) => `${t.name} (${t.navId}): ${t.description}`).join('\n')
 
   const raw = await chatJson<unknown>({
+    tier: 'luna',
     system: `You recommend which vCard navigation tabs to enable next. Reply JSON only: { "recommendations": [{ "tab": "<exact catalog name>", "navId": "<exact catalog navId>", "reason": "<short why>", "priority": "high"|"medium"|"low" }] }.
 Rules:
 - Suggest ONLY from the Available tabs list (exact tab name + navId).
@@ -158,8 +406,9 @@ Rules:
 - Skip tabs that do not fit the business.`,
     user: `Business summary: ${input.businessSummary || '(none)'}\nDraft notes: ${input.draftSummary || '(none)'}\nAlready enabled nav ids: ${[...enabled].join(', ') || 'home'}\n\nAvailable tabs:\n${catalog || '(none left)'}`,
   })
+  await logChatMeta('suggest_tabs', raw.meta, { userId: input.userId, sessionId: input.sessionId, success: true })
 
-  const parsed = suggestResponseSchema.parse(raw)
+  const parsed = suggestResponseSchema.parse(raw.data)
   const seen = new Set<string>()
   const recommendations = parsed.recommendations
     .map((r) => {
@@ -186,6 +435,9 @@ export async function fillSection(input: {
   websiteUrl?: string
   currentDraft?: string
   files?: UploadedPart[]
+  sessionId?: string
+  masterProfile?: string
+  userId?: string
 }) {
   ensureOpenAiConfigured()
   const section = String(input.section || '')
@@ -196,16 +448,49 @@ export async function fillSection(input: {
   }
   const sectionId = section as FillSectionId
 
+  const session = getCardSession(input.sessionId)
+  let profile = session?.businessProfile || null
+  if (!profile && input.masterProfile) {
+    try {
+      profile = JSON.parse(input.masterProfile)
+    } catch {
+      profile = null
+    }
+  }
+
   const text = (input.text || '').trim()
   const websiteUrl = (input.websiteUrl || '').trim()
   const files = input.files || []
-  if (!text && !websiteUrl && files.length === 0) {
+
+  if (profile && files.length === 0) {
+    const payload = (await generateSectionFromProfile({
+      section: sectionId,
+      profile,
+      instruction: text,
+      currentDraft: input.currentDraft,
+      userId: input.userId,
+      sessionId: input.sessionId,
+    })) as Record<string, unknown>
+    const count = countFillEntries(sectionId, payload)
+    const message =
+      count === 0
+        ? `No ${section} found in the saved business profile. Add a note or document if you want this section filled.`
+        : undefined
+    return { section: sectionId, payload, ...(message ? { message } : {}), count, usedProfile: true }
+  }
+
+  if (!text && !websiteUrl && files.length === 0 && !profile) {
     throw new AppError(400, 'Provide text, a website URL, and/or files to fill this section.')
   }
 
   const parts: string[] = []
   const images: Array<{ mimeType: string; base64: string }> = []
-  if (websiteUrl) {
+  if (profile) {
+    parts.push(
+      `MASTER BUSINESS PROFILE (prefer this over re-reading raw sources):\n${JSON.stringify(profile).slice(0, 14000)}`
+    )
+  }
+  if (websiteUrl && !profile) {
     try {
       const crawled = await crawlWebsiteDeep(websiteUrl, section)
       parts.push(
@@ -225,14 +510,41 @@ export async function fillSection(input: {
   }
 
   const schemaHint = FILL_SECTION_SCHEMA_HINTS[sectionId]
+  const complexity = assessComplexity({
+    sourceCount: parts.length,
+    ocrUsed: images.length > 0,
+    textLength: parts.join('').length,
+  })
+  const route = routeAiTier({ confidence: profile?.confidence?.overall ?? 0.9, complexity: complexity.complexity })
+
   let raw: unknown
   try {
-    raw = await chatJson<unknown>({
-      system: `You fill one vCard section from user materials, website crawls, embedded JSON, and OCR from images. Return ONLY JSON matching: ${schemaHint}. Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. For reviews/testimonials and slider/carousel/list content, include all distinct credible items present in the source, up to 30. If the requested section is not supported by the sources, return an empty array/object for that section instead of inventing specific facts. For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other.`,
+    const result = await chatJson<unknown>({
+      tier: route.tier,
+      system: `You fill one vCard section from user materials and the Master Business Profile when present. Return ONLY JSON matching: ${schemaHint}. Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. Never invent customer reviews. If reviews are not in the sources, return an empty reviews array. If the requested section is not supported by the sources, return an empty array/object. For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other.`,
       user: `Fill section “${section}”.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nSources:\n${parts.join('\n\n---\n\n')}`,
       images,
     })
+    await logChatMeta(`fill_${sectionId}`, result.meta, {
+      userId: input.userId,
+      sessionId: input.sessionId,
+      success: true,
+    })
+    raw = result.data
   } catch (e) {
+    await logAiUsage({
+      task: `fill_${sectionId}`,
+      model: 'unknown',
+      tier: route.tier,
+      inputTokens: 0,
+      outputTokens: 0,
+      estimatedCost: 0,
+      latencyMs: 0,
+      success: false,
+      userId: input.userId,
+      sessionId: input.sessionId,
+      error: e instanceof Error ? e.message : 'fill failed',
+    })
     throw new AppError(
       502,
       e instanceof Error ? e.message : 'AI failed to generate section content. Try again with clearer material.',
@@ -260,4 +572,24 @@ export async function fillSection(input: {
       : undefined
 
   return { section: sectionId, payload, ...(message ? { message } : {}), count }
+}
+
+export async function regenerateSection(input: {
+  section: string
+  instruction?: string
+  sessionId?: string
+  currentDraft?: string
+  userId?: string
+}) {
+  const session = getCardSession(input.sessionId)
+  if (!session?.businessProfile) {
+    throw new AppError(400, 'No saved business profile for this card yet. Run analyze first.')
+  }
+  return fillSection({
+    section: input.section,
+    text: input.instruction,
+    currentDraft: input.currentDraft,
+    sessionId: input.sessionId,
+    userId: input.userId,
+  })
 }

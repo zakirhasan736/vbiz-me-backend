@@ -16,6 +16,31 @@ const socialHandlesSchema = z
 /** Matches the admin Services editor dropdown. */
 export const SERVICE_TYPE_VALUES = ['Web Development', 'App Design', 'SEO', 'Marketing', 'Other'] as const
 
+export function coerceServiceTypes(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw
+  const obj = raw as Record<string, unknown>
+  if (!Array.isArray(obj.services)) return raw
+  const allowed = new Set(SERVICE_TYPE_VALUES)
+  return {
+    ...obj,
+    services: obj.services.map((row) => {
+      if (!row || typeof row !== 'object') return row
+      const s = row as Record<string, unknown>
+      const typeRaw = String(s.type || '').trim()
+      let type = 'Other'
+      if (allowed.has(typeRaw as (typeof SERVICE_TYPE_VALUES)[number])) type = typeRaw
+      else {
+        const lower = typeRaw.toLowerCase()
+        if (/web|frontend|backend|full.?stack/.test(lower)) type = 'Web Development'
+        else if (/app|mobile|ios|android|ui.?ux/.test(lower)) type = 'App Design'
+        else if (/seo|search/.test(lower)) type = 'SEO'
+        else if (/market|ads|social|brand/.test(lower)) type = 'Marketing'
+      }
+      return { ...s, type }
+    }),
+  }
+}
+
 export const serviceTypeSchema = z.enum(SERVICE_TYPE_VALUES)
 
 /** Lenient items for fill-section (AI often omits fields). */
@@ -272,7 +297,7 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
     "pushNotifications": true, "emailNotifications": true
   }
 }
-Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, you MUST populate those arrays with multiple real items. For reviews/testimonials and any slider/carousel/list section, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture ALL distinct items present in the crawl or embedded JSON, not just the first visible slide. If there are many reviews, include every credible review up to 30 and preserve author names/ratings when available. Prefer accurate facts from the source; invent minimal professional placeholders only when needed to make a usable card. Dates as YYYY-MM-DD when known.
+Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, populate those arrays with real extracted items. For reviews/testimonials, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture distinct items present in the crawl, up to 30. Never invent customer reviews. If no real reviews exist, return an empty reviews array. Creative wording is allowed for about, FAQs, headlines, and blog ideas, but never invent factual claims (years in business, licenses, awards, phone, email). Missing facts stay empty. Dates as YYYY-MM-DD when known.
 For services.type use ONLY: Web Development, App Design, SEO, Marketing, or Other.
 enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal is present. Never put Global Connection or My Info in enabledTabs — the product pins those last automatically. Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, News/Blogs, Profile, Portfolio, Certifications/Licenses, FAQ).`
 
