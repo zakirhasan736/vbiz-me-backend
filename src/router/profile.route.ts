@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import directTabController from '../controller/directTab.controller'
 import profileController from '../controller/profile.controller'
 import authMiddleware from '../middlewares/authValidation'
 
@@ -38,6 +39,19 @@ router.put('/:id/portfolios', authMiddleware.requireVcardMutable, profileControl
 router.put('/:id/reviews', authMiddleware.requireVcardMutable, profileController.replaceReviews)
 router.put('/:id/skills', authMiddleware.requireVcardMutable, profileController.replaceSkills)
 router.put('/:id/social-links', authMiddleware.requireVcardMutable, profileController.replaceSocialLinks)
+router.get('/:id/about-me', profileController.getAboutMe)
+router.put('/:id/about-me', authMiddleware.requireVcardMutable, profileController.upsertAboutMe)
+router.delete('/:id/about-me', authMiddleware.requireVcardMutable, profileController.deleteAboutMe)
+
+router.get('/:id/blogs', directTabController.listBlogs)
+router.post('/:id/blogs', authMiddleware.requireVcardMutable, directTabController.createBlog)
+router.patch('/:id/blogs/:blogId', authMiddleware.requireVcardMutable, directTabController.updateBlog)
+router.delete('/:id/blogs/:blogId', authMiddleware.requireVcardMutable, directTabController.deleteBlog)
+
+router.get('/:id/tabs/:tabKey', directTabController.listTabItems)
+router.post('/:id/tabs/:tabKey', authMiddleware.requireVcardMutable, directTabController.createTabItem)
+router.patch('/:id/tabs/:tabKey/:itemId', authMiddleware.requireVcardMutable, directTabController.updateTabItem)
+router.delete('/:id/tabs/:tabKey/:itemId', authMiddleware.requireVcardMutable, directTabController.deleteTabItem)
 
 router.get('/:id/posts', profileController.listPosts)
 router.post('/:id/posts', authMiddleware.requireVcardMutable, profileController.createPost)

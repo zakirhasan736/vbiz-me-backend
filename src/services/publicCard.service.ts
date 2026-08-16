@@ -1,4 +1,5 @@
 import type { Attachment, Setting } from '../../generated/prisma/client'
+import { getTabByKey, TAB_REGISTRY } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
@@ -509,13 +510,30 @@ const getPostTypesForProfile = async (profileId: string) => {
   }
 
   // Also include dedicated first-class tables as section names when present
-  const [serviceCount, portfolioCount, reviewCount, educationCount, experienceCount, skillCount] = await Promise.all([
+  const [
+    serviceCount,
+    portfolioCount,
+    reviewCount,
+    educationCount,
+    experienceCount,
+    skillCount,
+    blogCount,
+    aboutMeCount,
+    tabItemGroups,
+  ] = await Promise.all([
     prisma.service.count({ where: { profileId, status: 1 } }),
     prisma.portfolio.count({ where: { profileId, status: 1 } }),
     prisma.review.count({ where: { profileId, status: 1 } }),
     prisma.education.count({ where: { profileId } }),
     prisma.experience.count({ where: { profileId } }),
     prisma.skillTag.count({ where: { profileId } }),
+    prisma.blog.count({ where: { profileId, deletedAt: null, status: '1' } }),
+    prisma.aboutMe.count({ where: { profileId, status: '1' } }),
+    prisma.tabItem.groupBy({
+      by: ['tabKey'],
+      where: { profileId, deletedAt: null, status: '1' },
+      _count: { _all: true },
+    }),
   ])
   if (serviceCount > 0 && !post_types.some((t) => t.name.toLowerCase() === 'services')) {
     post_types.push({
@@ -525,6 +543,40 @@ const getPostTypesForProfile = async (profileId: string) => {
       status: 'active',
       type_id: null,
       slug: 'services',
+    })
+  }
+  if (blogCount > 0 && !post_types.some((t) => /^blog$/i.test(t.name))) {
+    post_types.push({
+      id: 'blog',
+      name: 'blog',
+      title: 'blog',
+      status: 'active',
+      type_id: 6,
+      slug: 'blog',
+    })
+  }
+  if (aboutMeCount > 0 && !post_types.some((t) => /^about me$/i.test(t.name))) {
+    post_types.push({
+      id: 'about-me',
+      name: 'About Me',
+      title: 'About Me',
+      status: 'active',
+      type_id: 16,
+      slug: 'about-me',
+    })
+  }
+  for (const group of tabItemGroups) {
+    if (!group._count._all) continue
+    const tab = getTabByKey(group.tabKey)
+    if (!tab) continue
+    if (post_types.some((t) => t.name.toLowerCase() === tab.publicSectionName.toLowerCase())) continue
+    post_types.push({
+      id: tab.key,
+      name: tab.publicSectionName,
+      title: tab.label,
+      status: 'active',
+      type_id: tab.legacyPostTypeId,
+      slug: tab.route,
     })
   }
   if (portfolioCount > 0 && !post_types.some((t) => /gallery|portfolio/i.test(t.name))) {
@@ -714,7 +766,7 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
 
   const name = decodeURIComponent(sectionName)
 
-  if (/^services$/i.test(name) || /^additional services$/i.test(name)) {
+  if (/^services$/i.test(name)) {
     const items = await prisma.service.findMany({
       where: { profileId, status: 1 },
       orderBy: { sortOrder: 'asc' },
@@ -734,6 +786,83 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
           review_link: { url: s.reviewUrl || '', has_link: Boolean(s.reviewUrl) },
         }
       }),
+    }
+  }
+
+  if (/^blog$/i.test(name)) {
+    const blogs = await prisma.blog.findMany({
+      where: { profileId, deletedAt: null, status: '1' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+    })
+    return {
+      type: 'blog',
+      postType: { name: 'blog', title: 'blog' },
+      profile: { id: profileId },
+      items: blogs.map((p) => {
+        const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
+        const metas: Record<string, string> = {}
+        if (p.category) metas.category = p.category
+        if (p.date) metas.date = p.date
+        return {
+          id: p.id,
+          title: p.title,
+          description: p.description,
+          status: p.status,
+          issuer: '',
+          year: '',
+          featured_image: featuredFromField ? [{ id: p.id, doc_name: p.title, url: featuredFromField }] : [],
+          general_info_url: p.url,
+          attachments: [],
+          metas,
+          created_at: p.createdAt,
+        }
+      }),
+    }
+  }
+
+  {
+    const needle = name.trim().toLowerCase()
+    const matched = Object.values(TAB_REGISTRY).find(
+      (tab) =>
+        tab.architecture === 'direct' && tab.storage === 'tab_item' && tab.publicSectionName.toLowerCase() === needle
+    )
+    if (matched) {
+      const tabKey = matched.key
+      const rows = await prisma.tabItem.findMany({
+        where: { profileId, tabKey, deletedAt: null, status: '1' },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      })
+      const tab = getTabByKey(tabKey)
+      return {
+        type: tab?.publicSectionName || name,
+        postType: {
+          name: tab?.publicSectionName || name,
+          title: tab?.label || name,
+          type_id: tab?.legacyPostTypeId,
+        },
+        profile: { id: profileId },
+        items: rows.map((p) => {
+          const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
+          const metas =
+            p.metas && typeof p.metas === 'object' && !Array.isArray(p.metas) ? (p.metas as Record<string, string>) : {}
+          const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
+          const year = typeof metas.year === 'string' ? metas.year.trim() : ''
+          return {
+            id: p.id,
+            title: p.title,
+            description: p.description,
+            status: p.status,
+            issuer,
+            year,
+            featured_image: featuredFromField ? [{ id: p.id, doc_name: p.title, url: featuredFromField }] : [],
+            general_info_url: p.url,
+            attachments: [],
+            metas,
+          }
+        }),
+        section_id: tabKey,
+        post_type: tab ? { name: tab.publicSectionName, title: tab.label, type_id: tab.legacyPostTypeId } : undefined,
+      }
     }
   }
 
@@ -791,16 +920,26 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
   }
 
   if (/^about me$/i.test(name)) {
+    const about = await prisma.aboutMe.findUnique({ where: { profileId } })
+    if (!about || about.status === '0') {
+      return {
+        type: 'About Me',
+        postType: { name: 'About Me', title: 'About Me' },
+        profile: { id: profileId },
+        items: [],
+      }
+    }
     return {
       type: 'About Me',
       postType: { name: 'About Me', title: 'About Me' },
       profile: { id: profileId },
       items: [
         {
-          id: profile.id,
-          title: 'About Me',
-          description: profile.about || '',
-          status: '1',
+          id: about.id,
+          title: about.title?.trim() || '',
+          description: about.description || '',
+          status: about.status || '1',
+          featured_image: about.featuredMediaUrl ? abs(about.featuredMediaUrl) : null,
         },
       ],
     }

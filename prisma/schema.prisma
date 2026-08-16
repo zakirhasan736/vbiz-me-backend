@@ -271,6 +271,9 @@ model Profile {
   portfolios         Portfolio[]
   reviews            Review[]
   posts              Post[]
+  aboutMe            AboutMe?
+  blogs              Blog[]
+  tabItems           TabItem[]
   settings           Setting[]
   profileSettings    ProfileSetting?
   socialLinks        SocialLink[]
@@ -368,6 +371,75 @@ model SkillTag {
   updatedAt   DateTime  @updatedAt
 
   @@index([profileId])
+}
+
+/// Single About Me section per profile (title, rich description, featured media).
+model AboutMe {
+  id               String   @id @default(cuid())
+  legacyPostId     Int?     @unique
+  profileId        String   @unique
+  profile          Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title            String   @default("About Me")
+  description      String?
+  featuredMediaUrl String?
+  status           String   @default("1")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+/// Dedicated blog posts (migrated from Post + postType blog).
+model Blog {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  category      String?
+  date          String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+  @@index([legacyPostId])
+}
+
+/**
+ * Direct-tab list/singleton items for tabs migrated off generic Post/postTypeId.
+ * `tabKey` matches backend TAB_REGISTRY keys (e.g. faqs, video_links).
+ * Singleton tabs enforce at most one active row per (profileId, tabKey) in service layer.
+ */
+model TabItem {
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int?
+  profileId        String
+  profile          Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  tabKey           String
+  title            String?
+  description      String?
+  url              String?
+  featuredImage    String?
+  status           String    @default("1")
+  sortOrder        Int       @default(0)
+  /** Mapped post_metas and extra fields (category, date, issuer, year, …). */
+  metas            Json?
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, tabKey])
+  @@index([tabKey])
+  @@index([legacyPostId])
 }
 
 model Service {

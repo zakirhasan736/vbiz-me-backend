@@ -62,6 +62,14 @@ const createProfileBody = z
   })
   .passthrough()
 
+const upsertAboutMeBody = z.object({
+  title: z.string().max(500).optional().nullable(),
+  description: z.string().max(100_000).optional().nullable(),
+  featuredMediaUrl: z.string().max(2000).optional().nullable(),
+  featured_image: z.string().max(2000).optional().nullable(),
+  status: z.string().max(20).optional().nullable(),
+})
+
 const ProfileZodSchema = {
   recentEngagementQuery,
   dashboardPeriodQuery,
@@ -71,6 +79,7 @@ const ProfileZodSchema = {
   patchContactBody,
   createTeamNoticeBody,
   createProfileBody,
+  upsertAboutMeBody,
   ENGAGEMENT_EVENT_TYPES,
 }
 

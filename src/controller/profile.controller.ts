@@ -217,6 +217,33 @@ const replaceSocialLinks = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Social links updated', data })
 })
 
+const getAboutMe = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const data = await profileService.getAboutMe(param(req.params.id), req.user.id, req.user.role)
+  sendResponse(res, { success: true, statusCode: 200, message: 'About Me fetched', data })
+})
+
+const upsertAboutMe = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const body = ProfileZodSchema.upsertAboutMeBody.parse(req.body || {})
+  const data = await profileService.upsertAboutMe(param(req.params.id), req.user.id, req.user.role, {
+    title: body.title == null ? null : String(body.title),
+    description: body.description == null ? null : String(body.description),
+    featuredMediaUrl:
+      body.featuredMediaUrl == null && body.featured_image == null
+        ? null
+        : String(body.featuredMediaUrl ?? body.featured_image ?? ''),
+    status: body.status == null ? null : String(body.status),
+  })
+  sendResponse(res, { success: true, statusCode: 200, message: 'About Me updated', data })
+})
+
+const deleteAboutMe = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const data = await profileService.deleteAboutMe(param(req.params.id), req.user.id, req.user.role)
+  sendResponse(res, { success: true, statusCode: 200, message: 'About Me deleted', data })
+})
+
 const listPosts = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const data = await profileService.listPosts(
@@ -398,6 +425,9 @@ const profileController = {
   replaceReviews,
   replaceSkills,
   replaceSocialLinks,
+  getAboutMe,
+  upsertAboutMe,
+  deleteAboutMe,
   listPosts,
   createPost,
   updatePost,

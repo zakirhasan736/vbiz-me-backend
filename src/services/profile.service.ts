@@ -605,6 +605,53 @@ const asOptionalString = (value: unknown): string | undefined => {
   return trimmed || undefined
 }
 
+const EMAIL_USED_IN_ANOTHER_VCARD = 'Provided email is used in another vCard.'
+const PHONE_USED_IN_ANOTHER_VCARD = 'Provided phone number is used in another vCard.'
+
+const phoneDigitsOnly = (phone: string) => phone.replace(/\D/g, '')
+
+/** Block create/update when email or phone is already on another profile (system-wide). */
+const assertPhoneEmailAvailable = async (opts: {
+  email?: string | null
+  phone?: string | null
+  excludeProfileId?: string
+}) => {
+  const email = typeof opts.email === 'string' ? opts.email.trim() : opts.email
+  if (email) {
+    const existing = await prisma.profile.findFirst({
+      where: {
+        email: { equals: email, mode: 'insensitive' },
+        ...(opts.excludeProfileId ? { NOT: { id: opts.excludeProfileId } } : {}),
+      },
+      select: { id: true },
+    })
+    if (existing) throw new AppError(400, EMAIL_USED_IN_ANOTHER_VCARD)
+  }
+
+  const phone = typeof opts.phone === 'string' ? opts.phone.trim() : opts.phone
+  if (!phone) return
+
+  const digits = phoneDigitsOnly(phone)
+  if (!digits) return
+
+  const rows = opts.excludeProfileId
+    ? await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "Profile"
+        WHERE phone IS NOT NULL
+          AND regexp_replace(phone, '[^0-9]', '', 'g') = ${digits}
+          AND id <> ${opts.excludeProfileId}
+        LIMIT 1
+      `
+    : await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "Profile"
+        WHERE phone IS NOT NULL
+          AND regexp_replace(phone, '[^0-9]', '', 'g') = ${digits}
+        LIMIT 1
+      `
+
+  if (rows.length > 0) throw new AppError(400, PHONE_USED_IN_ANOTHER_VCARD)
+}
+
 /** Upsert the primary Address row used for street address (line1). */
 const upsertPrimaryAddress = async (
   profileId: string,
@@ -732,6 +779,11 @@ const create = async (
   await assertCanCreateCard(capacityUserId, capacityRole)
 
   const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
+  const resolvedEmail = (raw.email as string) || profileOwnerEmail
+  await assertPhoneEmailAvailable({
+    email: resolvedEmail,
+    phone: raw.phone as string | undefined,
+  })
   const draftStatus = await ensureStatusByName('draft')
   const profile = await prisma.profile.create({
     data: {
@@ -739,7 +791,7 @@ const create = async (
       createdById,
       companyUserId,
       name: String(raw.name),
-      email: (raw.email as string) || profileOwnerEmail,
+      email: resolvedEmail,
       slug,
       companyName: raw.companyName as string | undefined,
       designation: raw.designation as string | undefined,
@@ -751,6 +803,7 @@ const create = async (
       prof: raw.prof as string | undefined,
       dob: raw.dob ? new Date(String(raw.dob)) : undefined,
       template: (raw.template as string) || 'default',
+      themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
       statusId: draftStatus.id,
       isPublic: raw.isDraft === true ? false : raw.isPublic !== false,
       // New cards start as drafts until the owner activates / completes them.
@@ -830,6 +883,14 @@ const update = async (
 
   if (typeof profileData.slug === 'string') {
     profileData.slug = await ensureUniqueSlug(profileData.slug, profileId)
+  }
+
+  if ('email' in raw || 'phone' in raw) {
+    await assertPhoneEmailAvailable({
+      ...('email' in raw ? { email: raw.email as string | null | undefined } : {}),
+      ...('phone' in raw ? { phone: raw.phone as string | null | undefined } : {}),
+      excludeProfileId: profileId,
+    })
   }
 
   if (requestedStatus) {
@@ -925,6 +986,14 @@ const update = async (
         ...(profileSettings.themeConfig !== undefined ? { themeConfig: profileSettings.themeConfig as object } : {}),
       },
     })
+
+    // Keep Profile.themeConfig in sync so public myCard / wallets match ProfileSetting.
+    if (profileSettings.themeConfig !== undefined && !('themeConfig' in raw)) {
+      await prisma.profile.update({
+        where: { id: profileId },
+        data: { themeConfig: profileSettings.themeConfig as object },
+      })
+    }
   }
 
   const updated = await prisma.profile.findUniqueOrThrow({ where: { id: profileId }, include: profileInclude })
@@ -1063,6 +1132,98 @@ const replaceCollection = async <T extends Record<string, unknown>>(
     })
   }
   return owned
+}
+
+const serializeAboutMe = (row: {
+  id: string
+  profileId: string
+  title: string
+  description: string | null
+  featuredMediaUrl: string | null
+  status: string
+  legacyPostId: number | null
+  createdAt: Date
+  updatedAt: Date
+}) => ({
+  id: row.id,
+  profileId: row.profileId,
+  title: row.title?.trim() || '',
+  description: row.description,
+  featuredMediaUrl: row.featuredMediaUrl,
+  status: row.status,
+  legacyPostId: row.legacyPostId,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+})
+
+const getAboutMe = async (profileId: string, userId: string, role: string) => {
+  await getOwned(profileId, userId, role)
+  const row = await prisma.aboutMe.findUnique({ where: { profileId } })
+  return row ? serializeAboutMe(row) : null
+}
+
+const upsertAboutMe = async (
+  profileId: string,
+  userId: string,
+  role: string,
+  input: {
+    title?: string | null
+    description?: string | null
+    featuredMediaUrl?: string | null
+    status?: string | null
+  }
+) => {
+  await getOwnedForWrite(profileId, userId, role)
+  // Title is the public headline under fixed "About Me" chrome — empty is allowed.
+  const title = typeof input.title === 'string' ? input.title.trim() : ''
+  const description =
+    input.description === undefined ? undefined : input.description == null ? null : String(input.description)
+  const featuredMediaUrl =
+    input.featuredMediaUrl === undefined
+      ? undefined
+      : input.featuredMediaUrl == null || !String(input.featuredMediaUrl).trim()
+        ? null
+        : String(input.featuredMediaUrl).trim()
+  const status =
+    input.status === undefined || input.status == null || !String(input.status).trim()
+      ? undefined
+      : String(input.status).trim()
+
+  const row = await prisma.aboutMe.upsert({
+    where: { profileId },
+    create: {
+      profileId,
+      title,
+      description: description ?? null,
+      featuredMediaUrl: featuredMediaUrl ?? null,
+      status: status ?? '1',
+    },
+    update: {
+      title,
+      ...(description !== undefined ? { description } : {}),
+      ...(featuredMediaUrl !== undefined ? { featuredMediaUrl } : {}),
+      ...(status !== undefined ? { status } : {}),
+    },
+  })
+
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { name: true, companyName: true },
+  })
+  const businessName = profile?.companyName || profile?.name || 'vBiz Me'
+  pushService.notifyProfileUpdate(profileId, {
+    type: 'business_hours',
+    title: 'About Me updated',
+    body: `${businessName} updated their About Me section.`,
+  })
+
+  return serializeAboutMe(row)
+}
+
+const deleteAboutMe = async (profileId: string, userId: string, role: string) => {
+  await getOwnedForWrite(profileId, userId, role)
+  await prisma.aboutMe.deleteMany({ where: { profileId } })
+  return { deleted: true as const }
 }
 
 type PostDocumentInput = {
@@ -2378,10 +2539,14 @@ const profileService = {
   listProfilesPage,
   getCardCapacity,
   getOwned,
+  getOwnedForWrite,
   create,
   update,
   remove,
   replaceCollection,
+  getAboutMe,
+  upsertAboutMe,
+  deleteAboutMe,
   createPost,
   updatePost,
   deletePost,
