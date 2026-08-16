@@ -30,8 +30,10 @@ import { prisma } from '../src/utils/prisma'
 import s3Utils from '../src/utils/s3'
 
 const LARAVEL_API = (process.env.LARAVEL_API_BASE || 'https://app.vbizme.com/api').replace(/\/$/, '')
+const NODE_PUBLIC_API = (process.env.NODE_PUBLIC_API_BASE || 'https://api.vbizme.com/api/v1/public').replace(/\/$/, '')
 const CONCURRENCY = Math.max(1, Math.min(6, Number(process.env.MEDIA_MIGRATE_CONCURRENCY) || 3))
-const USER_AGENT = 'vbizme-laravel-tab-sync/1.0'
+const USER_AGENT =
+  process.env.VBIZME_USER_AGENT || 'Mozilla/5.0 (compatible; vbizme-laravel-tab-sync/1.1; +https://vbiz.me)'
 
 const EXTRA_TABS = [
   'Why Choose Us',
@@ -55,6 +57,7 @@ const SKIP_HOST = /youtube\.com|youtu\.be|vimeo\.com|facebook\.com|instagram\.co
 type MediaHit = {
   section: string
   itemLegacyId: number | null
+  itemId: string | null
   attachmentLegacyId: number | null
   attachmentTypeLegacyId: number | null
   kind: 'profile' | 'post' | 'service' | 'portfolio' | 'attachment'
@@ -120,19 +123,35 @@ function formatError(err: unknown): string {
   }
 }
 
-async function laravelGet(apiPath: string): Promise<{ status: number; json: unknown }> {
+async function laravelGet(apiPath: string): Promise<{ status: number; json: unknown; url: string }> {
   const url = apiPath.startsWith('http') ? apiPath : `${LARAVEL_API}${apiPath}`
-  const response = await fetch(url, {
-    headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
-    redirect: 'follow',
-  })
+  let lastStatus = 0
   let json: unknown = null
-  try {
-    json = await response.json()
-  } catch {
-    json = null
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, Referer: 'https://app.vbizme.com/' },
+      redirect: 'follow',
+    })
+    lastStatus = response.status
+    const text = await response.text()
+    try {
+      json = JSON.parse(text)
+    } catch {
+      json = { _non_json: true, text: text.slice(0, 200) }
+    }
+    if (response.status === 429 && attempt < 4) {
+      await sleep(500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 250))
+      continue
+    }
+    return { status: lastStatus, json, url }
   }
-  return { status: response.status, json }
+  return { status: lastStatus, json, url }
+}
+
+function numericId(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value.trim())
+  return null
 }
 
 function envelope(json: unknown): Record<string, unknown> | null {
@@ -185,8 +204,9 @@ async function fetchOk(url: string): Promise<boolean> {
 
 async function resolveWorkingUrl(
   urls: string[],
-  laravelId: number,
-  typeLegacyId?: number | null
+  laravelId: number | null,
+  typeLegacyId?: number | null,
+  profileSlug?: string
 ): Promise<string | null> {
   const candidates: string[] = []
   for (const url of urls) {
@@ -195,7 +215,8 @@ async function resolveWorkingUrl(
         url,
         docName: mediaFilename(url, null),
         attachmentTypeLegacyId: typeLegacyId ?? null,
-        profileLegacyId: laravelId,
+        profileLegacyId: laravelId ?? undefined,
+        profileSlug,
       },
       { mode: 'exhaustive' }
     )) {
@@ -214,20 +235,29 @@ function collectFeaturedAndAttachments(
   kind: MediaHit['kind']
 ): MediaHit[] {
   const hits: MediaHit[] = []
-  const itemId = Number(item.id)
-  const itemLegacyId = Number.isFinite(itemId) ? itemId : null
+  const itemLegacyId = numericId(item.id)
+  const itemId = itemLegacyId == null && typeof item.id === 'string' ? item.id : null
   const featured = item.featured_image
   if (typeof featured === 'string') {
-    pushUrl(hits, { section, itemLegacyId, attachmentLegacyId: null, kind, field: 'featured_image', url: featured })
+    pushUrl(hits, {
+      section,
+      itemLegacyId,
+      itemId,
+      attachmentLegacyId: null,
+      kind,
+      field: 'featured_image',
+      url: featured,
+    })
   } else if (Array.isArray(featured)) {
     for (const entry of featured) {
       const rec = asRecord(entry)
       const url = typeof rec?.url === 'string' ? rec.url : typeof entry === 'string' ? entry : ''
-      const attId = Number(rec?.id)
+      const attId = numericId(rec?.id)
       pushUrl(hits, {
         section,
         itemLegacyId,
-        attachmentLegacyId: Number.isFinite(attId) ? attId : null,
+        itemId,
+        attachmentLegacyId: attId,
         kind: rec?.id ? 'attachment' : kind,
         field: 'featured_image',
         url,
@@ -237,7 +267,8 @@ function collectFeaturedAndAttachments(
     pushUrl(hits, {
       section,
       itemLegacyId,
-      attachmentLegacyId: Number(asRecord(featured)?.id) || null,
+      itemId,
+      attachmentLegacyId: numericId(asRecord(featured)?.id),
       kind,
       field: 'featured_image',
       url: String(asRecord(featured)?.url),
@@ -248,13 +279,14 @@ function collectFeaturedAndAttachments(
     for (const att of attachments) {
       const rec = asRecord(att)
       if (!rec || typeof rec.url !== 'string') continue
-      const attId = Number(rec.id)
-      const typeId = Number(rec.attachment_type_id)
+      const attId = numericId(rec.id)
+      const typeId = numericId(rec.attachment_type_id)
       pushUrl(hits, {
         section,
         itemLegacyId,
-        attachmentLegacyId: Number.isFinite(attId) ? attId : null,
-        attachmentTypeLegacyId: Number.isFinite(typeId) ? typeId : 8,
+        itemId,
+        attachmentLegacyId: attId,
+        attachmentTypeLegacyId: typeId ?? 8,
         kind: 'attachment',
         field: 'attachments',
         url: rec.url,
@@ -274,6 +306,7 @@ function collectProfileMedia(card: Record<string, unknown>): MediaHit[] {
         pushUrl(hits, {
           section: 'profile',
           itemLegacyId: null,
+          itemId: null,
           attachmentLegacyId: null,
           kind: 'profile',
           field: `${field}.${key}`,
@@ -286,6 +319,7 @@ function collectProfileMedia(card: Record<string, unknown>): MediaHit[] {
       pushUrl(hits, {
         section: 'profile',
         itemLegacyId: null,
+        itemId: null,
         attachmentLegacyId: null,
         kind: 'profile',
         field: `${field}.regular_video.url`,
@@ -319,72 +353,138 @@ async function rewriteRow(hit: MediaHit, profileId: string, newUrl: string) {
       await prisma.attachment.update({ where: { id: att.id }, data: { url: newUrl } })
     }
   }
-  if (hit.kind === 'service' && hit.itemLegacyId != null) {
-    const row = await prisma.service.findFirst({ where: { legacyId: hit.itemLegacyId, profileId } })
+  if (hit.kind === 'attachment' && hit.itemId) {
+    await prisma.attachment.updateMany({ where: { id: hit.itemId, profileId }, data: { url: newUrl } })
+  }
+  if (hit.kind === 'service' && (hit.itemLegacyId != null || hit.itemId)) {
+    const row = hit.itemId
+      ? await prisma.service.findFirst({ where: { id: hit.itemId, profileId } })
+      : await prisma.service.findFirst({ where: { legacyId: hit.itemLegacyId!, profileId } })
     if (row) await prisma.service.update({ where: { id: row.id }, data: { imageUrl: newUrl } })
   }
-  if (hit.kind === 'portfolio' && hit.itemLegacyId != null) {
-    const row = await prisma.portfolio.findFirst({ where: { legacyId: hit.itemLegacyId, profileId } })
+  if (hit.kind === 'portfolio' && (hit.itemLegacyId != null || hit.itemId)) {
+    const row = hit.itemId
+      ? await prisma.portfolio.findFirst({ where: { id: hit.itemId, profileId } })
+      : await prisma.portfolio.findFirst({ where: { legacyId: hit.itemLegacyId!, profileId } })
     if (row) await prisma.portfolio.update({ where: { id: row.id }, data: { imageUrl: newUrl } })
   }
-  if ((hit.kind === 'post' || hit.field === 'featured_image') && hit.itemLegacyId != null) {
-    const row = await prisma.post.findFirst({ where: { legacyId: hit.itemLegacyId, profileId } })
+  if ((hit.kind === 'post' || hit.field === 'featured_image') && (hit.itemLegacyId != null || hit.itemId)) {
+    const row = hit.itemId
+      ? await prisma.post.findFirst({ where: { id: hit.itemId, profileId } })
+      : await prisma.post.findFirst({ where: { legacyId: hit.itemLegacyId!, profileId } })
     if (row) await prisma.post.update({ where: { id: row.id }, data: { featuredImage: newUrl } })
   }
-  if (hit.kind === 'profile' && /profile_media/i.test(hit.field) && !/fallback/i.test(hit.field)) {
+  if (hit.kind === 'profile' && /profile_media|avatar/i.test(hit.field) && !/fallback/i.test(hit.field)) {
     await prisma.profile.update({ where: { id: profileId }, data: { avatar: newUrl } })
+  }
+  if (hit.url && hit.url !== newUrl) {
+    await prisma.attachment.updateMany({ where: { profileId, url: hit.url }, data: { url: newUrl } })
+    await prisma.post.updateMany({ where: { profileId, featuredImage: hit.url }, data: { featuredImage: newUrl } })
+    await prisma.service.updateMany({ where: { profileId, imageUrl: hit.url }, data: { imageUrl: newUrl } })
+    await prisma.portfolio.updateMany({ where: { profileId, imageUrl: hit.url }, data: { imageUrl: newUrl } })
   }
 }
 
-async function syncSlug(slug: string, dryRun: boolean): Promise<SyncResult> {
-  const errors: string[] = []
-  const cardRes = await laravelGet(`/v/${encodeURIComponent(slug)}`)
-  if (cardRes.status === 404) {
-    return {
-      slug,
-      status: 'laravel_not_found',
-      tabs: 0,
-      media: 0,
-      uploaded: 0,
-      skipped: 0,
-      failed: 0,
-      errors: ['Laravel 404'],
-    }
+function summarizeJson(json: unknown): string {
+  const rec = asRecord(json)
+  if (!rec) return String(json ?? '').slice(0, 160)
+  if (rec._non_json) return String(rec.text || 'non-json body').slice(0, 160)
+  if (typeof rec.message === 'string') return rec.message.slice(0, 160)
+  try {
+    return JSON.stringify(rec).slice(0, 160)
+  } catch {
+    return 'unreadable json'
   }
-  const card = envelope(cardRes.json)
-  const laravelProfile = asRecord(card?.profile)
-  const laravelId = Number(laravelProfile?.id)
-  if (!card || !Number.isFinite(laravelId)) {
-    return {
-      slug,
-      status: 'laravel_not_found',
-      tabs: 0,
-      media: 0,
-      uploaded: 0,
-      skipped: 0,
-      failed: 0,
-      errors: ['No Laravel profile id'],
-    }
-  }
+}
 
-  const dbProfile = await prisma.profile.findFirst({
-    where: { OR: [{ slug }, { legacyId: laravelId }] },
-    select: { id: true, slug: true, legacyId: true, avatar: true },
+async function collectFromDatabase(profileId: string, avatar?: string | null): Promise<MediaHit[]> {
+  const hits: MediaHit[] = []
+  if (avatar) {
+    pushUrl(hits, {
+      section: 'profile',
+      itemLegacyId: null,
+      itemId: profileId,
+      attachmentLegacyId: null,
+      kind: 'profile',
+      field: 'avatar',
+      url: avatar,
+    })
+  }
+  const attachments = await prisma.attachment.findMany({
+    where: { profileId },
+    select: {
+      id: true,
+      url: true,
+      legacyId: true,
+      attachmentType: { select: { legacyId: true } },
+    },
   })
-  if (!dbProfile) {
-    return {
-      slug,
-      status: 'db_not_found',
-      laravelId,
-      tabs: 0,
-      media: 0,
-      uploaded: 0,
-      skipped: 0,
-      failed: 0,
-      errors: [`No new-backend profile for slug=${slug} legacyId=${laravelId}`],
-    }
+  for (const att of attachments) {
+    if (!att.url) continue
+    pushUrl(hits, {
+      section: 'db-attachment',
+      itemLegacyId: null,
+      itemId: att.id,
+      attachmentLegacyId: att.legacyId,
+      attachmentTypeLegacyId: att.attachmentType?.legacyId ?? 8,
+      kind: 'attachment',
+      field: 'url',
+      url: att.url,
+    })
   }
+  const posts = await prisma.post.findMany({
+    where: { profileId, featuredImage: { not: null } },
+    select: { id: true, featuredImage: true, legacyId: true },
+  })
+  for (const post of posts) {
+    if (!post.featuredImage) continue
+    pushUrl(hits, {
+      section: 'db-post',
+      itemLegacyId: post.legacyId,
+      itemId: post.id,
+      attachmentLegacyId: null,
+      kind: 'post',
+      field: 'featured_image',
+      url: post.featuredImage,
+    })
+  }
+  const services = await prisma.service.findMany({
+    where: { profileId, imageUrl: { not: null } },
+    select: { id: true, imageUrl: true, legacyId: true },
+  })
+  for (const service of services) {
+    if (!service.imageUrl) continue
+    pushUrl(hits, {
+      section: 'db-service',
+      itemLegacyId: service.legacyId,
+      itemId: service.id,
+      attachmentLegacyId: null,
+      kind: 'service',
+      field: 'imageUrl',
+      url: service.imageUrl,
+    })
+  }
+  const portfolios = await prisma.portfolio.findMany({
+    where: { profileId, imageUrl: { not: null } },
+    select: { id: true, imageUrl: true, legacyId: true },
+  })
+  for (const portfolio of portfolios) {
+    if (!portfolio.imageUrl) continue
+    pushUrl(hits, {
+      section: 'db-portfolio',
+      itemLegacyId: portfolio.legacyId,
+      itemId: portfolio.id,
+      attachmentLegacyId: null,
+      kind: 'portfolio',
+      field: 'imageUrl',
+      url: portfolio.imageUrl,
+    })
+  }
+  return hits
+}
 
+async function collectLaravelTabs(laravelId: number, errors: string[]): Promise<{ hits: MediaHit[]; tabsOk: number }> {
+  const hits: MediaHit[] = []
   await sleep(120)
   const tabsRes = await laravelGet(`/post-types?profile_id=${laravelId}`)
   const tabsData = envelope(tabsRes.json) || {}
@@ -403,7 +503,6 @@ async function syncSlug(slug: string, dryRun: boolean): Promise<SyncResult> {
     }
   }
 
-  const hits: MediaHit[] = collectProfileMedia(card)
   let tabsOk = 0
   for (const [name, source] of names) {
     await sleep(120)
@@ -421,6 +520,78 @@ async function syncSlug(slug: string, dryRun: boolean): Promise<SyncResult> {
       const item = asRecord(raw)
       if (!item) continue
       hits.push(...collectFeaturedAndAttachments(name, item, kind))
+    }
+  }
+  return { hits, tabsOk }
+}
+
+async function syncSlug(slug: string, dryRun: boolean): Promise<SyncResult> {
+  const errors: string[] = []
+  const dbProfile = await prisma.profile.findFirst({
+    where: {
+      OR: [{ slug: { equals: slug.trim(), mode: 'insensitive' } }],
+    },
+    select: { id: true, slug: true, legacyId: true, avatar: true },
+  })
+
+  const cardRes = await laravelGet(`/v/${encodeURIComponent(slug)}`)
+  const card = envelope(cardRes.json)
+  const laravelProfile = asRecord(card?.profile)
+  let laravelId = numericId(laravelProfile?.id) ?? dbProfile?.legacyId ?? null
+  logger.info(
+    `  laravel /v/${slug} HTTP ${cardRes.status} numericId=${numericId(laravelProfile?.id) ?? 'none'} dbLegacyId=${dbProfile?.legacyId ?? 'none'}`
+  )
+  if (!laravelId && cardRes.status !== 200) {
+    errors.push(`Laravel /v/${slug} HTTP ${cardRes.status}: ${summarizeJson(cardRes.json)}`)
+  } else if (!numericId(laravelProfile?.id) && laravelId) {
+    errors.push(`Laravel /v/${slug} had no numeric id (HTTP ${cardRes.status}); using DB legacyId=${laravelId}`)
+  }
+
+  if (!dbProfile) {
+    return {
+      slug,
+      status: 'db_not_found',
+      laravelId: laravelId ?? undefined,
+      tabs: 0,
+      media: 0,
+      uploaded: 0,
+      skipped: 0,
+      failed: 0,
+      errors: [`No new-backend profile for slug=${slug}${laravelId ? ` legacyId=${laravelId}` : ''}`],
+    }
+  }
+
+  const hits: MediaHit[] = []
+  if (card) hits.push(...collectProfileMedia(card))
+  const cardSlug = dbProfile.slug ?? slug
+
+  try {
+    const nodeCard = await laravelGet(`${NODE_PUBLIC_API}/v/${encodeURIComponent(cardSlug)}`)
+    const nodeData = envelope(nodeCard.json)
+    if (nodeData) hits.push(...collectProfileMedia(nodeData))
+  } catch (err) {
+    errors.push(`Node public /v/: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  let tabsOk = 0
+  if (laravelId != null) {
+    const fromTabs = await collectLaravelTabs(laravelId, errors)
+    hits.push(...fromTabs.hits)
+    tabsOk = fromTabs.tabsOk
+  }
+
+  hits.push(...(await collectFromDatabase(dbProfile.id, dbProfile.avatar)))
+
+  if (!hits.length && laravelId == null) {
+    return {
+      slug,
+      status: 'laravel_not_found',
+      tabs: 0,
+      media: 0,
+      uploaded: 0,
+      skipped: 0,
+      failed: 0,
+      errors: errors.length ? errors : ['No Laravel profile id and no DB media URLs'],
     }
   }
 
@@ -454,7 +625,7 @@ async function syncSlug(slug: string, dryRun: boolean): Promise<SyncResult> {
           return
         }
         const typeId = related.find((h) => h.attachmentTypeLegacyId != null)?.attachmentTypeLegacyId
-        const working = await resolveWorkingUrl(urls, laravelId, typeId)
+        const working = await resolveWorkingUrl(urls, laravelId, typeId ?? undefined, cardSlug)
         if (!working) {
           failed += related.length
           errors.push(`${related[0].section} ${urls[0]}: SOURCE_MISSING after folder fallbacks`)
@@ -483,7 +654,7 @@ async function syncSlug(slug: string, dryRun: boolean): Promise<SyncResult> {
   return {
     slug,
     status,
-    laravelId,
+    laravelId: laravelId ?? undefined,
     tabs: tabsOk,
     media: hits.length,
     uploaded,
