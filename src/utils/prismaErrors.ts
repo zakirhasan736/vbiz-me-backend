@@ -15,3 +15,31 @@ export function isPrismaColumnMismatch(error: unknown): boolean {
   const message = String(err.message || '')
   return /column .* does not exist|42703/i.test(message)
 }
+
+export function missingPrismaTableName(error: unknown): string | null {
+  const message = String((error as { message?: string })?.message || '')
+  const columnOnModel = message.match(/column [`'](\w+)\.(\w+)[`']/i)
+  if (columnOnModel) return columnOnModel[1]
+  const match =
+    message.match(/table [`'](?:public\.)?(\w+)[`']/i) ||
+    message.match(/relation [`"](?:public\.)?(\w+)[`"] does not exist/i)
+  return match?.[1] ?? null
+}
+
+export function missingPrismaColumnName(error: unknown): string | null {
+  const message = String((error as { message?: string })?.message || '')
+  const columnOnModel = message.match(/column [`'](\w+)\.(\w+)[`']/i)
+  if (columnOnModel) return columnOnModel[2]
+  const match = message.match(/column [`'](?:[\w.]+\.)?(\w+)[`']/i)
+  return match?.[1] ?? null
+}
+
+/** Run a Prisma query; missing tables/columns return `fallback` instead of 500. */
+export async function safePrismaQuery<T>(run: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+    return fallback
+  }
+}

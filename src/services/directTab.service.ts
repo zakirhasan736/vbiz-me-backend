@@ -7,7 +7,9 @@ import {
 } from '../constants/directSectionStorage'
 import { getTabByKey, TAB_REGISTRY, type TabRegistryEntry } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
+import { listGalleriesForProfile } from '../utils/galleryMedia'
 import { prisma } from '../utils/prisma'
+import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
 import profileService from './profile.service'
 
 type BlogInput = {
@@ -346,17 +348,14 @@ const listTabItems = async (profileId: string, tabKey: string, userId: string, r
     ;[rows, total] = await Promise.all([
       model.findMany({ where, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }], ...pageArgs, ...liveSelect }),
       model.count({ where }),
-    ])
+    ]).catch((error: unknown) => {
+      if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+      return [[], 0] as [DirectRow[], number]
+    })
   } else if (tab.storage === 'gallery') {
-    const where = { profileId, deletedAt: null }
-    ;[rows, total] = await Promise.all([
-      prisma.gallery.findMany({
-        where,
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-        ...pageArgs,
-      }),
-      prisma.gallery.count({ where }),
-    ])
+    const galleryRows = await listGalleriesForProfile(profileId, pageArgs.take ?? 200)
+    rows = galleryRows
+    total = galleryRows.length
   } else if (tab.storage === 'service') {
     ;[rows, total] = await Promise.all([
       prisma.service.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' }, ...pageArgs }),
@@ -368,8 +367,13 @@ const listTabItems = async (profileId: string, tabKey: string, userId: string, r
       prisma.review.count({ where: { profileId } }),
     ])
   } else if (tab.storage === 'about_me') {
-    const row = await prisma.aboutMe.findUnique({ where: { profileId } })
-    rows = row ? [row] : []
+    try {
+      const row = await prisma.aboutMe.findUnique({ where: { profileId } })
+      rows = row ? [row] : []
+    } catch (error) {
+      if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+      rows = []
+    }
     total = rows.length
   } else if (isSingletonSectionStorage(tab.storage)) {
     const row = await singletonModel(tab.storage).findUnique({ where: { profileId } })

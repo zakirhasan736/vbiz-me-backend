@@ -8,7 +8,7 @@ import {
 } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
-import { fillMissingGalleryMedia, galleryHasMedia } from '../utils/galleryMedia'
+import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
@@ -539,15 +539,7 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
       profile.id,
       [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id))
     ),
-    prisma.gallery
-      .findMany({
-        where: { profileId: profile.id, deletedAt: null, status: '1' },
-        orderBy: { sortOrder: 'asc' },
-      })
-      .catch((error) => {
-        if (!isPrismaMissingTable(error)) throw error
-        return []
-      }),
+    listGalleriesForProfile(profile.id, 200).then((rows) => rows.filter((row) => row.status === '1')),
   ])
   const legacyPortfolio = await prisma.portfolio
     .findMany({
@@ -1130,11 +1122,9 @@ const getDynamicSection = async (
         createdAt: Date
       }
       const [galleryRows, legacy] = await Promise.all([
-        prisma.gallery.findMany({
-          where: { profileId, deletedAt: null, status: '1' },
-          orderBy: { sortOrder: 'asc' },
-          take: takeOverride ?? 100,
-        }),
+        listGalleriesForProfile(profileId, takeOverride ?? 100).then((rows) =>
+          rows.filter((row) => row.status === '1')
+        ),
         prisma.portfolio.findMany({
           where: { profileId, status: 1 },
           orderBy: { sortOrder: 'asc' },
@@ -1215,28 +1205,50 @@ const getDynamicSection = async (
   }
 
   if (registryTab?.storage === 'about_me') {
-    const about = await prisma.aboutMe.findUnique({ where: { profileId } })
-    if (!about || about.status === '0') {
+    try {
+      const about = await prisma.aboutMe.findUnique({ where: { profileId } })
+      if (!about || about.status === '0') {
+        const fallback = await prisma.profile.findUnique({
+          where: { id: profileId },
+          select: { about: true, id: true },
+        })
+        const text = fallback?.about?.trim() || ''
+        return {
+          type: 'About Me',
+          postType: { name: 'About Me', title: 'About Me' },
+          profile: { id: profileId },
+          items: text
+            ? [{ id: profileId, title: 'About Me', description: text, status: '1', featured_image: null }]
+            : [],
+        }
+      }
       return {
         type: 'About Me',
         postType: { name: 'About Me', title: 'About Me' },
         profile: { id: profileId },
-        items: [],
+        items: [
+          {
+            id: about.id,
+            title: about.title?.trim() || '',
+            description: about.description || '',
+            status: about.status || '1',
+            featured_image: about.featuredMediaUrl ? abs(about.featuredMediaUrl) : null,
+          },
+        ],
       }
-    }
-    return {
-      type: 'About Me',
-      postType: { name: 'About Me', title: 'About Me' },
-      profile: { id: profileId },
-      items: [
-        {
-          id: about.id,
-          title: about.title?.trim() || '',
-          description: about.description || '',
-          status: about.status || '1',
-          featured_image: about.featuredMediaUrl ? abs(about.featuredMediaUrl) : null,
-        },
-      ],
+    } catch (error) {
+      if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+      const fallback = await prisma.profile.findUnique({
+        where: { id: profileId },
+        select: { about: true },
+      })
+      const text = fallback?.about?.trim() || ''
+      return {
+        type: 'About Me',
+        postType: { name: 'About Me', title: 'About Me' },
+        profile: { id: profileId },
+        items: text ? [{ id: profileId, title: 'About Me', description: text, status: '1', featured_image: null }] : [],
+      }
     }
   }
 

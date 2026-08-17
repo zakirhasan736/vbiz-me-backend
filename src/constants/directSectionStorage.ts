@@ -200,15 +200,15 @@ export async function countPublicSection(storage: DirectSectionStorage, profileI
   }
   switch (storage) {
     case 'about_me':
-      return prisma.aboutMe.count({ where: { profileId, status: '1' } })
+      return prisma.aboutMe.count({ where: { profileId, status: '1' } }).catch(() => 0)
     case 'service':
-      return prisma.service.count({ where: { profileId, status: 1 } })
+      return prisma.service.count({ where: { profileId, status: 1 } }).catch(() => 0)
     case 'review':
-      return prisma.review.count({ where: { profileId, status: 1 } })
+      return prisma.review.count({ where: { profileId, status: 1 } }).catch(() => 0)
     case 'gallery':
-      return prisma.gallery.count({ where: where(profileId) })
+      return prisma.gallery.count({ where: { profileId, status: '1' } }).catch(() => 0)
     case 'blog':
-      return prisma.blog.count({ where: where(profileId) })
+      return prisma.blog.count({ where: where(profileId) }).catch(() => 0)
   }
 }
 
@@ -224,10 +224,10 @@ async function listPopulatedStoragesFromPosts(profileId: string): Promise<Set<Di
       include: { postType: true },
       distinct: ['postTypeId'],
     }),
-    prisma.aboutMe.count({ where: { profileId, status: '1' } }),
-    prisma.service.count({ where: { profileId, status: 1 } }),
-    prisma.review.count({ where: { profileId, status: 1 } }),
-    prisma.blog.count({ where: { profileId, deletedAt: null, status: '1' } }),
+    prisma.aboutMe.count({ where: { profileId, status: '1' } }).catch(() => 0),
+    prisma.service.count({ where: { profileId, status: 1 } }).catch(() => 0),
+    prisma.review.count({ where: { profileId, status: 1 } }).catch(() => 0),
+    prisma.blog.count({ where: { profileId, deletedAt: null, status: '1' } }).catch(() => 0),
   ])
   if (about > 0) populated.add('about_me')
   if (services > 0) populated.add('service')
@@ -235,7 +235,7 @@ async function listPopulatedStoragesFromPosts(profileId: string): Promise<Set<Di
   if (blogs > 0) populated.add('blog')
   const [portfolioCount, galleryCount, faqCount, clientCount, tabKeys] = await Promise.all([
     prisma.portfolio.count({ where: { profileId, status: 1 } }).catch(() => 0),
-    prisma.gallery.count({ where: { profileId, deletedAt: null, status: '1' } }).catch(() => 0),
+    prisma.gallery.count({ where: { profileId, status: '1' } }).catch(() => 0),
     prisma.faq.count({ where: { profileId, deletedAt: null, status: '1' } }).catch(() => 0),
     prisma.client.count({ where: { profileId, deletedAt: null, status: '1' } }).catch(() => 0),
     prisma.tabItem

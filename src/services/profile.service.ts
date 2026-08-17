@@ -31,12 +31,12 @@ import {
   type DashboardPeriod,
   type SocialChannel,
 } from '../utils/dashboardAnalytics'
-import { fillMissingGalleryMedia } from '../utils/galleryMedia'
+import { fillMissingGalleryMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
-import { isPrismaMissingTable } from '../utils/prismaErrors'
+import { isPrismaColumnMismatch, isPrismaMissingTable, safePrismaQuery } from '../utils/prismaErrors'
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
 import announcementService from './announcement.service'
 import pushService from './push.service'
@@ -195,30 +195,210 @@ const RECENT_ENGAGEMENT_LIMIT = 10
 /** Setting keys that store media URLs shown on the admin vCards grid. */
 const LIST_MEDIA_SETTING_KEYS = new Set(['profile_media_url', 'background_media_url'])
 
-const profileInclude = {
-  gender: true,
-  maritalStatus: true,
-  profession: true,
-  status: true,
-  settings: true,
-  profileSettings: true,
-  socialLinks: true,
-  education: { orderBy: { sortOrder: 'asc' as const } },
-  experiences: { orderBy: { sortOrder: 'asc' as const } },
-  services: { orderBy: { sortOrder: 'asc' as const } },
-  portfolios: { orderBy: { sortOrder: 'asc' as const } },
-  galleries: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' as const } },
-  reviews: { orderBy: { sortOrder: 'asc' as const } },
-  skillTags: { orderBy: { sortOrder: 'asc' as const } },
-  addresses: true,
-  attachments: { include: { attachmentType: true } },
-} satisfies Prisma.ProfileInclude
+type ProfileCoreInclude = {
+  gender: true
+  maritalStatus: true
+  profession: true
+  status: true
+  settings: true
+  profileSettings: true
+  socialLinks: true
+  addresses: true
+  attachments: { include: { attachmentType: true } }
+}
 
-type ProfileDetail = Prisma.ProfileGetPayload<{ include: typeof profileInclude }>
+type ProfileDetail = Prisma.ProfileGetPayload<{ include: ProfileCoreInclude }> & {
+  education: unknown[]
+  experiences: unknown[]
+  services: Array<{
+    title?: string | null
+    imageUrl?: string | null
+    attachmentUrl?: string | null
+    attachmentName?: string | null
+  }>
+  portfolios: Array<{
+    title?: string | null
+    imageUrl?: string | null
+    attachmentUrl?: string | null
+    attachmentName?: string | null
+  }>
+  reviews: unknown[]
+  skillTags: unknown[]
+  galleries: Awaited<ReturnType<typeof listGalleriesForProfile>>
+}
+
+const withEmptyCollections = (profile: Record<string, unknown>): ProfileDetail =>
+  ({
+    ...profile,
+    education: profile.education ?? [],
+    experiences: profile.experiences ?? [],
+    services: profile.services ?? [],
+    portfolios: profile.portfolios ?? [],
+    galleries: profile.galleries ?? [],
+    reviews: profile.reviews ?? [],
+    skillTags: profile.skillTags ?? [],
+    addresses: profile.addresses ?? [],
+    attachments: profile.attachments ?? [],
+    settings: profile.settings ?? [],
+    socialLinks: profile.socialLinks ?? [],
+  }) as ProfileDetail
 
 const withCanonicalCustomTabsSetting = (profile: ProfileDetail): ProfileDetail => {
   const galleries = fillMissingGalleryMedia(profile.galleries || [], profile.portfolios || [])
   return galleries === profile.galleries ? profile : { ...profile, galleries }
+}
+
+const listPortfoliosSafe = async (profileId: string) => {
+  const full = await safePrismaQuery(
+    () => prisma.portfolio.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }),
+    null
+  )
+  if (full) return full
+  const slim = await safePrismaQuery(
+    () =>
+      prisma.portfolio.findMany({
+        where: { profileId },
+        orderBy: { sortOrder: 'asc' },
+        select: {
+          id: true,
+          profileId: true,
+          title: true,
+          description: true,
+          status: true,
+          sortOrder: true,
+          url: true,
+          imageUrl: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+    []
+  )
+  return slim.map((row) => ({ ...row, attachmentUrl: null, attachmentName: null, legacyId: null }))
+}
+
+const loadProfileCollections = async (profileId: string) => {
+  const [education, experiences, services, portfolios, reviews, skillTags, galleries] = await Promise.all([
+    safePrismaQuery(() => prisma.education.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+    safePrismaQuery(() => prisma.experience.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+    safePrismaQuery(() => prisma.service.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+    listPortfoliosSafe(profileId),
+    safePrismaQuery(() => prisma.review.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+    safePrismaQuery(() => prisma.skillTag.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+    listGalleriesForProfile(profileId),
+  ])
+  return { education, experiences, services, portfolios, reviews, skillTags, galleries }
+}
+
+const loadProfileRelations = async (profileId: string) => {
+  const [settings, profileSettings, socialLinks, addresses, attachments] = await Promise.all([
+    safePrismaQuery(() => prisma.setting.findMany({ where: { profileId } }), []),
+    safePrismaQuery(() => prisma.profileSetting.findUnique({ where: { profileId } }), null),
+    safePrismaQuery(() => prisma.socialLink.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+    safePrismaQuery(() => prisma.address.findMany({ where: { profileId } }), []),
+    safePrismaQuery(
+      () =>
+        prisma.attachment.findMany({
+          where: { profileId },
+          include: { attachmentType: true },
+        }),
+      []
+    ),
+  ])
+  return { settings, profileSettings, socialLinks, addresses, attachments }
+}
+
+const loadProfileRow = async (where: Prisma.ProfileWhereInput): Promise<Record<string, unknown> | null> => {
+  const id = typeof where.id === 'string' ? where.id : null
+  if (!id) {
+    return safePrismaQuery(async () => {
+      const row = await prisma.profile.findFirst({ where, select: { id: true } })
+      if (!row) return null
+      const full = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+        SELECT * FROM "Profile" WHERE id = ${row.id} LIMIT 1
+      `
+      return full[0] ?? null
+    }, null)
+  }
+  const or = where.OR
+  if (Array.isArray(or) && or.length) {
+    const userIds = or
+      .map((clause) => {
+        if (clause && typeof clause === 'object' && 'userId' in clause) return String(clause.userId)
+        if (clause && typeof clause === 'object' && 'companyUserId' in clause) return String(clause.companyUserId)
+        return ''
+      })
+      .filter(Boolean)
+    const ownerId = userIds[0]
+    if (ownerId) {
+      const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+        SELECT * FROM "Profile"
+        WHERE id = ${id}
+          AND ("userId" = ${ownerId} OR "companyUserId" = ${ownerId})
+        LIMIT 1
+      `
+      return rows[0] ?? null
+    }
+  }
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT * FROM "Profile" WHERE id = ${id} LIMIT 1
+  `
+  return rows[0] ?? null
+}
+
+const attachProfileLookups = async (row: Record<string, unknown>) => {
+  const genderId = typeof row.genderId === 'string' ? row.genderId : null
+  const maritalStatusId = typeof row.maritalStatusId === 'string' ? row.maritalStatusId : null
+  const professionId = typeof row.professionId === 'string' ? row.professionId : null
+  const statusId = typeof row.statusId === 'string' ? row.statusId : null
+  const [gender, maritalStatus, profession, status] = await Promise.all([
+    genderId ? safePrismaQuery(() => prisma.gender.findUnique({ where: { id: genderId } }), null) : null,
+    maritalStatusId
+      ? safePrismaQuery(() => prisma.maritalStatus.findUnique({ where: { id: maritalStatusId } }), null)
+      : null,
+    professionId ? safePrismaQuery(() => prisma.profession.findUnique({ where: { id: professionId } }), null) : null,
+    statusId ? safePrismaQuery(() => prisma.status.findUnique({ where: { id: statusId } }), null) : null,
+  ])
+  return { gender, maritalStatus, profession, status }
+}
+
+const loadProfileDetail = async (where: Prisma.ProfileWhereInput): Promise<ProfileDetail | null> => {
+  try {
+    const row = await loadProfileRow(where)
+    if (!row?.id || typeof row.id !== 'string') return null
+    const profileId = row.id
+    const [lookups, relations, collections] = await Promise.all([
+      attachProfileLookups(row),
+      loadProfileRelations(profileId),
+      loadProfileCollections(profileId),
+    ])
+    return withCanonicalCustomTabsSetting(
+      withEmptyCollections({
+        ...row,
+        ...lookups,
+        ...relations,
+        ...collections,
+      })
+    )
+  } catch (error) {
+    logger.error('loadProfileDetail failed; returning empty collections', error)
+    try {
+      const row = await loadProfileRow(where)
+      if (!row?.id || typeof row.id !== 'string') return null
+      return withCanonicalCustomTabsSetting(
+        withEmptyCollections({
+          ...row,
+          settings: [],
+          socialLinks: [],
+          addresses: [],
+          attachments: [],
+        })
+      )
+    } catch (inner) {
+      logger.error('loadProfileDetail fallback failed', inner)
+      return null
+    }
+  }
 }
 
 const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
@@ -607,17 +787,11 @@ const listProfilesPage = async (
 }
 
 const getOwned = async (profileId: string, userId: string, role: string) => {
-  if (isAdminRole(role)) {
-    const profile = await prisma.profile.findUnique({ where: { id: profileId }, include: profileInclude })
-    if (!profile) throw new AppError(404, 'Profile not found')
-    return withCanonicalCustomTabsSetting(profile)
-  }
-  const profile = await prisma.profile.findFirst({
-    where: { id: profileId, OR: [{ userId }, { companyUserId: userId }] },
-    include: profileInclude,
-  })
+  const profile = isAdminRole(role)
+    ? await loadProfileDetail({ id: profileId })
+    : await loadProfileDetail({ id: profileId, OR: [{ userId }, { companyUserId: userId }] })
   if (!profile) throw new AppError(404, 'Profile not found')
-  return withCanonicalCustomTabsSetting(profile)
+  return profile
 }
 
 const assertOwnerAccountCanMutateVcards = async (userId: string, role: string) => {
@@ -910,7 +1084,6 @@ const create = async (
         },
       },
     },
-    include: profileInclude,
   })
 
   await upsertPrimaryAddress(profile.id, {
@@ -930,7 +1103,9 @@ const create = async (
     }
   }
 
-  return prisma.profile.findUniqueOrThrow({ where: { id: profile.id }, include: profileInclude })
+  const created = await loadProfileDetail({ id: profile.id })
+  if (!created) throw new AppError(404, 'Profile not found')
+  return created
 }
 
 const update = async (
@@ -1086,7 +1261,8 @@ const update = async (
     }
   }
 
-  const updated = await prisma.profile.findUniqueOrThrow({ where: { id: profileId }, include: profileInclude })
+  const updated = await loadProfileDetail({ id: profileId })
+  if (!updated) throw new AppError(404, 'Profile not found')
 
   if (staff && requestedStatus && requestedStatus !== currentName) {
     const actor = await prisma.user.findUnique({
@@ -1246,10 +1422,85 @@ const serializeAboutMe = (row: {
   updatedAt: row.updatedAt,
 })
 
+const ABOUT_ME_TITLE_KEY = 'about_me_title'
+const ABOUT_ME_MEDIA_KEY = 'about_me_featured_media_url'
+const ABOUT_ME_STATUS_KEY = 'about_me_status'
+
+const serializeAboutMeFromProfile = async (profileId: string) => {
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: {
+      about: true,
+      createdAt: true,
+      updatedAt: true,
+      settings: {
+        where: { key: { in: [ABOUT_ME_TITLE_KEY, ABOUT_ME_MEDIA_KEY, ABOUT_ME_STATUS_KEY] } },
+        select: { key: true, value: true },
+      },
+    },
+  })
+  if (!profile) return null
+  const map = Object.fromEntries(profile.settings.map((row) => [row.key, row.value || '']))
+  const description = profile.about?.trim() || ''
+  const title = map[ABOUT_ME_TITLE_KEY]?.trim() || ''
+  const featuredMediaUrl = map[ABOUT_ME_MEDIA_KEY]?.trim() || ''
+  if (!description && !title && !featuredMediaUrl) return null
+  return {
+    id: profileId,
+    profileId,
+    title: title || 'About Me',
+    description: description || null,
+    featuredMediaUrl: featuredMediaUrl || null,
+    status: map[ABOUT_ME_STATUS_KEY] || '1',
+    legacyPostId: null,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
+  }
+}
+
+const upsertAboutMeSettingsFallback = async (
+  profileId: string,
+  input: {
+    title?: string | null
+    description?: string | null
+    featuredMediaUrl?: string | null
+    status?: string | null
+  }
+) => {
+  if (input.description !== undefined) {
+    await prisma.profile.update({
+      where: { id: profileId },
+      data: { about: input.description == null ? null : String(input.description) },
+    })
+  }
+  const pairs: Array<[string, string | null | undefined]> = [
+    [ABOUT_ME_TITLE_KEY, input.title],
+    [ABOUT_ME_MEDIA_KEY, input.featuredMediaUrl],
+    [ABOUT_ME_STATUS_KEY, input.status],
+  ]
+  await Promise.all(
+    pairs
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) =>
+        prisma.setting.upsert({
+          where: { profileId_key: { profileId, key } },
+          create: { profileId, key, value: value == null ? '' : String(value) },
+          update: { value: value == null ? '' : String(value) },
+        })
+      )
+  )
+  return serializeAboutMeFromProfile(profileId)
+}
+
 const getAboutMe = async (profileId: string, userId: string, role: string) => {
   await getOwned(profileId, userId, role)
-  const row = await prisma.aboutMe.findUnique({ where: { profileId } })
-  return row ? serializeAboutMe(row) : null
+  try {
+    const row = await prisma.aboutMe.findUnique({ where: { profileId } })
+    return row ? serializeAboutMe(row) : serializeAboutMeFromProfile(profileId)
+  } catch (error) {
+    if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+    return serializeAboutMeFromProfile(profileId)
+  }
 }
 
 const upsertAboutMe = async (
@@ -1279,22 +1530,44 @@ const upsertAboutMe = async (
       ? undefined
       : String(input.status).trim()
 
-  const row = await prisma.aboutMe.upsert({
-    where: { profileId },
-    create: {
-      profileId,
+  let row
+  try {
+    row = await prisma.aboutMe.upsert({
+      where: { profileId },
+      create: {
+        profileId,
+        title,
+        description: description ?? null,
+        featuredMediaUrl: featuredMediaUrl ?? null,
+        status: status ?? '1',
+      },
+      update: {
+        title,
+        ...(description !== undefined ? { description } : {}),
+        ...(featuredMediaUrl !== undefined ? { featuredMediaUrl } : {}),
+        ...(status !== undefined ? { status } : {}),
+      },
+    })
+  } catch (error) {
+    if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+    const fallback = await upsertAboutMeSettingsFallback(profileId, {
       title,
-      description: description ?? null,
-      featuredMediaUrl: featuredMediaUrl ?? null,
-      status: status ?? '1',
-    },
-    update: {
-      title,
-      ...(description !== undefined ? { description } : {}),
-      ...(featuredMediaUrl !== undefined ? { featuredMediaUrl } : {}),
-      ...(status !== undefined ? { status } : {}),
-    },
-  })
+      description,
+      featuredMediaUrl,
+      status,
+    })
+    const profile = await prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { name: true, companyName: true },
+    })
+    const businessName = profile?.companyName || profile?.name || 'vBiz Me'
+    pushService.notifyProfileUpdate(profileId, {
+      type: 'business_hours',
+      title: 'About Me updated',
+      body: `${businessName} updated their About Me section.`,
+    })
+    return fallback
+  }
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
@@ -1312,7 +1585,15 @@ const upsertAboutMe = async (
 
 const deleteAboutMe = async (profileId: string, userId: string, role: string) => {
   await getOwnedForWrite(profileId, userId, role)
-  await prisma.aboutMe.deleteMany({ where: { profileId } })
+  try {
+    await prisma.aboutMe.deleteMany({ where: { profileId } })
+  } catch (error) {
+    if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+  }
+  await prisma.profile.update({ where: { id: profileId }, data: { about: null } })
+  await prisma.setting.deleteMany({
+    where: { profileId, key: { in: [ABOUT_ME_TITLE_KEY, ABOUT_ME_MEDIA_KEY, ABOUT_ME_STATUS_KEY] } },
+  })
   return { deleted: true as const }
 }
 

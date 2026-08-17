@@ -6,6 +6,7 @@ import AppError from '../error/AppError'
 import handleZodError from '../error/zodError'
 import { IErrorSources } from '../interfaces/error.interface'
 import logger from '../utils/logger'
+import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
 
 const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   let message = error.message || 'Something went wrong!'
@@ -45,6 +46,19 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     statusCode = simpleErr.statusCode
     message = simpleErr.message
     errorMessages = simpleErr.errorSources
+  } else if (isPrismaMissingTable(error) || isPrismaColumnMismatch(error)) {
+    logger.error(`${req.method} ${req.originalUrl} schema mismatch`, { error: error.message })
+    if (req.method === 'GET') {
+      return res.status(200).json({
+        success: true,
+        statusCode: 200,
+        message: 'OK',
+        data: null,
+      })
+    }
+    statusCode = 409
+    message = 'Database schema is missing a table or column this API expects.'
+    errorMessages = [{ path: '', message }]
   }
 
   logger.error(`${req.method} ${req.originalUrl} ${message}`, {
