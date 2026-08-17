@@ -331,6 +331,94 @@ const galleryUpdateData = (input: TabItemInput) => ({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const singletonModel = (_storage: 'why_choose_us'): any => prisma.whyChooseUs
 
+const isSchemaGap = (error: unknown) => isPrismaMissingTable(error) || isPrismaColumnMismatch(error)
+
+const schemaGapError = (tab: TabRegistryEntry) =>
+  new AppError(503, `Cannot save ${tab.label} until the database migration for this tab is applied.`)
+
+async function listGenericTabItemRows(profileId: string, tabKey: string, skip: number, take: number) {
+  const where = { profileId, tabKey, deletedAt: null }
+  try {
+    const [rows, total] = await Promise.all([
+      prisma.tabItem.findMany({
+        where,
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        skip,
+        take,
+      }),
+      prisma.tabItem.count({ where }),
+    ])
+    return { rows: rows as DirectRow[], total }
+  } catch (error) {
+    if (!isSchemaGap(error)) throw error
+    return { rows: [] as DirectRow[], total: 0 }
+  }
+}
+
+async function createGenericTabItem(tab: TabRegistryEntry, profileId: string, input: TabItemInput) {
+  try {
+    const max = await prisma.tabItem.aggregate({
+      where: { profileId, tabKey: tab.key, deletedAt: null },
+      _max: { sortOrder: true },
+    })
+    const sortOrder = typeof input.sortOrder === 'number' ? input.sortOrder : (max._max.sortOrder ?? -1) + 1
+    const row = await prisma.tabItem.create({
+      data: {
+        profileId,
+        tabKey: tab.key,
+        legacyPostTypeId: tab.legacyPostTypeId,
+        title: str(input.title) || (isSingletonSectionStorage(tab.storage) ? tab.label : null),
+        description: str(input.description),
+        url: str(input.url),
+        featuredImage: str(input.featuredImage),
+        status: statusOf(input.status),
+        sortOrder,
+        metas: input.metas != null ? (input.metas as Prisma.InputJsonValue) : undefined,
+      },
+    })
+    return serializeDedicatedRow(tab, row)
+  } catch (error) {
+    if (!isSchemaGap(error)) throw error
+    throw schemaGapError(tab)
+  }
+}
+
+async function updateGenericTabItem(tab: TabRegistryEntry, profileId: string, itemId: string, input: TabItemInput) {
+  try {
+    const existing = await prisma.tabItem.findFirst({
+      where: { id: itemId, profileId, tabKey: tab.key, deletedAt: null },
+    })
+    if (!existing) throw new AppError(404, 'Item not found')
+    const row = await prisma.tabItem.update({
+      where: { id: itemId },
+      data: genericUpdateData(input),
+    })
+    return serializeDedicatedRow(tab, row)
+  } catch (error) {
+    if (error instanceof AppError) throw error
+    if (!isSchemaGap(error)) throw error
+    throw schemaGapError(tab)
+  }
+}
+
+async function deleteGenericTabItem(tab: TabRegistryEntry, profileId: string, itemId: string) {
+  try {
+    const existing = await prisma.tabItem.findFirst({
+      where: { id: itemId, profileId, tabKey: tab.key, deletedAt: null },
+    })
+    if (!existing) throw new AppError(404, 'Item not found')
+    await prisma.tabItem.update({
+      where: { id: itemId },
+      data: { deletedAt: new Date(), status: '0' },
+    })
+    return { deleted: true as const }
+  } catch (error) {
+    if (error instanceof AppError) throw error
+    if (!isSchemaGap(error)) throw error
+    throw schemaGapError(tab)
+  }
+}
+
 const listTabItems = async (profileId: string, tabKey: string, userId: string, role: string, skip = 0, limit = 200) => {
   const tab = assertDirectListTab(tabKey)
   await profileService.getOwned(profileId, userId, role)
@@ -345,13 +433,17 @@ const listTabItems = async (profileId: string, tabKey: string, userId: string, r
     const where = { profileId, deletedAt: null }
     const liveSelect =
       tab.storage === 'faq' || tab.storage === 'mission_statement' ? { select: LIVE_POST_STYLE_SELECT } : {}
-    ;[rows, total] = await Promise.all([
-      model.findMany({ where, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }], ...pageArgs, ...liveSelect }),
-      model.count({ where }),
-    ]).catch((error: unknown) => {
-      if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
-      return [[], 0] as [DirectRow[], number]
-    })
+    try {
+      ;[rows, total] = await Promise.all([
+        model.findMany({ where, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }], ...pageArgs, ...liveSelect }),
+        model.count({ where }),
+      ])
+    } catch (error: unknown) {
+      if (!isSchemaGap(error)) throw error
+      const fallback = await listGenericTabItemRows(profileId, tab.key, start, take)
+      rows = fallback.rows
+      total = fallback.total
+    }
   } else if (tab.storage === 'gallery') {
     const galleryRows = await listGalleriesForProfile(profileId, pageArgs.take ?? 200)
     rows = galleryRows
@@ -376,9 +468,16 @@ const listTabItems = async (profileId: string, tabKey: string, userId: string, r
     }
     total = rows.length
   } else if (isSingletonSectionStorage(tab.storage)) {
-    const row = await singletonModel(tab.storage).findUnique({ where: { profileId } })
-    rows = row ? [row] : []
-    total = rows.length
+    try {
+      const row = await singletonModel(tab.storage).findUnique({ where: { profileId } })
+      rows = row ? [row] : []
+      total = rows.length
+    } catch (error) {
+      if (!isSchemaGap(error)) throw error
+      const fallback = await listGenericTabItemRows(profileId, tab.key, start, take)
+      rows = fallback.rows
+      total = fallback.total
+    }
   }
   return { items: rows.map((row) => serializeDedicatedRow(tab, row)), total, skip: start, limit: take }
 }
@@ -387,58 +486,63 @@ const createTabItem = async (profileId: string, tabKey: string, userId: string, 
   const tab = assertDirectListTab(tabKey)
   await profileService.getOwnedForWrite(profileId, userId, role)
   if (tab.storage === 'blog') return createBlog(profileId, userId, role, input)
-  if (tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model: any = tab.storage === 'about_me' ? prisma.aboutMe : singletonModel(tab.storage)
-    const row = await model.upsert({
-      where: { profileId },
-      create: {
-        profileId,
-        title: str(input.title) || tab.label,
-        description: str(input.description),
-        featuredMediaUrl: str(input.featuredImage),
-        status: statusOf(input.status),
-      },
-      update: {
-        title: str(input.title) || tab.label,
-        description: str(input.description),
-        featuredMediaUrl: str(input.featuredImage),
-        status: statusOf(input.status),
-      },
-    })
-    return serializeDedicatedRow(tab, row)
-  }
-  const model =
-    tab.storage === 'gallery'
-      ? prisma.gallery
-      : tab.storage === 'service'
-        ? prisma.service
-        : tab.storage === 'review'
-          ? prisma.review
-          : listModel(tab)
-  const max = await model.aggregate({ where: { profileId }, _max: { sortOrder: true } })
-  const sortOrder = typeof input.sortOrder === 'number' ? input.sortOrder : (max._max.sortOrder ?? -1) + 1
-  const data =
-    tab.storage === 'gallery'
-      ? galleryData(input)
-      : tab.storage === 'service'
-        ? {
-            title: str(input.title),
-            description: str(input.description),
-            reviewUrl: str(input.url),
-            imageUrl: str(input.featuredImage),
-            status: Number(statusOf(input.status)),
-          }
-        : tab.storage === 'review'
+  try {
+    if (tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const model: any = tab.storage === 'about_me' ? prisma.aboutMe : singletonModel(tab.storage)
+      const row = await model.upsert({
+        where: { profileId },
+        create: {
+          profileId,
+          title: str(input.title) || tab.label,
+          description: str(input.description),
+          featuredMediaUrl: str(input.featuredImage),
+          status: statusOf(input.status),
+        },
+        update: {
+          title: str(input.title) || tab.label,
+          description: str(input.description),
+          featuredMediaUrl: str(input.featuredImage),
+          status: statusOf(input.status),
+        },
+      })
+      return serializeDedicatedRow(tab, row)
+    }
+    const model =
+      tab.storage === 'gallery'
+        ? prisma.gallery
+        : tab.storage === 'service'
+          ? prisma.service
+          : tab.storage === 'review'
+            ? prisma.review
+            : listModel(tab)
+    const max = await model.aggregate({ where: { profileId }, _max: { sortOrder: true } })
+    const sortOrder = typeof input.sortOrder === 'number' ? input.sortOrder : (max._max.sortOrder ?? -1) + 1
+    const data =
+      tab.storage === 'gallery'
+        ? galleryData(input)
+        : tab.storage === 'service'
           ? {
-              author: str(input.title),
-              text: str(input.description),
-              rating: Number(input.metas?.rating) || 5,
+              title: str(input.title),
+              description: str(input.description),
+              reviewUrl: str(input.url),
+              imageUrl: str(input.featuredImage),
               status: Number(statusOf(input.status)),
             }
-          : listCreateData(tab, input)
-  const row = await model.create({ data: { profileId, sortOrder, ...data } })
-  return serializeDedicatedRow(tab, row)
+          : tab.storage === 'review'
+            ? {
+                author: str(input.title),
+                text: str(input.description),
+                rating: Number(input.metas?.rating) || 5,
+                status: Number(statusOf(input.status)),
+              }
+            : listCreateData(tab, input)
+    const row = await model.create({ data: { profileId, sortOrder, ...data } })
+    return serializeDedicatedRow(tab, row)
+  } catch (error) {
+    if (!isSchemaGap(error)) throw error
+    return createGenericTabItem(tab, profileId, input)
+  }
 }
 
 const updateTabItem = async (
@@ -464,42 +568,48 @@ const updateTabItem = async (
             : isSingletonSectionStorage(tab.storage)
               ? singletonModel(tab.storage)
               : listModel(tab)
-  const existing = await model.findFirst({ where: { id: itemId, profileId } })
-  if (!existing) throw new AppError(404, 'Item not found')
-  const base =
-    tab.storage === 'gallery'
-      ? galleryUpdateData(input)
-      : tab.storage === 'service'
-        ? {
-            ...(input.title !== undefined ? { title: str(input.title) } : {}),
-            ...(input.description !== undefined ? { description: str(input.description) } : {}),
-            ...(input.url !== undefined ? { reviewUrl: str(input.url) } : {}),
-            ...(input.featuredImage !== undefined ? { imageUrl: str(input.featuredImage) } : {}),
-            ...(input.status !== undefined ? { status: Number(statusOf(input.status)) } : {}),
-          }
-        : tab.storage === 'review'
+  try {
+    const existing = await model.findFirst({ where: { id: itemId, profileId } })
+    if (!existing) throw new AppError(404, 'Item not found')
+    const base =
+      tab.storage === 'gallery'
+        ? galleryUpdateData(input)
+        : tab.storage === 'service'
           ? {
-              ...(input.title !== undefined ? { author: str(input.title) } : {}),
-              ...(input.description !== undefined ? { text: str(input.description) } : {}),
+              ...(input.title !== undefined ? { title: str(input.title) } : {}),
+              ...(input.description !== undefined ? { description: str(input.description) } : {}),
+              ...(input.url !== undefined ? { reviewUrl: str(input.url) } : {}),
+              ...(input.featuredImage !== undefined ? { imageUrl: str(input.featuredImage) } : {}),
               ...(input.status !== undefined ? { status: Number(statusOf(input.status)) } : {}),
-              ...(input.metas?.rating !== undefined ? { rating: Number(input.metas.rating) || 5 } : {}),
             }
-          : tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)
+          : tab.storage === 'review'
             ? {
-                ...(input.title !== undefined ? { title: str(input.title) || tab.label } : {}),
-                ...(input.description !== undefined ? { description: str(input.description) } : {}),
-                ...(input.featuredImage !== undefined ? { featuredMediaUrl: str(input.featuredImage) } : {}),
-                ...(input.status !== undefined ? { status: statusOf(input.status) } : {}),
+                ...(input.title !== undefined ? { author: str(input.title) } : {}),
+                ...(input.description !== undefined ? { text: str(input.description) } : {}),
+                ...(input.status !== undefined ? { status: Number(statusOf(input.status)) } : {}),
+                ...(input.metas?.rating !== undefined ? { rating: Number(input.metas.rating) || 5 } : {}),
               }
-            : listUpdateData(tab, input)
-  const row = await model.update({
-    where: { id: itemId },
-    data: {
-      ...base,
-      ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
-    },
-  })
-  return serializeDedicatedRow(tab, row)
+            : tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)
+              ? {
+                  ...(input.title !== undefined ? { title: str(input.title) || tab.label } : {}),
+                  ...(input.description !== undefined ? { description: str(input.description) } : {}),
+                  ...(input.featuredImage !== undefined ? { featuredMediaUrl: str(input.featuredImage) } : {}),
+                  ...(input.status !== undefined ? { status: statusOf(input.status) } : {}),
+                }
+              : listUpdateData(tab, input)
+    const row = await model.update({
+      where: { id: itemId },
+      data: {
+        ...base,
+        ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
+      },
+    })
+    return serializeDedicatedRow(tab, row)
+  } catch (error) {
+    if (error instanceof AppError) throw error
+    if (!isSchemaGap(error)) throw error
+    return updateGenericTabItem(tab, profileId, itemId, input)
+  }
 }
 
 const deleteTabItem = async (profileId: string, tabKey: string, itemId: string, userId: string, role: string) => {
@@ -518,15 +628,21 @@ const deleteTabItem = async (profileId: string, tabKey: string, itemId: string, 
             : isSingletonSectionStorage(tab.storage)
               ? singletonModel(tab.storage)
               : listModel(tab)
-  const existing = await model.findFirst({ where: { id: itemId, profileId } })
-  if (!existing) throw new AppError(404, 'Item not found')
-  const singleton = tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)
-  const numericStatus = tab.storage === 'service' || tab.storage === 'review'
-  await model.update({
-    where: { id: itemId },
-    data: singleton ? { status: '0' } : numericStatus ? { status: 0 } : { deletedAt: new Date(), status: '0' },
-  })
-  return { deleted: true as const }
+  try {
+    const existing = await model.findFirst({ where: { id: itemId, profileId } })
+    if (!existing) throw new AppError(404, 'Item not found')
+    const singleton = tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)
+    const numericStatus = tab.storage === 'service' || tab.storage === 'review'
+    await model.update({
+      where: { id: itemId },
+      data: singleton ? { status: '0' } : numericStatus ? { status: 0 } : { deletedAt: new Date(), status: '0' },
+    })
+    return { deleted: true as const }
+  } catch (error) {
+    if (error instanceof AppError) throw error
+    if (!isSchemaGap(error)) throw error
+    return deleteGenericTabItem(tab, profileId, itemId)
+  }
 }
 
 /** Public helpers used by getDynamicSection */
