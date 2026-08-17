@@ -99,7 +99,9 @@ model PasswordSetupToken {
   @@index([userId])
 }
 
-/** Encrypted Canva OAuth tokens for a card owner (Connect API). */
+/**
+ * Encrypted Canva OAuth tokens for a card owner (Connect API).
+ */
 model CanvaConnection {
   id              String   @id @default(cuid())
   userId          String   @unique
@@ -114,7 +116,9 @@ model CanvaConnection {
   updatedAt       DateTime @updatedAt
 }
 
-/** Short-lived PKCE state for Canva OAuth (cleared after callback). */
+/**
+ * Short-lived PKCE state for Canva OAuth (cleared after callback).
+ */
 model CanvaOAuthPending {
   state        String   @id
   userId       String
@@ -210,91 +214,130 @@ model City {
 }
 
 model Profile {
-  id              String    @id @default(cuid())
-  legacyId        Int?      @unique
+  id              String         @id @default(cuid())
+  legacyId        Int?           @unique
   userId          String?
-  user            User?     @relation("ProfileOwner", fields: [userId], references: [id], onDelete: SetNull)
+  user            User?          @relation("ProfileOwner", fields: [userId], references: [id], onDelete: SetNull)
   companyUserId   String?
-  companyUser     User?     @relation("ProfileCompany", fields: [companyUserId], references: [id], onDelete: SetNull)
+  companyUser     User?          @relation("ProfileCompany", fields: [companyUserId], references: [id], onDelete: SetNull)
   createdById     String?
-  createdBy       User?     @relation("ProfileCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy       User?          @relation("ProfileCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   statusId        String?
-  status          Status?   @relation(fields: [statusId], references: [id], onDelete: SetNull)
+  status          Status?        @relation(fields: [statusId], references: [id], onDelete: SetNull)
   genderId        String?
-  gender          Gender?   @relation(fields: [genderId], references: [id], onDelete: SetNull)
+  gender          Gender?        @relation(fields: [genderId], references: [id], onDelete: SetNull)
   maritalStatusId String?
   maritalStatus   MaritalStatus? @relation(fields: [maritalStatusId], references: [id], onDelete: SetNull)
   professionId    String?
-  profession      Profession? @relation(fields: [professionId], references: [id], onDelete: SetNull)
+  profession      Profession?    @relation(fields: [professionId], references: [id], onDelete: SetNull)
 
-  name         String
-  slug         String?   @unique
-  prof         String?
-  companyName  String?
-  email        String
-  website      String?
-  lastName     String?
-  dob          DateTime?
-  phone        String?
-  whatsapp     String?
-  countryCode  String?
-  facebook     String?
-  instagram    String?
-  twitter      String?
-  tiktok       String?
-  youtube      String?
-  rumble       String?
-  truth        String?
-  linkedin     String?
-  pinterest    String?
-  avatar       String?
-  colorCode    String    @default("#212121")
-  address      String?
-  about        String?
-  isEmploy     Boolean   @default(false)
-  designation  String?
-  referralCount Int      @default(0)
-  referralCode String?   @unique
-  isPublic     Boolean   @default(true)
-  /** Incomplete / not yet published cards show under Draft tabs in the dashboard. */
-  isDraft      Boolean   @default(false)
-  /** Snapshot of status/isPublic/isDraft before account pause/suspend cascade; cleared on restore. */
+  name                String
+  slug                String?   @unique
+  prof                String?
+  companyName         String?
+  email               String
+  website             String?
+  lastName            String?
+  dob                 DateTime?
+  phone               String?
+  whatsapp            String?
+  countryCode         String?
+  facebook            String?
+  instagram           String?
+  twitter             String?
+  tiktok              String?
+  youtube             String?
+  rumble              String?
+  truth               String?
+  linkedin            String?
+  pinterest           String?
+  avatar              String?
+  colorCode           String    @default("#212121")
+  address             String?
+  about               String?
+  isEmploy            Boolean   @default(false)
+  designation         String?
+  referralCount       Int       @default(0)
+  referralCode        String?   @unique
+  isPublic            Boolean   @default(true)
+  /**
+   * Incomplete / not yet published cards show under Draft tabs in the dashboard.
+   */
+  isDraft             Boolean   @default(false)
+  /**
+   * Snapshot of status/isPublic/isDraft before account pause/suspend cascade; cleared on restore.
+   */
   accountLockSnapshot Json?
-  viewCount    Int       @default(0)
-  template     String    @default("default")
-  themeConfig  Json?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  viewCount           Int       @default(0)
+  template            String    @default("default")
+  themeConfig         Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  addresses          Address[]
-  education          Education[]
-  experiences        Experience[]
-  services           Service[]
-  portfolios         Portfolio[]
-  reviews            Review[]
-  posts              Post[]
-  aboutMe            AboutMe?
-  blogs              Blog[]
-  tabItems           TabItem[]
-  settings           Setting[]
-  profileSettings    ProfileSetting?
-  socialLinks        SocialLink[]
-  skillTags          SkillTag[]
-  contacts           Contact[]
-  guestUsers         GuestUserData[]
-  userNotes          UserNote[]
-  eventLogs          EventLog[]
-  pushSubscriptions  PushSubscription[]
-  menus              Menu[]
-  attachments        Attachment[]
-  meetings           Meeting[]
-  auditLogs          AuditLog[]
-  birthdayWishLogs   BirthdayWishLog[]
-  aiGenerationLogs   AiGenerationLog[]
+  addresses           Address[]
+  education           Education[]
+  experiences         Experience[]
+  services            Service[]
+  portfolios          Portfolio[]
+  reviews             Review[]
+  posts               Post[]
+  aboutMe             AboutMe?
+  blogs               Blog[]
+  tabItems            TabItem[]
+  galleries           Gallery[]
+  videos              Video[]
+  bbbAccreditations   BbbAccreditation[]
+  licensing           Licensing[]
+  dcp                 Dcp[]
+  certificateLicenses CertificateLicense[]
+  faqs                Faq[]
+  calendarSections    CalendarSection[]
+  propertyListings    PropertyListing[]
+  profileEvents       ProfileEvent[]
+  mediaPress          MediaPress[]
+  missionStatement    MissionStatement?
+  menuSections        MenuSection[]
+  whyChooseUs         WhyChooseUs?
+  directAnnouncements AnnouncementDirect[]
+  joinMyTeam          JoinMyTeam[]
+  bookings            Booking[]
+  additionalServices  AdditionalService[]
+  videoLinks          VideoLink[]
+  inventory           Inventory[]
+  homeSolar           HomeSolar[]
+  resiliencyProducts  ResiliencyProduct[]
+  breakfast           Breakfast[]
+  lunch               Lunch[]
+  dinner              Dinner[]
+  products            Product[]
+  salesPeople         SalesPerson[]
+  teamMembers         TeamMember[]
+  clients             Client[]
+  generalPosts        GeneralPost[]
+  insuranceLicenses   InsuranceLicense[]
+  videoExplainers     VideoExplainer[]
+  customTabs          CustomTab[]
+  customTabItems      CustomTabItem[]
+  settings            Setting[]
+  profileSettings     ProfileSetting?
+  socialLinks         SocialLink[]
+  skillTags           SkillTag[]
+  contacts            Contact[]
+  guestUsers          GuestUserData[]
+  userNotes           UserNote[]
+  eventLogs           EventLog[]
+  pushSubscriptions   PushSubscription[]
+  menus               Menu[]
+  attachments         Attachment[]
+  meetings            Meeting[]
+  auditLogs           AuditLog[]
+  birthdayWishLogs    BirthdayWishLog[]
+  aiGenerationLogs    AiGenerationLog[]
 
   @@index([userId])
   @@index([companyUserId])
   @@index([slug])
+  @@index([email])
   @@index([isPublic])
   @@index([isDraft])
 }
@@ -316,19 +359,19 @@ model Address {
 }
 
 model Education {
-  id         String    @id @default(cuid())
-  legacyId   Int?      @unique
-  profileId  String
-  profile    Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  institute  String?
-  degree     String?
-  fromDate   DateTime?
-  toDate     DateTime?
-  tillNow    Boolean   @default(false)
+  id          String    @id @default(cuid())
+  legacyId    Int?      @unique
+  profileId   String
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  institute   String?
+  degree      String?
+  fromDate    DateTime?
+  toDate      DateTime?
+  tillNow     Boolean   @default(false)
   description String?
-  sortOrder  Int       @default(0)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([profileId])
 }
@@ -361,17 +404,17 @@ model SkillType {
 }
 
 model SkillTag {
-  id          String    @id @default(cuid())
-  legacyId    Int?      @unique
+  id          String     @id @default(cuid())
+  legacyId    Int?       @unique
   profileId   String
-  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile     Profile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
   skillTypeId String?
   skillType   SkillType? @relation(fields: [skillTypeId], references: [id], onDelete: SetNull)
   name        String
   level       String?
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  sortOrder   Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   @@index([profileId])
 }
@@ -433,7 +476,9 @@ model TabItem {
   featuredImage    String?
   status           String    @default("1")
   sortOrder        Int       @default(0)
-  /** Mapped post_metas and extra fields (category, date, issuer, year, …). */
+  /**
+   * Mapped post_metas and extra fields (category, date, issuer, year, …).
+   */
   metas            Json?
   deletedAt        DateTime?
   createdAt        DateTime  @default(now())
@@ -443,6 +488,686 @@ model TabItem {
   @@index([profileId, tabKey])
   @@index([tabKey])
   @@index([legacyPostId])
+}
+
+model Gallery {
+  id             String    @id @default(cuid())
+  legacyPostId   Int?      @unique
+  profileId      String
+  profile        Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title          String?
+  description    String?
+  url            String?
+  featuredImage  String?
+  attachmentUrl  String?
+  attachmentName String?
+  status         String    @default("1")
+  sortOrder      Int       @default(0)
+  metas          Json?
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model Video {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model BbbAccreditation {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+  @@map("BBBAccreditation")
+}
+
+model Licensing {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model Dcp {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+  @@map("DCP")
+}
+
+model CertificateLicense {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model Faq {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model CalendarSection {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model PropertyListing {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model ProfileEvent {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+  @@map("Event")
+}
+
+model MediaPress {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model MissionStatement {
+  id               String   @id @default(cuid())
+  legacyPostId     Int?     @unique
+  profileId        String   @unique
+  profile          Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title            String   @default("Mission Statement")
+  description      String?
+  featuredMediaUrl String?
+  status           String   @default("1")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model MenuSection {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model WhyChooseUs {
+  id               String   @id @default(cuid())
+  legacyPostId     Int?     @unique
+  profileId        String   @unique
+  profile          Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title            String   @default("Why Choose Us")
+  description      String?
+  featuredMediaUrl String?
+  status           String   @default("1")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model AnnouncementDirect {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model JoinMyTeam {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model Booking {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model AdditionalService {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model VideoLink {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model Inventory {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model HomeSolar {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model ResiliencyProduct {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model Breakfast {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model Lunch {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model Dinner {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model Product {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model SalesPerson {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model TeamMember {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model Client {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model GeneralPost {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model InsuranceLicense {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model VideoExplainer {
+  id            String    @id @default(cuid())
+  legacyPostId  Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  status        String    @default("1")
+  sortOrder     Int       @default(0)
+  metas         Json?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, status])
+}
+
+model CustomTab {
+  id          String          @id @default(cuid())
+  profileId   String
+  profile     Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  key         String
+  label       String
+  slug        String
+  description String?
+  icon        String?
+  sortOrder   Int             @default(0)
+  isEnabled   Boolean         @default(true)
+  isPublic    Boolean         @default(true)
+  status      String          @default("1")
+  layoutType  String          @default("list")
+  settings    Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  items       CustomTabItem[]
+
+  @@unique([profileId, key])
+  @@index([profileId, status])
+  @@index([profileId, isEnabled, isPublic, sortOrder])
+}
+
+model CustomTabItem {
+  id            String    @id @default(cuid())
+  customTabId   String
+  customTab     CustomTab @relation(fields: [customTabId], references: [id], onDelete: Cascade)
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title         String?
+  description   String?
+  url           String?
+  featuredImage String?
+  sortOrder     Int       @default(0)
+  status        String    @default("1")
+  data          Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([customTabId, status])
+  @@index([customTabId, sortOrder])
+  @@index([profileId, status])
 }
 
 model Service {
@@ -460,6 +1185,7 @@ model Service {
   updatedAt   DateTime @updatedAt
 
   @@index([profileId])
+  @@index([profileId, status])
 }
 
 model Portfolio {
@@ -473,7 +1199,9 @@ model Portfolio {
   sortOrder      Int      @default(0)
   url            String?
   imageUrl       String?
-  /** Secondary image/video attachment (admin “Attachments (Images/Video)”). */
+  /**
+   * Secondary image/video attachment (admin “Attachments (Images/Video)”).
+   */
   attachmentUrl  String?
   attachmentName String?
   createdAt      DateTime @default(now())
@@ -513,25 +1241,25 @@ model PostType {
 }
 
 model Post {
-  id          String    @id @default(cuid())
-  legacyId    Int?      @unique
-  profileId   String
-  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  postTypeId  String?
-  postType    PostType? @relation(fields: [postTypeId], references: [id], onDelete: SetNull)
-  title       String?
-  description String?
-  status      String    @default("1")
-  url         String?
+  id            String    @id @default(cuid())
+  legacyId      Int?      @unique
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  postTypeId    String?
+  postType      PostType? @relation(fields: [postTypeId], references: [id], onDelete: SetNull)
+  title         String?
+  description   String?
+  status        String    @default("1")
+  url           String?
   featuredImage String?
-  sortOrder   Int       @default(0)
-  createdById String?
-  createdBy   User?     @relation("PostCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById String?
-  updatedBy   User?     @relation("PostUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  sortOrder     Int       @default(0)
+  createdById   String?
+  createdBy     User?     @relation("PostCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById   String?
+  updatedBy     User?     @relation("PostUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   metas       PostMeta[]
   attachments Attachment[]
@@ -652,17 +1380,17 @@ model Menu {
 }
 
 model MenuItem {
-  id        String   @id @default(cuid())
-  legacyId  Int?     @unique
-  menuId    String
-  menu      Menu     @relation(fields: [menuId], references: [id], onDelete: Cascade)
-  title     String?
-  url       String?
-  price     String?
+  id          String   @id @default(cuid())
+  legacyId    Int?     @unique
+  menuId      String
+  menu        Menu     @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  title       String?
+  url         String?
+  price       String?
   description String?
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([menuId])
 }
@@ -727,26 +1455,27 @@ model EventLog {
   @@index([profileId])
   @@index([eventType])
   @@index([createdAt])
+  @@index([profileId, eventType, createdAt])
 }
 
 model Meeting {
-  id             String    @id @default(cuid())
-  host           String
-  type           String
-  date           String
-  time           String
-  startsAt       DateTime
-  location       String?
-  notes          String?
-  status         String    @default("Scheduled")
-  profileId      String?
-  profile        Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
-  createdById    String?
-  createdBy      User?     @relation("MeetingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  googleEventId  String?
-  meetLink       String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id            String   @id @default(cuid())
+  host          String
+  type          String
+  date          String
+  time          String
+  startsAt      DateTime
+  location      String?
+  notes         String?
+  status        String   @default("Scheduled")
+  profileId     String?
+  profile       Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  createdById   String?
+  createdBy     User?    @relation("MeetingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  googleEventId String?
+  meetLink      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([status])
   @@index([startsAt])
@@ -865,20 +1594,20 @@ model CardTemplate {
 }
 
 model PushSubscription {
-  id          String   @id @default(cuid())
-  legacyId    Int?     @unique
-  profileId   String
-  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  endpoint    String
+  id           String    @id @default(cuid())
+  legacyId     Int?      @unique
+  profileId    String
+  profile      Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  endpoint     String
   endpointHash String
-  p256dh      String
-  auth        String
-  browser     String?
-  platform    String?
-  isActive    Boolean  @default(true)
-  lastUsedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  p256dh       String
+  auth         String
+  browser      String?
+  platform     String?
+  isActive     Boolean   @default(true)
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   preferences PushNotificationPreference?
 
@@ -888,70 +1617,70 @@ model PushSubscription {
 }
 
 model PushNotificationPreference {
-  id                   String           @id @default(cuid())
-  legacyId             Int?             @unique
-  pushSubscriptionId   String           @unique
-  pushSubscription     PushSubscription @relation(fields: [pushSubscriptionId], references: [id], onDelete: Cascade)
-  serviceUpdates       Boolean          @default(true)
-  portfolioUpdates     Boolean          @default(true)
-  contactUpdates       Boolean          @default(true)
-  offers               Boolean          @default(true)
-  businessHours        Boolean          @default(true)
-  news                 Boolean          @default(true)
-  eventUpdates         Boolean          @default(true)
-  announcementUpdates  Boolean          @default(true)
-  themeUpdates         Boolean          @default(true)
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  id                  String           @id @default(cuid())
+  legacyId            Int?             @unique
+  pushSubscriptionId  String           @unique
+  pushSubscription    PushSubscription @relation(fields: [pushSubscriptionId], references: [id], onDelete: Cascade)
+  serviceUpdates      Boolean          @default(true)
+  portfolioUpdates    Boolean          @default(true)
+  contactUpdates      Boolean          @default(true)
+  offers              Boolean          @default(true)
+  businessHours       Boolean          @default(true)
+  news                Boolean          @default(true)
+  eventUpdates        Boolean          @default(true)
+  announcementUpdates Boolean          @default(true)
+  themeUpdates        Boolean          @default(true)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 }
 
 model Package {
-  id           String           @id @default(cuid())
-  legacyId     Int?             @unique
-  name         String
-  slug         String?          @unique
-  description  String?
-  monthlyPrice Int              @default(0)
-  yearlyPrice  Int              @default(0)
-  isActive     Boolean          @default(true)
-  sortOrder    Int              @default(0)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  features     PackageFeature[]
+  id            String           @id @default(cuid())
+  legacyId      Int?             @unique
+  name          String
+  slug          String?          @unique
+  description   String?
+  monthlyPrice  Int              @default(0)
+  yearlyPrice   Int              @default(0)
+  isActive      Boolean          @default(true)
+  sortOrder     Int              @default(0)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  features      PackageFeature[]
   subscriptions Subscription[]
 }
 
 model PackageFeature {
-  id        String   @id @default(cuid())
-  legacyId  Int?     @unique
-  packageId String
-  package   Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
-  featureKey String
+  id           String   @id @default(cuid())
+  legacyId     Int?     @unique
+  packageId    String
+  package      Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  featureKey   String
   featureValue String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  @@index([packageId])
   @@unique([packageId, featureKey])
+  @@index([packageId])
 }
 
 model Subscription {
-  id               String    @id @default(cuid())
-  legacyId         Int?      @unique
-  userId           String
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  packageId        String?
-  package          Package?  @relation(fields: [packageId], references: [id], onDelete: SetNull)
-  name             String?
-  stripeId         String?
-  stripeStatus     String?
-  stripePrice      String?
-  quantity         Int?
-  trialEndsAt      DateTime?
-  endsAt           DateTime?
-  provider         String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  legacyId     Int?      @unique
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  packageId    String?
+  package      Package?  @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  name         String?
+  stripeId     String?
+  stripeStatus String?
+  stripePrice  String?
+  quantity     Int?
+  trialEndsAt  DateTime?
+  endsAt       DateTime?
+  provider     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   items        SubscriptionItem[]
   transactions Transaction[]
@@ -1008,29 +1737,31 @@ model CompanyEmployee {
   @@index([companyId])
 }
 
-/** AI card-agent usage for cost and routing analytics. */
+/**
+ * AI card-agent usage for cost and routing analytics.
+ */
 model AiGenerationLog {
-  id                 String   @id @default(cuid())
-  userId             String?
-  user               User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  profileId          String?
-  profile            Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
-  sessionId          String?
-  jobId              String?
-  stage              String?
-  task               String
-  model              String
-  tier               String
-  inputTokens        Int      @default(0)
-  cachedInputTokens  Int      @default(0)
-  outputTokens       Int      @default(0)
-  estimatedCost      Float    @default(0)
-  latencyMs          Int      @default(0)
-  retryNumber        Int      @default(0)
-  success            Boolean  @default(true)
-  escalatedFrom      String?
-  error              String?
-  createdAt          DateTime @default(now())
+  id                String   @id @default(cuid())
+  userId            String?
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  profileId         String?
+  profile           Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  sessionId         String?
+  jobId             String?
+  stage             String?
+  task              String
+  model             String
+  tier              String
+  inputTokens       Int      @default(0)
+  cachedInputTokens Int      @default(0)
+  outputTokens      Int      @default(0)
+  estimatedCost     Float    @default(0)
+  latencyMs         Int      @default(0)
+  retryNumber       Int      @default(0)
+  success           Boolean  @default(true)
+  escalatedFrom     String?
+  error             String?
+  createdAt         DateTime @default(now())
 
   @@index([userId])
   @@index([profileId])
@@ -1040,31 +1771,33 @@ model AiGenerationLog {
   @@index([createdAt])
 }
 
-/** One Auto AI card-build job per user run (extract → SOL → fields → apply). */
+/**
+ * One Auto AI card-build job per user run (extract → SOL → fields → apply).
+ */
 model AiCardSession {
-  id                   String    @id @default(cuid())
-  userId               String?
-  user                 User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  profileId            String?
-  websiteUrl           String?
-  sourceHash           String?
-  status               String    @default("QUEUED")
-  rawSources           Json?
-  normalizedSources    Json?
-  businessProfile      Json?
-  generatedContent     Json?
-  finalBlueprint       Json?
-  architecture         Json?
-  selectedNavIds       Json?
-  fieldGraph           Json?
-  fieldDecisions       Json?
-  assembledDraft       Json?
-  userProgress         Json?
-  errorMessage         String?
-  architectureVersion  Int       @default(1)
-  expiresAt            DateTime
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                  String   @id @default(cuid())
+  userId              String?
+  user                User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  profileId           String?
+  websiteUrl          String?
+  sourceHash          String?
+  status              String   @default("QUEUED")
+  rawSources          Json?
+  normalizedSources   Json?
+  businessProfile     Json?
+  generatedContent    Json?
+  finalBlueprint      Json?
+  architecture        Json?
+  selectedNavIds      Json?
+  fieldGraph          Json?
+  fieldDecisions      Json?
+  assembledDraft      Json?
+  userProgress        Json?
+  errorMessage        String?
+  architectureVersion Int      @default(1)
+  expiresAt           DateTime
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([userId])
   @@index([profileId])

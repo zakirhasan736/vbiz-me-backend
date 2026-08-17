@@ -1,5 +1,10 @@
 import type { Attachment, Setting } from '../../generated/prisma/client'
-import { getTabByKey, TAB_REGISTRY } from '../constants/tabRegistry'
+import {
+  DIRECT_SECTION_LOADERS,
+  isGenericDirectStorage,
+  listPopulatedStorages,
+} from '../constants/directSectionStorage'
+import { getTabByPublicSectionName, TAB_REGISTRY } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
@@ -457,15 +462,49 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
 
 const getMyCardBySlug = async (slug: string) => {
   const profile = await getProfileBySlugOrThrow(slug)
-  // viewCount is incremented only when a unique guest is tracked via trackEvent(profile_view).
-  const card = await buildMyCard(profile)
-  const team_notices = await profileService.listPublicTeamNoticesForProfile(profile.id)
-  return { ...card, team_notices }
+  return getMyCardFromProfile(profile)
 }
 
-const getPostTypesForProfile = async (profileId: string) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
-  if (!profile) throw new AppError(404, 'Profile not found')
+const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>>) => {
+  // viewCount is incremented only when a unique guest is tracked via trackEvent(profile_view).
+  const card = await buildMyCard(profile)
+  const [team_notices, gallery] = await Promise.all([
+    profileService.listPublicTeamNoticesForProfile(
+      profile.id,
+      [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id))
+    ),
+    prisma.gallery.findMany({
+      where: { profileId: profile.id, deletedAt: null, status: '1' },
+      orderBy: { sortOrder: 'asc' },
+    }),
+  ])
+  // Gallery is the canonical store. Query legacy Portfolio only for unmigrated cards.
+  const legacyPortfolio = gallery.length
+    ? []
+    : await prisma.portfolio.findMany({
+        where: { profileId: profile.id, status: 1 },
+        orderBy: { sortOrder: 'asc' },
+      })
+  const portfolio = (gallery.length ? gallery : legacyPortfolio).map((item) => ({
+    title: item.title,
+    description: item.description,
+    url: item.url,
+    status: Number(item.status),
+    imageUrl: 'featuredImage' in item ? item.featuredImage : item.imageUrl,
+    attachmentUrl: item.attachmentUrl,
+    attachmentName: item.attachmentName,
+  }))
+  return { ...card, portfolio, team_notices }
+}
+
+const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated = false) => {
+  if (!profileAlreadyValidated) {
+    const profile = await prisma.profile.findFirst({
+      where: { id: profileId, ...publicReadableWhere() },
+      select: { id: true },
+    })
+    if (!profile) throw new AppError(404, 'Profile not found')
+  }
 
   const settings = await prisma.setting.findMany({ where: { profileId } })
   const map = settingsToMap(settings)
@@ -488,115 +527,76 @@ const getPostTypesForProfile = async (profileId: string) => {
     },
   ].filter((i) => i.active)
 
-  const posts = await prisma.post.findMany({
-    where: { profileId, deletedAt: null, status: '1' },
-    include: { postType: true },
-    distinct: ['postTypeId'],
-  })
-
-  const seen = new Set<string>()
-  const post_types = []
-  for (const p of posts) {
-    if (!p.postType || seen.has(p.postType.id)) continue
-    seen.add(p.postType.id)
-    post_types.push({
-      id: p.postType.id,
-      name: p.postType.name,
-      title: p.postType.title || p.postType.name,
-      status: p.postType.status || 'active',
-      type_id: p.postType.typeId,
-      slug: p.postType.slug,
-    })
-  }
-
-  // Also include dedicated first-class tables as section names when present
-  const [
-    serviceCount,
-    portfolioCount,
-    reviewCount,
-    educationCount,
-    experienceCount,
-    skillCount,
-    blogCount,
-    aboutMeCount,
-    tabItemGroups,
-  ] = await Promise.all([
-    prisma.service.count({ where: { profileId, status: 1 } }),
-    prisma.portfolio.count({ where: { profileId, status: 1 } }),
-    prisma.review.count({ where: { profileId, status: 1 } }),
+  const [posts, customTabs, educationCount, experienceCount, skillCount, populatedStorages] = await Promise.all([
+    prisma.post.findMany({
+      where: { profileId, deletedAt: null, status: '1' },
+      include: { postType: true },
+      distinct: ['postTypeId'],
+    }),
+    prisma.customTab.findMany({
+      where: { profileId, isEnabled: true, isPublic: true, status: '1' },
+      orderBy: { sortOrder: 'asc' },
+    }),
     prisma.education.count({ where: { profileId } }),
     prisma.experience.count({ where: { profileId } }),
     prisma.skillTag.count({ where: { profileId } }),
-    prisma.blog.count({ where: { profileId, deletedAt: null, status: '1' } }),
-    prisma.aboutMe.count({ where: { profileId, status: '1' } }),
-    prisma.tabItem.groupBy({
-      by: ['tabKey'],
-      where: { profileId, deletedAt: null, status: '1' },
-      _count: { _all: true },
-    }),
+    listPopulatedStorages(profileId),
   ])
-  if (serviceCount > 0 && !post_types.some((t) => t.name.toLowerCase() === 'services')) {
+
+  const post_types: {
+    id: string
+    key: string
+    name: string
+    title: string
+    status: string
+    type_id: number | null
+    slug: string | null
+    type: 'standard' | 'custom'
+  }[] = Object.values(TAB_REGISTRY)
+    .map((tab) =>
+      populatedStorages.has(tab.storage)
+        ? {
+            id: tab.key,
+            key: tab.key,
+            name: tab.publicSectionName,
+            title: tab.label,
+            status: 'active',
+            type_id: tab.legacyPostTypeId,
+            slug: tab.route,
+            type: 'standard' as const,
+          }
+        : null
+    )
+    .filter((tab): tab is NonNullable<typeof tab> => tab !== null)
+
+  for (const tab of customTabs) {
     post_types.push({
-      id: 'services',
-      name: 'services',
-      title: 'Services',
-      status: 'active',
-      type_id: null,
-      slug: 'services',
-    })
-  }
-  if (blogCount > 0 && !post_types.some((t) => /^blog$/i.test(t.name))) {
-    post_types.push({
-      id: 'blog',
-      name: 'blog',
-      title: 'blog',
-      status: 'active',
-      type_id: 6,
-      slug: 'blog',
-    })
-  }
-  if (aboutMeCount > 0 && !post_types.some((t) => /^about me$/i.test(t.name))) {
-    post_types.push({
-      id: 'about-me',
-      name: 'About Me',
-      title: 'About Me',
-      status: 'active',
-      type_id: 16,
-      slug: 'about-me',
-    })
-  }
-  for (const group of tabItemGroups) {
-    if (!group._count._all) continue
-    const tab = getTabByKey(group.tabKey)
-    if (!tab) continue
-    if (post_types.some((t) => t.name.toLowerCase() === tab.publicSectionName.toLowerCase())) continue
-    post_types.push({
-      id: tab.key,
-      name: tab.publicSectionName,
+      id: tab.id,
+      key: tab.key,
+      name: tab.key,
       title: tab.label,
       status: 'active',
-      type_id: tab.legacyPostTypeId,
-      slug: tab.route,
+      type_id: null,
+      slug: tab.slug,
+      type: 'custom',
     })
   }
-  if (portfolioCount > 0 && !post_types.some((t) => /gallery|portfolio/i.test(t.name))) {
+
+  const seenPostTypes = new Set<string>()
+  for (const post of posts) {
+    const postType = post.postType
+    if (!postType || seenPostTypes.has(postType.id)) continue
+    if (getTabByPublicSectionName(postType.name) || getTabByPublicSectionName(postType.title || '')) continue
+    seenPostTypes.add(postType.id)
     post_types.push({
-      id: 'gallery',
-      name: 'gallery',
-      title: 'Gallery',
-      status: 'active',
-      type_id: null,
-      slug: 'gallery',
-    })
-  }
-  if (reviewCount > 0 && !post_types.some((t) => /^reviews?$/i.test(t.name) || /^testimonials?$/i.test(t.name))) {
-    post_types.push({
-      id: 'reviews',
-      name: 'reviews',
-      title: 'Reviews',
-      status: 'active',
-      type_id: null,
-      slug: 'reviews',
+      id: postType.id,
+      key: postType.slug || postType.id,
+      name: postType.name,
+      title: postType.title || postType.name,
+      status: postType.status || 'active',
+      type_id: postType.typeId,
+      slug: postType.slug,
+      type: 'standard',
     })
   }
   if (
@@ -605,11 +605,13 @@ const getPostTypesForProfile = async (profileId: string) => {
   ) {
     post_types.push({
       id: 'resume',
+      key: 'resume',
       name: 'Resume',
       title: 'Resume',
       status: 'active',
       type_id: null,
       slug: 'resume',
+      type: 'standard',
     })
   }
   if (
@@ -622,21 +624,25 @@ const getPostTypesForProfile = async (profileId: string) => {
   ) {
     post_types.push({
       id: 'work-experience',
+      key: 'work-experience',
       name: 'Work Experience',
       title: 'Work Experience',
       status: 'active',
       type_id: null,
       slug: 'work-experience',
+      type: 'standard',
     })
   }
   if (skillCount > 0 && !post_types.some((t) => /^skills?$/i.test(t.name) || /^skills?$/i.test(t.title || ''))) {
     post_types.push({
       id: 'skills',
+      key: 'skills',
       name: 'skills',
       title: 'Skills',
       status: 'active',
       type_id: null,
       slug: 'skills',
+      type: 'standard',
     })
   }
 
@@ -670,6 +676,7 @@ const getProfileAiData = async (profileId: string) => {
       experiences: { orderBy: { sortOrder: 'asc' } },
       services: { where: { status: 1 }, orderBy: { sortOrder: 'asc' } },
       portfolios: { where: { status: 1 }, orderBy: { sortOrder: 'asc' } },
+      galleries: { where: { status: '1', deletedAt: null }, orderBy: { sortOrder: 'asc' } },
       skillTags: { orderBy: { sortOrder: 'asc' } },
       socialLinks: { orderBy: { sortOrder: 'asc' } },
     },
@@ -737,12 +744,12 @@ const getProfileAiData = async (profileId: string) => {
       toDate: formatDate(e.toDate),
       tillNow: e.tillNow,
     })),
-    portfolio: profile.portfolios.map((p) => ({
+    portfolio: (profile.galleries.length ? profile.galleries : profile.portfolios).map((p) => ({
       title: p.title,
       description: p.description,
       url: p.url,
-      status: p.status,
-      imageUrl: p.imageUrl,
+      status: Number(p.status),
+      imageUrl: 'featuredImage' in p ? p.featuredImage : p.imageUrl,
       attachmentUrl: p.attachmentUrl,
       attachmentName: p.attachmentName,
       attachments: p.attachmentUrl ? { url: p.attachmentUrl, name: p.attachmentName || '' } : null,
@@ -751,8 +758,18 @@ const getProfileAiData = async (profileId: string) => {
   }
 }
 
-const getDynamicSection = async (sectionName: string, profileId: string) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
+const getDynamicSection = async (
+  sectionName: string,
+  profileId: string,
+  validatedProfile?: { id: string; legacyId: number | null; isPublic: boolean },
+  takeOverride?: number
+) => {
+  const profile =
+    validatedProfile ??
+    (await prisma.profile.findFirst({
+      where: { id: profileId, ...publicReadableWhere() },
+      select: { id: true, legacyId: true, isPublic: true },
+    }))
   if (!profile) throw new AppError(404, 'Profile not found')
   const legacyId = profile.legacyId
 
@@ -765,11 +782,13 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
     })
 
   const name = decodeURIComponent(sectionName)
+  const registryTab = getTabByPublicSectionName(name)
 
-  if (/^services$/i.test(name)) {
+  if (registryTab?.storage === 'service') {
     const items = await prisma.service.findMany({
       where: { profileId, status: 1 },
       orderBy: { sortOrder: 'asc' },
+      take: takeOverride ?? 200,
     })
     return {
       type: 'services',
@@ -789,10 +808,12 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
     }
   }
 
-  if (/^blog$/i.test(name)) {
+  if (registryTab?.storage === 'blog') {
     const blogs = await prisma.blog.findMany({
       where: { profileId, deletedAt: null, status: '1' },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      // High-volume public sections are bounded to protect response size.
+      take: takeOverride ?? 100,
     })
     return {
       type: 'blog',
@@ -821,24 +842,15 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
   }
 
   {
-    const needle = name.trim().toLowerCase()
-    const matched = Object.values(TAB_REGISTRY).find(
-      (tab) =>
-        tab.architecture === 'direct' && tab.storage === 'tab_item' && tab.publicSectionName.toLowerCase() === needle
-    )
-    if (matched) {
-      const tabKey = matched.key
-      const rows = await prisma.tabItem.findMany({
-        where: { profileId, tabKey, deletedAt: null, status: '1' },
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      })
-      const tab = getTabByKey(tabKey)
+    const tab = registryTab
+    if (tab && isGenericDirectStorage(tab.storage)) {
+      const rows = await DIRECT_SECTION_LOADERS[tab.storage](profileId, takeOverride ?? 100)
       return {
-        type: tab?.publicSectionName || name,
+        type: tab.publicSectionName,
         postType: {
-          name: tab?.publicSectionName || name,
-          title: tab?.label || name,
-          type_id: tab?.legacyPostTypeId,
+          name: tab.publicSectionName,
+          title: tab.label,
+          type_id: tab.legacyPostTypeId,
         },
         profile: { id: profileId },
         items: rows.map((p) => {
@@ -860,23 +872,24 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
             metas,
           }
         }),
-        section_id: tabKey,
-        post_type: tab ? { name: tab.publicSectionName, title: tab.label, type_id: tab.legacyPostTypeId } : undefined,
+        section_id: tab.key,
+        post_type: { name: tab.publicSectionName, title: tab.label, type_id: tab.legacyPostTypeId },
       }
     }
   }
 
-  if (/^gallery$/i.test(name) || /^portfolio$/i.test(name)) {
-    const items = await prisma.portfolio.findMany({
-      where: { profileId, status: 1 },
+  if (registryTab?.storage === 'gallery' || /^portfolio$/i.test(name)) {
+    const items = await prisma.gallery.findMany({
+      where: { profileId, deletedAt: null, status: '1' },
       orderBy: { sortOrder: 'asc' },
+      take: takeOverride ?? 100,
     })
     return {
       type: 'gallery',
       postType: { name: 'gallery', title: 'Gallery' },
       profile: { id: profileId },
       items: items.map((p) => {
-        const imageUrl = abs(p.imageUrl, null, 5, 'Portfolio Gallery')
+        const imageUrl = abs(p.featuredImage, null, 5, 'Portfolio Gallery')
         const attachmentUrl = abs(p.attachmentUrl, p.attachmentName, 5, 'Portfolio Attachment')
         const gallery = [
           ...(imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : []),
@@ -898,10 +911,11 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
     }
   }
 
-  if (/^reviews?$/i.test(name) || /^testimonials?$/i.test(name)) {
+  if (registryTab?.storage === 'review' || /^testimonials?$/i.test(name)) {
     const items = await prisma.review.findMany({
       where: { profileId, status: 1 },
       orderBy: { sortOrder: 'asc' },
+      take: takeOverride ?? 200,
     })
     return {
       type: 'reviews',
@@ -919,7 +933,7 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
     }
   }
 
-  if (/^about me$/i.test(name)) {
+  if (registryTab?.storage === 'about_me') {
     const about = await prisma.aboutMe.findUnique({ where: { profileId } })
     if (!about || about.status === '0') {
       return {
@@ -942,6 +956,20 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
           featured_image: about.featuredMediaUrl ? abs(about.featuredMediaUrl) : null,
         },
       ],
+    }
+  }
+
+  if (registryTab) {
+    return {
+      type: registryTab.publicSectionName,
+      postType: {
+        name: registryTab.publicSectionName,
+        title: registryTab.label,
+        type_id: registryTab.legacyPostTypeId,
+      },
+      profile: { id: profileId },
+      items: [],
+      section_id: registryTab.key,
     }
   }
 
@@ -997,6 +1025,49 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
     }
   }
 
+  const customTab = await prisma.customTab.findFirst({
+    where: {
+      profileId,
+      isEnabled: true,
+      isPublic: true,
+      status: '1',
+      OR: [{ key: { equals: name, mode: 'insensitive' } }, { slug: { equals: name, mode: 'insensitive' } }],
+    },
+  })
+  if (customTab) {
+    const rows = await prisma.customTabItem.findMany({
+      where: { customTabId: customTab.id, profileId, status: '1' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      take: takeOverride ?? 200,
+    })
+    return {
+      type: customTab.key,
+      postType: { name: customTab.key, title: customTab.label },
+      profile: { id: profileId },
+      items: rows.map((item) => {
+        const featuredImage = abs(item.featuredImage, null, 7, 'Featured Image')
+        const metas =
+          item.data && typeof item.data === 'object' && !Array.isArray(item.data)
+            ? (item.data as Record<string, string>)
+            : {}
+        return {
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          status: item.status,
+          issuer: typeof metas.issuer === 'string' ? metas.issuer.trim() : '',
+          year: typeof metas.year === 'string' ? metas.year.trim() : '',
+          featured_image: featuredImage ? [{ id: item.id, doc_name: item.title, url: featuredImage }] : [],
+          general_info_url: item.url,
+          attachments: [],
+          metas,
+        }
+      }),
+      section_id: customTab.id,
+      post_type: { name: customTab.key, title: customTab.label, type_id: null },
+    }
+  }
+
   const posts = await prisma.post.findMany({
     where: {
       profileId,
@@ -1014,6 +1085,7 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
       attachments: { include: { attachmentType: true } },
     },
     orderBy: { sortOrder: 'asc' },
+    take: takeOverride ?? 100,
   })
 
   const postType = posts[0]?.postType
@@ -1059,6 +1131,57 @@ const getDynamicSection = async (sectionName: string, profileId: string) => {
       ? { name: postType.name, title: postType.title || postType.name, type_id: postType.typeId }
       : undefined,
   }
+}
+
+type BootstrapPayload = {
+  myCard: Awaited<ReturnType<typeof getMyCardFromProfile>>
+  postTypes: Awaited<ReturnType<typeof getPostTypesForProfile>>
+  settings: Awaited<ReturnType<typeof getProfileSettings>>
+  sections: Record<string, Awaited<ReturnType<typeof getDynamicSection>>>
+}
+
+const BOOTSTRAP_TTL_MS = 15_000
+const bootstrapCache = new Map<string, { expiresAt: number; value: BootstrapPayload }>()
+
+const getPublicBootstrap = async (slug: string): Promise<BootstrapPayload> => {
+  const profile = await getProfileBySlugOrThrow(slug)
+  const cacheKey = `${profile.id}:${profile.updatedAt.getTime()}`
+  const cached = bootstrapCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) return cached.value
+
+  const validatedProfile = { id: profile.id, legacyId: profile.legacyId, isPublic: profile.isPublic }
+  const settings = {
+    appearance: {
+      profileTemplate: profile.profileSettings?.profileTemplate || profile.template || 'v3',
+      layoutStyle: profile.profileSettings?.layoutStyle || 'classic',
+      buttonStyle: profile.profileSettings?.buttonStyle || 'solid',
+      cornerStyle: profile.profileSettings?.cornerStyle || 'round',
+    },
+    theme_config: profile.profileSettings?.themeConfig || profile.themeConfig || null,
+  }
+  const lightTabs = Object.values(TAB_REGISTRY).filter((tab) =>
+    ['about_me', 'mission_statement', 'why_choose_us', 'service', 'review'].includes(tab.storage)
+  )
+
+  const [myCard, postTypes, sectionEntries] = await Promise.all([
+    getMyCardFromProfile(profile),
+    getPostTypesForProfile(profile.id, true),
+    Promise.all(
+      lightTabs.map(async (tab) => [
+        tab.publicSectionName,
+        await getDynamicSection(tab.publicSectionName, profile.id, validatedProfile, 12),
+      ])
+    ),
+  ])
+  const value: BootstrapPayload = {
+    myCard,
+    postTypes,
+    settings,
+    sections: Object.fromEntries(sectionEntries),
+  }
+  bootstrapCache.clear()
+  bootstrapCache.set(cacheKey, { expiresAt: Date.now() + BOOTSTRAP_TTL_MS, value })
+  return value
 }
 
 const getPublicCards = async (query: {
@@ -1417,6 +1540,7 @@ const publicCardService = {
   getProfileSettings,
   getProfileAiData,
   getDynamicSection,
+  getPublicBootstrap,
   getPublicCards,
   saveGuestUser,
   saveNote,

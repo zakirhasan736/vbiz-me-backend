@@ -14,6 +14,12 @@ const getMyCard = catchAsyncError(async (req, res) => {
   sendPublicResponse(res, { success: true, data })
 })
 
+const getBootstrap = catchAsyncError(async (req, res) => {
+  const data = await publicCardService.getPublicBootstrap(param(req.params.slug))
+  res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30')
+  sendPublicResponse(res, { success: true, data })
+})
+
 const getPostTypes = catchAsyncError(async (req, res) => {
   const profileId = String(req.query.profile_id || '')
   if (!profileId) {
@@ -202,6 +208,7 @@ const trackEvent = catchAsyncError(async (req, res) => {
 
 const publicController = {
   getMyCard,
+  getBootstrap,
   getPostTypes,
   getSettings,
   getProfileAnnouncement,

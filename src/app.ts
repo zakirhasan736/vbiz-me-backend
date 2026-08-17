@@ -1,3 +1,4 @@
+import compression from 'compression'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import express, { Application, NextFunction, Request, Response } from 'express'
@@ -6,6 +7,7 @@ import config from './configs/config'
 import './configs/passport'
 import globalErrorHandler from './middlewares/globalErrorHandler'
 import router from './router/index'
+import logger from './utils/logger'
 import sendResponse from './utils/sendResponse'
 
 const app: Application = express()
@@ -14,7 +16,18 @@ const app: Application = express()
 app.set('trust proxy', 1)
 
 app.use(helmet())
+app.use(compression())
 app.use(cookieParser())
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const startedAt = performance.now()
+  res.on('finish', () => {
+    const durationMs = Math.round(performance.now() - startedAt)
+    if (durationMs > 500) {
+      logger.warn('Slow request', { method: req.method, path: req.path, durationMs })
+    }
+  })
+  next()
+})
 
 app.use(
   cors({

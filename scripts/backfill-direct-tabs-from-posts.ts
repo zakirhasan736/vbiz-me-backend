@@ -15,7 +15,6 @@ async function main() {
   })
 
   let blogsUpserted = 0
-  let tabItemsUpserted = 0
   let skipped = 0
   let unmapped = 0
   const unknownMetaKeys = new Set<string>()
@@ -44,7 +43,7 @@ async function main() {
     if (
       tab.storage === 'about_me' ||
       tab.storage === 'service' ||
-      tab.storage === 'portfolio' ||
+      tab.storage === 'gallery' ||
       tab.storage === 'review'
     ) {
       skipped += 1
@@ -91,50 +90,13 @@ async function main() {
       continue
     }
 
-    if (tab.storage === 'tab_item') {
-      const data = {
-        profileId: post.profileId,
-        tabKey,
-        legacyPostTypeId: tab.legacyPostTypeId,
-        title: post.title,
-        description: post.description,
-        url: post.url,
-        featuredImage: post.featuredImage,
-        status: post.status || '1',
-        sortOrder: post.sortOrder,
-        metas,
-        legacyPostId: legacyPostId ?? undefined,
-      }
-      if (legacyPostId != null) {
-        await prisma.tabItem.upsert({
-          where: { legacyPostId },
-          create: { ...data, legacyPostId },
-          update: data,
-        })
-      } else {
-        const existing = await prisma.tabItem.findFirst({
-          where: {
-            profileId: post.profileId,
-            tabKey,
-            title: post.title || undefined,
-            deletedAt: null,
-          },
-        })
-        if (existing) {
-          await prisma.tabItem.update({ where: { id: existing.id }, data })
-        } else {
-          await prisma.tabItem.create({ data })
-        }
-      }
-      tabItemsUpserted += 1
-    }
+    skipped += 1
   }
 
   console.log(
     JSON.stringify(
       {
         blogsUpserted,
-        tabItemsUpserted,
         skipped,
         unmapped,
         unknownMetaKeys: Array.from(unknownMetaKeys).sort(),

@@ -16,6 +16,8 @@ router.get('/profiles/:slug/apple-wallet', publicController.appleWallet)
 router.use(publicRateLimiter)
 
 router.get('/v/:slug', publicController.getMyCard)
+router.get('/v/:slug/bootstrap', publicController.getBootstrap)
+router.get('/cards/:slug/bootstrap', publicController.getBootstrap)
 router.get('/post-types', publicController.getPostTypes)
 router.get('/profiles/:id/settings', publicController.getSettings)
 router.get('/profiles/:id/announcement', publicController.getProfileAnnouncement)

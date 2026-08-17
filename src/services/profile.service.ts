@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
 import { AccountStatus } from '../../generated/prisma/enums'
@@ -205,10 +206,127 @@ const profileInclude = {
   services: { orderBy: { sortOrder: 'asc' as const } },
   portfolios: { orderBy: { sortOrder: 'asc' as const } },
   reviews: { orderBy: { sortOrder: 'asc' as const } },
+  customTabs: {
+    orderBy: { sortOrder: 'asc' as const },
+    include: { items: { orderBy: { sortOrder: 'asc' as const } } },
+  },
   skillTags: { orderBy: { sortOrder: 'asc' as const } },
   addresses: true,
   attachments: { include: { attachmentType: true } },
 } satisfies Prisma.ProfileInclude
+
+type CustomTabsProfile = Prisma.ProfileGetPayload<{ include: typeof profileInclude }>
+
+const customTabsJson = (profile: CustomTabsProfile) =>
+  JSON.stringify(
+    profile.customTabs.map((tab) => ({
+      id: tab.id,
+      label: tab.label,
+      items: tab.items.map((item) => {
+        const data =
+          item.data && typeof item.data === 'object' && !Array.isArray(item.data)
+            ? (item.data as Record<string, unknown>)
+            : {}
+        return {
+          id: item.id,
+          title: item.title || '',
+          description: item.description || '',
+          mediaUrl: item.featuredImage || '',
+          mediaName: typeof data.mediaName === 'string' ? data.mediaName : '',
+          mediaKind: typeof data.mediaKind === 'string' ? data.mediaKind : undefined,
+          gallery: Array.isArray(data.gallery) ? data.gallery : [],
+          active: item.status === '1',
+        }
+      }),
+    }))
+  )
+
+const withCanonicalCustomTabsSetting = (profile: CustomTabsProfile): CustomTabsProfile => {
+  if (!profile.customTabs.length) return profile
+  const value = customTabsJson(profile)
+  const existing = profile.settings.find((setting) => setting.key === 'custom_tabs_json')
+  const settings = existing
+    ? profile.settings.map((setting) => (setting.key === 'custom_tabs_json' ? { ...setting, value } : setting))
+    : [
+        ...profile.settings,
+        {
+          id: `custom-tabs-${profile.id}`,
+          legacyId: null,
+          profileId: profile.id,
+          key: 'custom_tabs_json',
+          value,
+          createdAt: profile.createdAt,
+          updatedAt: profile.updatedAt,
+        },
+      ]
+  return { ...profile, settings }
+}
+
+const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(rawJson)
+  } catch {
+    throw new AppError(400, 'custom_tabs_json must be valid JSON')
+  }
+  if (!Array.isArray(parsed)) throw new AppError(400, 'custom_tabs_json must be an array')
+  const tabs = parsed.filter((tab): tab is Record<string, unknown> => Boolean(tab && typeof tab === 'object'))
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.customTab.findMany({ where: { profileId }, select: { id: true } })
+    const retainedIds: string[] = []
+    for (let tabIndex = 0; tabIndex < tabs.length; tabIndex += 1) {
+      const input = tabs[tabIndex]
+      const inputId = typeof input.id === 'string' ? input.id : ''
+      const matched = existing.some((row) => row.id === inputId)
+      const label = String(input.label || 'Custom tab').trim() || 'Custom tab'
+      const tab = matched
+        ? await tx.customTab.update({
+            where: { id: inputId },
+            data: { label, sortOrder: tabIndex, slug: slugify(label) || 'custom-tab' },
+          })
+        : await tx.customTab.create({
+            data: {
+              profileId,
+              key: `custom-${slugify(label) || 'tab'}-${randomBytes(4).toString('hex')}`,
+              label,
+              slug: slugify(label) || 'custom-tab',
+              sortOrder: tabIndex,
+            },
+          })
+      retainedIds.push(tab.id)
+      await tx.customTabItem.deleteMany({ where: { customTabId: tab.id } })
+      const items = Array.isArray(input.items) ? input.items : []
+      for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+        const item = items[itemIndex]
+        if (!item || typeof item !== 'object') continue
+        const row = item as Record<string, unknown>
+        await tx.customTabItem.create({
+          data: {
+            customTabId: tab.id,
+            profileId,
+            title: row.title == null ? null : String(row.title),
+            description: row.description == null ? null : String(row.description),
+            featuredImage: row.mediaUrl == null ? null : String(row.mediaUrl),
+            sortOrder: itemIndex,
+            status: row.active === false ? '0' : '1',
+            data: {
+              mediaName: row.mediaName ?? null,
+              mediaKind: row.mediaKind ?? null,
+              gallery: Array.isArray(row.gallery) ? row.gallery : [],
+            } as Prisma.InputJsonValue,
+          },
+        })
+      }
+    }
+    await tx.customTab.deleteMany({ where: { profileId, id: { notIn: retainedIds } } })
+  })
+  const canonical = await prisma.profile.findUniqueOrThrow({ where: { id: profileId }, include: profileInclude })
+  await prisma.setting.upsert({
+    where: { profileId_key: { profileId, key: 'custom_tabs_json' } },
+    create: { profileId, key: 'custom_tabs_json', value: customTabsJson(canonical) },
+    update: { value: customTabsJson(canonical) },
+  })
+}
 
 const listInclude = {
   status: { select: { id: true, name: true } },
@@ -526,14 +644,14 @@ const getOwned = async (profileId: string, userId: string, role: string) => {
   if (isAdminRole(role)) {
     const profile = await prisma.profile.findUnique({ where: { id: profileId }, include: profileInclude })
     if (!profile) throw new AppError(404, 'Profile not found')
-    return profile
+    return withCanonicalCustomTabsSetting(profile)
   }
   const profile = await prisma.profile.findFirst({
     where: { id: profileId, OR: [{ userId }, { companyUserId: userId }] },
     include: profileInclude,
   })
   if (!profile) throw new AppError(404, 'Profile not found')
-  return profile
+  return withCanonicalCustomTabsSetting(profile)
 }
 
 const assertOwnerAccountCanMutateVcards = async (userId: string, role: string) => {
@@ -841,6 +959,9 @@ const create = async (
         })
       )
     )
+    if (typeof settings.custom_tabs_json === 'string') {
+      await syncCustomTabsJson(profile.id, settings.custom_tabs_json)
+    }
   }
 
   return prisma.profile.findUniqueOrThrow({ where: { id: profile.id }, include: profileInclude })
@@ -965,6 +1086,9 @@ const update = async (
         })
       )
     )
+    if (typeof settings.custom_tabs_json === 'string') {
+      await syncCustomTabsJson(profileId, settings.custom_tabs_json)
+    }
   }
 
   if (profileSettings) {
@@ -1076,7 +1200,7 @@ const COLLECTION_DELEGATE = {
   education: 'education',
   experiences: 'experience',
   services: 'service',
-  portfolios: 'portfolio',
+  portfolios: 'gallery',
   reviews: 'review',
   skillTags: 'skillTag',
   socialLinks: 'socialLink',
@@ -1572,6 +1696,28 @@ const getDashboardStats = async (
   }
 }
 
+const getDashboardSummary = async (
+  userId: string,
+  role: string,
+  period: DashboardPeriod = 'all',
+  scope?: ProfileListScope
+) => {
+  const [stats, contacts] = await Promise.all([
+    getDashboardStats(userId, role, period, scope),
+    listContacts(userId, role, undefined, 10),
+  ])
+  return {
+    stats,
+    recentEngagement: {
+      items: stats.recentEngagement,
+      total: stats.recentEngagement.length,
+      skip: 0,
+      limit: RECENT_ENGAGEMENT_LIMIT,
+    },
+    contactsPreview: contacts.slice(0, 10),
+  }
+}
+
 type OwnerContactMeta = {
   privateNotes?: string
   lastReply?: string
@@ -1633,7 +1779,12 @@ export type OwnerContactRow = {
   lastReplyAt?: string
 }
 
-const listContacts = async (userId: string, role: string, profileId?: string): Promise<OwnerContactRow[]> => {
+const listContacts = async (
+  userId: string,
+  role: string,
+  profileId?: string,
+  limit?: number
+): Promise<OwnerContactRow[]> => {
   if (profileId) await getOwned(profileId, userId, role)
   const profiles = await listForUser(userId, role)
   const ids = profileId ? [profileId] : profiles.map((p) => p.id)
@@ -1646,16 +1797,19 @@ const listContacts = async (userId: string, role: string, profileId?: string): P
       where: { profileId: { in: ids } },
       orderBy: { createdAt: 'desc' },
       include: { profile: profileSelect },
+      ...(limit ? { take: limit } : {}),
     }),
     prisma.contact.findMany({
       where: { profileId: { in: ids } },
       orderBy: { createdAt: 'desc' },
       include: { profile: profileSelect },
+      ...(limit ? { take: limit } : {}),
     }),
     prisma.userNote.findMany({
       where: { profileId: { in: ids } },
       orderBy: { createdAt: 'desc' },
       include: { profile: profileSelect },
+      ...(limit ? { take: limit } : {}),
     }),
   ])
 
@@ -2465,13 +2619,20 @@ const deleteTeamNotice = async (userId: string, role: string, noticeId: string) 
 }
 
 /** Active public-banner notices for a profile — only notices targeted at this card. */
-const listPublicTeamNoticesForProfile = async (profileId: string): Promise<TeamNoticeRow[]> => {
-  const profile = await prisma.profile.findUnique({
-    where: { id: profileId },
-    select: { userId: true, companyUserId: true },
-  })
-  if (!profile) return []
-  const ownerIds = [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id))
+const listPublicTeamNoticesForProfile = async (
+  profileId: string,
+  knownOwnerIds?: string[]
+): Promise<TeamNoticeRow[]> => {
+  const ownerIds: string[] =
+    knownOwnerIds ??
+    (await prisma.profile
+      .findUnique({
+        where: { id: profileId },
+        select: { userId: true, companyUserId: true },
+      })
+      .then((profile) =>
+        profile ? [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id)) : []
+      ))
   if (!ownerIds.length) return []
 
   const rows = await prisma.teamNotice.findMany({
@@ -2552,6 +2713,7 @@ const profileService = {
   deletePost,
   listPosts,
   getDashboardStats,
+  getDashboardSummary,
   getLiveSocialClicks,
   getSocialClicksByCard,
   notifyLiveSocialClicks,

@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import customTabController from '../controller/customTab.controller'
 import directTabController from '../controller/directTab.controller'
 import profileController from '../controller/profile.controller'
 import authMiddleware from '../middlewares/authValidation'
@@ -9,6 +10,7 @@ router.use(authMiddleware.isAuthenticateUser)
 router.use(authMiddleware.requireNotSuspended)
 
 router.get('/dashboard/stats', profileController.dashboard)
+router.get('/dashboard/summary', profileController.dashboardSummary)
 router.get('/dashboard/engagement', profileController.recentEngagement)
 router.get('/dashboard/weekly-engagement', profileController.weeklyEngagement)
 router.get('/dashboard/consolidated-engagement', profileController.consolidatedEngagement)
@@ -52,6 +54,23 @@ router.get('/:id/tabs/:tabKey', directTabController.listTabItems)
 router.post('/:id/tabs/:tabKey', authMiddleware.requireVcardMutable, directTabController.createTabItem)
 router.patch('/:id/tabs/:tabKey/:itemId', authMiddleware.requireVcardMutable, directTabController.updateTabItem)
 router.delete('/:id/tabs/:tabKey/:itemId', authMiddleware.requireVcardMutable, directTabController.deleteTabItem)
+
+router.get('/:id/custom-tabs', customTabController.listTabs)
+router.post('/:id/custom-tabs', authMiddleware.requireVcardMutable, customTabController.createTab)
+router.patch('/:id/custom-tabs/:tabId', authMiddleware.requireVcardMutable, customTabController.updateTab)
+router.delete('/:id/custom-tabs/:tabId', authMiddleware.requireVcardMutable, customTabController.deleteTab)
+router.get('/:id/custom-tabs/:tabId/items', customTabController.listItems)
+router.post('/:id/custom-tabs/:tabId/items', authMiddleware.requireVcardMutable, customTabController.createItem)
+router.patch(
+  '/:id/custom-tabs/:tabId/items/:itemId',
+  authMiddleware.requireVcardMutable,
+  customTabController.updateItem
+)
+router.delete(
+  '/:id/custom-tabs/:tabId/items/:itemId',
+  authMiddleware.requireVcardMutable,
+  customTabController.deleteItem
+)
 
 router.get('/:id/posts', profileController.listPosts)
 router.post('/:id/posts', authMiddleware.requireVcardMutable, profileController.createPost)

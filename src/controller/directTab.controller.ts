@@ -7,7 +7,8 @@ const param = (v: string | string[] | undefined) => String(Array.isArray(v) ? v[
 
 const listBlogs = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const data = await directTabService.listBlogs(param(req.params.id), req.user.id, req.user.role)
+  const limit = req.query.limit ? Number(req.query.limit) : undefined
+  const data = await directTabService.listBlogs(param(req.params.id), req.user.id, req.user.role, limit)
   sendResponse(res, { success: true, statusCode: 200, message: 'Blogs fetched', data })
 })
 
@@ -89,7 +90,8 @@ const listTabItems = catchAsyncError(async (req, res) => {
     param(req.params.id),
     param(req.params.tabKey),
     req.user.id,
-    req.user.role
+    req.user.role,
+    req.query.limit ? Number(req.query.limit) : undefined
   )
   sendResponse(res, { success: true, statusCode: 200, message: 'Tab items fetched', data })
 })

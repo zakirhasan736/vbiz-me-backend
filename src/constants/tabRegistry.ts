@@ -4,6 +4,43 @@
  */
 export type TabMode = 'singleton' | 'list'
 export type TabArchitecture = 'direct' | 'posts'
+export type DirectSectionStorage =
+  | 'about_me'
+  | 'service'
+  | 'client'
+  | 'review'
+  | 'gallery'
+  | 'video'
+  | 'blog'
+  | 'general_post'
+  | 'bbb_accreditation'
+  | 'licensing'
+  | 'dcp'
+  | 'certificate_license'
+  | 'insurance_license'
+  | 'faq'
+  | 'calendar_section'
+  | 'property_listing'
+  | 'profile_event'
+  | 'media_press'
+  | 'mission_statement'
+  | 'video_explainer'
+  | 'menu_section'
+  | 'why_choose_us'
+  | 'announcement_direct'
+  | 'join_my_team'
+  | 'booking'
+  | 'additional_service'
+  | 'video_link'
+  | 'inventory'
+  | 'home_solar'
+  | 'resiliency_product'
+  | 'breakfast'
+  | 'lunch'
+  | 'dinner'
+  | 'product'
+  | 'sales_person'
+  | 'team_member'
 
 export type TabRegistryEntry = {
   key: string
@@ -15,7 +52,7 @@ export type TabRegistryEntry = {
   legacyPostTypeId: number
   architecture: TabArchitecture
   /** Storage backend for direct tabs */
-  storage: 'about_me' | 'service' | 'portfolio' | 'review' | 'blog' | 'tab_item' | 'posts'
+  storage: DirectSectionStorage
 }
 
 const list = (
@@ -24,7 +61,7 @@ const list = (
   route: string,
   publicSectionName: string,
   legacyPostTypeId: number,
-  storage: TabRegistryEntry['storage'] = 'tab_item'
+  storage: DirectSectionStorage
 ): TabRegistryEntry => ({
   key,
   label,
@@ -32,7 +69,7 @@ const list = (
   route,
   publicSectionName,
   legacyPostTypeId,
-  architecture: storage === 'posts' ? 'posts' : 'direct',
+  architecture: 'direct',
   storage,
 })
 
@@ -42,7 +79,7 @@ const singleton = (
   route: string,
   publicSectionName: string,
   legacyPostTypeId: number,
-  storage: TabRegistryEntry['storage'] = 'tab_item'
+  storage: DirectSectionStorage
 ): TabRegistryEntry => ({
   key,
   label,
@@ -50,65 +87,103 @@ const singleton = (
   route,
   publicSectionName,
   legacyPostTypeId,
-  architecture: storage === 'posts' ? 'posts' : 'direct',
+  architecture: 'direct',
   storage,
 })
 
 export const TAB_REGISTRY: Record<string, TabRegistryEntry> = {
   services: list('services', 'Services', 'services', 'services', 1, 'service'),
-  clients: list('clients', 'Clients', 'clients', 'clients', 2),
+  clients: list('clients', 'Clients', 'clients', 'clients', 2, 'client'),
   reviews: list('reviews', 'Reviews', 'reviews', 'reviews', 3, 'review'),
-  gallery: list('gallery', 'Gallery', 'portfolios', 'gallery', 4, 'portfolio'),
-  videos: list('videos', 'Video', 'videos', 'video', 5),
+  gallery: list('gallery', 'Gallery', 'portfolios', 'gallery', 4, 'gallery'),
+  videos: list('videos', 'Video', 'videos', 'video', 5, 'video'),
   blogs: list('blogs', 'Blog', 'blogs', 'blog', 6, 'blog'),
-  general_posts: list('general_posts', 'Post', 'general-posts', 'Post', 7),
+  general_posts: list('general_posts', 'Post', 'general-posts', 'Post', 7, 'general_post'),
   bbb_accreditations: list(
     'bbb_accreditations',
     'BBB Accreditation',
     'bbb-accreditations',
     'Better Business Bureau (BBB) Accreditation',
-    8
+    8,
+    'bbb_accreditation'
   ),
-  licensing: list('licensing', 'Licensing', 'licensing', 'Licensing', 9),
-  dcp: list('dcp', 'DCP', 'dcp', 'Department of Consumer Protection (DCP)', 10),
-  certificates: list('certificates', 'Certificates/Licenses', 'certificates', 'Certificates Licenses', 11),
-  insurance_licenses: list('insurance_licenses', 'Insurance License', 'insurance-licenses', 'Insurance License', 12),
-  faqs: list('faqs', 'FAQ', 'faqs', 'Faq', 13),
-  calendar: list('calendar', 'Calendar', 'calendar', 'calender', 14),
-  property_listings: list('property_listings', 'Property Listing', 'property-listings', 'Property Listing', 15),
+  licensing: list('licensing', 'Licensing', 'licensing', 'Licensing', 9, 'licensing'),
+  dcp: list('dcp', 'DCP', 'dcp', 'Department of Consumer Protection (DCP)', 10, 'dcp'),
+  certificates: list(
+    'certificates',
+    'Certificates/Licenses',
+    'certificates',
+    'Certificates Licenses',
+    11,
+    'certificate_license'
+  ),
+  insurance_licenses: list(
+    'insurance_licenses',
+    'Insurance License',
+    'insurance-licenses',
+    'Insurance License',
+    12,
+    'insurance_license'
+  ),
+  faqs: list('faqs', 'FAQ', 'faqs', 'Faq', 13, 'faq'),
+  calendar: list('calendar', 'Calendar', 'calendar', 'calender', 14, 'calendar_section'),
+  property_listings: list(
+    'property_listings',
+    'Property Listing',
+    'property-listings',
+    'Property Listing',
+    15,
+    'property_listing'
+  ),
   about_me: singleton('about_me', 'About Me', 'about-me', 'About Me', 16, 'about_me'),
-  events: list('events', 'Events', 'events', 'Events', 17),
-  media_press: list('media_press', 'Media/Press', 'media-press', 'Media Press', 18),
-  mission_statement: singleton('mission_statement', 'Mission Statement', 'mission-statement', 'Mission Statement', 19),
-  video_explainers: list('video_explainers', '2D Video Explainer', 'video-explainers', '2D Video Explainer', 20),
-  menu: list('menu', 'Menu', 'menu', 'Menu', 21),
-  why_choose_us: singleton('why_choose_us', 'Why Choose Us', 'why-choose-us', 'Why Choose Us', 22),
-  announcements: list('announcements', 'Announcement', 'announcements', 'Announcement', 23),
-  join_my_team: list('join_my_team', 'Join My Team', 'join-my-team', 'Join My Team', 24),
-  bookings: list('bookings', 'Booking', 'bookings', 'Booking', 25),
+  events: list('events', 'Events', 'events', 'Events', 17, 'profile_event'),
+  media_press: list('media_press', 'Media/Press', 'media-press', 'Media Press', 18, 'media_press'),
+  mission_statement: singleton(
+    'mission_statement',
+    'Mission Statement',
+    'mission-statement',
+    'Mission Statement',
+    19,
+    'mission_statement'
+  ),
+  video_explainers: list(
+    'video_explainers',
+    '2D Video Explainer',
+    'video-explainers',
+    '2D Video Explainer',
+    20,
+    'video_explainer'
+  ),
+  menu: list('menu', 'Menu', 'menu', 'Menu', 21, 'menu_section'),
+  why_choose_us: singleton('why_choose_us', 'Why Choose Us', 'why-choose-us', 'Why Choose Us', 22, 'why_choose_us'),
+  announcements: list('announcements', 'Announcement', 'announcements', 'Announcement', 23, 'announcement_direct'),
+  join_my_team: list('join_my_team', 'Join My Team', 'join-my-team', 'Join My Team', 24, 'join_my_team'),
+  bookings: list('bookings', 'Booking', 'bookings', 'Booking', 25, 'booking'),
   additional_services: list(
     'additional_services',
     'Additional Services',
     'additional-services',
     'Additional Services',
-    26
+    26,
+    'additional_service'
   ),
-  video_links: list('video_links', 'Video Links', 'video-links', 'Video Links', 27),
-  inventory: list('inventory', 'Inventory', 'inventory', 'Inventory', 28),
-  home_solar: list('home_solar', 'Home Solar', 'home-solar', 'Home Solar', 29),
+  video_links: list('video_links', 'Video Links', 'video-links', 'Video Links', 27, 'video_link'),
+  inventory: list('inventory', 'Inventory', 'inventory', 'Inventory', 28, 'inventory'),
+  home_solar: list('home_solar', 'Home Solar', 'home-solar', 'Home Solar', 29, 'home_solar'),
   resiliency_products: list(
     'resiliency_products',
     'Resiliency Products',
     'resiliency-products',
     'Resiliency Products',
-    30
+    30,
+    'resiliency_product'
   ),
-  breakfast: list('breakfast', 'Breakfast', 'breakfast', 'Breakfast', 31),
-  lunch: list('lunch', 'Lunch', 'lunch', 'Lunch', 32),
-  dinner: list('dinner', 'Dinner', 'dinner', 'Dinner', 33),
-  products: list('products', 'See Products', 'products', 'See Products', 34),
-  sales_people: list('sales_people', 'Sales Person', 'sales-people', 'Sales Person', 35),
-  meet_our_team: list('meet_our_team', 'Meet Our Team', 'meet-our-team', 'Meet Our Team', 36),
+  breakfast: list('breakfast', 'Breakfast', 'breakfast', 'Breakfast', 31, 'breakfast'),
+  lunch: list('lunch', 'Lunch', 'lunch', 'Lunch', 32, 'lunch'),
+  dinner: list('dinner', 'Dinner', 'dinner', 'Dinner', 33, 'dinner'),
+  products: list('products', 'See Products', 'products', 'See Products', 34, 'product'),
+  sales_people: list('sales_people', 'Sales Person', 'sales-people', 'Sales Person', 35, 'sales_person'),
+  meet_our_team: list('meet_our_team', 'Meet Our Team', 'meet-our-team', 'Meet Our Team', 36, 'team_member'),
 }
 
 export const LEGACY_POST_TYPE_TO_TAB: Record<number, string> = Object.fromEntries(
@@ -129,5 +204,8 @@ export function getPostsTabs(): TabRegistryEntry[] {
 
 export function getTabByPublicSectionName(name: string): TabRegistryEntry | undefined {
   const needle = name.trim().toLowerCase()
-  return Object.values(TAB_REGISTRY).find((t) => t.publicSectionName.toLowerCase() === needle)
+  return Object.values(TAB_REGISTRY).find(
+    (t) =>
+      t.publicSectionName.toLowerCase() === needle || t.key.toLowerCase() === needle || t.route.toLowerCase() === needle
+  )
 }

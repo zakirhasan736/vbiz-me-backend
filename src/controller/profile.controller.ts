@@ -137,9 +137,9 @@ const replacePortfolios = catchAsyncError(async (req, res) => {
       return {
         title: item.title,
         description: item.description,
-        status: item.status ?? 1,
+        status: String(item.status ?? '1'),
         url: item.url,
-        imageUrl: item.imageUrl,
+        featuredImage: item.featuredImage ?? item.imageUrl,
         attachmentUrl,
         attachmentName,
       }
@@ -278,6 +278,13 @@ const dashboard = catchAsyncError(async (req, res) => {
   const { period, scope } = ProfileZodSchema.dashboardPeriodQuery.parse(req.query)
   const data = await profileService.getDashboardStats(req.user.id, req.user.role, period, scope)
   sendResponse(res, { success: true, statusCode: 200, message: 'Dashboard stats', data })
+})
+
+const dashboardSummary = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const { period, scope } = ProfileZodSchema.dashboardPeriodQuery.parse(req.query)
+  const data = await profileService.getDashboardSummary(req.user.id, req.user.role, period, scope)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Dashboard summary', data })
 })
 
 const recentEngagement = catchAsyncError(async (req, res) => {
@@ -433,6 +440,7 @@ const profileController = {
   updatePost,
   deletePost,
   dashboard,
+  dashboardSummary,
   recentEngagement,
   weeklyEngagement,
   consolidatedEngagement,
