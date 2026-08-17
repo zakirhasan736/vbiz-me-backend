@@ -296,6 +296,7 @@ const dashboardSummary = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const { period, scope } = ProfileZodSchema.dashboardPeriodQuery.parse(req.query)
   const data = await profileService.getDashboardSummary(req.user.id, req.user.role, period, scope)
+  res.set('Cache-Control', 'private, max-age=8, stale-while-revalidate=20')
   sendResponse(res, { success: true, statusCode: 200, message: 'Dashboard summary', data })
 })
 

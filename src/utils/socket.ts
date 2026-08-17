@@ -11,6 +11,8 @@ import quicker from './quicker'
 
 export const STAFF_DASHBOARD_ROOM = 'staff:dashboard'
 
+export const ownerDashboardRoom = (userId: string) => `user:${userId}:dashboard`
+
 type SocketUser = {
   id: string
   email: string
@@ -131,7 +133,10 @@ export const attachSocket = (httpServer: HttpServer): Server => {
   io.use(authenticateSocket)
 
   io.on('connection', (socket) => {
-    if (socket.data.user?.isStaff) {
+    const user = socket.data.user
+    if (!user) return
+    void socket.join(ownerDashboardRoom(user.id))
+    if (user.isStaff) {
       void socket.join(STAFF_DASHBOARD_ROOM)
     }
   })
@@ -139,4 +144,4 @@ export const attachSocket = (httpServer: HttpServer): Server => {
   return io
 }
 
-export default { getIo, attachSocket, STAFF_DASHBOARD_ROOM }
+export default { getIo, attachSocket, STAFF_DASHBOARD_ROOM, ownerDashboardRoom }

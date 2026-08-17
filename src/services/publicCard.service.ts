@@ -10,6 +10,7 @@ import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/ca
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
+import { isPrismaMissingTable } from '../utils/prismaErrors'
 import profileService from './profile.service'
 
 const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
@@ -473,10 +474,15 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
       profile.id,
       [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id))
     ),
-    prisma.gallery.findMany({
-      where: { profileId: profile.id, deletedAt: null, status: '1' },
-      orderBy: { sortOrder: 'asc' },
-    }),
+    prisma.gallery
+      .findMany({
+        where: { profileId: profile.id, deletedAt: null, status: '1' },
+        orderBy: { sortOrder: 'asc' },
+      })
+      .catch((error) => {
+        if (!isPrismaMissingTable(error)) throw error
+        return []
+      }),
   ])
   // Gallery is the canonical store. Query legacy Portfolio only for unmigrated cards.
   const legacyPortfolio = gallery.length
@@ -533,10 +539,15 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
       include: { postType: true },
       distinct: ['postTypeId'],
     }),
-    prisma.customTab.findMany({
-      where: { profileId, isEnabled: true, isPublic: true, status: '1' },
-      orderBy: { sortOrder: 'asc' },
-    }),
+    prisma.customTab
+      .findMany({
+        where: { profileId, isEnabled: true, isPublic: true, status: '1' },
+        orderBy: { sortOrder: 'asc' },
+      })
+      .catch((error) => {
+        if (!isPrismaMissingTable(error)) throw error
+        return []
+      }),
     prisma.education.count({ where: { profileId } }),
     prisma.experience.count({ where: { profileId } }),
     prisma.skillTag.count({ where: { profileId } }),
@@ -844,70 +855,80 @@ const getDynamicSection = async (
   {
     const tab = registryTab
     if (tab && isGenericDirectStorage(tab.storage)) {
-      const rows = await DIRECT_SECTION_LOADERS[tab.storage](profileId, takeOverride ?? 100)
-      return {
-        type: tab.publicSectionName,
-        postType: {
-          name: tab.publicSectionName,
-          title: tab.label,
-          type_id: tab.legacyPostTypeId,
-        },
-        profile: { id: profileId },
-        items: rows.map((p) => {
-          const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
-          const metas =
-            p.metas && typeof p.metas === 'object' && !Array.isArray(p.metas) ? (p.metas as Record<string, string>) : {}
-          const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
-          const year = typeof metas.year === 'string' ? metas.year.trim() : ''
-          return {
-            id: p.id,
-            title: p.title,
-            description: p.description,
-            status: p.status,
-            issuer,
-            year,
-            featured_image: featuredFromField ? [{ id: p.id, doc_name: p.title, url: featuredFromField }] : [],
-            general_info_url: p.url,
-            attachments: [],
-            metas,
-          }
-        }),
-        section_id: tab.key,
-        post_type: { name: tab.publicSectionName, title: tab.label, type_id: tab.legacyPostTypeId },
+      try {
+        const rows = await DIRECT_SECTION_LOADERS[tab.storage](profileId, takeOverride ?? 100)
+        return {
+          type: tab.publicSectionName,
+          postType: {
+            name: tab.publicSectionName,
+            title: tab.label,
+            type_id: tab.legacyPostTypeId,
+          },
+          profile: { id: profileId },
+          items: rows.map((p) => {
+            const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
+            const metas =
+              p.metas && typeof p.metas === 'object' && !Array.isArray(p.metas)
+                ? (p.metas as Record<string, string>)
+                : {}
+            const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
+            const year = typeof metas.year === 'string' ? metas.year.trim() : ''
+            return {
+              id: p.id,
+              title: p.title,
+              description: p.description,
+              status: p.status,
+              issuer,
+              year,
+              featured_image: featuredFromField ? [{ id: p.id, doc_name: p.title, url: featuredFromField }] : [],
+              general_info_url: p.url,
+              attachments: [],
+              metas,
+            }
+          }),
+          section_id: tab.key,
+          post_type: { name: tab.publicSectionName, title: tab.label, type_id: tab.legacyPostTypeId },
+        }
+      } catch (error) {
+        if (!isPrismaMissingTable(error)) throw error
       }
     }
   }
 
   if (registryTab?.storage === 'gallery' || /^portfolio$/i.test(name)) {
-    const items = await prisma.gallery.findMany({
-      where: { profileId, deletedAt: null, status: '1' },
-      orderBy: { sortOrder: 'asc' },
-      take: takeOverride ?? 100,
-    })
-    return {
-      type: 'gallery',
-      postType: { name: 'gallery', title: 'Gallery' },
-      profile: { id: profileId },
-      items: items.map((p) => {
-        const imageUrl = abs(p.featuredImage, null, 5, 'Portfolio Gallery')
-        const attachmentUrl = abs(p.attachmentUrl, p.attachmentName, 5, 'Portfolio Attachment')
-        const gallery = [
-          ...(imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : []),
-          ...(attachmentUrl
-            ? [{ id: `${p.id}-attachment`, doc_name: p.attachmentName || p.title, url: attachmentUrl }]
-            : []),
-        ]
-        return {
-          id: p.id,
-          title: p.title,
-          description: p.description,
-          status: p.status,
-          featured_image: imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : [],
-          gallery,
-          attachments: attachmentUrl ? { url: attachmentUrl, name: p.attachmentName || '' } : null,
-          general_info_url: p.url,
-        }
-      }),
+    try {
+      const items = await prisma.gallery.findMany({
+        where: { profileId, deletedAt: null, status: '1' },
+        orderBy: { sortOrder: 'asc' },
+        take: takeOverride ?? 100,
+      })
+      return {
+        type: 'gallery',
+        postType: { name: 'gallery', title: 'Gallery' },
+        profile: { id: profileId },
+        items: items.map((p) => {
+          const imageUrl = abs(p.featuredImage, null, 5, 'Portfolio Gallery')
+          const attachmentUrl = abs(p.attachmentUrl, p.attachmentName, 5, 'Portfolio Attachment')
+          const gallery = [
+            ...(imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : []),
+            ...(attachmentUrl
+              ? [{ id: `${p.id}-attachment`, doc_name: p.attachmentName || p.title, url: attachmentUrl }]
+              : []),
+          ]
+          return {
+            id: p.id,
+            title: p.title,
+            description: p.description,
+            status: p.status,
+            featured_image: imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : [],
+            gallery,
+            attachments: attachmentUrl ? { url: attachmentUrl, name: p.attachmentName || '' } : null,
+            general_info_url: p.url,
+          }
+        }),
+      }
+    } catch (error) {
+      if (!isPrismaMissingTable(error)) throw error
     }
   }
 
@@ -956,20 +977,6 @@ const getDynamicSection = async (
           featured_image: about.featuredMediaUrl ? abs(about.featuredMediaUrl) : null,
         },
       ],
-    }
-  }
-
-  if (registryTab) {
-    return {
-      type: registryTab.publicSectionName,
-      postType: {
-        name: registryTab.publicSectionName,
-        title: registryTab.label,
-        type_id: registryTab.legacyPostTypeId,
-      },
-      profile: { id: profileId },
-      items: [],
-      section_id: registryTab.key,
     }
   }
 
@@ -1025,15 +1032,20 @@ const getDynamicSection = async (
     }
   }
 
-  const customTab = await prisma.customTab.findFirst({
-    where: {
-      profileId,
-      isEnabled: true,
-      isPublic: true,
-      status: '1',
-      OR: [{ key: { equals: name, mode: 'insensitive' } }, { slug: { equals: name, mode: 'insensitive' } }],
-    },
-  })
+  const customTab = await prisma.customTab
+    .findFirst({
+      where: {
+        profileId,
+        isEnabled: true,
+        isPublic: true,
+        status: '1',
+        OR: [{ key: { equals: name, mode: 'insensitive' } }, { slug: { equals: name, mode: 'insensitive' } }],
+      },
+    })
+    .catch((error) => {
+      if (!isPrismaMissingTable(error)) throw error
+      return null
+    })
   if (customTab) {
     const rows = await prisma.customTabItem.findMany({
       where: { customTabId: customTab.id, profileId, status: '1' },
@@ -1167,10 +1179,24 @@ const getPublicBootstrap = async (slug: string): Promise<BootstrapPayload> => {
     getMyCardFromProfile(profile),
     getPostTypesForProfile(profile.id, true),
     Promise.all(
-      lightTabs.map(async (tab) => [
-        tab.publicSectionName,
-        await getDynamicSection(tab.publicSectionName, profile.id, validatedProfile, 12),
-      ])
+      lightTabs.map(async (tab) => {
+        try {
+          return [
+            tab.publicSectionName,
+            await getDynamicSection(tab.publicSectionName, profile.id, validatedProfile, 12),
+          ] as const
+        } catch {
+          return [
+            tab.publicSectionName,
+            {
+              type: tab.publicSectionName,
+              postType: { name: tab.publicSectionName, title: tab.label },
+              profile: { id: profile.id },
+              items: [],
+            },
+          ] as const
+        }
+      })
     ),
   ])
   const value: BootstrapPayload = {
@@ -1357,7 +1383,7 @@ const saveGuestUser = async (
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
 
-  liveDashboardHub.emitKpi('save')
+  liveDashboardHub.emitKpi('save', [profile.userId, profile.companyUserId])
 
   return {
     id: row.id,
@@ -1392,7 +1418,7 @@ const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; u
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
 
-  liveDashboardHub.emitKpi('save')
+  liveDashboardHub.emitKpi('save', [profile.userId, profile.companyUserId])
 
   return {
     action_buttons: {
@@ -1449,7 +1475,7 @@ const trackEvent = async (
     where: profileId
       ? { id: profileId, ...publicReadableWhere() }
       : { slug: slugEquals(String(slug || '')), ...publicReadableWhere() },
-    select: { id: true, slug: true },
+    select: { id: true, slug: true, userId: true, companyUserId: true },
   })
   if (!profile) throw new AppError(404, 'Profile not found')
 
@@ -1516,7 +1542,7 @@ const trackEvent = async (
       where: { id: profile.id },
       data: { viewCount: { increment: 1 } },
     })
-    liveDashboardHub.emitKpi('view')
+    liveDashboardHub.emitKpi('view', [profile.userId, profile.companyUserId])
   }
 
   if (eventType === 'social_click') {

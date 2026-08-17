@@ -1,5 +1,6 @@
 import { prisma } from '../utils/prisma'
-import type { DirectSectionStorage } from './tabRegistry'
+import { isPrismaMissingTable } from '../utils/prismaErrors'
+import { getTabByPublicSectionName, type DirectSectionStorage } from './tabRegistry'
 
 export type DirectSectionRow = {
   id: string
@@ -162,8 +163,34 @@ export async function countPublicSection(storage: DirectSectionStorage, profileI
  * Returns every populated dedicated public storage in one database round trip.
  * Physical names follow Prisma's model names, including explicit @@map names.
  */
+async function listPopulatedStoragesFromPosts(profileId: string): Promise<Set<DirectSectionStorage>> {
+  const populated = new Set<DirectSectionStorage>()
+  const [posts, about, services, reviews, blogs] = await Promise.all([
+    prisma.post.findMany({
+      where: { profileId, deletedAt: null, status: '1' },
+      include: { postType: true },
+      distinct: ['postTypeId'],
+    }),
+    prisma.aboutMe.count({ where: { profileId, status: '1' } }),
+    prisma.service.count({ where: { profileId, status: 1 } }),
+    prisma.review.count({ where: { profileId, status: 1 } }),
+    prisma.blog.count({ where: { profileId, deletedAt: null, status: '1' } }),
+  ])
+  if (about > 0) populated.add('about_me')
+  if (services > 0) populated.add('service')
+  if (reviews > 0) populated.add('review')
+  if (blogs > 0) populated.add('blog')
+  for (const post of posts) {
+    const tab =
+      getTabByPublicSectionName(post.postType?.name || '') || getTabByPublicSectionName(post.postType?.title || '')
+    if (tab) populated.add(tab.storage)
+  }
+  return populated
+}
+
 export async function listPopulatedStorages(profileId: string): Promise<Set<DirectSectionStorage>> {
-  const rows = await prisma.$queryRaw<Array<{ storage: DirectSectionStorage }>>`
+  try {
+    const rows = await prisma.$queryRaw<Array<{ storage: DirectSectionStorage }>>`
     SELECT 'about_me' AS storage WHERE EXISTS (SELECT 1 FROM "AboutMe" WHERE "profileId" = ${profileId} AND status = '1')
     UNION ALL SELECT 'service' WHERE EXISTS (SELECT 1 FROM "Service" WHERE "profileId" = ${profileId} AND status = 1)
     UNION ALL SELECT 'review' WHERE EXISTS (SELECT 1 FROM "Review" WHERE "profileId" = ${profileId} AND status = 1)
@@ -201,5 +228,9 @@ export async function listPopulatedStorages(profileId: string): Promise<Set<Dire
     UNION ALL SELECT 'sales_person' WHERE EXISTS (SELECT 1 FROM "SalesPerson" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
     UNION ALL SELECT 'team_member' WHERE EXISTS (SELECT 1 FROM "TeamMember" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
   `
-  return new Set(rows.map((row) => row.storage))
+    return new Set(rows.map((row) => row.storage))
+  } catch (error) {
+    if (!isPrismaMissingTable(error)) throw error
+    return listPopulatedStoragesFromPosts(profileId)
+  }
 }

@@ -1722,9 +1722,10 @@ const getDashboardSummary = async (
   period: DashboardPeriod = 'all',
   scope?: ProfileListScope
 ) => {
-  const [stats, contacts] = await Promise.all([
+  const [stats, contacts, social] = await Promise.all([
     getDashboardStats(userId, role, period, scope),
     listContacts(userId, role, undefined, 10),
+    getSocialClicksBundle(userId, role, scope),
   ])
   return {
     stats,
@@ -1735,6 +1736,8 @@ const getDashboardSummary = async (
       limit: RECENT_ENGAGEMENT_LIMIT,
     },
     contactsPreview: contacts.slice(0, 10),
+    socialClicks: social.socialClicks,
+    socialClicksByCard: social.socialClicksByCard,
   }
 }
 
@@ -2099,22 +2102,7 @@ const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 const WEEKDAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
 
 /** All-time social click counts for channels with at least one click. */
-const getLiveSocialClicks = async (userId: string, role: string, profileId?: string): Promise<LiveSocialClickRow[]> => {
-  let profileIds: string[]
-  if (profileId) {
-    const profile = await getOwned(profileId, userId, role)
-    profileIds = [profile.id]
-  } else {
-    const profiles = await listForUser(userId, role)
-    profileIds = profiles.map((p) => p.id)
-  }
-  if (emptyProfileIds(profileIds)) return []
-
-  const socialEvents = await prisma.eventLog.findMany({
-    where: { profileId: { in: profileIds }, eventType: 'social_click' },
-    select: { payload: true },
-  })
-  const counts = countDistinctGuestsByChannel(socialEvents)
+const toLiveSocialClickRows = (counts: Map<SocialChannel, number>): LiveSocialClickRow[] => {
   const rows: LiveSocialClickRow[] = []
   for (const channel of SOCIAL_CHANNELS) {
     const clickCount = counts.get(channel) || 0
@@ -2127,6 +2115,59 @@ const getLiveSocialClicks = async (userId: string, role: string, profileId?: str
   }
   rows.sort((a, b) => b.clickCount - a.clickCount)
   return rows
+}
+
+const getSocialClicksBundle = async (
+  userId: string,
+  role: string,
+  scope?: ProfileListScope
+): Promise<{ socialClicks: LiveSocialClickRow[]; socialClicksByCard: SocialClicksByCardRow[] }> => {
+  const profiles = await listForUser(userId, role, scope)
+  const profileIds = profiles.map((p) => p.id)
+  if (emptyProfileIds(profileIds)) return { socialClicks: [], socialClicksByCard: [] }
+
+  const socialEvents = await prisma.eventLog.findMany({
+    where: { profileId: { in: profileIds }, eventType: 'social_click' },
+    select: { profileId: true, payload: true },
+  })
+
+  const byProfile = new Map<string, Array<{ payload: unknown }>>()
+  for (const row of socialEvents) {
+    if (!row.profileId) continue
+    let bucket = byProfile.get(row.profileId)
+    if (!bucket) {
+      bucket = []
+      byProfile.set(row.profileId, bucket)
+    }
+    bucket.push({ payload: row.payload })
+  }
+
+  const socialClicksByCard: SocialClicksByCardRow[] = []
+  for (const profileId of profileIds) {
+    const events = byProfile.get(profileId) || []
+    socialClicksByCard.push({
+      profileId,
+      channels: toLiveSocialClickRows(countDistinctGuestsByChannel(events)),
+    })
+  }
+
+  return {
+    socialClicks: toLiveSocialClickRows(countDistinctGuestsByChannel(socialEvents)),
+    socialClicksByCard,
+  }
+}
+
+const getLiveSocialClicks = async (userId: string, role: string, profileId?: string): Promise<LiveSocialClickRow[]> => {
+  if (!profileId) {
+    const bundle = await getSocialClicksBundle(userId, role)
+    return bundle.socialClicks
+  }
+  const profile = await getOwned(profileId, userId, role)
+  const socialEvents = await prisma.eventLog.findMany({
+    where: { profileId: profile.id, eventType: 'social_click' },
+    select: { payload: true },
+  })
+  return toLiveSocialClickRows(countDistinctGuestsByChannel(socialEvents))
 }
 
 /** After a newly counted social_click, push refreshed totals to profile owners listening on SSE. */
@@ -2400,44 +2441,8 @@ const getSocialClicksByCard = async (
   role: string,
   scope?: ProfileListScope
 ): Promise<SocialClicksByCardRow[]> => {
-  const profiles = await listForUser(userId, role, scope)
-  const profileIds = profiles.map((p) => p.id)
-  if (emptyProfileIds(profileIds)) return []
-
-  const socialEvents = await prisma.eventLog.findMany({
-    where: { profileId: { in: profileIds }, eventType: 'social_click' },
-    select: { profileId: true, payload: true },
-  })
-
-  const byProfile = new Map<string, Array<{ payload: unknown }>>()
-  for (const row of socialEvents) {
-    if (!row.profileId) continue
-    let bucket = byProfile.get(row.profileId)
-    if (!bucket) {
-      bucket = []
-      byProfile.set(row.profileId, bucket)
-    }
-    bucket.push({ payload: row.payload })
-  }
-
-  const result: SocialClicksByCardRow[] = []
-  for (const profileId of profileIds) {
-    const events = byProfile.get(profileId) || []
-    const counts = countDistinctGuestsByChannel(events)
-    const channels: LiveSocialClickRow[] = []
-    for (const channel of SOCIAL_CHANNELS) {
-      const clickCount = counts.get(channel) || 0
-      if (clickCount <= 0) continue
-      channels.push({
-        channel,
-        label: SOCIAL_CHANNEL_LABELS[channel],
-        clickCount,
-      })
-    }
-    channels.sort((a, b) => b.clickCount - a.clickCount)
-    result.push({ profileId, channels })
-  }
-  return result
+  const bundle = await getSocialClicksBundle(userId, role, scope)
+  return bundle.socialClicksByCard
 }
 
 export type TeamNoticeRow = {

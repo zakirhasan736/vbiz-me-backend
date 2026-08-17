@@ -196,16 +196,21 @@ INSERT INTO "Gallery" (
   "sortOrder", "createdAt", "updatedAt"
 )
 SELECT
-  "id", "legacyId", "profileId", "title", "description", "url",
-  "imageUrl", "attachmentUrl", "attachmentName", "status"::TEXT,
-  "sortOrder", "createdAt", "updatedAt"
-FROM "Portfolio"
-ON CONFLICT DO NOTHING;
+  p."id", p."legacyId", p."profileId", p."title", p."description", p."url",
+  p."imageUrl", p."attachmentUrl", p."attachmentName", p."status"::TEXT,
+  p."sortOrder", p."createdAt", p."updatedAt"
+FROM "Portfolio" p
+WHERE EXISTS (SELECT 1 FROM "Profile" pr WHERE pr."id" = p."profileId")
+ON CONFLICT ("id") DO NOTHING;
 
 DO $$
 DECLARE
   mapping RECORD;
 BEGIN
+  IF to_regclass('public."TabItem"') IS NULL THEN
+    RETURN;
+  END IF;
+
   FOR mapping IN
     SELECT * FROM (VALUES
       ('videos', 'Video'),
@@ -246,37 +251,48 @@ BEGIN
         "createdAt", "updatedAt"
       )
       SELECT
-        "id", "legacyPostId", "profileId", "title", "description", "url",
-        "featuredImage", "status", "sortOrder", "metas", "deletedAt",
-        "createdAt", "updatedAt"
-      FROM "TabItem" WHERE "tabKey" = %L
-      ON CONFLICT DO NOTHING',
+        t."id", t."legacyPostId", t."profileId", t."title", t."description", t."url",
+        t."featuredImage", t."status", t."sortOrder", t."metas", t."deletedAt",
+        t."createdAt", t."updatedAt"
+      FROM "TabItem" t
+      WHERE t."tabKey" = %L
+        AND EXISTS (SELECT 1 FROM "Profile" pr WHERE pr."id" = t."profileId")
+      ON CONFLICT ("id") DO NOTHING',
       mapping.table_name,
       mapping.tab_key
     );
   END LOOP;
 END $$;
 
-INSERT INTO "MissionStatement" (
-  "id", "legacyPostId", "profileId", "title", "description",
-  "featuredMediaUrl", "status", "createdAt", "updatedAt"
-)
-SELECT DISTINCT ON ("profileId")
-  "id", "legacyPostId", "profileId", COALESCE("title", 'Mission Statement'),
-  "description", "featuredImage", "status", "createdAt", "updatedAt"
-FROM "TabItem"
-WHERE "tabKey" = 'mission_statement'
-ORDER BY "profileId", "sortOrder", "createdAt" DESC
-ON CONFLICT DO NOTHING;
+DO $$
+BEGIN
+  IF to_regclass('public."TabItem"') IS NULL THEN
+    RETURN;
+  END IF;
 
-INSERT INTO "WhyChooseUs" (
-  "id", "legacyPostId", "profileId", "title", "description",
-  "featuredMediaUrl", "status", "createdAt", "updatedAt"
-)
-SELECT DISTINCT ON ("profileId")
-  "id", "legacyPostId", "profileId", COALESCE("title", 'Why Choose Us'),
-  "description", "featuredImage", "status", "createdAt", "updatedAt"
-FROM "TabItem"
-WHERE "tabKey" = 'why_choose_us'
-ORDER BY "profileId", "sortOrder", "createdAt" DESC
-ON CONFLICT DO NOTHING;
+  INSERT INTO "MissionStatement" (
+    "id", "legacyPostId", "profileId", "title", "description",
+    "featuredMediaUrl", "status", "createdAt", "updatedAt"
+  )
+  SELECT DISTINCT ON (t."profileId")
+    t."id", t."legacyPostId", t."profileId", COALESCE(t."title", 'Mission Statement'),
+    t."description", t."featuredImage", t."status", t."createdAt", t."updatedAt"
+  FROM "TabItem" t
+  WHERE t."tabKey" = 'mission_statement'
+    AND EXISTS (SELECT 1 FROM "Profile" pr WHERE pr."id" = t."profileId")
+  ORDER BY t."profileId", t."sortOrder", t."createdAt" DESC
+  ON CONFLICT DO NOTHING;
+
+  INSERT INTO "WhyChooseUs" (
+    "id", "legacyPostId", "profileId", "title", "description",
+    "featuredMediaUrl", "status", "createdAt", "updatedAt"
+  )
+  SELECT DISTINCT ON (t."profileId")
+    t."id", t."legacyPostId", t."profileId", COALESCE(t."title", 'Why Choose Us'),
+    t."description", t."featuredImage", t."status", t."createdAt", t."updatedAt"
+  FROM "TabItem" t
+  WHERE t."tabKey" = 'why_choose_us'
+    AND EXISTS (SELECT 1 FROM "Profile" pr WHERE pr."id" = t."profileId")
+  ORDER BY t."profileId", t."sortOrder", t."createdAt" DESC
+  ON CONFLICT DO NOTHING;
+END $$;
