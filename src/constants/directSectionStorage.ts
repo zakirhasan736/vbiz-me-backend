@@ -1,6 +1,6 @@
 import { prisma } from '../utils/prisma'
 import { isPrismaMissingTable } from '../utils/prismaErrors'
-import { getTabByPublicSectionName, type DirectSectionStorage } from './tabRegistry'
+import { getTabByKey, getTabByPublicSectionName, type DirectSectionStorage } from './tabRegistry'
 
 export type DirectSectionRow = {
   id: string
@@ -10,15 +10,15 @@ export type DirectSectionRow = {
   featuredImage: string | null
   status: string
   sortOrder: number
-  metas: unknown
+  metas?: unknown
   createdAt: Date
 }
 
 export type ListSectionStorage = Exclude<
   DirectSectionStorage,
-  'about_me' | 'service' | 'review' | 'gallery' | 'blog' | 'mission_statement' | 'why_choose_us'
+  'about_me' | 'service' | 'review' | 'gallery' | 'blog' | 'why_choose_us'
 >
-export type SingletonSectionStorage = 'mission_statement' | 'why_choose_us'
+export type SingletonSectionStorage = 'why_choose_us'
 type GenericStorage = ListSectionStorage | SingletonSectionStorage
 type Loader = (profileId: string, take?: number) => Promise<DirectSectionRow[]>
 
@@ -39,6 +39,7 @@ export const LIST_SECTION_MODELS = {
   property_listing: prisma.propertyListing,
   profile_event: prisma.profileEvent,
   media_press: prisma.mediaPress,
+  mission_statement: prisma.missionStatement,
   video_explainer: prisma.videoExplainer,
   menu_section: prisma.menuSection,
   announcement_direct: prisma.announcementDirect,
@@ -72,20 +73,7 @@ export const DIRECT_SECTION_LOADERS: Record<GenericStorage, Loader> = {
   property_listing: (profileId, take) => prisma.propertyListing.findMany({ where: where(profileId), orderBy, take }),
   profile_event: (profileId, take) => prisma.profileEvent.findMany({ where: where(profileId), orderBy, take }),
   media_press: (profileId, take) => prisma.mediaPress.findMany({ where: where(profileId), orderBy, take }),
-  mission_statement: async (profileId) => {
-    const row = await prisma.missionStatement.findUnique({ where: { profileId } })
-    return row && row.status === '1'
-      ? [
-          {
-            ...row,
-            url: null,
-            featuredImage: row.featuredMediaUrl,
-            sortOrder: 0,
-            metas: null,
-          },
-        ]
-      : []
-  },
+  mission_statement: (profileId, take) => prisma.missionStatement.findMany({ where: where(profileId), orderBy, take }),
   video_explainer: (profileId, take) => prisma.videoExplainer.findMany({ where: where(profileId), orderBy, take }),
   menu_section: (profileId, take) => prisma.menuSection.findMany({ where: where(profileId), orderBy, take }),
   why_choose_us: async (profileId) => {
@@ -130,7 +118,7 @@ export function isListSectionStorage(storage: DirectSectionStorage): storage is 
 }
 
 export function isSingletonSectionStorage(storage: DirectSectionStorage): storage is SingletonSectionStorage {
-  return storage === 'mission_statement' || storage === 'why_choose_us'
+  return storage === 'why_choose_us'
 }
 
 export async function countPublicSection(storage: DirectSectionStorage, profileId: string): Promise<number> {
@@ -141,9 +129,7 @@ export async function countPublicSection(storage: DirectSectionStorage, profileI
     return model.count({ where: where(profileId) })
   }
   if (isSingletonSectionStorage(storage)) {
-    return storage === 'mission_statement'
-      ? prisma.missionStatement.count({ where: { profileId, status: '1' } })
-      : prisma.whyChooseUs.count({ where: { profileId, status: '1' } })
+    return prisma.whyChooseUs.count({ where: { profileId, status: '1' } })
   }
   switch (storage) {
     case 'about_me':
@@ -180,6 +166,26 @@ async function listPopulatedStoragesFromPosts(profileId: string): Promise<Set<Di
   if (services > 0) populated.add('service')
   if (reviews > 0) populated.add('review')
   if (blogs > 0) populated.add('blog')
+  const [portfolioCount, galleryCount, faqCount, clientCount, tabKeys] = await Promise.all([
+    prisma.portfolio.count({ where: { profileId, status: 1 } }).catch(() => 0),
+    prisma.gallery.count({ where: { profileId, deletedAt: null, status: '1' } }).catch(() => 0),
+    prisma.faq.count({ where: { profileId, deletedAt: null, status: '1' } }).catch(() => 0),
+    prisma.client.count({ where: { profileId, deletedAt: null, status: '1' } }).catch(() => 0),
+    prisma.tabItem
+      .findMany({
+        where: { profileId, deletedAt: null, status: '1' },
+        distinct: ['tabKey'],
+        select: { tabKey: true },
+      })
+      .catch(() => [] as Array<{ tabKey: string }>),
+  ])
+  if (portfolioCount > 0 || galleryCount > 0) populated.add('gallery')
+  if (faqCount > 0) populated.add('faq')
+  if (clientCount > 0) populated.add('client')
+  for (const row of tabKeys) {
+    const tab = getTabByKey(row.tabKey)
+    if (tab) populated.add(tab.storage)
+  }
   for (const post of posts) {
     const tab =
       getTabByPublicSectionName(post.postType?.name || '') || getTabByPublicSectionName(post.postType?.title || '')
@@ -195,7 +201,8 @@ export async function listPopulatedStorages(profileId: string): Promise<Set<Dire
     UNION ALL SELECT 'service' WHERE EXISTS (SELECT 1 FROM "Service" WHERE "profileId" = ${profileId} AND status = 1)
     UNION ALL SELECT 'review' WHERE EXISTS (SELECT 1 FROM "Review" WHERE "profileId" = ${profileId} AND status = 1)
     UNION ALL SELECT 'gallery' WHERE EXISTS (SELECT 1 FROM "Gallery" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
-    UNION ALL SELECT 'blog' WHERE EXISTS (SELECT 1 FROM "Blog" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
+    UNION ALL SELECT 'gallery' WHERE EXISTS (SELECT 1 FROM "Portfolio" WHERE "profileId" = ${profileId} AND status = 1)
+    UNION ALL SELECT 'blog' WHERE EXISTS (SELECT 1 FROM "BlogDirect" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
     UNION ALL SELECT 'client' WHERE EXISTS (SELECT 1 FROM "Client" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
     UNION ALL SELECT 'video' WHERE EXISTS (SELECT 1 FROM "Video" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
     UNION ALL SELECT 'general_post' WHERE EXISTS (SELECT 1 FROM "GeneralPost" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
@@ -209,7 +216,7 @@ export async function listPopulatedStorages(profileId: string): Promise<Set<Dire
     UNION ALL SELECT 'property_listing' WHERE EXISTS (SELECT 1 FROM "PropertyListing" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
     UNION ALL SELECT 'profile_event' WHERE EXISTS (SELECT 1 FROM "Event" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
     UNION ALL SELECT 'media_press' WHERE EXISTS (SELECT 1 FROM "MediaPress" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
-    UNION ALL SELECT 'mission_statement' WHERE EXISTS (SELECT 1 FROM "MissionStatement" WHERE "profileId" = ${profileId} AND status = '1')
+    UNION ALL SELECT 'mission_statement' WHERE EXISTS (SELECT 1 FROM "MissionStatement" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
     UNION ALL SELECT 'video_explainer' WHERE EXISTS (SELECT 1 FROM "VideoExplainer" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
     UNION ALL SELECT 'menu_section' WHERE EXISTS (SELECT 1 FROM "MenuSection" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
     UNION ALL SELECT 'why_choose_us' WHERE EXISTS (SELECT 1 FROM "WhyChooseUs" WHERE "profileId" = ${profileId} AND status = '1')
@@ -228,7 +235,9 @@ export async function listPopulatedStorages(profileId: string): Promise<Set<Dire
     UNION ALL SELECT 'sales_person' WHERE EXISTS (SELECT 1 FROM "SalesPerson" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
     UNION ALL SELECT 'team_member' WHERE EXISTS (SELECT 1 FROM "TeamMember" WHERE "profileId" = ${profileId} AND "deletedAt" IS NULL AND status = '1')
   `
-    return new Set(rows.map((row) => row.storage))
+    const dedicated = new Set(rows.map((row) => row.storage))
+    const fallback = await listPopulatedStoragesFromPosts(profileId)
+    return new Set([...dedicated, ...fallback])
   } catch (error) {
     if (!isPrismaMissingTable(error)) throw error
     return listPopulatedStoragesFromPosts(profileId)

@@ -4,9 +4,15 @@ import {
   isGenericDirectStorage,
   listPopulatedStorages,
 } from '../constants/directSectionStorage'
-import { getTabByPublicSectionName, TAB_REGISTRY } from '../constants/tabRegistry'
+import {
+  getTabByPublicSectionName,
+  NAV_CHECKBOX_TO_TAB_KEY,
+  NAV_ID_TO_TAB_KEY,
+  TAB_REGISTRY,
+} from '../constants/tabRegistry'
 import AppError from '../error/AppError'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
+import { fillMissingGalleryMedia, galleryHasMedia } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
@@ -44,6 +50,79 @@ type BackgroundAudioBlock = {
   doc_name?: string
   youtube?: { link?: string; video_id?: string; embed_url?: string }
   repeat?: boolean
+}
+
+function collectEditorNavIds(map: Record<string, string>): string[] {
+  const rawJson = map.display_settings_json
+  if (!rawJson?.trim()) return []
+  try {
+    const parsed = JSON.parse(rawJson) as { editorNavOrder?: unknown }
+    const order = Array.isArray(parsed.editorNavOrder) ? parsed.editorNavOrder : []
+    const ids = Array.from(new Set(order.filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))))
+    if (!ids.length) return []
+    if (!ids.includes('home')) ids.unshift('home')
+    if (!ids.includes('about')) {
+      const homeIndex = ids.indexOf('home')
+      ids.splice(homeIndex >= 0 ? homeIndex + 1 : 1, 0, 'about')
+    }
+    for (const id of ['global-connection', 'my-info']) {
+      if (!ids.includes(id)) ids.push(id)
+    }
+    const pinned = new Set(['global-connection', 'my-info'])
+    const middle = ids.filter((id) => id !== 'home' && id !== 'about' && !pinned.has(id))
+    const pinnedOrder = Array.from(new Set([...ids.filter((id) => pinned.has(id)), 'global-connection', 'my-info']))
+    return ['home', 'about', ...middle, ...pinnedOrder]
+  } catch {
+    return []
+  }
+}
+
+const TAB_KEY_TO_NAV_ID: Record<string, string> = Object.fromEntries(
+  Object.entries(NAV_ID_TO_TAB_KEY).map(([navId, tabKey]) => [tabKey, navId])
+)
+
+const EXTRA_NAV_POST_TYPES: Record<string, { name: string; title: string }> = {
+  education: { name: 'Education', title: 'Education' },
+  work: { name: 'Work Experience', title: 'Work Experience' },
+  skills: { name: 'skills', title: 'Skills' },
+  resume: { name: 'Resume', title: 'Resume' },
+  profile: { name: 'Profile', title: 'Profile' },
+  'my-info': { name: 'My Info', title: 'My Info' },
+  'global-connection': { name: 'Global Connection', title: 'Global Connection' },
+  'content-media': { name: 'Content & media', title: 'Content & media' },
+  'contact-us': { name: 'Contact Us', title: 'Contact Us' },
+}
+
+function collectEnabledTabKeys(map: Record<string, string>): Set<string> {
+  const keys = new Set<string>()
+  for (const [checkbox, tabKey] of Object.entries(NAV_CHECKBOX_TO_TAB_KEY)) {
+    const value = map[checkbox]
+    if (value === '1' || value === 'true') keys.add(tabKey)
+  }
+  const rawJson = map.display_settings_json
+  if (!rawJson?.trim()) return keys
+  try {
+    const parsed = JSON.parse(rawJson) as {
+      editorNavOrder?: unknown
+      fields?: Record<string, { visible?: boolean }>
+    }
+    const order = Array.isArray(parsed.editorNavOrder) ? parsed.editorNavOrder : []
+    for (const id of order) {
+      if (typeof id !== 'string') continue
+      const tabKey = NAV_ID_TO_TAB_KEY[id] || id
+      if (TAB_REGISTRY[tabKey]) keys.add(tabKey)
+    }
+    for (const [label, config] of Object.entries(parsed.fields || {})) {
+      if (config?.visible !== true) continue
+      const tab = getTabByPublicSectionName(label)
+      if (tab) keys.add(tab.key)
+      const fromNavId = NAV_ID_TO_TAB_KEY[label.trim().toLowerCase().replace(/\s+/g, '-')]
+      if (fromNavId && TAB_REGISTRY[fromNavId]) keys.add(fromNavId)
+    }
+  } catch {
+    /* ignore invalid snapshot */
+  }
+  return keys
 }
 
 function settingsToMap(settings: Setting[]): Record<string, string> {
@@ -484,14 +563,19 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
         return []
       }),
   ])
-  // Gallery is the canonical store. Query legacy Portfolio only for unmigrated cards.
-  const legacyPortfolio = gallery.length
-    ? []
-    : await prisma.portfolio.findMany({
-        where: { profileId: profile.id, status: 1 },
-        orderBy: { sortOrder: 'asc' },
-      })
-  const portfolio = (gallery.length ? gallery : legacyPortfolio).map((item) => ({
+  const legacyPortfolio = await prisma.portfolio
+    .findMany({
+      where: { profileId: profile.id, status: 1 },
+      orderBy: { sortOrder: 'asc' },
+    })
+    .catch(() => [])
+  const hydratedGallery = fillMissingGalleryMedia(gallery, legacyPortfolio)
+  const source = galleryHasMedia(hydratedGallery)
+    ? hydratedGallery
+    : legacyPortfolio.length
+      ? legacyPortfolio
+      : hydratedGallery
+  const portfolio = source.map((item) => ({
     title: item.title,
     description: item.description,
     url: item.url,
@@ -514,22 +598,35 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
 
   const settings = await prisma.setting.findMany({ where: { profileId } })
   const map = settingsToMap(settings)
+  const enabledTabKeys = collectEnabledTabKeys(map)
+  const editorNavIds = collectEditorNavIds(map)
+  const editorNavSet = new Set(editorNavIds)
 
   const StaticLink = [
-    { id: 'home', title: 'Home', name: 'Home', post_type: 'static', active: map.navHome_checkbox !== '0' },
+    {
+      id: 'home',
+      title: 'Home',
+      name: 'Home',
+      post_type: 'static',
+      active: !editorNavSet.size || editorNavSet.has('home'),
+    },
     {
       id: 'about',
       title: 'About Me',
       name: 'About Me',
       post_type: 'static',
-      active: map.aboutMeNav_checkbox === '1' || map.about_checkbox === '1',
+      active: editorNavSet.size
+        ? editorNavSet.has('about')
+        : map.aboutMeNav_checkbox === '1' || map.about_checkbox === '1' || enabledTabKeys.has('about_me'),
     },
     {
       id: 'public-cards',
       title: 'Public Cards',
       name: 'Public Cards',
       post_type: 'static',
-      active: map.pCardsNav_checkbox === '1',
+      active: editorNavSet.size
+        ? editorNavSet.has('public-cards')
+        : map.pCardsNav_checkbox === '1' || enabledTabKeys.has('public-cards'),
     },
   ].filter((i) => i.active)
 
@@ -564,8 +661,12 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     slug: string | null
     type: 'standard' | 'custom'
   }[] = Object.values(TAB_REGISTRY)
-    .map((tab) =>
-      populatedStorages.has(tab.storage)
+    .map((tab) => {
+      const navId = TAB_KEY_TO_NAV_ID[tab.key]
+      const selected = editorNavSet.size
+        ? editorNavSet.has(navId || tab.key) || editorNavSet.has(tab.key)
+        : populatedStorages.has(tab.storage) || enabledTabKeys.has(tab.key)
+      return selected
         ? {
             id: tab.key,
             key: tab.key,
@@ -577,10 +678,13 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
             type: 'standard' as const,
           }
         : null
-    )
+    })
     .filter((tab): tab is NonNullable<typeof tab> => tab !== null)
 
   for (const tab of customTabs) {
+    if (editorNavSet.size && !editorNavSet.has(tab.id) && !editorNavSet.has(tab.key) && !editorNavSet.has(tab.slug)) {
+      continue
+    }
     post_types.push({
       id: tab.id,
       key: tab.key,
@@ -593,68 +697,89 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     })
   }
 
-  const seenPostTypes = new Set<string>()
-  for (const post of posts) {
-    const postType = post.postType
-    if (!postType || seenPostTypes.has(postType.id)) continue
-    if (getTabByPublicSectionName(postType.name) || getTabByPublicSectionName(postType.title || '')) continue
-    seenPostTypes.add(postType.id)
-    post_types.push({
-      id: postType.id,
-      key: postType.slug || postType.id,
-      name: postType.name,
-      title: postType.title || postType.name,
-      status: postType.status || 'active',
-      type_id: postType.typeId,
-      slug: postType.slug,
-      type: 'standard',
-    })
-  }
-  if (
-    educationCount > 0 &&
-    !post_types.some((t) => /^(resume|education)$/i.test(t.name) || /^(resume|education)$/i.test(t.title || ''))
-  ) {
-    post_types.push({
-      id: 'resume',
-      key: 'resume',
-      name: 'Resume',
-      title: 'Resume',
-      status: 'active',
-      type_id: null,
-      slug: 'resume',
-      type: 'standard',
-    })
-  }
-  if (
-    experienceCount > 0 &&
-    !post_types.some(
-      (t) =>
-        /^(work experience|work|experience)$/i.test(t.name) ||
-        /^(work experience|work|experience)$/i.test(t.title || '')
-    )
-  ) {
-    post_types.push({
-      id: 'work-experience',
-      key: 'work-experience',
-      name: 'Work Experience',
-      title: 'Work Experience',
-      status: 'active',
-      type_id: null,
-      slug: 'work-experience',
-      type: 'standard',
-    })
-  }
-  if (skillCount > 0 && !post_types.some((t) => /^skills?$/i.test(t.name) || /^skills?$/i.test(t.title || ''))) {
-    post_types.push({
-      id: 'skills',
-      key: 'skills',
-      name: 'skills',
-      title: 'Skills',
-      status: 'active',
-      type_id: null,
-      slug: 'skills',
-      type: 'standard',
-    })
+  if (!editorNavSet.size) {
+    const seenPostTypes = new Set<string>()
+    for (const post of posts) {
+      const postType = post.postType
+      if (!postType || seenPostTypes.has(postType.id)) continue
+      if (getTabByPublicSectionName(postType.name) || getTabByPublicSectionName(postType.title || '')) continue
+      seenPostTypes.add(postType.id)
+      post_types.push({
+        id: postType.id,
+        key: postType.slug || postType.id,
+        name: postType.name,
+        title: postType.title || postType.name,
+        status: postType.status || 'active',
+        type_id: postType.typeId,
+        slug: postType.slug,
+        type: 'standard',
+      })
+    }
+    if (
+      educationCount > 0 &&
+      !post_types.some((t) => /^(resume|education)$/i.test(t.name) || /^(resume|education)$/i.test(t.title || ''))
+    ) {
+      post_types.push({
+        id: 'resume',
+        key: 'resume',
+        name: 'Resume',
+        title: 'Resume',
+        status: 'active',
+        type_id: null,
+        slug: 'resume',
+        type: 'standard',
+      })
+    }
+    if (
+      experienceCount > 0 &&
+      !post_types.some(
+        (t) =>
+          /^(work experience|work|experience)$/i.test(t.name) ||
+          /^(work experience|work|experience)$/i.test(t.title || '')
+      )
+    ) {
+      post_types.push({
+        id: 'work-experience',
+        key: 'work-experience',
+        name: 'Work Experience',
+        title: 'Work Experience',
+        status: 'active',
+        type_id: null,
+        slug: 'work-experience',
+        type: 'standard',
+      })
+    }
+    if (skillCount > 0 && !post_types.some((t) => /^skills?$/i.test(t.name) || /^skills?$/i.test(t.title || ''))) {
+      post_types.push({
+        id: 'skills',
+        key: 'skills',
+        name: 'skills',
+        title: 'Skills',
+        status: 'active',
+        type_id: null,
+        slug: 'skills',
+        type: 'standard',
+      })
+    }
+  } else {
+    const present = new Set(post_types.map((tab) => tab.key))
+    for (const navId of editorNavIds) {
+      if (navId === 'home' || navId === 'about' || navId === 'public-cards') continue
+      if (present.has(navId) || present.has(NAV_ID_TO_TAB_KEY[navId] || '')) continue
+      const extra = EXTRA_NAV_POST_TYPES[navId]
+      if (!extra) continue
+      post_types.push({
+        id: navId,
+        key: navId,
+        name: extra.name,
+        title: extra.title,
+        status: 'active',
+        type_id: null,
+        slug: navId,
+        type: 'standard',
+      })
+      present.add(navId)
+    }
   }
 
   return { StaticLink, post_types }
@@ -792,6 +917,9 @@ const getDynamicSection = async (
       profileLegacyId: legacyId,
     })
 
+  const mediaAsset = (id: string, title: string | null | undefined, url: string | null) =>
+    url ? { id, doc_name: title || 'media', url } : null
+
   const name = decodeURIComponent(sectionName)
   const registryTab = getTabByPublicSectionName(name)
 
@@ -801,21 +929,23 @@ const getDynamicSection = async (
       orderBy: { sortOrder: 'asc' },
       take: takeOverride ?? 200,
     })
-    return {
-      type: 'services',
-      postType: { name: 'services', title: 'Services' },
-      profile: { id: profileId },
-      items: items.map((s) => {
-        const imageUrl = abs(s.imageUrl, null, 6, 'Service Image')
-        return {
-          id: s.id,
-          title: s.title,
-          description: s.description,
-          status: s.status,
-          featured_image: imageUrl || null,
-          review_link: { url: s.reviewUrl || '', has_link: Boolean(s.reviewUrl) },
-        }
-      }),
+    if (items.length) {
+      return {
+        type: 'services',
+        postType: { name: 'services', title: 'Services' },
+        profile: { id: profileId },
+        items: items.map((s) => {
+          const imageUrl = abs(s.imageUrl, null, 6, 'Service Image')
+          return {
+            id: s.id,
+            title: s.title,
+            description: s.description,
+            status: s.status,
+            featured_image: imageUrl || null,
+            review_link: { url: s.reviewUrl || '', has_link: Boolean(s.reviewUrl) },
+          }
+        }),
+      }
     }
   }
 
@@ -823,32 +953,123 @@ const getDynamicSection = async (
     const blogs = await prisma.blog.findMany({
       where: { profileId, deletedAt: null, status: '1' },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      // High-volume public sections are bounded to protect response size.
       take: takeOverride ?? 100,
     })
-    return {
-      type: 'blog',
-      postType: { name: 'blog', title: 'blog' },
-      profile: { id: profileId },
-      items: blogs.map((p) => {
-        const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
-        const metas: Record<string, string> = {}
-        if (p.category) metas.category = p.category
-        if (p.date) metas.date = p.date
+    if (blogs.length) {
+      const missingCopy = blogs.filter((row) => !String(row.description || '').trim())
+      let byTitle = new Map<string, string>()
+      if (missingCopy.length) {
+        const legacyPosts = await prisma.post.findMany({
+          where: {
+            profileId,
+            deletedAt: null,
+            OR: [
+              { postType: { name: { equals: 'blog', mode: 'insensitive' } } },
+              { postType: { title: { equals: 'blog', mode: 'insensitive' } } },
+            ],
+          },
+          select: { title: true, description: true },
+        })
+        byTitle = new Map(
+          legacyPosts
+            .filter((row) => String(row.description || '').trim())
+            .map((row) => [
+              String(row.title || '')
+                .trim()
+                .toLowerCase(),
+              row.description || '',
+            ])
+        )
+      }
+      return {
+        type: 'blog',
+        postType: { name: 'blog', title: 'blog' },
+        profile: { id: profileId },
+        items: blogs.map((p) => {
+          const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
+          const metas: Record<string, string> = {}
+          const description =
+            String(p.description || '').trim() ||
+            byTitle.get(
+              String(p.title || '')
+                .trim()
+                .toLowerCase()
+            ) ||
+            p.description
+          return {
+            id: p.id,
+            title: p.title,
+            description,
+            status: p.status,
+            issuer: '',
+            year: '',
+            featured_image: featuredFromField ? [{ id: p.id, doc_name: p.title, url: featuredFromField }] : [],
+            general_info_url: p.url,
+            attachments: featuredFromField ? [{ id: p.id, doc_name: p.title || 'image', url: featuredFromField }] : [],
+            metas,
+            created_at: p.createdAt,
+          }
+        }),
+      }
+    }
+  }
+
+  if (registryTab?.storage === 'video_explainer') {
+    try {
+      type ExplainerRow = {
+        id: string
+        title: string | null
+        description: string | null
+        url: string | null
+        featuredImage: string | null
+        status: string
+        createdAt: Date
+      }
+      let rows: ExplainerRow[] = await prisma.videoExplainer.findMany({
+        where: { profileId, deletedAt: null, status: '1' },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        take: takeOverride ?? 20,
+      })
+      if (!rows.length) {
+        rows = await prisma.tabItem.findMany({
+          where: { profileId, tabKey: 'video_explainers', deletedAt: null, status: '1' },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+          take: takeOverride ?? 20,
+        })
+      }
+      if (rows.length) {
+        const items = rows.map((p) => {
+          const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
+          const urlFromField = abs(p.url, null, 7, 'Featured Image')
+          const videoUrl = featuredFromField || urlFromField
+          const asset = mediaAsset(p.id, p.title, videoUrl)
+          return {
+            id: p.id,
+            title: p.title,
+            description: p.description,
+            status: p.status === '0' ? 0 : 1,
+            featured_image: asset,
+            general_info_url: p.url,
+            attachments: asset ? [asset] : [],
+            created_at: p.createdAt,
+            video_url: videoUrl,
+          }
+        })
+        const first = items[0]
+        const videoUrl = first.video_url || ''
+        const ext = String(first.general_info_url || '').trim()
+        const external = ext && ext !== videoUrl && /^https?:\/\//i.test(ext) ? ext : null
         return {
-          id: p.id,
-          title: p.title,
-          description: p.description,
-          status: p.status,
-          issuer: '',
-          year: '',
-          featured_image: featuredFromField ? [{ id: p.id, doc_name: p.title, url: featuredFromField }] : [],
-          general_info_url: p.url,
-          attachments: [],
-          metas,
-          created_at: p.createdAt,
+          type: '2D Video Explainer',
+          postType: { name: '2D Video Explainer', title: '2D Video Explainer' },
+          profile: { id: profileId },
+          video: videoUrl ? { doc_name: first.title || 'Explainer', url: videoUrl } : { doc_name: '', url: '' },
+          external_url: { url: external, has_external_url: Boolean(external) },
+          items,
         }
-      }),
+      }
+    } catch (error) {
+      if (!isPrismaMissingTable(error)) throw error
     }
   }
 
@@ -856,38 +1077,84 @@ const getDynamicSection = async (
     const tab = registryTab
     if (tab && isGenericDirectStorage(tab.storage)) {
       try {
-        const rows = await DIRECT_SECTION_LOADERS[tab.storage](profileId, takeOverride ?? 100)
-        return {
-          type: tab.publicSectionName,
-          postType: {
-            name: tab.publicSectionName,
-            title: tab.label,
-            type_id: tab.legacyPostTypeId,
-          },
-          profile: { id: profileId },
-          items: rows.map((p) => {
-            const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
-            const metas =
-              p.metas && typeof p.metas === 'object' && !Array.isArray(p.metas)
-                ? (p.metas as Record<string, string>)
-                : {}
-            const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
-            const year = typeof metas.year === 'string' ? metas.year.trim() : ''
-            return {
-              id: p.id,
-              title: p.title,
-              description: p.description,
-              status: p.status,
-              issuer,
-              year,
-              featured_image: featuredFromField ? [{ id: p.id, doc_name: p.title, url: featuredFromField }] : [],
-              general_info_url: p.url,
-              attachments: [],
-              metas,
-            }
-          }),
-          section_id: tab.key,
-          post_type: { name: tab.publicSectionName, title: tab.label, type_id: tab.legacyPostTypeId },
+        let rows = await DIRECT_SECTION_LOADERS[tab.storage](profileId, takeOverride ?? 100)
+        if (rows.length && !rows.some((row) => row.featuredImage || row.url)) {
+          const extras = await prisma.tabItem
+            .findMany({
+              where: { profileId, tabKey: tab.key, deletedAt: null, status: '1' },
+              select: { title: true, featuredImage: true, url: true },
+            })
+            .catch(() => [])
+          if (extras.length) {
+            const byTitle = new Map(
+              extras.map(
+                (row) =>
+                  [
+                    String(row.title || '')
+                      .trim()
+                      .toLowerCase(),
+                    row,
+                  ] as const
+              )
+            )
+            rows = rows.map((row, index) => {
+              const extra =
+                byTitle.get(
+                  String(row.title || '')
+                    .trim()
+                    .toLowerCase()
+                ) || extras[index]
+              if (!extra) return row
+              return {
+                ...row,
+                featuredImage: row.featuredImage || extra.featuredImage,
+                url: row.url || extra.url,
+              }
+            })
+          }
+        }
+        if (rows.length) {
+          return {
+            type: tab.publicSectionName,
+            postType: {
+              name: tab.publicSectionName,
+              title: tab.label,
+              type_id: tab.legacyPostTypeId,
+            },
+            profile: { id: profileId },
+            items: rows.map((p) => {
+              const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
+              const urlFromField = abs(p.url, null, 7, 'Featured Image')
+              const asset = mediaAsset(p.id, p.title, featuredFromField)
+              const urlAsset =
+                urlFromField && urlFromField !== featuredFromField
+                  ? mediaAsset(`${p.id}-url`, p.title, urlFromField)
+                  : null
+              const metas =
+                p.metas && typeof p.metas === 'object' && !Array.isArray(p.metas)
+                  ? (p.metas as Record<string, string>)
+                  : {}
+              const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
+              const year = typeof metas.year === 'string' ? metas.year.trim() : ''
+              const attachments = [asset, urlAsset].filter(Boolean)
+              return {
+                id: p.id,
+                title: p.title,
+                description: p.description,
+                status: p.status === '0' ? 0 : 1,
+                issuer,
+                year,
+                featured_image: asset,
+                general_info_url: p.url,
+                review_link: { url: p.url || '', has_link: Boolean(p.url) },
+                attachments,
+                metas,
+                created_at: p.createdAt,
+              }
+            }),
+            section_id: tab.key,
+            post_type: { name: tab.publicSectionName, title: tab.label, type_id: tab.legacyPostTypeId },
+          }
         }
       } catch (error) {
         if (!isPrismaMissingTable(error)) throw error
@@ -895,37 +1162,74 @@ const getDynamicSection = async (
     }
   }
 
-  if (registryTab?.storage === 'gallery' || /^portfolio$/i.test(name)) {
+  if (registryTab?.storage === 'gallery' || /^portfolio$/i.test(name) || /^galler(y|ies)$/i.test(name)) {
     try {
-      const items = await prisma.gallery.findMany({
-        where: { profileId, deletedAt: null, status: '1' },
-        orderBy: { sortOrder: 'asc' },
-        take: takeOverride ?? 100,
-      })
-      return {
-        type: 'gallery',
-        postType: { name: 'gallery', title: 'Gallery' },
-        profile: { id: profileId },
-        items: items.map((p) => {
-          const imageUrl = abs(p.featuredImage, null, 5, 'Portfolio Gallery')
-          const attachmentUrl = abs(p.attachmentUrl, p.attachmentName, 5, 'Portfolio Attachment')
-          const gallery = [
-            ...(imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : []),
-            ...(attachmentUrl
-              ? [{ id: `${p.id}-attachment`, doc_name: p.attachmentName || p.title, url: attachmentUrl }]
-              : []),
-          ]
-          return {
-            id: p.id,
-            title: p.title,
-            description: p.description,
-            status: p.status,
-            featured_image: imageUrl ? [{ id: p.id, doc_name: p.title, url: imageUrl }] : [],
-            gallery,
-            attachments: attachmentUrl ? { url: attachmentUrl, name: p.attachmentName || '' } : null,
-            general_info_url: p.url,
-          }
+      type PublicGalleryRow = {
+        id: string
+        title: string | null
+        description: string | null
+        url: string | null
+        featuredImage: string | null
+        attachmentUrl: string | null
+        attachmentName: string | null
+        status: string
+        createdAt: Date
+      }
+      const [galleryRows, legacy] = await Promise.all([
+        prisma.gallery.findMany({
+          where: { profileId, deletedAt: null, status: '1' },
+          orderBy: { sortOrder: 'asc' },
+          take: takeOverride ?? 100,
         }),
+        prisma.portfolio.findMany({
+          where: { profileId, status: 1 },
+          orderBy: { sortOrder: 'asc' },
+          take: takeOverride ?? 100,
+        }),
+      ])
+      const mappedLegacy: PublicGalleryRow[] = legacy.map((p) => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        url: p.url,
+        featuredImage: p.imageUrl,
+        attachmentUrl: p.attachmentUrl,
+        attachmentName: p.attachmentName,
+        status: String(p.status),
+        createdAt: p.createdAt,
+      }))
+      const hydrated = fillMissingGalleryMedia(galleryRows, legacy)
+      const items: PublicGalleryRow[] = galleryHasMedia(hydrated)
+        ? hydrated
+        : mappedLegacy.length
+          ? mappedLegacy
+          : hydrated
+      if (items.length) {
+        return {
+          type: 'gallery',
+          postType: { name: 'gallery', title: 'Gallery' },
+          profile: { id: profileId },
+          items: items.map((p) => {
+            const imageUrl = abs(p.featuredImage, null, 5, 'Portfolio Gallery')
+            const attachmentUrl = abs(p.attachmentUrl, p.attachmentName, 5, 'Portfolio Attachment')
+            const featured = mediaAsset(p.id, p.title, imageUrl || attachmentUrl)
+            const attachment = attachmentUrl
+              ? { id: `${p.id}-attachment`, doc_name: p.attachmentName || p.title || 'attachment', url: attachmentUrl }
+              : null
+            const gallery = [featured, attachment].filter(Boolean)
+            return {
+              id: p.id,
+              title: p.title,
+              description: p.description,
+              status: p.status === '0' ? 0 : 1,
+              featured_image: featured,
+              gallery,
+              attachments: attachment ? [attachment] : featured ? [featured] : [],
+              general_info_url: p.url,
+              created_at: p.createdAt,
+            }
+          }),
+        }
       }
     } catch (error) {
       if (!isPrismaMissingTable(error)) throw error
@@ -938,19 +1242,21 @@ const getDynamicSection = async (
       orderBy: { sortOrder: 'asc' },
       take: takeOverride ?? 200,
     })
-    return {
-      type: 'reviews',
-      postType: { name: 'reviews', title: 'Reviews' },
-      profile: { id: profileId },
-      items: items.map((r) => ({
-        id: r.id,
-        title: r.author,
-        description: r.text,
-        status: r.status,
-        rating: r.rating,
-        featured_image: null,
-        review_link: { url: '', has_link: false },
-      })),
+    if (items.length) {
+      return {
+        type: 'reviews',
+        postType: { name: 'reviews', title: 'Reviews' },
+        profile: { id: profileId },
+        items: items.map((r) => ({
+          id: r.id,
+          title: r.author,
+          description: r.text,
+          status: r.status,
+          rating: r.rating,
+          featured_image: null,
+          review_link: { url: '', has_link: false },
+        })),
+      }
     }
   }
 
@@ -1071,12 +1377,63 @@ const getDynamicSection = async (
           year: typeof metas.year === 'string' ? metas.year.trim() : '',
           featured_image: featuredImage ? [{ id: item.id, doc_name: item.title, url: featuredImage }] : [],
           general_info_url: item.url,
-          attachments: [],
+          attachments: featuredImage ? [{ id: item.id, doc_name: item.title, url: featuredImage }] : [],
           metas,
         }
       }),
       section_id: customTab.id,
       post_type: { name: customTab.key, title: customTab.label, type_id: null },
+    }
+  }
+
+  if (registryTab) {
+    try {
+      const tabRows = await prisma.tabItem.findMany({
+        where: { profileId, tabKey: registryTab.key, deletedAt: null, status: '1' },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        take: takeOverride ?? 100,
+      })
+      if (tabRows.length) {
+        return {
+          type: registryTab.publicSectionName,
+          postType: {
+            name: registryTab.publicSectionName,
+            title: registryTab.label,
+            type_id: registryTab.legacyPostTypeId,
+          },
+          profile: { id: profileId },
+          items: tabRows.map((p) => {
+            const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
+            const asset = mediaAsset(p.id, p.title, featuredFromField)
+            const metas =
+              p.metas && typeof p.metas === 'object' && !Array.isArray(p.metas)
+                ? (p.metas as Record<string, string>)
+                : {}
+            return {
+              id: p.id,
+              title: p.title,
+              description: p.description,
+              status: p.status === '0' ? 0 : 1,
+              issuer: typeof metas.issuer === 'string' ? metas.issuer.trim() : '',
+              year: typeof metas.year === 'string' ? metas.year.trim() : '',
+              featured_image: asset,
+              general_info_url: p.url,
+              review_link: { url: p.url || '', has_link: Boolean(p.url) },
+              attachments: asset ? [asset] : [],
+              metas,
+              created_at: p.createdAt,
+            }
+          }),
+          section_id: registryTab.key,
+          post_type: {
+            name: registryTab.publicSectionName,
+            title: registryTab.label,
+            type_id: registryTab.legacyPostTypeId,
+          },
+        }
+      }
+    } catch (error) {
+      if (!isPrismaMissingTable(error)) throw error
     }
   }
 

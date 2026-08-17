@@ -295,7 +295,7 @@ model Profile {
   propertyListings    PropertyListing[]
   profileEvents       ProfileEvent[]
   mediaPress          MediaPress[]
-  missionStatement    MissionStatement?
+  missionStatements   MissionStatement[]
   menuSections        MenuSection[]
   whyChooseUs         WhyChooseUs?
   directAnnouncements AnnouncementDirect[]
@@ -435,27 +435,25 @@ model AboutMe {
   @@index([profileId])
 }
 
-/// Dedicated blog posts (migrated from Post + postType blog).
+/// Dedicated blog posts. Live table is "BlogDirect" (same columns as Faq).
 model Blog {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
-  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  title         String?
-  description   String?
-  category      String?
-  date          String?
-  url           String?
-  featuredImage String?
-  status        String    @default("1")
-  sortOrder     Int       @default(0)
-  deletedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  profileId        String
+  profile          Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(6)
+  title            String?
+  description      String?
+  url              String?
+  featuredImage    String?
+  status           String    @default("1")
+  sortOrder        Int       @default(0)
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([profileId])
-  @@index([profileId, status])
-  @@index([legacyPostId])
+  @@map("BlogDirect")
 }
 
 /**
@@ -615,23 +613,22 @@ model CertificateLicense {
 }
 
 model Faq {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
-  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  title         String?
-  description   String?
-  url           String?
-  featuredImage String?
-  status        String    @default("1")
-  sortOrder     Int       @default(0)
-  metas         Json?
-  deletedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  profileId        String
+  profile          Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(13)
+  title            String?
+  description      String?
+  url              String?
+  featuredImage    String?
+  status           String    @default("1")
+  sortOrder        Int       @default(0)
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([profileId])
-  @@index([profileId, status])
 }
 
 model CalendarSection {
@@ -716,16 +713,20 @@ model MediaPress {
 }
 
 model MissionStatement {
-  id               String   @id @default(cuid())
-  legacyPostId     Int?     @unique
-  profileId        String   @unique
-  profile          Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  title            String   @default("Mission Statement")
+  id               String    @id @default(cuid())
+  profileId        String
+  profile          Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(19)
+  title            String?
   description      String?
-  featuredMediaUrl String?
-  status           String   @default("1")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  url              String?
+  featuredImage    String?
+  status           String    @default("1")
+  sortOrder        Int       @default(0)
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([profileId])
 }

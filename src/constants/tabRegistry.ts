@@ -138,7 +138,7 @@ export const TAB_REGISTRY: Record<string, TabRegistryEntry> = {
   about_me: singleton('about_me', 'About Me', 'about-me', 'About Me', 16, 'about_me'),
   events: list('events', 'Events', 'events', 'Events', 17, 'profile_event'),
   media_press: list('media_press', 'Media/Press', 'media-press', 'Media Press', 18, 'media_press'),
-  mission_statement: singleton(
+  mission_statement: list(
     'mission_statement',
     'Mission Statement',
     'mission-statement',
@@ -206,6 +206,73 @@ export function getTabByPublicSectionName(name: string): TabRegistryEntry | unde
   const needle = name.trim().toLowerCase()
   return Object.values(TAB_REGISTRY).find(
     (t) =>
-      t.publicSectionName.toLowerCase() === needle || t.key.toLowerCase() === needle || t.route.toLowerCase() === needle
+      t.publicSectionName.toLowerCase() === needle ||
+      t.key.toLowerCase() === needle ||
+      t.route.toLowerCase() === needle ||
+      t.label.toLowerCase() === needle
   )
+}
+
+/** Public/editor nav item ids → TAB_REGISTRY keys (activated tabs on the public card). */
+export const NAV_ID_TO_TAB_KEY: Record<string, string> = {
+  about: 'about_me',
+  mission: 'mission_statement',
+  services: 'services',
+  gallery: 'gallery',
+  videos: 'videos',
+  blog: 'blogs',
+  post: 'general_posts',
+  additional: 'additional_services',
+  explainer: 'video_explainers',
+  reviews: 'reviews',
+  certificates: 'certificates',
+  'insurance-license': 'insurance_licenses',
+  licensing: 'licensing',
+  clients: 'clients',
+  'meet-team': 'meet_our_team',
+  calendar: 'calendar',
+  faq: 'faqs',
+  'video-links': 'video_links',
+  announcement: 'announcements',
+  bbb: 'bbb_accreditations',
+  booking: 'bookings',
+  breakfast: 'breakfast',
+  dcp: 'dcp',
+  dinner: 'dinner',
+  events: 'events',
+  'home-solar': 'home_solar',
+  inventory: 'inventory',
+  'join-team': 'join_my_team',
+  lunch: 'lunch',
+  menu: 'menu',
+  press: 'media_press',
+  'property-listing': 'property_listings',
+  resiliency: 'resiliency_products',
+  'see-product': 'products',
+  'sales-24h': 'sales_people',
+  'who-we-are': 'why_choose_us',
+}
+
+export const NAV_CHECKBOX_TO_TAB_KEY: Record<string, string> = {
+  faqNav_checkbox: 'faqs',
+  '2dNav_checkbox': 'video_explainers',
+  businessNav_checkbox: 'mission_statement',
+  blogNav_checkbox: 'blogs',
+  serviceNav_checkbox: 'services',
+  galleryNav_checkbox: 'gallery',
+  portfolioNav_checkbox: 'gallery',
+  testimonialNav_checkbox: 'reviews',
+  partnershipNav_checkbox: 'clients',
+  videoLinksNav_checkbox: 'video_links',
+  meetOurTeamNav_checkbox: 'meet_our_team',
+  bbbNav_checkbox: 'bbb_accreditations',
+  dcpNav_checkbox: 'dcp',
+  restaurantMenuNav_checkbox: 'menu',
+  solarNav_checkbox: 'home_solar',
+  salesPersonNav_checkbox: 'sales_people',
+  seeproduct_checkbox: 'products',
+  certificationNav_checkbox: 'certificates',
+  licensingNav_checkbox: 'licensing',
+  meetingNav_checkbox: 'calendar',
+  aboutMeNav_checkbox: 'about_me',
 }

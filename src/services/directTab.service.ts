@@ -31,8 +31,6 @@ const serializeBlog = (row: {
   profileId: string
   title: string | null
   description: string | null
-  category: string | null
-  date: string | null
   url: string | null
   featuredImage: string | null
   status: string
@@ -45,8 +43,8 @@ const serializeBlog = (row: {
   profileId: row.profileId,
   title: row.title,
   description: row.description,
-  category: row.category,
-  date: row.date,
+  category: null as string | null,
+  date: null as string | null,
   url: row.url,
   featuredImage: row.featuredImage,
   status: row.status,
@@ -54,10 +52,7 @@ const serializeBlog = (row: {
   legacyPostId: row.legacyPostId,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
-  metas: {
-    ...(row.category ? { category: row.category } : {}),
-    ...(row.date ? { date: row.date } : {}),
-  },
+  metas: {} as Record<string, string>,
   postType: { name: 'blog', title: 'blog' },
 })
 
@@ -144,10 +139,9 @@ const createBlog = async (profileId: string, userId: string, role: string, input
   const row = await prisma.blog.create({
     data: {
       profileId,
+      legacyPostTypeId: 6,
       title: str(input.title),
       description: str(input.description),
-      category: str(input.category),
-      date: str(input.date),
       url: str(input.url),
       featuredImage: str(input.featuredImage),
       status: statusOf(input.status),
@@ -166,8 +160,6 @@ const updateBlog = async (profileId: string, blogId: string, userId: string, rol
     data: {
       ...(input.title !== undefined ? { title: str(input.title) } : {}),
       ...(input.description !== undefined ? { description: str(input.description) } : {}),
-      ...(input.category !== undefined ? { category: str(input.category) } : {}),
-      ...(input.date !== undefined ? { date: str(input.date) } : {}),
       ...(input.url !== undefined ? { url: str(input.url) } : {}),
       ...(input.featuredImage !== undefined ? { featuredImage: str(input.featuredImage) } : {}),
       ...(input.status !== undefined ? { status: statusOf(input.status, existing.status) } : {}),
@@ -288,6 +280,27 @@ const genericUpdateData = (input: TabItemInput) => ({
     : {}),
 })
 
+/** Live Faq / MissionStatement / BlogDirect have no `metas` column; they require `legacyPostTypeId`. */
+const omitMetas = <T extends { metas?: unknown }>(data: T) => {
+  const { metas: _metas, ...rest } = data
+  void _metas
+  return rest
+}
+
+const listCreateData = (tab: TabRegistryEntry, input: TabItemInput) => {
+  const data = genericData(input)
+  if (tab.storage === 'faq' || tab.storage === 'mission_statement') {
+    return { ...omitMetas(data), legacyPostTypeId: tab.legacyPostTypeId }
+  }
+  return data
+}
+
+const listUpdateData = (tab: TabRegistryEntry, input: TabItemInput) => {
+  const data = genericUpdateData(input)
+  if (tab.storage === 'faq' || tab.storage === 'mission_statement') return omitMetas(data)
+  return data
+}
+
 const galleryUpdateData = (input: TabItemInput) => ({
   ...genericUpdateData(input),
   ...(input.metas?.attachmentUrl !== undefined ||
@@ -309,8 +322,7 @@ const galleryUpdateData = (input: TabItemInput) => ({
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const singletonModel = (storage: 'mission_statement' | 'why_choose_us'): any =>
-  storage === 'mission_statement' ? prisma.missionStatement : prisma.whyChooseUs
+const singletonModel = (_storage: 'why_choose_us'): any => prisma.whyChooseUs
 
 const listTabItems = async (profileId: string, tabKey: string, userId: string, role: string, skip = 0, limit = 200) => {
   const tab = assertDirectListTab(tabKey)
@@ -413,7 +425,7 @@ const createTabItem = async (profileId: string, tabKey: string, userId: string, 
               rating: Number(input.metas?.rating) || 5,
               status: Number(statusOf(input.status)),
             }
-          : genericData(input)
+          : listCreateData(tab, input)
   const row = await model.create({ data: { profileId, sortOrder, ...data } })
   return serializeDedicatedRow(tab, row)
 }
@@ -468,7 +480,7 @@ const updateTabItem = async (
                 ...(input.featuredImage !== undefined ? { featuredMediaUrl: str(input.featuredImage) } : {}),
                 ...(input.status !== undefined ? { status: statusOf(input.status) } : {}),
               }
-            : genericUpdateData(input)
+            : listUpdateData(tab, input)
   const row = await model.update({
     where: { id: itemId },
     data: {

@@ -62,13 +62,13 @@ async function main() {
         profileId: post.profileId,
         title: post.title,
         description: post.description,
-        category: metas.category || null,
-        date: metas.date || null,
+        category: post.title ? undefined : undefined,
         url: post.url,
         featuredImage: post.featuredImage,
         status: post.status || '1',
         sortOrder: post.sortOrder,
         legacyPostId: legacyPostId ?? undefined,
+        legacyPostTypeId: 6,
       }
       if (legacyPostId != null) {
         await prisma.blog.upsert({

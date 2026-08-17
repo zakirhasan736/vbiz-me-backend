@@ -31,6 +31,7 @@ import {
   type DashboardPeriod,
   type SocialChannel,
 } from '../utils/dashboardAnalytics'
+import { fillMissingGalleryMedia } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
@@ -205,6 +206,7 @@ const profileInclude = {
   experiences: { orderBy: { sortOrder: 'asc' as const } },
   services: { orderBy: { sortOrder: 'asc' as const } },
   portfolios: { orderBy: { sortOrder: 'asc' as const } },
+  galleries: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' as const } },
   reviews: { orderBy: { sortOrder: 'asc' as const } },
   customTabs: {
     orderBy: { sortOrder: 'asc' as const },
@@ -242,6 +244,8 @@ const customTabsJson = (profile: CustomTabsProfile) =>
   )
 
 const withCanonicalCustomTabsSetting = (profile: CustomTabsProfile): CustomTabsProfile => {
+  const galleries = fillMissingGalleryMedia(profile.galleries || [], profile.portfolios || [])
+  profile = galleries === profile.galleries ? profile : { ...profile, galleries }
   if (!profile.customTabs.length) return profile
   const value = customTabsJson(profile)
   const existing = profile.settings.find((setting) => setting.key === 'custom_tabs_json')
