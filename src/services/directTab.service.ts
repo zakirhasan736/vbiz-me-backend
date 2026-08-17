@@ -1,5 +1,10 @@
 import type { Prisma } from '../../generated/prisma/client'
-import { isListSectionStorage, isSingletonSectionStorage, LIST_SECTION_MODELS } from '../constants/directSectionStorage'
+import {
+  isListSectionStorage,
+  isSingletonSectionStorage,
+  LIST_SECTION_MODELS,
+  LIVE_POST_STYLE_SELECT,
+} from '../constants/directSectionStorage'
 import { getTabByKey, TAB_REGISTRY, type TabRegistryEntry } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
 import { prisma } from '../utils/prisma'
@@ -336,8 +341,10 @@ const listTabItems = async (profileId: string, tabKey: string, userId: string, r
   if (isListSectionStorage(tab.storage)) {
     const model = listModel(tab)
     const where = { profileId, deletedAt: null }
+    const liveSelect =
+      tab.storage === 'faq' || tab.storage === 'mission_statement' ? { select: LIVE_POST_STYLE_SELECT } : {}
     ;[rows, total] = await Promise.all([
-      model.findMany({ where, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }], ...pageArgs }),
+      model.findMany({ where, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }], ...pageArgs, ...liveSelect }),
       model.count({ where }),
     ])
   } else if (tab.storage === 'gallery') {

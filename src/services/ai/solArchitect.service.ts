@@ -50,7 +50,7 @@ export async function runSolArchitect(input: {
   existingCard?: unknown
 }): Promise<SolArchitecture> {
   const route = selectModelForTask({ task: 'CARD_ARCHITECTURE' })
-  const catalog = TAB_CATALOG.filter((t) => t.navId !== 'global-connection' && t.navId !== 'my-info')
+  const catalog = TAB_CATALOG.filter((t) => t.navId !== 'public-cards' && t.navId !== 'my-info')
     .map((t) => `${t.navId} = ${t.name}: ${t.description}`)
     .join('\n')
 
@@ -98,7 +98,7 @@ Never invent tabs. Never invent phones, emails, licenses, awards, reviews, proje
 
   const codeTabs = decideRecommendedTabs(profile)
   const solNav = parsed.recommendedNavIds.filter(
-    (id) => CATALOG_NAV.has(id) && id !== 'global-connection' && id !== 'my-info'
+    (id) => CATALOG_NAV.has(id) && id !== 'public-cards' && id !== 'my-info'
   )
   const reasonByNav = Object.fromEntries(parsed.tabReasons.map((row) => [row.navId, row.reason]))
   const mergedNav = [...new Set(['home', ...solNav, ...codeTabs.map((t) => t.navId)])]

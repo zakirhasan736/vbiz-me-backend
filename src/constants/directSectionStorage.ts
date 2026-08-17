@@ -1,5 +1,5 @@
 import { prisma } from '../utils/prisma'
-import { isPrismaMissingTable } from '../utils/prismaErrors'
+import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
 import { getTabByKey, getTabByPublicSectionName, type DirectSectionStorage } from './tabRegistry'
 
 export type DirectSectionRow = {
@@ -24,6 +24,73 @@ type Loader = (profileId: string, take?: number) => Promise<DirectSectionRow[]>
 
 const where = (profileId: string) => ({ profileId, deletedAt: null, status: '1' })
 const orderBy = [{ sortOrder: 'asc' as const }, { createdAt: 'desc' as const }]
+
+/** Live `Faq` / `MissionStatement` / `BlogDirect` columns — never select `metas`. */
+export const LIVE_POST_STYLE_SELECT = {
+  id: true,
+  profileId: true,
+  legacyPostId: true,
+  legacyPostTypeId: true,
+  title: true,
+  description: true,
+  url: true,
+  featuredImage: true,
+  status: true,
+  sortOrder: true,
+  deletedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const
+
+const publicLiveWhere = (profileId: string) => ({
+  profileId,
+  deletedAt: null,
+  status: { notIn: ['0', 'false', 'inactive', 'draft'] },
+})
+
+async function loadLivePostStyleRows(
+  table: 'Faq' | 'MissionStatement',
+  profileId: string,
+  take?: number
+): Promise<DirectSectionRow[]> {
+  const limit = Math.min(200, Math.max(1, take ?? 100))
+  const args = {
+    where: publicLiveWhere(profileId),
+    orderBy,
+    take: limit,
+    select: LIVE_POST_STYLE_SELECT,
+  }
+  try {
+    const rows = table === 'Faq' ? await prisma.faq.findMany(args) : await prisma.missionStatement.findMany(args)
+    return rows
+  } catch (error) {
+    if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+    const sql =
+      table === 'Faq'
+        ? prisma.$queryRaw<DirectSectionRow[]>`
+            SELECT id, title, description, url, "featuredImage", status, "sortOrder", "createdAt"
+            FROM "Faq"
+            WHERE "profileId" = ${profileId}
+              AND "deletedAt" IS NULL
+              AND status NOT IN ('0', 'false', 'inactive', 'draft')
+            ORDER BY "sortOrder" ASC, "createdAt" DESC
+            LIMIT ${limit}
+          `
+        : prisma.$queryRaw<DirectSectionRow[]>`
+            SELECT id, title, description, url, "featuredImage", status, "sortOrder", "createdAt"
+            FROM "MissionStatement"
+            WHERE "profileId" = ${profileId}
+              AND "deletedAt" IS NULL
+              AND status NOT IN ('0', 'false', 'inactive', 'draft')
+            ORDER BY "sortOrder" ASC, "createdAt" DESC
+            LIMIT ${limit}
+          `
+    return sql.catch((rawError) => {
+      if (!isPrismaMissingTable(rawError) && !isPrismaColumnMismatch(rawError)) throw rawError
+      return []
+    })
+  }
+}
 
 export const LIST_SECTION_MODELS = {
   client: prisma.client,
@@ -68,12 +135,12 @@ export const DIRECT_SECTION_LOADERS: Record<GenericStorage, Loader> = {
   certificate_license: (profileId, take) =>
     prisma.certificateLicense.findMany({ where: where(profileId), orderBy, take }),
   insurance_license: (profileId, take) => prisma.insuranceLicense.findMany({ where: where(profileId), orderBy, take }),
-  faq: (profileId, take) => prisma.faq.findMany({ where: where(profileId), orderBy, take }),
+  faq: (profileId, take) => loadLivePostStyleRows('Faq', profileId, take),
   calendar_section: (profileId, take) => prisma.calendarSection.findMany({ where: where(profileId), orderBy, take }),
   property_listing: (profileId, take) => prisma.propertyListing.findMany({ where: where(profileId), orderBy, take }),
   profile_event: (profileId, take) => prisma.profileEvent.findMany({ where: where(profileId), orderBy, take }),
   media_press: (profileId, take) => prisma.mediaPress.findMany({ where: where(profileId), orderBy, take }),
-  mission_statement: (profileId, take) => prisma.missionStatement.findMany({ where: where(profileId), orderBy, take }),
+  mission_statement: (profileId, take) => loadLivePostStyleRows('MissionStatement', profileId, take),
   video_explainer: (profileId, take) => prisma.videoExplainer.findMany({ where: where(profileId), orderBy, take }),
   menu_section: (profileId, take) => prisma.menuSection.findMany({ where: where(profileId), orderBy, take }),
   why_choose_us: async (profileId) => {

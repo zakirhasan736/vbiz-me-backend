@@ -1,7 +1,7 @@
 import type { MasterBusinessProfile } from './businessProfile.schema'
 import { TAB_CATALOG } from './cardBlueprint.schema'
 
-const PINNED = new Set(['home', 'global-connection', 'my-info'])
+const PINNED = new Set(['home', 'about', 'public-cards', 'my-info'])
 
 export type RecommendedTab = {
   type: string

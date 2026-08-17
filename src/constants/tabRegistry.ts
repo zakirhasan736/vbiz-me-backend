@@ -202,8 +202,19 @@ export function getPostsTabs(): TabRegistryEntry[] {
   return Object.values(TAB_REGISTRY).filter((t) => t.architecture === 'posts')
 }
 
+const PUBLIC_SECTION_ALIASES: Record<string, string> = {
+  faq: 'faqs',
+  faqs: 'faqs',
+  mission: 'mission_statement',
+  'mission statement': 'mission_statement',
+  'company mission statement': 'mission_statement',
+  'mission-statement': 'mission_statement',
+}
+
 export function getTabByPublicSectionName(name: string): TabRegistryEntry | undefined {
   const needle = name.trim().toLowerCase()
+  const aliasedKey = PUBLIC_SECTION_ALIASES[needle]
+  if (aliasedKey) return TAB_REGISTRY[aliasedKey]
   return Object.values(TAB_REGISTRY).find(
     (t) =>
       t.publicSectionName.toLowerCase() === needle ||

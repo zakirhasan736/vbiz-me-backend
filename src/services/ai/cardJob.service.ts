@@ -77,7 +77,12 @@ function publicJob(session: CardBuildSession) {
     warnings: session.normalized?.warnings || [],
     errorMessage: session.errorMessage || null,
     addableTabs: TAB_CATALOG.filter(
-      (t) => t.navId !== 'global-connection' && t.navId !== 'my-info' && !session.selectedNavIds.includes(t.navId)
+      (t) =>
+        t.navId !== 'public-cards' &&
+        t.navId !== 'my-info' &&
+        t.navId !== 'home' &&
+        t.navId !== 'about' &&
+        !session.selectedNavIds.includes(t.navId)
     ).map((t) => ({ navId: t.navId, tab: t.name })),
   }
 }
@@ -178,9 +183,13 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       architecture,
       userProgress: progress({ ...session, userProgress: progress(session, 'understand', 'done') }, 'design', 'done'),
     })
-    const selectedNavIds = ['home', ...architecture.recommendedTabs.map((t) => t.navId)].filter(
-      (id, index, all) => all.indexOf(id) === index && id !== 'global-connection' && id !== 'my-info'
-    )
+    const selectedNavIds = [
+      'home',
+      'about',
+      ...architecture.recommendedTabs.map((t) => t.navId).filter((id) => id !== 'public-cards' && id !== 'my-info'),
+      'public-cards',
+      'my-info',
+    ].filter((id, index, all) => all.indexOf(id) === index)
     const fieldGraph = buildFieldGraph({
       profile: architecture.masterBusinessProfile,
       recommendedTabs: architecture.recommendedTabs,
@@ -224,7 +233,10 @@ export async function setSelectedTabs(jobId: string, selectedNavIds: string[], u
   const allowed = new Set(TAB_CATALOG.map((t) => t.navId))
   const nextIds = [
     'home',
-    ...selectedNavIds.filter((id) => allowed.has(id) && id !== 'global-connection' && id !== 'my-info'),
+    'about',
+    ...selectedNavIds.filter((id) => allowed.has(id) && id !== 'public-cards' && id !== 'my-info'),
+    'public-cards',
+    'my-info',
   ]
   const unique = [...new Set(nextIds)]
   let fields = session.fieldGraph.filter((field) => unique.includes(field.tabId))

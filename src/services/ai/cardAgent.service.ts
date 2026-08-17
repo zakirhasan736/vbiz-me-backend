@@ -51,7 +51,7 @@ export type CardAgentSection = (typeof SECTIONS)[number]
 
 const TAB_BY_NAV = Object.fromEntries(TAB_CATALOG.map((t) => [t.navId, t]))
 const TAB_BY_NAME = Object.fromEntries(TAB_CATALOG.map((t) => [t.name.trim().toLowerCase(), t]))
-const PINNED_SUGGEST_BLOCK = new Set(['home', 'global-connection', 'my-info'])
+const PINNED_SUGGEST_BLOCK = new Set(['home', 'about', 'public-cards', 'my-info'])
 
 function resolveCatalogTab(tab?: string, navId?: string) {
   if (navId && TAB_BY_NAV[navId]) return TAB_BY_NAV[navId]

@@ -3,6 +3,7 @@ import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
 import { prisma } from '../utils/prisma'
+import { isPrismaMissingTable } from '../utils/prismaErrors'
 import profileService from './profile.service'
 
 type Input = Record<string, unknown>
@@ -23,11 +24,16 @@ const getTab = async (profileId: string, tabId: string) => {
 
 const listTabs = async (profileId: string, userId: string, role: string) => {
   await profileService.getOwned(profileId, userId, role)
-  return prisma.customTab.findMany({
-    where: { profileId },
-    include: { items: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }], take: 200 } },
-    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-  })
+  try {
+    return await prisma.customTab.findMany({
+      where: { profileId },
+      include: { items: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }], take: 200 } },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    })
+  } catch (error) {
+    if (!isPrismaMissingTable(error)) throw error
+    return []
+  }
 }
 
 const createTab = async (profileId: string, userId: string, role: string, input: Input) => {

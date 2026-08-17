@@ -36,6 +36,7 @@ import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
+import { isPrismaMissingTable } from '../utils/prismaErrors'
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
 import announcementService from './announcement.service'
 import pushService from './push.service'
@@ -208,62 +209,16 @@ const profileInclude = {
   portfolios: { orderBy: { sortOrder: 'asc' as const } },
   galleries: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' as const } },
   reviews: { orderBy: { sortOrder: 'asc' as const } },
-  customTabs: {
-    orderBy: { sortOrder: 'asc' as const },
-    include: { items: { orderBy: { sortOrder: 'asc' as const } } },
-  },
   skillTags: { orderBy: { sortOrder: 'asc' as const } },
   addresses: true,
   attachments: { include: { attachmentType: true } },
 } satisfies Prisma.ProfileInclude
 
-type CustomTabsProfile = Prisma.ProfileGetPayload<{ include: typeof profileInclude }>
+type ProfileDetail = Prisma.ProfileGetPayload<{ include: typeof profileInclude }>
 
-const customTabsJson = (profile: CustomTabsProfile) =>
-  JSON.stringify(
-    profile.customTabs.map((tab) => ({
-      id: tab.id,
-      label: tab.label,
-      items: tab.items.map((item) => {
-        const data =
-          item.data && typeof item.data === 'object' && !Array.isArray(item.data)
-            ? (item.data as Record<string, unknown>)
-            : {}
-        return {
-          id: item.id,
-          title: item.title || '',
-          description: item.description || '',
-          mediaUrl: item.featuredImage || '',
-          mediaName: typeof data.mediaName === 'string' ? data.mediaName : '',
-          mediaKind: typeof data.mediaKind === 'string' ? data.mediaKind : undefined,
-          gallery: Array.isArray(data.gallery) ? data.gallery : [],
-          active: item.status === '1',
-        }
-      }),
-    }))
-  )
-
-const withCanonicalCustomTabsSetting = (profile: CustomTabsProfile): CustomTabsProfile => {
+const withCanonicalCustomTabsSetting = (profile: ProfileDetail): ProfileDetail => {
   const galleries = fillMissingGalleryMedia(profile.galleries || [], profile.portfolios || [])
-  profile = galleries === profile.galleries ? profile : { ...profile, galleries }
-  if (!profile.customTabs.length) return profile
-  const value = customTabsJson(profile)
-  const existing = profile.settings.find((setting) => setting.key === 'custom_tabs_json')
-  const settings = existing
-    ? profile.settings.map((setting) => (setting.key === 'custom_tabs_json' ? { ...setting, value } : setting))
-    : [
-        ...profile.settings,
-        {
-          id: `custom-tabs-${profile.id}`,
-          legacyId: null,
-          profileId: profile.id,
-          key: 'custom_tabs_json',
-          value,
-          createdAt: profile.createdAt,
-          updatedAt: profile.updatedAt,
-        },
-      ]
-  return { ...profile, settings }
+  return galleries === profile.galleries ? profile : { ...profile, galleries }
 }
 
 const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
@@ -275,60 +230,63 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
   }
   if (!Array.isArray(parsed)) throw new AppError(400, 'custom_tabs_json must be an array')
   const tabs = parsed.filter((tab): tab is Record<string, unknown> => Boolean(tab && typeof tab === 'object'))
-  await prisma.$transaction(async (tx) => {
-    const existing = await tx.customTab.findMany({ where: { profileId }, select: { id: true } })
-    const retainedIds: string[] = []
-    for (let tabIndex = 0; tabIndex < tabs.length; tabIndex += 1) {
-      const input = tabs[tabIndex]
-      const inputId = typeof input.id === 'string' ? input.id : ''
-      const matched = existing.some((row) => row.id === inputId)
-      const label = String(input.label || 'Custom tab').trim() || 'Custom tab'
-      const tab = matched
-        ? await tx.customTab.update({
-            where: { id: inputId },
-            data: { label, sortOrder: tabIndex, slug: slugify(label) || 'custom-tab' },
-          })
-        : await tx.customTab.create({
+  try {
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.customTab.findMany({ where: { profileId }, select: { id: true } })
+      const retainedIds: string[] = []
+      for (let tabIndex = 0; tabIndex < tabs.length; tabIndex += 1) {
+        const input = tabs[tabIndex]
+        const inputId = typeof input.id === 'string' ? input.id : ''
+        const matched = existing.some((row) => row.id === inputId)
+        const label = String(input.label || 'Custom tab').trim() || 'Custom tab'
+        const tab = matched
+          ? await tx.customTab.update({
+              where: { id: inputId },
+              data: { label, sortOrder: tabIndex, slug: slugify(label) || 'custom-tab' },
+            })
+          : await tx.customTab.create({
+              data: {
+                profileId,
+                key: `custom-${slugify(label) || 'tab'}-${randomBytes(4).toString('hex')}`,
+                label,
+                slug: slugify(label) || 'custom-tab',
+                sortOrder: tabIndex,
+              },
+            })
+        retainedIds.push(tab.id)
+        await tx.customTabItem.deleteMany({ where: { customTabId: tab.id } })
+        const items = Array.isArray(input.items) ? input.items : []
+        for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+          const item = items[itemIndex]
+          if (!item || typeof item !== 'object') continue
+          const row = item as Record<string, unknown>
+          await tx.customTabItem.create({
             data: {
+              customTabId: tab.id,
               profileId,
-              key: `custom-${slugify(label) || 'tab'}-${randomBytes(4).toString('hex')}`,
-              label,
-              slug: slugify(label) || 'custom-tab',
-              sortOrder: tabIndex,
+              title: row.title == null ? null : String(row.title),
+              description: row.description == null ? null : String(row.description),
+              featuredImage: row.mediaUrl == null ? null : String(row.mediaUrl),
+              sortOrder: itemIndex,
+              status: row.active === false ? '0' : '1',
+              data: {
+                mediaName: row.mediaName ?? null,
+                mediaKind: row.mediaKind ?? null,
+                gallery: Array.isArray(row.gallery) ? row.gallery : [],
+              } as Prisma.InputJsonValue,
             },
           })
-      retainedIds.push(tab.id)
-      await tx.customTabItem.deleteMany({ where: { customTabId: tab.id } })
-      const items = Array.isArray(input.items) ? input.items : []
-      for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
-        const item = items[itemIndex]
-        if (!item || typeof item !== 'object') continue
-        const row = item as Record<string, unknown>
-        await tx.customTabItem.create({
-          data: {
-            customTabId: tab.id,
-            profileId,
-            title: row.title == null ? null : String(row.title),
-            description: row.description == null ? null : String(row.description),
-            featuredImage: row.mediaUrl == null ? null : String(row.mediaUrl),
-            sortOrder: itemIndex,
-            status: row.active === false ? '0' : '1',
-            data: {
-              mediaName: row.mediaName ?? null,
-              mediaKind: row.mediaKind ?? null,
-              gallery: Array.isArray(row.gallery) ? row.gallery : [],
-            } as Prisma.InputJsonValue,
-          },
-        })
+        }
       }
-    }
-    await tx.customTab.deleteMany({ where: { profileId, id: { notIn: retainedIds } } })
-  })
-  const canonical = await prisma.profile.findUniqueOrThrow({ where: { id: profileId }, include: profileInclude })
+      await tx.customTab.deleteMany({ where: { profileId, id: { notIn: retainedIds } } })
+    })
+  } catch (error) {
+    if (!isPrismaMissingTable(error)) throw error
+  }
   await prisma.setting.upsert({
     where: { profileId_key: { profileId, key: 'custom_tabs_json' } },
-    create: { profileId, key: 'custom_tabs_json', value: customTabsJson(canonical) },
-    update: { value: customTabsJson(canonical) },
+    create: { profileId, key: 'custom_tabs_json', value: rawJson },
+    update: { value: rawJson },
   })
 }
 

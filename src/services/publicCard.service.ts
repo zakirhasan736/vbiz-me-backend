@@ -1,9 +1,5 @@
-import type { Attachment, Setting } from '../../generated/prisma/client'
-import {
-  DIRECT_SECTION_LOADERS,
-  isGenericDirectStorage,
-  listPopulatedStorages,
-} from '../constants/directSectionStorage'
+﻿import type { Attachment, Setting } from '../../generated/prisma/client'
+import { DIRECT_SECTION_LOADERS, isGenericDirectStorage } from '../constants/directSectionStorage'
 import {
   getTabByPublicSectionName,
   NAV_CHECKBOX_TO_TAB_KEY,
@@ -16,7 +12,7 @@ import { fillMissingGalleryMedia, galleryHasMedia } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
-import { isPrismaMissingTable } from '../utils/prismaErrors'
+import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
 import profileService from './profile.service'
 
 const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
@@ -65,21 +61,17 @@ function collectEditorNavIds(map: Record<string, string>): string[] {
       const homeIndex = ids.indexOf('home')
       ids.splice(homeIndex >= 0 ? homeIndex + 1 : 1, 0, 'about')
     }
-    for (const id of ['global-connection', 'my-info']) {
+    for (const id of ['public-cards', 'my-info']) {
       if (!ids.includes(id)) ids.push(id)
     }
-    const pinned = new Set(['global-connection', 'my-info'])
+    const pinned = new Set(['public-cards', 'my-info'])
     const middle = ids.filter((id) => id !== 'home' && id !== 'about' && !pinned.has(id))
-    const pinnedOrder = Array.from(new Set([...ids.filter((id) => pinned.has(id)), 'global-connection', 'my-info']))
+    const pinnedOrder = Array.from(new Set([...ids.filter((id) => pinned.has(id)), 'public-cards', 'my-info']))
     return ['home', 'about', ...middle, ...pinnedOrder]
   } catch {
     return []
   }
 }
-
-const TAB_KEY_TO_NAV_ID: Record<string, string> = Object.fromEntries(
-  Object.entries(NAV_ID_TO_TAB_KEY).map(([navId, tabKey]) => [tabKey, navId])
-)
 
 const EXTRA_NAV_POST_TYPES: Record<string, { name: string; title: string }> = {
   education: { name: 'Education', title: 'Education' },
@@ -87,6 +79,7 @@ const EXTRA_NAV_POST_TYPES: Record<string, { name: string; title: string }> = {
   skills: { name: 'skills', title: 'Skills' },
   resume: { name: 'Resume', title: 'Resume' },
   profile: { name: 'Profile', title: 'Profile' },
+  'public-cards': { name: 'Public Cards', title: 'Public Cards' },
   'my-info': { name: 'My Info', title: 'My Info' },
   'global-connection': { name: 'Global Connection', title: 'Global Connection' },
   'content-media': { name: 'Content & media', title: 'Content & media' },
@@ -111,13 +104,6 @@ function collectEnabledTabKeys(map: Record<string, string>): Set<string> {
       if (typeof id !== 'string') continue
       const tabKey = NAV_ID_TO_TAB_KEY[id] || id
       if (TAB_REGISTRY[tabKey]) keys.add(tabKey)
-    }
-    for (const [label, config] of Object.entries(parsed.fields || {})) {
-      if (config?.visible !== true) continue
-      const tab = getTabByPublicSectionName(label)
-      if (tab) keys.add(tab.key)
-      const fromNavId = NAV_ID_TO_TAB_KEY[label.trim().toLowerCase().replace(/\s+/g, '-')]
-      if (fromNavId && TAB_REGISTRY[fromNavId]) keys.add(fromNavId)
     }
   } catch {
     /* ignore invalid snapshot */
@@ -630,28 +616,7 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     },
   ].filter((i) => i.active)
 
-  const [posts, customTabs, educationCount, experienceCount, skillCount, populatedStorages] = await Promise.all([
-    prisma.post.findMany({
-      where: { profileId, deletedAt: null, status: '1' },
-      include: { postType: true },
-      distinct: ['postTypeId'],
-    }),
-    prisma.customTab
-      .findMany({
-        where: { profileId, isEnabled: true, isPublic: true, status: '1' },
-        orderBy: { sortOrder: 'asc' },
-      })
-      .catch((error) => {
-        if (!isPrismaMissingTable(error)) throw error
-        return []
-      }),
-    prisma.education.count({ where: { profileId } }),
-    prisma.experience.count({ where: { profileId } }),
-    prisma.skillTag.count({ where: { profileId } }),
-    listPopulatedStorages(profileId),
-  ])
-
-  const post_types: {
+  type PublicPostType = {
     id: string
     key: string
     name: string
@@ -660,31 +625,96 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     type_id: number | null
     slug: string | null
     type: 'standard' | 'custom'
-  }[] = Object.values(TAB_REGISTRY)
-    .map((tab) => {
-      const navId = TAB_KEY_TO_NAV_ID[tab.key]
-      const selected = editorNavSet.size
-        ? editorNavSet.has(navId || tab.key) || editorNavSet.has(tab.key)
-        : populatedStorages.has(tab.storage) || enabledTabKeys.has(tab.key)
-      return selected
-        ? {
-            id: tab.key,
-            key: tab.key,
-            name: tab.publicSectionName,
-            title: tab.label,
-            status: 'active',
-            type_id: tab.legacyPostTypeId,
-            slug: tab.route,
-            type: 'standard' as const,
-          }
-        : null
+  }
+
+  const customTabs = await prisma.customTab
+    .findMany({
+      where: { profileId, isEnabled: true, isPublic: true, status: '1' },
+      orderBy: { sortOrder: 'asc' },
     })
-    .filter((tab): tab is NonNullable<typeof tab> => tab !== null)
+    .catch((error) => {
+      if (!isPrismaMissingTable(error)) throw error
+      return []
+    })
+
+  const rowFromNavId = (navId: string): PublicPostType | null => {
+    if (navId === 'home' || navId === 'about' || navId === 'public-cards') return null
+    const tabKey = NAV_ID_TO_TAB_KEY[navId]
+    const tab = (tabKey && TAB_REGISTRY[tabKey]) || TAB_REGISTRY[navId]
+    if (tab) {
+      return {
+        id: tab.key,
+        key: tab.key,
+        name: tab.publicSectionName,
+        title: tab.label,
+        status: 'active',
+        type_id: tab.legacyPostTypeId,
+        slug: tab.route,
+        type: 'standard',
+      }
+    }
+    const extra = EXTRA_NAV_POST_TYPES[navId]
+    if (extra) {
+      return {
+        id: navId,
+        key: navId,
+        name: extra.name,
+        title: extra.title,
+        status: 'active',
+        type_id: null,
+        slug: navId,
+        type: 'standard',
+      }
+    }
+    const custom = customTabs.find((tab) => tab.id === navId || tab.key === navId || tab.slug === navId)
+    if (!custom) return null
+    return {
+      id: custom.id,
+      key: custom.key,
+      name: custom.key,
+      title: custom.label,
+      status: 'active',
+      type_id: null,
+      slug: custom.slug,
+      type: 'custom',
+    }
+  }
+
+  if (editorNavIds.length) {
+    const seen = new Set<string>()
+    const post_types: PublicPostType[] = []
+    for (const navId of editorNavIds) {
+      const row = rowFromNavId(navId)
+      if (!row || seen.has(row.key)) continue
+      seen.add(row.key)
+      post_types.push(row)
+    }
+    return { StaticLink, post_types }
+  }
+
+  const post_types: PublicPostType[] = []
+  const seenKeys = new Set<string>()
+  for (const tab of Object.values(TAB_REGISTRY)) {
+    if (!enabledTabKeys.has(tab.key) || seenKeys.has(tab.key)) continue
+    seenKeys.add(tab.key)
+    post_types.push({
+      id: tab.key,
+      key: tab.key,
+      name: tab.publicSectionName,
+      title: tab.label,
+      status: 'active',
+      type_id: tab.legacyPostTypeId,
+      slug: tab.route,
+      type: 'standard',
+    })
+  }
 
   for (const tab of customTabs) {
-    if (editorNavSet.size && !editorNavSet.has(tab.id) && !editorNavSet.has(tab.key) && !editorNavSet.has(tab.slug)) {
+    if (seenKeys.has(tab.key) || seenKeys.has(tab.id) || seenKeys.has(tab.slug)) continue
+    if (!enabledTabKeys.has(tab.key) && !enabledTabKeys.has(tab.id) && !enabledTabKeys.has(tab.slug)) {
       continue
     }
+    seenKeys.add(tab.key)
     post_types.push({
       id: tab.id,
       key: tab.key,
@@ -697,89 +727,11 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     })
   }
 
-  if (!editorNavSet.size) {
-    const seenPostTypes = new Set<string>()
-    for (const post of posts) {
-      const postType = post.postType
-      if (!postType || seenPostTypes.has(postType.id)) continue
-      if (getTabByPublicSectionName(postType.name) || getTabByPublicSectionName(postType.title || '')) continue
-      seenPostTypes.add(postType.id)
-      post_types.push({
-        id: postType.id,
-        key: postType.slug || postType.id,
-        name: postType.name,
-        title: postType.title || postType.name,
-        status: postType.status || 'active',
-        type_id: postType.typeId,
-        slug: postType.slug,
-        type: 'standard',
-      })
-    }
-    if (
-      educationCount > 0 &&
-      !post_types.some((t) => /^(resume|education)$/i.test(t.name) || /^(resume|education)$/i.test(t.title || ''))
-    ) {
-      post_types.push({
-        id: 'resume',
-        key: 'resume',
-        name: 'Resume',
-        title: 'Resume',
-        status: 'active',
-        type_id: null,
-        slug: 'resume',
-        type: 'standard',
-      })
-    }
-    if (
-      experienceCount > 0 &&
-      !post_types.some(
-        (t) =>
-          /^(work experience|work|experience)$/i.test(t.name) ||
-          /^(work experience|work|experience)$/i.test(t.title || '')
-      )
-    ) {
-      post_types.push({
-        id: 'work-experience',
-        key: 'work-experience',
-        name: 'Work Experience',
-        title: 'Work Experience',
-        status: 'active',
-        type_id: null,
-        slug: 'work-experience',
-        type: 'standard',
-      })
-    }
-    if (skillCount > 0 && !post_types.some((t) => /^skills?$/i.test(t.name) || /^skills?$/i.test(t.title || ''))) {
-      post_types.push({
-        id: 'skills',
-        key: 'skills',
-        name: 'skills',
-        title: 'Skills',
-        status: 'active',
-        type_id: null,
-        slug: 'skills',
-        type: 'standard',
-      })
-    }
-  } else {
-    const present = new Set(post_types.map((tab) => tab.key))
-    for (const navId of editorNavIds) {
-      if (navId === 'home' || navId === 'about' || navId === 'public-cards') continue
-      if (present.has(navId) || present.has(NAV_ID_TO_TAB_KEY[navId] || '')) continue
-      const extra = EXTRA_NAV_POST_TYPES[navId]
-      if (!extra) continue
-      post_types.push({
-        id: navId,
-        key: navId,
-        name: extra.name,
-        title: extra.title,
-        status: 'active',
-        type_id: null,
-        slug: navId,
-        type: 'standard',
-      })
-      present.add(navId)
-    }
+  for (const navId of Object.keys(EXTRA_NAV_POST_TYPES)) {
+    if (post_types.some((tab) => tab.key === navId || tab.slug === navId)) continue
+    if (!enabledTabKeys.has(navId) && !enabledTabKeys.has(NAV_ID_TO_TAB_KEY[navId] || '')) continue
+    const row = rowFromNavId(navId)
+    if (row) post_types.push(row)
   }
 
   return { StaticLink, post_types }
@@ -1077,6 +1029,7 @@ const getDynamicSection = async (
     const tab = registryTab
     if (tab && isGenericDirectStorage(tab.storage)) {
       try {
+        const liveList = tab.storage === 'faq' || tab.storage === 'mission_statement'
         let rows = await DIRECT_SECTION_LOADERS[tab.storage](profileId, takeOverride ?? 100)
         if (rows.length && !rows.some((row) => row.featuredImage || row.url)) {
           const extras = await prisma.tabItem
@@ -1124,7 +1077,7 @@ const getDynamicSection = async (
             profile: { id: profileId },
             items: rows.map((p) => {
               const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
-              const urlFromField = abs(p.url, null, 7, 'Featured Image')
+              const urlFromField = liveList ? null : abs(p.url, null, 7, 'Featured Image')
               const asset = mediaAsset(p.id, p.title, featuredFromField)
               const urlAsset =
                 urlFromField && urlFromField !== featuredFromField
@@ -1137,6 +1090,7 @@ const getDynamicSection = async (
               const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
               const year = typeof metas.year === 'string' ? metas.year.trim() : ''
               const attachments = [asset, urlAsset].filter(Boolean)
+              const featuredImage = liveList ? (asset ? [asset] : []) : asset
               return {
                 id: p.id,
                 title: p.title,
@@ -1144,7 +1098,7 @@ const getDynamicSection = async (
                 status: p.status === '0' ? 0 : 1,
                 issuer,
                 year,
-                featured_image: asset,
+                featured_image: featuredImage,
                 general_info_url: p.url,
                 review_link: { url: p.url || '', has_link: Boolean(p.url) },
                 attachments,
@@ -1157,7 +1111,7 @@ const getDynamicSection = async (
           }
         }
       } catch (error) {
-        if (!isPrismaMissingTable(error)) throw error
+        if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
       }
     }
   }
@@ -1314,7 +1268,7 @@ const getDynamicSection = async (
           ...education.map((e) => ({
             id: e.id,
             title: e.degree || e.institute,
-            description: [e.institute, e.degree].filter(Boolean).join(' — '),
+            description: [e.institute, e.degree].filter(Boolean).join(' â€” '),
             status: '1',
           })),
           ...experiences.map((e) => ({

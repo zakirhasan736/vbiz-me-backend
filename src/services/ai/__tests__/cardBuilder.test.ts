@@ -90,6 +90,7 @@ describe('vBiz Me auto card builder', () => {
       tabs.every((t) =>
         [
           'home',
+          'about',
           'education',
           'work',
           'skills',
@@ -101,7 +102,7 @@ describe('vBiz Me auto card builder', () => {
           'certificates',
           'resume',
           'faq',
-          'global-connection',
+          'public-cards',
           'my-info',
         ].includes(t.navId)
       )

@@ -299,10 +299,11 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
 }
 Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, populate those arrays with real extracted items. For reviews/testimonials, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture distinct items present in the crawl, up to 30. Never invent customer reviews. If no real reviews exist, return an empty reviews array. Creative wording is allowed for about, FAQs, headlines, and blog ideas, but never invent factual claims (years in business, licenses, awards, phone, email). Missing facts stay empty. Dates as YYYY-MM-DD when known.
 For services.type use ONLY: Web Development, App Design, SEO, Marketing, or Other.
-enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal is present. Never put Global Connection or My Info in enabledTabs — the product pins those last automatically. Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, News/Blogs, Profile, Portfolio, Certifications/Licenses, FAQ).`
+enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal and About Me are present. Never put Public Cards or My Info in enabledTabs — the product pins those last automatically. Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, News/Blogs, Profile, Portfolio, Certifications/Licenses, FAQ).`
 
 export const TAB_CATALOG = [
   { name: 'Personal', navId: 'home', description: 'Profile, contact details, media & socials (always first)' },
+  { name: 'About Me', navId: 'about', description: 'Company story, bio, and featured media (always second)' },
   { name: 'Education', navId: 'education', description: 'Degrees, schools, and years' },
   { name: 'Experience', navId: 'work', description: 'Work history and roles' },
   { name: 'Skill', navId: 'skills', description: 'Skill groups and proficiency' },
@@ -315,9 +316,9 @@ export const TAB_CATALOG = [
   { name: 'Resume', navId: 'resume', description: 'Downloadable resume / CV' },
   { name: 'FAQ', navId: 'faq', description: 'Common questions and answers (multi-item)' },
   {
-    name: 'Global Connection',
-    navId: 'global-connection',
-    description: 'Shared global directory — ALWAYS second-to-last; same list for all cards',
+    name: 'Public Cards',
+    navId: 'public-cards',
+    description: 'Directory of other public vBiz cards — ALWAYS second-to-last',
   },
   {
     name: 'My Info',
