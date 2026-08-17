@@ -1,5 +1,5 @@
 import { prisma } from './prisma'
-import { isPrismaColumnMismatch, isPrismaMissingTable } from './prismaErrors'
+import { isPrismaSchemaDrift } from './prismaErrors'
 
 type GalleryLike = {
   title?: string | null
@@ -117,7 +117,7 @@ export async function listGalleriesForProfile(profileId: string, take = 200): Pr
     })
     return rows.map(withGalleryDefaults)
   } catch (error) {
-    if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+    if (!isPrismaSchemaDrift(error)) throw error
   }
   try {
     const rows = await prisma.$queryRaw<
@@ -145,7 +145,7 @@ export async function listGalleriesForProfile(profileId: string, take = 200): Pr
         "featuredImage",
         "attachmentUrl",
         "attachmentName",
-        status,
+        status::text AS status,
         "sortOrder",
         "createdAt",
         "updatedAt"
@@ -156,7 +156,7 @@ export async function listGalleriesForProfile(profileId: string, take = 200): Pr
     `
     return rows.map(withGalleryDefaults)
   } catch (error) {
-    if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+    if (!isPrismaSchemaDrift(error)) throw error
   }
   try {
     const rows = await prisma.$queryRaw<
@@ -180,13 +180,12 @@ export async function listGalleriesForProfile(profileId: string, take = 200): Pr
         description,
         url,
         "featuredImage",
-        status,
-        "sortOrder",
-        "createdAt",
-        "updatedAt"
+        status::text AS status,
+        COALESCE("sortOrder", 0) AS "sortOrder",
+        COALESCE("createdAt", NOW()) AS "createdAt",
+        COALESCE("updatedAt", NOW()) AS "updatedAt"
       FROM "Gallery"
       WHERE "profileId" = ${profileId}
-      ORDER BY "sortOrder" ASC, "createdAt" DESC
       LIMIT ${limit}
     `
     return rows.map((row) =>

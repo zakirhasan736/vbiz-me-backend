@@ -1,5 +1,5 @@
 import { prisma } from '../utils/prisma'
-import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
+import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
 import { getTabByKey, getTabByPublicSectionName, type DirectSectionStorage } from './tabRegistry'
 
 export type DirectSectionRow = {
@@ -306,7 +306,7 @@ export async function listPopulatedStorages(profileId: string): Promise<Set<Dire
     const fallback = await listPopulatedStoragesFromPosts(profileId)
     return new Set([...dedicated, ...fallback])
   } catch (error) {
-    if (!isPrismaMissingTable(error)) throw error
+    if (!isPrismaSchemaDrift(error)) throw error
     return listPopulatedStoragesFromPosts(profileId)
   }
 }

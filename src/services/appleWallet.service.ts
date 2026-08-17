@@ -226,42 +226,48 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
   const strip = (await fetchPng(walletArtUrl(slugForPass, 'strip'))) || createSolidPng(1125, 432, brandRgb)
   const icon = createSolidPng(58, 58, brandRgb)
 
-  const pass = new PKPass(
-    {
-      'icon.png': icon,
-      'icon@2x.png': icon,
-      'strip.png': strip,
-      'strip@2x.png': strip,
-      'strip@3x.png': strip,
-    },
-    {
-      wwdr: loadWwdrPem(),
-      signerCert: signer.cert,
-      signerKey: signer.key,
-      signerKeyPassphrase: signer.passphrase,
-    },
-    {
-      formatVersion: 1,
-      passTypeIdentifier: passTypeId,
-      teamIdentifier: teamId,
-      serialNumber: `card-face2-${profile.id}`.slice(0, 64),
-      organizationName: config.APPLE_WALLET.ORGANIZATION,
-      description: `${name} digital card`,
-      logoText: '',
-      foregroundColor: darkBg ? 'rgb(255, 255, 255)' : 'rgb(17, 17, 17)',
-      backgroundColor: hexToRgbCss(primary),
-      labelColor: darkBg ? 'rgb(220, 220, 220)' : 'rgb(80, 80, 80)',
-      sharingProhibited: false,
-    }
-  )
+  try {
+    const pass = new PKPass(
+      {
+        'icon.png': icon,
+        'icon@2x.png': icon,
+        'strip.png': strip,
+        'strip@2x.png': strip,
+        'strip@3x.png': strip,
+      },
+      {
+        wwdr: loadWwdrPem(),
+        signerCert: signer.cert,
+        signerKey: signer.key,
+        signerKeyPassphrase: signer.passphrase,
+      },
+      {
+        formatVersion: 1,
+        passTypeIdentifier: passTypeId,
+        teamIdentifier: teamId,
+        serialNumber: `card-face2-${profile.id}`.slice(0, 64),
+        organizationName: config.APPLE_WALLET.ORGANIZATION,
+        description: `${name} digital card`,
+        logoText: '',
+        foregroundColor: darkBg ? 'rgb(255, 255, 255)' : 'rgb(17, 17, 17)',
+        backgroundColor: hexToRgbCss(primary),
+        labelColor: darkBg ? 'rgb(220, 220, 220)' : 'rgb(80, 80, 80)',
+        sharingProhibited: false,
+      }
+    )
 
-  pass.type = 'storeCard'
-  pushField(pass.backFields, 'card', 'Open digital card', cardUrl)
-  pushField(pass.backFields, 'phone', 'Phone', profile.phone)
-  pushField(pass.backFields, 'email', 'Email', profile.email)
+    pass.type = 'storeCard'
+    pushField(pass.backFields, 'card', 'Open digital card', cardUrl)
+    pushField(pass.backFields, 'phone', 'Phone', profile.phone)
+    pushField(pass.backFields, 'email', 'Email', profile.email)
 
-  const filename = `${slugForPass.replace(/[^a-zA-Z0-9._-]/g, '-') || 'vbiz-card'}.pkpass`
-  return { buffer: pass.getAsBuffer(), filename }
+    const filename = `${slugForPass.replace(/[^a-zA-Z0-9._-]/g, '-') || 'vbiz-card'}.pkpass`
+    return { buffer: pass.getAsBuffer(), filename }
+  } catch (error) {
+    if (error instanceof AppError) throw error
+    const message = error instanceof Error ? error.message : 'Apple Wallet pass could not be built'
+    throw new AppError(503, message)
+  }
 }
 
 const appleWalletService = {

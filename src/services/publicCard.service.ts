@@ -12,7 +12,7 @@ import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } fro
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
-import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
+import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
 import profileService from './profile.service'
 
 const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
@@ -602,7 +602,7 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
       profile.id,
       [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id))
     ),
-    listGalleriesForProfile(profile.id, 200).then((rows) => rows.filter((row) => row.status === '1')),
+    listGalleriesForProfile(profile.id, 200).then((rows) => rows.filter((row) => String(row.status) === '1')),
   ])
   const legacyPortfolio = await prisma.portfolio
     .findMany({
@@ -688,7 +688,7 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
       orderBy: { sortOrder: 'asc' },
     })
     .catch((error) => {
-      if (!isPrismaMissingTable(error)) throw error
+      if (!isPrismaSchemaDrift(error)) throw error
       return []
     })
 
@@ -819,12 +819,13 @@ const getProfileAiData = async (profileId: string) => {
       experiences: { orderBy: { sortOrder: 'asc' } },
       services: { where: { status: 1 }, orderBy: { sortOrder: 'asc' } },
       portfolios: { where: { status: 1 }, orderBy: { sortOrder: 'asc' } },
-      galleries: { where: { status: '1', deletedAt: null }, orderBy: { sortOrder: 'asc' } },
       skillTags: { orderBy: { sortOrder: 'asc' } },
       socialLinks: { orderBy: { sortOrder: 'asc' } },
     },
   })
   if (!profile) throw new AppError(404, 'Profile not found')
+
+  const galleries = (await listGalleriesForProfile(profileId, 200)).filter((row) => String(row.status) === '1')
 
   const formatDate = (d: Date | null | undefined) => {
     if (!d) return null
@@ -887,7 +888,7 @@ const getProfileAiData = async (profileId: string) => {
       toDate: formatDate(e.toDate),
       tillNow: e.tillNow,
     })),
-    portfolio: (profile.galleries.length ? profile.galleries : profile.portfolios).map((p) => ({
+    portfolio: (galleries.length ? galleries : profile.portfolios).map((p) => ({
       title: p.title,
       description: p.description,
       url: p.url,
@@ -1116,7 +1117,7 @@ const getDynamicSection = async (
         }
       }
     } catch (error) {
-      if (!isPrismaMissingTable(error)) throw error
+      if (!isPrismaSchemaDrift(error)) throw error
     }
   }
 
@@ -1206,7 +1207,7 @@ const getDynamicSection = async (
           }
         }
       } catch (error) {
-        if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+        if (!isPrismaSchemaDrift(error)) throw error
       }
     }
   }
@@ -1226,7 +1227,7 @@ const getDynamicSection = async (
       }
       const [galleryRows, legacy] = await Promise.all([
         listGalleriesForProfile(profileId, takeOverride ?? 100).then((rows) =>
-          rows.filter((row) => row.status === '1')
+          rows.filter((row) => String(row.status) === '1')
         ),
         prisma.portfolio.findMany({
           where: { profileId, status: 1 },
@@ -1279,7 +1280,7 @@ const getDynamicSection = async (
         }
       }
     } catch (error) {
-      if (!isPrismaMissingTable(error)) throw error
+      if (!isPrismaSchemaDrift(error)) throw error
     }
   }
 
@@ -1422,7 +1423,7 @@ const getDynamicSection = async (
       },
     })
     .catch((error) => {
-      if (!isPrismaMissingTable(error)) throw error
+      if (!isPrismaSchemaDrift(error)) throw error
       return null
     })
   if (customTab) {
@@ -1507,7 +1508,7 @@ const getDynamicSection = async (
         }
       }
     } catch (error) {
-      if (!isPrismaMissingTable(error)) throw error
+      if (!isPrismaSchemaDrift(error)) throw error
     }
   }
 

@@ -16,6 +16,19 @@ export function isPrismaColumnMismatch(error: unknown): boolean {
   return /column .* does not exist|42703/i.test(message)
 }
 
+/** True when a live column type does not match Prisma (e.g. Gallery.status integer vs text). */
+export function isPrismaTypeMismatch(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const err = error as { code?: string; message?: string }
+  if (err.code === 'P2023' || err.code === 'P2032') return true
+  const message = String(err.message || '')
+  return /inconsistent column data|conversion failed|operator does not exist/i.test(message)
+}
+
+export function isPrismaSchemaDrift(error: unknown): boolean {
+  return isPrismaMissingTable(error) || isPrismaColumnMismatch(error) || isPrismaTypeMismatch(error)
+}
+
 export function missingPrismaTableName(error: unknown): string | null {
   const message = String((error as { message?: string })?.message || '')
   const columnOnModel = message.match(/column [`'](\w+)\.(\w+)[`']/i)
@@ -39,7 +52,7 @@ export async function safePrismaQuery<T>(run: () => Promise<T>, fallback: T): Pr
   try {
     return await run()
   } catch (error) {
-    if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+    if (!isPrismaSchemaDrift(error)) throw error
     return fallback
   }
 }
