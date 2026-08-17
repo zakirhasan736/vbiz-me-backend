@@ -248,7 +248,7 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
         serialNumber: `card-face2-${profile.id}`.slice(0, 64),
         organizationName: config.APPLE_WALLET.ORGANIZATION,
         description: `${name} digital card`,
-        logoText: '',
+        logoText: (name || config.APPLE_WALLET.ORGANIZATION).slice(0, 40),
         foregroundColor: darkBg ? 'rgb(255, 255, 255)' : 'rgb(17, 17, 17)',
         backgroundColor: hexToRgbCss(primary),
         labelColor: darkBg ? 'rgb(220, 220, 220)' : 'rgb(80, 80, 80)',
