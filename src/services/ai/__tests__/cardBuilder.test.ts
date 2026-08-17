@@ -281,4 +281,20 @@ describe('vBiz Me auto card builder', () => {
       /cannot create real customer reviews|cannot invent/i
     )
   })
+
+  it('21. award objects and zero ratings from the model still parse', () => {
+    const parsed = masterBusinessProfileSchema.parse({
+      businessName: 'Next Creavo',
+      awards: [{ title: 'Best Digital Agency', year: 2024 }],
+      verifiedReviews: [{ author: 'Alex', text: 'Great work', rating: 0 }],
+      suggestedTestimonialTemplates: [
+        { author: 'Sample Client', text: 'Loved the launch', rating: 0 },
+        { text: 'Would recommend', rating: 0 },
+      ],
+    })
+    assert.equal(parsed.awards[0], 'Best Digital Agency — 2024')
+    assert.equal(parsed.verifiedReviews[0]?.rating, undefined)
+    assert.equal(parsed.suggestedTestimonialTemplates[0]?.rating, 5)
+    assert.equal(parsed.suggestedTestimonialTemplates[1]?.rating, 5)
+  })
 })

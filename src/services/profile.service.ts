@@ -412,25 +412,46 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
   const tabs = parsed.filter((tab): tab is Record<string, unknown> => Boolean(tab && typeof tab === 'object'))
   try {
     await prisma.$transaction(async (tx) => {
-      const existing = await tx.customTab.findMany({ where: { profileId }, select: { id: true } })
+      const existing = await tx.customTab.findMany({ where: { profileId }, select: { id: true, key: true } })
       const retainedIds: string[] = []
       for (let tabIndex = 0; tabIndex < tabs.length; tabIndex += 1) {
         const input = tabs[tabIndex]
-        const inputId = typeof input.id === 'string' ? input.id : ''
-        const matched = existing.some((row) => row.id === inputId)
+        const inputId = typeof input.id === 'string' ? input.id.trim() : ''
+        const editorId = inputId.startsWith('custom-tab-') ? inputId : ''
+        const matched =
+          (editorId && existing.some((row) => row.id === editorId || row.key === editorId)) ||
+          existing.some((row) => row.id === inputId)
+        const matchedId = matched
+          ? existing.find((row) => row.id === editorId || row.key === editorId || row.id === inputId)?.id || editorId
+          : ''
         const label = String(input.label || 'Custom tab').trim() || 'Custom tab'
-        const tab = matched
+        const slug = slugify(label) || 'custom-tab'
+        const tab = matchedId
           ? await tx.customTab.update({
-              where: { id: inputId },
-              data: { label, sortOrder: tabIndex, slug: slugify(label) || 'custom-tab' },
+              where: { id: matchedId },
+              data: {
+                label,
+                sortOrder: tabIndex,
+                slug,
+                isEnabled: true,
+                isPublic: true,
+                status: '1',
+                ...(editorId && !existing.some((row) => row.key === editorId && row.id !== matchedId)
+                  ? { key: editorId }
+                  : {}),
+              },
             })
           : await tx.customTab.create({
               data: {
+                ...(editorId ? { id: editorId } : {}),
                 profileId,
-                key: `custom-${slugify(label) || 'tab'}-${randomBytes(4).toString('hex')}`,
+                key: editorId || `custom-${slug}-${randomBytes(4).toString('hex')}`,
                 label,
-                slug: slugify(label) || 'custom-tab',
+                slug,
                 sortOrder: tabIndex,
+                isEnabled: true,
+                isPublic: true,
+                status: '1',
               },
             })
         retainedIds.push(tab.id)
@@ -440,13 +461,18 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
           const item = items[itemIndex]
           if (!item || typeof item !== 'object') continue
           const row = item as Record<string, unknown>
+          const itemId = typeof row.id === 'string' && row.id.trim() ? row.id.trim() : undefined
+          const mediaUrl = typeof row.mediaUrl === 'string' ? row.mediaUrl.trim() : ''
+          const linkUrl = typeof row.url === 'string' ? row.url.trim() : ''
           await tx.customTabItem.create({
             data: {
+              ...(itemId ? { id: itemId } : {}),
               customTabId: tab.id,
               profileId,
               title: row.title == null ? null : String(row.title),
               description: row.description == null ? null : String(row.description),
-              featuredImage: row.mediaUrl == null ? null : String(row.mediaUrl),
+              url: linkUrl || null,
+              featuredImage: mediaUrl || null,
               sortOrder: itemIndex,
               status: row.active === false ? '0' : '1',
               data: {
@@ -458,7 +484,9 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
           })
         }
       }
-      await tx.customTab.deleteMany({ where: { profileId, id: { notIn: retainedIds } } })
+      await tx.customTab.deleteMany({
+        where: retainedIds.length ? { profileId, id: { notIn: retainedIds } } : { profileId },
+      })
     })
   } catch (error) {
     if (!isPrismaMissingTable(error)) throw error
@@ -864,50 +892,20 @@ const asOptionalString = (value: unknown): string | undefined => {
 }
 
 const EMAIL_USED_IN_ANOTHER_VCARD = 'Provided email is used in another vCard.'
-const PHONE_USED_IN_ANOTHER_VCARD = 'Provided phone number is used in another vCard.'
 
-const phoneDigitsOnly = (phone: string) => phone.replace(/\D/g, '')
-
-/** Block create/update when email or phone is already on another profile (system-wide). */
-const assertPhoneEmailAvailable = async (opts: {
-  email?: string | null
-  phone?: string | null
-  excludeProfileId?: string
-}) => {
+/** Block create/update when email is already on another profile. Phone may be reused across cards. */
+const assertPhoneEmailAvailable = async (opts: { email?: string | null; excludeProfileId?: string }) => {
   const email = typeof opts.email === 'string' ? opts.email.trim() : opts.email
-  if (email) {
-    const existing = await prisma.profile.findFirst({
-      where: {
-        email: { equals: email, mode: 'insensitive' },
-        ...(opts.excludeProfileId ? { NOT: { id: opts.excludeProfileId } } : {}),
-      },
-      select: { id: true },
-    })
-    if (existing) throw new AppError(400, EMAIL_USED_IN_ANOTHER_VCARD)
-  }
+  if (!email) return
 
-  const phone = typeof opts.phone === 'string' ? opts.phone.trim() : opts.phone
-  if (!phone) return
-
-  const digits = phoneDigitsOnly(phone)
-  if (!digits) return
-
-  const rows = opts.excludeProfileId
-    ? await prisma.$queryRaw<Array<{ id: string }>>`
-        SELECT id FROM "Profile"
-        WHERE phone IS NOT NULL
-          AND regexp_replace(phone, '[^0-9]', '', 'g') = ${digits}
-          AND id <> ${opts.excludeProfileId}
-        LIMIT 1
-      `
-    : await prisma.$queryRaw<Array<{ id: string }>>`
-        SELECT id FROM "Profile"
-        WHERE phone IS NOT NULL
-          AND regexp_replace(phone, '[^0-9]', '', 'g') = ${digits}
-        LIMIT 1
-      `
-
-  if (rows.length > 0) throw new AppError(400, PHONE_USED_IN_ANOTHER_VCARD)
+  const existing = await prisma.profile.findFirst({
+    where: {
+      email: { equals: email, mode: 'insensitive' },
+      ...(opts.excludeProfileId ? { NOT: { id: opts.excludeProfileId } } : {}),
+    },
+    select: { id: true },
+  })
+  if (existing) throw new AppError(400, EMAIL_USED_IN_ANOTHER_VCARD)
 }
 
 /** Upsert the primary Address row used for street address (line1). */
@@ -1040,7 +1038,6 @@ const create = async (
   const resolvedEmail = (raw.email as string) || profileOwnerEmail
   await assertPhoneEmailAvailable({
     email: resolvedEmail,
-    phone: raw.phone as string | undefined,
   })
   const draftStatus = await ensureStatusByName('draft')
   const profile = await prisma.profile.create({
@@ -1147,10 +1144,9 @@ const update = async (
     profileData.slug = await ensureUniqueSlug(profileData.slug, profileId)
   }
 
-  if ('email' in raw || 'phone' in raw) {
+  if ('email' in raw) {
     await assertPhoneEmailAvailable({
-      ...('email' in raw ? { email: raw.email as string | null | undefined } : {}),
-      ...('phone' in raw ? { phone: raw.phone as string | null | undefined } : {}),
+      email: raw.email as string | null | undefined,
       excludeProfileId: profileId,
     })
   }

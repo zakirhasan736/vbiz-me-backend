@@ -58,6 +58,13 @@ app.get('/', (_req: Request, res: Response) => {
   })
 })
 
+// Exercises the production error pipeline without exposing a public route.
+if (process.env.NODE_ENV === 'test') {
+  app.get('/__test__/error', (_req: Request, _res: Response, next: NextFunction) => {
+    next(new Error('Forced test failure'))
+  })
+}
+
 app.use((req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent) {
     return

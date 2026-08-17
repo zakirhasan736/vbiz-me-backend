@@ -48,6 +48,48 @@ type BackgroundAudioBlock = {
   repeat?: boolean
 }
 
+function telHref(phone?: string | null): string | undefined {
+  const digits = String(phone || '').replace(/[^\d+]/g, '')
+  return digits ? `tel:${digits}` : undefined
+}
+
+function smsHref(phone?: string | null): string | undefined {
+  const digits = String(phone || '').replace(/[^\d+]/g, '')
+  return digits ? `sms:${digits}` : undefined
+}
+
+function parseMyInfoActions(map: Record<string, string>) {
+  const defaults = {
+    headline: 'Ready When You Are',
+    showCall: true,
+    showText: true,
+    showEmail: true,
+    callLabel: 'Call Now',
+    textLabel: 'Shoot Me A Text',
+    emailLabel: 'Email Me',
+  }
+  const raw = map.my_info_json
+  if (!raw?.trim()) return defaults
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return defaults
+    const str = (value: unknown, fallback: string) =>
+      typeof value === 'string' && value.trim() ? value.trim() : fallback
+    const bool = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback)
+    return {
+      headline: str(o.headline, defaults.headline),
+      showCall: bool(o.showCall, defaults.showCall),
+      showText: bool(o.showText, defaults.showText),
+      showEmail: bool(o.showEmail, defaults.showEmail),
+      callLabel: str(o.callLabel, defaults.callLabel),
+      textLabel: str(o.textLabel, defaults.textLabel),
+      emailLabel: str(o.emailLabel, defaults.emailLabel),
+    }
+  } catch {
+    return defaults
+  }
+}
+
 function collectEditorNavIds(map: Record<string, string>): string[] {
   const rawJson = map.display_settings_json
   if (!rawJson?.trim()) return []
@@ -159,6 +201,21 @@ function extractYoutubeVideoId(url?: string | null): string | null {
 
 function isYoutubeUrl(url?: string | null): boolean {
   return Boolean(extractYoutubeVideoId(url))
+}
+
+function splitExplainerMedia(
+  featured?: string | null,
+  url?: string | null
+): { videoUrl: string; external: string | null } {
+  const featuredValue = featured?.trim() || ''
+  const urlValue = url?.trim() || ''
+  const file = [featuredValue, urlValue].find((value) => value && !isYoutubeUrl(value)) || ''
+  const youtube = [urlValue, featuredValue].find((value) => value && isYoutubeUrl(value)) || ''
+  let external: string | null = youtube || null
+  if (!external && urlValue && urlValue !== file && /^https?:\/\//i.test(urlValue)) {
+    external = urlValue
+  }
+  return { videoUrl: file, external }
 }
 
 function isDurableMediaUrl(url?: string | null): boolean {
@@ -505,16 +562,22 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
         designation: { enabled: true, value: profile.designation || '' },
       },
       contact: {
-        email: { enabled: true, value: profile.email, mailto_url: `mailto:${profile.email}` },
+        email: {
+          enabled: Boolean(profile.email),
+          value: profile.email || '',
+          mailto_url: profile.email ? `mailto:${profile.email}` : undefined,
+        },
         phone: {
           enabled: Boolean(profile.phone),
           value: profile.phone || '',
-          tel_url: profile.phone ? `tel:${profile.phone}` : undefined,
+          tel_url: telHref(profile.phone),
+          sms_url: smsHref(profile.phone || profile.whatsapp),
         },
         whatsapp: { enabled: Boolean(profile.whatsapp), value: profile.whatsapp || '' },
         website: { enabled: Boolean(profile.website), value: profile.website || '', url: profile.website || undefined },
         address: { enabled: Boolean(profile.address), value: profile.address || '' },
       },
+      actions: parseMyInfoActions(settings),
       additional_fields: profile.socialLinks.map((s) => ({
         key: s.name || 'link',
         value: s.url || '',
@@ -662,12 +725,12 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     if (!custom) return null
     return {
       id: custom.id,
-      key: custom.key,
-      name: custom.key,
+      key: custom.id,
+      name: custom.id,
       title: custom.label,
       status: 'active',
       type_id: null,
-      slug: custom.slug,
+      slug: custom.id,
       type: 'custom',
     }
   }
@@ -709,12 +772,12 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     seenKeys.add(tab.key)
     post_types.push({
       id: tab.id,
-      key: tab.key,
-      name: tab.key,
+      key: tab.id,
+      name: tab.id,
       title: tab.label,
       status: 'active',
       type_id: null,
-      slug: tab.slug,
+      slug: tab.id,
       type: 'custom',
     })
   }
@@ -981,28 +1044,68 @@ const getDynamicSection = async (
           take: takeOverride ?? 20,
         })
       }
+      if (!rows.length) {
+        const settingRows = await prisma.setting.findMany({
+          where: { profileId, key: { in: ['intro_video_url', 'intro_youtube_url'] } },
+          select: { key: true, value: true },
+        })
+        const settings: Record<string, string> = {}
+        for (const row of settingRows) {
+          if (row.value?.trim()) settings[row.key] = row.value.trim()
+        }
+        const introFile = settings.intro_video_url || ''
+        const introYoutube = settings.intro_youtube_url || ''
+        const { videoUrl, external } = splitExplainerMedia(
+          introFile && !isYoutubeUrl(introFile) ? introFile : '',
+          introYoutube || (isYoutubeUrl(introFile) ? introFile : '')
+        )
+        const resolvedVideo = videoUrl ? abs(videoUrl, null, 7, 'Featured Image') || videoUrl : ''
+        if (resolvedVideo || external) {
+          const asset = mediaAsset('profile-media', '2D Video Explainer', resolvedVideo || null)
+          return {
+            type: '2D Video Explainer',
+            postType: { name: '2D Video Explainer', title: '2D Video Explainer' },
+            profile: { id: profileId },
+            video: resolvedVideo ? { doc_name: 'Explainer', url: resolvedVideo } : { doc_name: '', url: '' },
+            external_url: { url: external, has_external_url: Boolean(external) },
+            items: [
+              {
+                id: 'profile-media',
+                title: '2D Video Explainer',
+                description: null,
+                status: 1,
+                featured_image: asset,
+                general_info_url: external || resolvedVideo || '',
+                attachments: asset ? [asset] : [],
+                created_at: new Date(),
+                video_url: resolvedVideo,
+              },
+            ],
+          }
+        }
+      }
       if (rows.length) {
         const items = rows.map((p) => {
           const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
           const urlFromField = abs(p.url, null, 7, 'Featured Image')
-          const videoUrl = featuredFromField || urlFromField
-          const asset = mediaAsset(p.id, p.title, videoUrl)
+          const { videoUrl, external } = splitExplainerMedia(featuredFromField, urlFromField || p.url)
+          const asset = mediaAsset(p.id, p.title, videoUrl || null)
           return {
             id: p.id,
             title: p.title,
             description: p.description,
             status: p.status === '0' ? 0 : 1,
             featured_image: asset,
-            general_info_url: p.url,
+            general_info_url: external || p.url,
             attachments: asset ? [asset] : [],
             created_at: p.createdAt,
             video_url: videoUrl,
+            external_url: external,
           }
         })
         const first = items[0]
         const videoUrl = first.video_url || ''
-        const ext = String(first.general_info_url || '').trim()
-        const external = ext && ext !== videoUrl && /^https?:\/\//i.test(ext) ? ext : null
+        const external = first.external_url || null
         return {
           type: '2D Video Explainer',
           postType: { name: '2D Video Explainer', title: '2D Video Explainer' },
@@ -1311,7 +1414,11 @@ const getDynamicSection = async (
         isEnabled: true,
         isPublic: true,
         status: '1',
-        OR: [{ key: { equals: name, mode: 'insensitive' } }, { slug: { equals: name, mode: 'insensitive' } }],
+        OR: [
+          { id: name },
+          { key: { equals: name, mode: 'insensitive' } },
+          { slug: { equals: name, mode: 'insensitive' } },
+        ],
       },
     })
     .catch((error) => {
@@ -1325,8 +1432,8 @@ const getDynamicSection = async (
       take: takeOverride ?? 200,
     })
     return {
-      type: customTab.key,
-      postType: { name: customTab.key, title: customTab.label },
+      type: customTab.id,
+      postType: { name: customTab.id, title: customTab.label },
       profile: { id: profileId },
       items: rows.map((item) => {
         const featuredImage = abs(item.featuredImage, null, 7, 'Featured Image')
@@ -1342,13 +1449,14 @@ const getDynamicSection = async (
           issuer: typeof metas.issuer === 'string' ? metas.issuer.trim() : '',
           year: typeof metas.year === 'string' ? metas.year.trim() : '',
           featured_image: featuredImage ? [{ id: item.id, doc_name: item.title, url: featuredImage }] : [],
-          general_info_url: item.url,
+          general_info_url: item.url || '',
+          video_url: featuredImage,
           attachments: featuredImage ? [{ id: item.id, doc_name: item.title, url: featuredImage }] : [],
           metas,
         }
       }),
       section_id: customTab.id,
-      post_type: { name: customTab.key, title: customTab.label, type_id: null },
+      post_type: { name: customTab.id, title: customTab.label, type_id: null },
     }
   }
 

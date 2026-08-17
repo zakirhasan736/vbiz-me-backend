@@ -8,6 +8,38 @@ const emptyToNull = (value: unknown) => {
 
 const nullableString = z.preprocess(emptyToNull, z.string().nullable().optional().default(null))
 
+function labeledToString(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  if (!value || typeof value !== 'object') return ''
+  const rec = value as Record<string, unknown>
+  const title = [rec.title, rec.name, rec.value, rec.label, rec.text, rec.award, rec.credential].find(
+    (item): item is string => typeof item === 'string' && Boolean(item.trim())
+  )
+  const extra = [rec.year, rec.issuer, rec.organization, rec.authority]
+    .filter((item) => item != null && String(item).trim())
+    .map((item) => String(item).trim())
+  return [title?.trim(), ...extra].filter(Boolean).join(' — ')
+}
+
+const stringListSchema = z.preprocess(
+  (value) => {
+    if (value == null) return []
+    return Array.isArray(value) ? value : [value]
+  },
+  z.array(z.unknown()).transform((items) => items.map(labeledToString).filter(Boolean))
+)
+
+function clampStarRating(value: unknown, fallback?: number): number | undefined {
+  if (value == null || value === '') return fallback
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n) || n < 1) return fallback
+  return Math.min(5, Math.round(n))
+}
+
+const optionalStarRating = z.preprocess((value) => clampStarRating(value), z.number().min(1).max(5).optional())
+const sampleStarRating = z.preprocess((value) => clampStarRating(value, 5), z.number().min(1).max(5).default(5))
+
 const sourcedFactSchema = z
   .object({
     value: z.union([z.string(), z.number()]),
@@ -33,7 +65,7 @@ export const conflictSchema = z.object({
 const reviewFactSchema = z.object({
   author: z.string().optional().default(''),
   text: z.string().optional().default(''),
-  rating: z.coerce.number().min(1).max(5).optional(),
+  rating: optionalStarRating,
   source: z.string().optional(),
   sourceUrl: z.string().optional(),
 })
@@ -41,7 +73,7 @@ const reviewFactSchema = z.object({
 const sampleReviewSchema = z.object({
   author: z.string().optional().default('Sample Client'),
   text: z.string(),
-  rating: z.coerce.number().min(1).max(5).optional().default(5),
+  rating: sampleStarRating,
   isSample: z.literal(true).optional().default(true),
   label: z.string().optional().default('DRAFT / SAMPLE'),
 })
@@ -59,8 +91,8 @@ export const masterBusinessProfileSchema = z.object({
   address: nullableString,
   whatsapp: nullableString,
   suggestedSlug: z.string().optional().default(''),
-  serviceAreas: z.array(z.string()).optional().default([]),
-  businessHours: z.array(z.string()).optional().default([]),
+  serviceAreas: stringListSchema,
+  businessHours: stringListSchema,
   services: z
     .array(
       z.object({
@@ -73,12 +105,12 @@ export const masterBusinessProfileSchema = z.object({
     )
     .optional()
     .default([]),
-  products: z.array(z.string()).optional().default([]),
-  credentials: z.array(z.string()).optional().default([]),
-  licenses: z.array(z.string()).optional().default([]),
-  certifications: z.array(z.string()).optional().default([]),
-  awards: z.array(z.string()).optional().default([]),
-  teamMembers: z.array(z.string()).optional().default([]),
+  products: stringListSchema,
+  credentials: stringListSchema,
+  licenses: stringListSchema,
+  certifications: stringListSchema,
+  awards: stringListSchema,
+  teamMembers: stringListSchema,
   education: z
     .array(
       z.object({
