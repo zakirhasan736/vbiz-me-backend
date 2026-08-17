@@ -25,7 +25,7 @@ const listTabs = async (profileId: string, userId: string, role: string) => {
   await profileService.getOwned(profileId, userId, role)
   return prisma.customTab.findMany({
     where: { profileId },
-    include: { items: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }] } },
+    include: { items: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }], take: 200 } },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
   })
 }
@@ -81,13 +81,22 @@ const deleteTab = async (profileId: string, tabId: string, userId: string, role:
   return { id: tabId, deleted: true as const }
 }
 
-const listItems = async (profileId: string, tabId: string, userId: string, role: string) => {
+const listItems = async (profileId: string, tabId: string, userId: string, role: string, skip = 0, limit = 200) => {
   await profileService.getOwned(profileId, userId, role)
   await getTab(profileId, tabId)
-  return prisma.customTabItem.findMany({
-    where: { profileId, customTabId: tabId },
-    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-  })
+  const take = Math.min(200, Math.max(1, limit))
+  const start = Math.max(0, skip)
+  const where = { profileId, customTabId: tabId }
+  const [items, total] = await Promise.all([
+    prisma.customTabItem.findMany({
+      where,
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      skip: start,
+      take,
+    }),
+    prisma.customTabItem.count({ where }),
+  ])
+  return { items, total, skip: start, limit: take }
 }
 
 const createItem = async (profileId: string, tabId: string, userId: string, role: string, input: Input) => {

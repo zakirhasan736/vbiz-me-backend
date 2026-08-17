@@ -1,6 +1,7 @@
 import AppError from '../error/AppError'
 import customTabService from '../services/customTab.service'
 import catchAsyncError from '../utils/catchAsyncError'
+import { listMeta, parseListQuery } from '../utils/pagination'
 import sendResponse from '../utils/sendResponse'
 
 const param = (value: string | string[] | undefined) => String(Array.isArray(value) ? value[0] : value || '')
@@ -38,8 +39,23 @@ const deleteTab = catchAsyncError(async (req, res) => {
 })
 const listItems = catchAsyncError(async (req, res) => {
   const user = auth(req)
-  const data = await customTabService.listItems(param(req.params.id), param(req.params.tabId), user.id, user.role)
-  sendResponse(res, { success: true, statusCode: 200, message: 'Custom tab items fetched', data })
+  const { skip, limit } = parseListQuery(req.query)
+  const result = await customTabService.listItems(
+    param(req.params.id),
+    param(req.params.tabId),
+    user.id,
+    user.role,
+    skip,
+    limit
+  )
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: 'Custom tab items fetched',
+    data: result.items,
+    totalDoc: result.total,
+    meta: listMeta(result.skip, result.limit, result.total),
+  })
 })
 const createItem = catchAsyncError(async (req, res) => {
   const user = auth(req)

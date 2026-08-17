@@ -1,6 +1,7 @@
 import AppError from '../error/AppError'
 import adminUserService from '../services/adminUser.service'
 import catchAsyncError from '../utils/catchAsyncError'
+import { listMeta } from '../utils/pagination'
 import sendResponse from '../utils/sendResponse'
 import AdminUserZodSchema from '../zodValidation/adminUser.zod'
 
@@ -17,7 +18,14 @@ const list = catchAsyncError(async (req, res) => {
   assertUsersAccess(req.user)
   const query = AdminUserZodSchema.listAdminUsersQuery.parse(req.query)
   const data = await adminUserService.list(query)
-  sendResponse(res, { success: true, statusCode: 200, message: 'Admin users fetched', data })
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: 'Admin users fetched',
+    data,
+    totalDoc: data.total,
+    meta: listMeta(data.skip, data.limit, data.total),
+  })
 })
 
 const stats = catchAsyncError(async (req, res) => {

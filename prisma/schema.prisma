@@ -1208,6 +1208,7 @@ model Portfolio {
   updatedAt      DateTime @updatedAt
 
   @@index([profileId])
+  @@index([profileId, status])
 }
 
 model Review {
@@ -1223,6 +1224,7 @@ model Review {
   updatedAt DateTime @updatedAt
 
   @@index([profileId])
+  @@index([profileId, status])
 }
 
 model PostType {
@@ -1267,6 +1269,7 @@ model Post {
   @@index([profileId])
   @@index([postTypeId])
   @@index([status])
+  @@index([profileId, status])
 }
 
 model PostMeta {
@@ -1409,6 +1412,7 @@ model Contact {
   updatedAt DateTime @updatedAt
 
   @@index([profileId])
+  @@index([profileId, createdAt])
 }
 
 model GuestUserData {
@@ -1426,6 +1430,7 @@ model GuestUserData {
   updatedAt DateTime @updatedAt
 
   @@index([profileId])
+  @@index([profileId, createdAt])
 }
 
 model UserNote {
@@ -1439,6 +1444,7 @@ model UserNote {
   updatedAt DateTime @updatedAt
 
   @@index([profileId])
+  @@index([profileId, createdAt])
 }
 
 model EventLog {

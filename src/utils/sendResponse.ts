@@ -7,6 +7,13 @@ type IResponse<T> = {
   data: T
   error?: unknown
   totalDoc?: number
+  meta?: {
+    skip?: number
+    limit?: number
+    page?: number
+    total?: number
+    hasMore?: boolean
+  }
 }
 
 const sendResponse = <T>(res: Response, data: IResponse<T>) => {
@@ -15,7 +22,8 @@ const sendResponse = <T>(res: Response, data: IResponse<T>) => {
     statusCode: data.statusCode || 200,
     message: data.message,
     data: data.data,
-    totalDoc: data.totalDoc,
+    totalDoc: data.totalDoc ?? data.meta?.total,
+    meta: data.meta,
   })
 }
 

@@ -351,6 +351,8 @@ export type CardCapacity = {
 export type ProfileListPage = {
   items: EnrichedListProfile[]
   total: number
+  skip: number
+  limit: number
   capacity: CardCapacity
 }
 
@@ -636,6 +638,8 @@ const listProfilesPage = async (
       } satisfies EnrichedListProfile
     }),
     total,
+    skip,
+    limit,
     capacity,
   }
 }
@@ -1544,17 +1548,33 @@ const deletePost = async (postId: string, userId: string, role: string) => {
   return { id: postId, deleted: true }
 }
 
-const listPosts = async (profileId: string, userId: string, role: string, postTypeName?: string) => {
+const listPosts = async (
+  profileId: string,
+  userId: string,
+  role: string,
+  postTypeName?: string,
+  skip = 0,
+  limit = 200
+) => {
   await getOwned(profileId, userId, role)
-  return prisma.post.findMany({
-    where: {
-      profileId,
-      deletedAt: null,
-      ...(postTypeName ? { postType: { name: { equals: postTypeName, mode: 'insensitive' } } } : {}),
-    },
-    include: { postType: true, metas: true, attachments: true },
-    orderBy: { sortOrder: 'asc' },
-  })
+  const take = Math.min(200, Math.max(1, limit))
+  const start = Math.max(0, skip)
+  const where = {
+    profileId,
+    deletedAt: null,
+    ...(postTypeName ? { postType: { name: { equals: postTypeName, mode: 'insensitive' as const } } } : {}),
+  }
+  const [items, total] = await Promise.all([
+    prisma.post.findMany({
+      where,
+      include: { postType: true, metas: true, attachments: true },
+      orderBy: { sortOrder: 'asc' },
+      skip: start,
+      take,
+    }),
+    prisma.post.count({ where }),
+  ])
+  return { items, total, skip: start, limit: take }
 }
 
 const emptyProfileIds = (profileIds: string[]) => profileIds.length === 0

@@ -3,6 +3,7 @@ import profileService from '../services/profile.service'
 import { buildOverviewPdf } from '../utils/buildOverviewPdf'
 import catchAsyncError from '../utils/catchAsyncError'
 import liveClicksHub from '../utils/liveClicksHub'
+import { listMeta, parseListQuery } from '../utils/pagination'
 import sendResponse from '../utils/sendResponse'
 import ProfileZodSchema from '../zodValidation/profile.zod'
 
@@ -18,6 +19,7 @@ const list = catchAsyncError(async (req, res) => {
     message: 'Profiles fetched',
     data,
     totalDoc: data.total,
+    meta: listMeta(data.skip ?? query.skip, data.limit ?? query.limit, data.total),
   })
 })
 
@@ -246,13 +248,23 @@ const deleteAboutMe = catchAsyncError(async (req, res) => {
 
 const listPosts = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const data = await profileService.listPosts(
+  const { skip, limit } = parseListQuery(req.query)
+  const result = await profileService.listPosts(
     param(req.params.id),
     req.user.id,
     req.user.role,
-    req.query.postType ? String(req.query.postType) : undefined
+    req.query.postType ? String(req.query.postType) : undefined,
+    skip,
+    limit
   )
-  sendResponse(res, { success: true, statusCode: 200, message: 'Posts fetched', data })
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: 'Posts fetched',
+    data: result.items,
+    totalDoc: result.total,
+    meta: listMeta(result.skip, result.limit, result.total),
+  })
 })
 
 const createPost = catchAsyncError(async (req, res) => {
@@ -291,7 +303,14 @@ const recentEngagement = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const query = ProfileZodSchema.recentEngagementQuery.parse(req.query)
   const data = await profileService.listRecentEngagement(req.user.id, req.user.role, query)
-  sendResponse(res, { success: true, statusCode: 200, message: 'Recent engagement fetched', data })
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: 'Recent engagement fetched',
+    data,
+    totalDoc: data.total,
+    meta: listMeta(data.skip, data.limit, data.total),
+  })
 })
 
 const checkSlug = catchAsyncError(async (req, res) => {
@@ -303,12 +322,22 @@ const checkSlug = catchAsyncError(async (req, res) => {
 
 const contacts = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
+  const { skip, limit } = parseListQuery(req.query, { limit: 100, max: 200 })
   const data = await profileService.listContacts(
     req.user.id,
     req.user.role,
-    req.query.profileId ? String(req.query.profileId) : undefined
+    req.query.profileId ? String(req.query.profileId) : undefined,
+    skip + limit
   )
-  sendResponse(res, { success: true, statusCode: 200, message: 'Contacts fetched', data })
+  const page = data.slice(skip, skip + limit)
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: 'Contacts fetched',
+    data: page,
+    totalDoc: data.length,
+    meta: listMeta(skip, limit, data.length),
+  })
 })
 
 const patchContact = catchAsyncError(async (req, res) => {

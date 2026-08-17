@@ -4,6 +4,7 @@ import googleWalletService from '../services/googleWallet.service'
 import publicCardService from '../services/publicCard.service'
 import pushService from '../services/push.service'
 import catchAsyncError from '../utils/catchAsyncError'
+import { parseListQuery } from '../utils/pagination'
 import sendPublicResponse from '../utils/sendPublicResponse'
 
 const param = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
@@ -49,8 +50,31 @@ const getDynamicSection = catchAsyncError(async (req, res) => {
   if (!profileId) {
     return sendPublicResponse(res, { success: false, data: null, error: 'profile_id is required' }, 400)
   }
-  const data = await publicCardService.getDynamicSection(param(req.params.name), profileId)
-  sendPublicResponse(res, { success: true, data })
+  const { skip, limit } = parseListQuery(req.query, { limit: 100, max: 200 })
+  const data = await publicCardService.getDynamicSection(
+    param(req.params.name),
+    profileId,
+    undefined,
+    skip > 0 ? skip + limit : limit
+  )
+  const section = data as { items?: unknown[] }
+  if (Array.isArray(section.items) && skip > 0) {
+    section.items = section.items.slice(skip, skip + limit)
+  }
+  const items = Array.isArray(section.items) ? section.items : null
+  sendPublicResponse(res, {
+    success: true,
+    data,
+    meta: items
+      ? {
+          skip,
+          limit,
+          page: Math.floor(skip / limit) + 1,
+          total: skip + items.length,
+          hasMore: items.length === limit,
+        }
+      : undefined,
+  })
 })
 
 const getPublicCards = catchAsyncError(async (req, res) => {

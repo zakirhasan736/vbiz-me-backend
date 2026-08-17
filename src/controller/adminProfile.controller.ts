@@ -2,6 +2,7 @@ import AppError from '../error/AppError'
 import adminProfileService from '../services/adminProfile.service'
 import profileService from '../services/profile.service'
 import catchAsyncError from '../utils/catchAsyncError'
+import { listMeta } from '../utils/pagination'
 import sendResponse from '../utils/sendResponse'
 import AdminProfileZodSchema from '../zodValidation/adminProfile.zod'
 
@@ -20,7 +21,17 @@ const list = catchAsyncError(async (req, res) => {
   assertVcardsAccess(req.user)
   const query = AdminProfileZodSchema.listAdminProfilesQuery.parse(req.query)
   const data = await adminProfileService.list(query)
-  sendResponse(res, { success: true, statusCode: 200, message: 'Admin profiles fetched', data })
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: 'Admin profiles fetched',
+    data,
+    totalDoc: data.total,
+    meta:
+      data.limit == null
+        ? { skip: 0, limit: data.total, page: 1, total: data.total, hasMore: false }
+        : listMeta(data.skip, data.limit, data.total),
+  })
 })
 
 const filters = catchAsyncError(async (req, res) => {

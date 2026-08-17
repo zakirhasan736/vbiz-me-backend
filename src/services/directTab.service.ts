@@ -118,14 +118,21 @@ const statusOf = (v: unknown, fallback = '1') => {
 
 /** ——— Blogs ——— */
 
-const listBlogs = async (profileId: string, userId: string, role: string, limit?: number) => {
+const listBlogs = async (profileId: string, userId: string, role: string, skip = 0, limit = 200) => {
   await profileService.getOwned(profileId, userId, role)
-  const rows = await prisma.blog.findMany({
-    where: { profileId, deletedAt: null },
-    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-    ...(limit ? { take: Math.min(200, Math.max(1, limit)) } : {}),
-  })
-  return rows.map(serializeBlog)
+  const take = Math.min(200, Math.max(1, limit))
+  const start = Math.max(0, skip)
+  const where = { profileId, deletedAt: null }
+  const [rows, total] = await Promise.all([
+    prisma.blog.findMany({
+      where,
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      skip: start,
+      take,
+    }),
+    prisma.blog.count({ where }),
+  ])
+  return { items: rows.map(serializeBlog), total, skip: start, limit: take }
 }
 
 const createBlog = async (profileId: string, userId: string, role: string, input: BlogInput) => {
@@ -305,38 +312,52 @@ const galleryUpdateData = (input: TabItemInput) => ({
 const singletonModel = (storage: 'mission_statement' | 'why_choose_us'): any =>
   storage === 'mission_statement' ? prisma.missionStatement : prisma.whyChooseUs
 
-const listTabItems = async (profileId: string, tabKey: string, userId: string, role: string, limit?: number) => {
+const listTabItems = async (profileId: string, tabKey: string, userId: string, role: string, skip = 0, limit = 200) => {
   const tab = assertDirectListTab(tabKey)
   await profileService.getOwned(profileId, userId, role)
-  if (tab.storage === 'blog') return listBlogs(profileId, userId, role, limit)
-  const take = limit ? Math.min(200, Math.max(1, limit)) : undefined
-  let rows: DirectRow[]
+  if (tab.storage === 'blog') return listBlogs(profileId, userId, role, skip, limit)
+  const take = Math.min(200, Math.max(1, limit))
+  const start = Math.max(0, skip)
+  const pageArgs = { skip: start, take }
+  let rows: DirectRow[] = []
+  let total = 0
   if (isListSectionStorage(tab.storage)) {
-    rows = await listModel(tab).findMany({
-      where: { profileId, deletedAt: null },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      take,
-    })
+    const model = listModel(tab)
+    const where = { profileId, deletedAt: null }
+    ;[rows, total] = await Promise.all([
+      model.findMany({ where, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }], ...pageArgs }),
+      model.count({ where }),
+    ])
   } else if (tab.storage === 'gallery') {
-    rows = await prisma.gallery.findMany({
-      where: { profileId, deletedAt: null },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      take,
-    })
+    const where = { profileId, deletedAt: null }
+    ;[rows, total] = await Promise.all([
+      prisma.gallery.findMany({
+        where,
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        ...pageArgs,
+      }),
+      prisma.gallery.count({ where }),
+    ])
   } else if (tab.storage === 'service') {
-    rows = await prisma.service.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' }, take })
+    ;[rows, total] = await Promise.all([
+      prisma.service.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' }, ...pageArgs }),
+      prisma.service.count({ where: { profileId } }),
+    ])
   } else if (tab.storage === 'review') {
-    rows = await prisma.review.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' }, take })
+    ;[rows, total] = await Promise.all([
+      prisma.review.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' }, ...pageArgs }),
+      prisma.review.count({ where: { profileId } }),
+    ])
   } else if (tab.storage === 'about_me') {
     const row = await prisma.aboutMe.findUnique({ where: { profileId } })
     rows = row ? [row] : []
+    total = rows.length
   } else if (isSingletonSectionStorage(tab.storage)) {
     const row = await singletonModel(tab.storage).findUnique({ where: { profileId } })
     rows = row ? [row] : []
-  } else {
-    rows = []
+    total = rows.length
   }
-  return rows.map((row) => serializeDedicatedRow(tab, row))
+  return { items: rows.map((row) => serializeDedicatedRow(tab, row)), total, skip: start, limit: take }
 }
 
 const createTabItem = async (profileId: string, tabKey: string, userId: string, role: string, input: TabItemInput) => {
