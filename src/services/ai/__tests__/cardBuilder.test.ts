@@ -392,7 +392,7 @@ describe('vBiz Me auto card builder', () => {
     })
   })
 
-  it('blocks activation until all starred card fields are complete', () => {
+  it('blocks activation until starred card fields are complete', () => {
     const issues = collectCardActivationIssues({
       slug: 'profile-owner',
       name: 'Profile Owner',
@@ -402,9 +402,36 @@ describe('vBiz Me auto card builder', () => {
     })
     assert.deepEqual(
       issues.map((issue) => issue.field),
-      ['dob', 'phone']
+      ['dob']
     )
-    assert.match(cardActivationIssueMessage(issues), /Date of birth, Phone/)
+    assert.match(cardActivationIssueMessage(issues), /date of birth/)
+  })
+
+  it('allows activation without a phone number', () => {
+    assert.equal(
+      collectCardActivationIssues({
+        slug: 'profile-owner',
+        name: 'Profile Owner',
+        email: 'owner@example.com',
+        dob: '1990-07-18',
+        phone: '',
+      }).length,
+      0
+    )
+  })
+
+  it('rejects an invalid phone number when one is provided', () => {
+    const issues = collectCardActivationIssues({
+      slug: 'profile-owner',
+      name: 'Profile Owner',
+      email: 'owner@example.com',
+      dob: '1990-07-18',
+      phone: '123',
+    })
+    assert.equal(
+      issues.some((issue) => issue.field === 'phone' && issue.reason === 'invalid'),
+      true
+    )
   })
 
   it('normalizes card email casing and whitespace for uniqueness checks', () => {

@@ -99,7 +99,7 @@ const FIELD_DEFS: FieldDef[] = [
     sectionId: 'personal',
     fieldKey: 'phone',
     fieldLabel: 'Phone',
-    required: true,
+    required: false,
     aiGenerationAllowed: false,
     prompt: 'A phone number visitors can tap.',
     getValue: (p) => p.phone,

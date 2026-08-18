@@ -1321,8 +1321,11 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
   const created = await create(userId, role, {
     name: `${source.name?.trim() || 'Card'} (Copy)`,
     slug: `${source.slug?.trim() || source.name || 'card'}-copy`,
+    ...clearedDuplicateContactFields,
     companyName: source.companyName || undefined,
     designation: source.designation || undefined,
+    phone: source.phone || undefined,
+    whatsapp: source.whatsapp || undefined,
     website: source.website || undefined,
     address: source.address || undefined,
     about: source.about || undefined,

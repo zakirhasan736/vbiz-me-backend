@@ -64,7 +64,6 @@ export function collectCardActivationIssues(input: CardActivationInput): CardAct
     ['name', 'Name'],
     ['email', 'Email'],
     ['dob', 'Date of birth'],
-    ['phone', 'Phone'],
   ]
   const issues: CardActivationIssue[] = required
     .filter(([field]) => (field === 'dob' ? !cardDateOnly(input[field]) : !text(input[field])))
