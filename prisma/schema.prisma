@@ -334,6 +334,8 @@ model Profile {
   auditLogs           AuditLog[]
   birthdayWishLogs    BirthdayWishLog[]
   aiGenerationLogs    AiGenerationLog[]
+  assistantConfig     ProfileAssistantConfig?
+  assistantKnowledge  ProfileAssistantKnowledge[]
 
   @@index([userId])
   @@index([companyUserId])
@@ -1050,20 +1052,22 @@ model TeamMember {
 model Client {
   id              String    @id @default(cuid())
   legacyPostId    Int?      @unique
-  /** Laravel `services.id` when this client row was copied from a Service. */
+  /**
+   * Laravel `services.id` when this client row was copied from a Service.
+   */
   legacyServiceId Int?      @unique
   profileId       String
-  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  title         String?
-  description   String?
-  url           String?
-  featuredImage String?
-  status        String    @default("1")
-  sortOrder     Int       @default(0)
-  metas         Json?
-  deletedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  profile         Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title           String?
+  description     String?
+  url             String?
+  featuredImage   String?
+  status          String    @default("1")
+  sortOrder       Int       @default(0)
+  metas           Json?
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([profileId])
   @@index([profileId, status])
@@ -1361,6 +1365,38 @@ model ProfileSetting {
   themeConfig     Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model ProfileAssistantConfig {
+  id                   String   @id @default(cuid())
+  profileId            String   @unique
+  profile              Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  enabled              Boolean  @default(false)
+  businessBrief        String   @default("")
+  systemPromptAddendum String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model ProfileAssistantKnowledge {
+  id               String   @id @default(cuid())
+  profileId        String
+  profile          Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  sourceType       String
+  tabScope         String?
+  label            String
+  sha256           String?
+  extractedText    String   @db.Text
+  extractionMethod String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([profileId])
+  @@index([profileId, tabScope])
+  @@index([profileId, createdAt])
+  @@index([sha256])
 }
 
 model SocialLink {

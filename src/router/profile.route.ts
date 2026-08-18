@@ -3,6 +3,7 @@ import customTabController from '../controller/customTab.controller'
 import directTabController from '../controller/directTab.controller'
 import profileController from '../controller/profile.controller'
 import authMiddleware from '../middlewares/authValidation'
+import profileAssistantRoute from './profileAssistant.route'
 
 const router = Router()
 
@@ -30,6 +31,7 @@ router.get('/subscriptions', profileController.subscriptions)
 router.get('/', profileController.list)
 router.post('/', authMiddleware.requireVcardMutable, profileController.create)
 router.get('/check-slug', profileController.checkSlug)
+router.use('/:profileId/assistant', profileAssistantRoute)
 router.get('/:id', profileController.getOne)
 router.post('/:id/duplicate', authMiddleware.requireVcardMutable, profileController.duplicate)
 router.patch('/:id', authMiddleware.requireVcardMutable, profileController.update)

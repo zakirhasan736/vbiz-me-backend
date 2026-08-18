@@ -1,5 +1,7 @@
 import { z } from 'zod'
+import config from '../../configs/config'
 import AppError from '../../error/AppError'
+import { extractWithOcrFallback, needsServerOcr } from '../documentOcr.service'
 import {
   MAX_OWNER_SEO_KEYWORDS,
   MAX_SEO_DESCRIPTION_LENGTH,
@@ -24,7 +26,7 @@ import { buildCompletenessReport } from './completeness.service'
 import { generateCardContent, generateSectionFromProfile, profileToBlueprintFacts } from './contentGenerator.service'
 import { crawlWebsiteDeep, extractTextFromBuffer, type UploadedPart } from './extractDocumentText'
 import { buildFieldGraph, buildTabPlan } from './fieldGraph.service'
-import { assessComplexity, routeAiTier } from './modelRouter.service'
+import { routeAiTier } from './modelRouter.service'
 import { chatJson, getOpenAiApiKey } from './openai.client'
 import { runSolArchitect } from './solArchitect.service'
 import { normalizeSources } from './sourceNormalizer.service'
@@ -497,7 +499,6 @@ export async function fillSection(input: {
   }
 
   const parts: string[] = []
-  const images: Array<{ mimeType: string; base64: string }> = []
   if (profile) {
     parts.push(
       `MASTER BUSINESS PROFILE (prefer this over re-reading raw sources):\n${JSON.stringify(profile).slice(0, 14000)}`
@@ -518,8 +519,15 @@ export async function fillSection(input: {
   if (text) parts.push(`USER TEXT:\n${text}`)
   for (const file of files) {
     const extracted = await extractTextFromBuffer(file)
-    parts.push(`DOCUMENT “${extracted.label}”:\n${extracted.text}`)
-    images.push(...extracted.images)
+    const body = needsServerOcr(extracted)
+      ? await extractWithOcrFallback(file, extracted.extractionMethod === 'ocr_needed' ? 'scanned PDF' : 'image')
+      : extracted.text
+    parts.push(`DOCUMENT “${extracted.label}”:\n${body}`)
+  }
+
+  const readyText = parts.join('\n\n---\n\n').trim()
+  if (!readyText) {
+    throw new AppError(422, 'Could not read text from this source. Add clearer text or another file.')
   }
 
   const schemaHint = FILL_SECTION_SCHEMA_HINTS[sectionId]
@@ -527,20 +535,14 @@ export async function fillSection(input: {
     sectionId === 'seo'
       ? `For SEO, write a concise business-specific title (max ${MAX_SEO_TITLE_LENGTH} chars) and description (max ${MAX_SEO_DESCRIPTION_LENGTH} chars) from verified facts. Return 5-${MAX_OWNER_SEO_KEYWORDS} high-intent keywords about this business. Do not include vBiz Me platform keywords; those are added automatically. Never invent numeric search-volume claims.`
       : ''
-  const complexity = assessComplexity({
-    sourceCount: parts.length,
-    ocrUsed: images.length > 0,
-    textLength: parts.join('').length,
-  })
-  const route = routeAiTier({ confidence: profile?.confidence?.overall ?? 0.9, complexity: complexity.complexity })
+  const fillModel = config.OPENAI_TAB_FILL_MODEL || 'gpt-4o'
 
   let raw: unknown
   try {
     const result = await chatJson<unknown>({
-      tier: route.tier,
-      system: `You fill one vCard section from user materials and the Master Business Profile when present. Return ONLY JSON matching: ${schemaHint}. Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. Never invent customer reviews. If reviews are not in the sources, return an empty reviews array. If the requested section is not supported by the sources, return an empty array/object. For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
-      user: `Fill section “${section}”.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nSources:\n${parts.join('\n\n---\n\n')}`,
-      images,
+      model: fillModel,
+      system: `You fill one vCard section from ready text. Return ONLY JSON matching: ${schemaHint}. Fill only the current section/tab. Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. Never invent customer reviews. If reviews are not in the sources, return an empty reviews array. If the requested section is not supported by the sources, return an empty array/object. For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
+      user: `Fill section “${section}”.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nREADY TEXT:\n${readyText}`,
     })
     await logChatMeta(`fill_${sectionId}`, result.meta, {
       userId: input.userId,
@@ -552,7 +554,7 @@ export async function fillSection(input: {
     await logAiUsage({
       task: `fill_${sectionId}`,
       model: 'unknown',
-      tier: route.tier,
+      tier: 'vision',
       inputTokens: 0,
       outputTokens: 0,
       estimatedCost: 0,

@@ -19,10 +19,10 @@ const TIER_ENV: Record<AiTier, string | undefined> = {
 }
 
 const TIER_DEFAULTS: Record<AiTier, string> = {
-  luna: process.env.OPENAI_CARD_MODEL?.trim() || 'gpt-4o-mini',
-  terra: process.env.OPENAI_CARD_MODEL_TERRA?.trim() || 'gpt-4.1',
-  sol: process.env.OPENAI_CARD_MODEL_SOL?.trim() || 'gpt-4.1',
-  vision: process.env.OPENAI_CARD_MODEL_VISION?.trim() || 'gpt-4o',
+  luna: 'gpt-5.6-luna',
+  terra: 'gpt-5.6-terra',
+  sol: 'gpt-5.6-sol',
+  vision: 'gpt-4o',
 }
 
 /** USD per 1M tokens — overridable via env for cost reporting. */
@@ -153,11 +153,11 @@ export function selectModelForTask(input: {
   previousAttempts?: number
   hasImages?: boolean
 }): { tier: AiTier; reason: string } {
-  if (input.preferredTier === 'vision' || input.task === 'VISION' || input.hasImages) {
-    return { tier: 'vision', reason: 'vision_or_legacy_ocr' }
-  }
   if (input.task === 'CARD_ARCHITECTURE') {
     return { tier: 'sol', reason: 'card_architecture' }
+  }
+  if (input.preferredTier === 'vision' || input.task === 'VISION' || input.hasImages) {
+    return { tier: 'vision', reason: 'vision_or_legacy_ocr' }
   }
   if (input.task === 'HIGH_QUALITY_WRITING') {
     if ((input.previousAttempts || 0) >= 2) return { tier: 'sol', reason: 'writing_retry' }

@@ -22,7 +22,7 @@ import { buildCompletenessReport } from '../completeness.service'
 import { detectSourceConflicts } from '../conflictDetection'
 import { profileToBlueprintFacts } from '../contentGenerator.service'
 import { classifyWebsitePage, pdfTextLooksScanned, stripWebsiteBoilerplate } from '../extractDocumentText'
-import { assessComplexity, routeAiTier, selectModelForTask } from '../modelRouter.service'
+import { assessComplexity, getModelForTier, routeAiTier, selectModelForTask } from '../modelRouter.service'
 import { decideRecommendedTabs } from '../tabDecision.service'
 import { filterRealReviews, looksLikeDateOnly, looksLikeEmail, sanitizeBlueprint } from '../validation.service'
 
@@ -261,8 +261,12 @@ describe('vBiz Me auto card builder', () => {
   })
 
   it('architecture task always routes to Sol internally', () => {
-    const route = selectModelForTask({ task: 'CARD_ARCHITECTURE' })
+    const route = selectModelForTask({ task: 'CARD_ARCHITECTURE', hasImages: true })
     assert.equal(route.tier, 'sol')
+    assert.equal(getModelForTier('sol'), process.env.OPENAI_CARD_MODEL_SOL?.trim() || 'gpt-5.6-sol')
+    assert.equal(getModelForTier('terra'), process.env.OPENAI_CARD_MODEL_TERRA?.trim() || 'gpt-5.6-terra')
+    assert.equal(getModelForTier('luna'), process.env.OPENAI_CARD_MODEL_LUNA?.trim() || 'gpt-5.6-luna')
+    assert.equal(getModelForTier('vision'), process.env.OPENAI_CARD_MODEL_VISION?.trim() || 'gpt-4o')
   })
 
   it('vision/images never use Luna for writing', () => {

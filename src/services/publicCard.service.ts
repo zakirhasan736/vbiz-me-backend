@@ -16,6 +16,7 @@ import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUr
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
 import profileService from './profile.service'
+import { getPublicAssistantSupplement } from './profileAssistant.service'
 import { mediaFromProfile } from './push.service'
 
 const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
@@ -858,7 +859,11 @@ const getProfileAiData = async (profileId: string) => {
   })
   if (!profile) throw new AppError(404, 'Profile not found')
 
-  const galleries = (await listGalleriesForProfile(profileId, 200)).filter((row) => String(row.status) === '1')
+  const [galleryRows, assistant] = await Promise.all([
+    listGalleriesForProfile(profileId, 200),
+    getPublicAssistantSupplement(profileId),
+  ])
+  const galleries = galleryRows.filter((row) => String(row.status) === '1')
 
   const formatDate = (d: Date | null | undefined) => {
     if (!d) return null
@@ -932,6 +937,14 @@ const getProfileAiData = async (profileId: string) => {
       attachments: p.attachmentUrl ? { url: p.attachmentUrl, name: p.attachmentName || '' } : null,
     })),
     customSections: [],
+    ...(assistant.enabled
+      ? {
+          assistantContext: {
+            businessBrief: assistant.businessBrief,
+            knowledgeText: assistant.knowledgeText,
+          },
+        }
+      : {}),
   }
 }
 

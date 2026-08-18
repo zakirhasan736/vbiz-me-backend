@@ -17,7 +17,7 @@ export function getOpenAiApiKey(): string {
 }
 
 export function getCardAgentModel(): string {
-  return process.env.OPENAI_CARD_MODEL?.trim() || 'gpt-4o-mini'
+  return process.env.OPENAI_CARD_MODEL?.trim() || getModelForTier('luna')
 }
 
 export function createOpenAIClient(): OpenAI {
@@ -57,7 +57,8 @@ export async function chatJson<T>(params: {
 }): Promise<{ data: T; meta: ChatJsonMeta }> {
   const client = createOpenAIClient()
   const requested = params.tier || 'luna'
-  const tier = (params.images?.length ? 'vision' : requested) as AiTier
+  const keepRequested = requested === 'sol' || Boolean(params.model)
+  const tier = (params.images?.length && !keepRequested ? 'vision' : requested) as AiTier
   const model = params.model || getModelForTier(tier)
   const started = Date.now()
 

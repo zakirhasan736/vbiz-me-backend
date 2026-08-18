@@ -59,6 +59,9 @@ const {
   GOOGLE_WALLET_SA_PRIVATE_KEY,
   GOOGLE_WALLET_CLASS_SUFFIX,
   GOOGLE_WALLET_LOGO_URL,
+  GEMINI_API_KEY,
+  GEMINI_LIVE_MODEL,
+  OPENAI_TAB_FILL_MODEL,
   APPLE_WALLET_PASS_TYPE_ID,
   APPLE_WALLET_TEAM_ID,
   APPLE_WALLET_ORGANIZATION,
@@ -177,6 +180,11 @@ export default {
     CLASS_SUFFIX: (GOOGLE_WALLET_CLASS_SUFFIX || 'vbiz-digital-card').trim(),
     LOGO_URL: (GOOGLE_WALLET_LOGO_URL || '').trim() || undefined,
   },
+  GEMINI: {
+    API_KEY: (GEMINI_API_KEY || '').trim() || undefined,
+    LIVE_MODEL: (GEMINI_LIVE_MODEL || 'gemini-3.1-flash-live-preview').trim(),
+  },
+  OPENAI_TAB_FILL_MODEL: (OPENAI_TAB_FILL_MODEL || 'gpt-4o').trim(),
   APPLE_WALLET: {
     PASS_TYPE_ID: (APPLE_WALLET_PASS_TYPE_ID || '').trim(),
     TEAM_ID: (APPLE_WALLET_TEAM_ID || '').trim(),

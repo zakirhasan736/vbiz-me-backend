@@ -15,6 +15,15 @@ export const publicRateLimiter = rateLimit({
   validate: { xForwardedForHeader: false },
 })
 
+export const publicAssistantRateLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, data: null, error: 'Too many assistant session requests' },
+  validate: { xForwardedForHeader: false },
+})
+
 /** Resolve a profile the current user may manage (owner, company parent, or admin). */
 export const assertProfileAccess = catchAsyncError(async (req: IUserInfoRequest, _res, next) => {
   const profileId = (req.params.profileId || req.params.id || req.body?.profileId) as string | undefined

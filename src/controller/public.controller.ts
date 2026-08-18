@@ -1,5 +1,6 @@
 import announcementService from '../services/announcement.service'
 import appleWalletService from '../services/appleWallet.service'
+import { issuePublicLiveToken } from '../services/geminiLive.service'
 import googleWalletService from '../services/googleWallet.service'
 import profileService from '../services/profile.service'
 import publicCardService from '../services/publicCard.service'
@@ -75,6 +76,12 @@ const dismissProfileTeamNotice = catchAsyncError(async (req, res) => {
 const getAiData = catchAsyncError(async (req, res) => {
   const data = await publicCardService.getProfileAiData(param(req.params.id))
   res.status(200).json(data)
+})
+
+const createAssistantLiveToken = catchAsyncError(async (req, res) => {
+  const data = await issuePublicLiveToken(param(req.params.profileId))
+  res.setHeader('Cache-Control', 'no-store, private')
+  sendPublicResponse(res, { success: true, data })
 })
 
 const getDynamicSection = catchAsyncError(async (req, res) => {
@@ -295,6 +302,7 @@ const publicController = {
   getProfileTeamNotice,
   dismissProfileTeamNotice,
   getAiData,
+  createAssistantLiveToken,
   getDynamicSection,
   getPublicCards,
   saveGuestUser,

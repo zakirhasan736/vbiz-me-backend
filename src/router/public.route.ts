@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import multer from 'multer'
 import publicController from '../controller/public.controller'
-import { publicRateLimiter } from '../middlewares/ownership'
+import { publicAssistantRateLimiter, publicRateLimiter } from '../middlewares/ownership'
 import { validSchema } from '../middlewares/validator'
 import PublicZodSchema from '../zodValidation/public.zod'
 
@@ -12,6 +12,11 @@ const formData = multer()
 // with the vCard page (which can fire many section requests in one visit).
 router.get('/profiles/:slug/google-wallet', publicController.googleWallet)
 router.get('/profiles/:slug/apple-wallet', publicController.appleWallet)
+router.post(
+  '/profiles/:profileId/assistant/live-token',
+  publicAssistantRateLimiter,
+  publicController.createAssistantLiveToken
+)
 
 router.use(publicRateLimiter)
 

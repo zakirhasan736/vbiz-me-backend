@@ -396,10 +396,8 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
           for (const pid of profileIds) {
             await pushService.sendToProfile(pid, payloadPartial)
           }
-        } catch (err) {
-          // swallow background errors
-          // eslint-disable-next-line no-console
-          console.error('Announcement push broadcast failed', err)
+        } catch {
+          /* swallow background errors */
         }
       })()
     }
