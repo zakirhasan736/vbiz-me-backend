@@ -66,7 +66,7 @@ router.patch(
 )
 router.get('/author', authMiddleware.isAuthenticateUser, authController.author)
 router.post('/logout', authController.logout)
-router.post('/refresh-token', authMiddleware.isAuthenticateUser, authController.refreshToken)
+router.post('/refresh-token', authMiddleware.requireRefreshSession, authController.refreshToken)
 
 router.get(
   '/google',

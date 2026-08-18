@@ -107,6 +107,35 @@ const isAuthenticateUser = catchAsyncError(async (req, res, next) => {
   next()
 })
 
+const requireRefreshSession = catchAsyncError(async (req, _res, next) => {
+  const refreshToken = req.cookies?.refreshToken as string | undefined
+  if (!refreshToken) {
+    throw new AppError(401, 'Refresh token is missing')
+  }
+
+  const userId = (() => {
+    try {
+      const payload = jwt.verify(refreshToken, config.REFRESH_TOKEN.SECRET as string) as { id?: unknown }
+      return typeof payload.id === 'string' ? payload.id : ''
+    } catch {
+      throw new AppError(401, 'Refresh token is invalid or expired')
+    }
+  })()
+
+  if (!userId) {
+    throw new AppError(401, 'Refresh token is invalid or expired')
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  if (!user) {
+    throw new AppError(401, 'Refresh session was not found')
+  }
+
+  authUtils.assertCanAuthenticate(user)
+  req.user = toRequestUser(user)
+  next()
+})
+
 const requireNotSuspended = catchAsyncError(async (req, _res, next) => {
   const status = req.user?.accountStatus
   if (status === 'SUSPENDED') {
@@ -179,6 +208,7 @@ const optionalAuthenticateUser = catchAsyncError(async (req, res, next) => {
 
 const authMiddleware = {
   isAuthenticateUser,
+  requireRefreshSession,
   optionalAuthenticateUser,
   requireGoogleOAuth,
   requireFacebookOAuth,
