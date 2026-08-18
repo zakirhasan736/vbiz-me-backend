@@ -33,8 +33,9 @@
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/services/ai/__tests__/cardBuilder.test.ts",
+    "test": "tsx --test src/services/ai/__tests__/cardBuilder.test.ts src/test/duplicateCard.test.ts",
     "test:turnstile": "tsx --test src/test/turnstile.test.ts",
+    "test:duplicate": "tsx --test src/test/duplicateCard.test.ts",
     "test:api": "tsx --test src/test/api.contract.test.ts"
   },
   "lint-staged": {

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import {
   cardActivationIssueMessage,
   collectCardActivationIssues,
+  minCardAgeCutoffDate,
   normalizeCardEmail,
   normalizeCardPhone,
 } from '../../../utils/cardActivation'
@@ -353,7 +354,29 @@ describe('vBiz Me auto card builder', () => {
       personal: { fullName: 'Profile Owner', dob: '1990-02-31' },
     })
     assert.equal(result.blueprint.personal.dob, '')
-    assert.ok(result.issues.some((issue) => issue.code === 'invalid_date_of_birth'))
+    assert.ok(
+      result.issues.some(
+        (issue) =>
+          issue.code === 'invalid_date_of_birth' && issue.message === 'Please enter a valid date of birth (YYYY-MM-DD).'
+      )
+    )
+  })
+
+  it('drops underage dates of birth instead of persisting them', () => {
+    const now = new Date()
+    const underage = new Date(now.getFullYear() - 12, now.getMonth(), now.getDate() + 1)
+    const dob = `${underage.getFullYear()}-${String(underage.getMonth() + 1).padStart(2, '0')}-${String(underage.getDate()).padStart(2, '0')}`
+    const result = sanitizeBlueprint({
+      businessSummary: 'Profile',
+      suggestedSlug: 'profile',
+      personal: { fullName: 'Profile Owner', dob },
+    })
+    assert.equal(result.blueprint.personal.dob, '')
+    assert.ok(
+      result.issues.some(
+        (issue) => issue.code === 'underage_date_of_birth' && issue.message === 'You must be at least 12 years old.'
+      )
+    )
   })
 
   it('resolves create lifecycle status from the published flags', () => {
@@ -409,6 +432,34 @@ describe('vBiz Me auto card builder', () => {
         phone: '+1 (202) 555-0101',
       }).some((issue) => issue.field === 'dob' && issue.reason === 'invalid'),
       true
+    )
+    assert.equal(
+      collectCardActivationIssues({
+        slug: 'profile-owner',
+        name: 'Profile Owner',
+        email: 'owner@example.com',
+        dob: minCardAgeCutoffDate(),
+        phone: '+1 (202) 555-0101',
+      }).length,
+      0
+    )
+    const now = new Date()
+    const underage = new Date(now.getFullYear() - 12, now.getMonth(), now.getDate() + 1)
+    const underageDob = `${underage.getFullYear()}-${String(underage.getMonth() + 1).padStart(2, '0')}-${String(underage.getDate()).padStart(2, '0')}`
+    const underageIssues = collectCardActivationIssues({
+      slug: 'profile-owner',
+      name: 'Profile Owner',
+      email: 'owner@example.com',
+      dob: underageDob,
+      phone: '+1 (202) 555-0101',
+    })
+    assert.equal(
+      underageIssues.some((issue) => issue.field === 'dob' && issue.reason === 'underage'),
+      true
+    )
+    assert.equal(
+      cardActivationIssueMessage(underageIssues),
+      'Card cannot be activated. You must be at least 12 years old.'
     )
   })
 })

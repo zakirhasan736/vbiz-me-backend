@@ -121,7 +121,8 @@ const FIELD_DEFS: FieldDef[] = [
     fieldLabel: 'Date of birth',
     required: true,
     aiGenerationAllowed: false,
-    prompt: "Required for activation. Use YYYY-MM-DD only when the source explicitly states the owner's birth date.",
+    prompt:
+      "Required for activation. The owner must be at least 12 years old. Use YYYY-MM-DD only when the source explicitly states the owner's birth date.",
     getValue: (p) => p.dateOfBirth,
   },
   {

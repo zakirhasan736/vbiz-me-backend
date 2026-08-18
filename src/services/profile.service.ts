@@ -38,6 +38,7 @@ import {
   type DashboardPeriod,
   type SocialChannel,
 } from '../utils/dashboardAnalytics'
+import { clearedDuplicateContactFields } from '../utils/duplicateCard'
 import { fillMissingGalleryMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
@@ -1319,17 +1320,13 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
   )
   const created = await create(userId, role, {
     name: `${source.name?.trim() || 'Card'} (Copy)`,
-    email: '',
     slug: `${source.slug?.trim() || source.name || 'card'}-copy`,
     companyName: source.companyName || undefined,
     designation: source.designation || undefined,
-    phone: source.phone || undefined,
-    whatsapp: source.whatsapp || undefined,
     website: source.website || undefined,
     address: source.address || undefined,
     about: source.about || undefined,
     prof: source.prof || undefined,
-    dob: source.dob || undefined,
     template: source.template,
     themeConfig: source.themeConfig || undefined,
     facebook: source.facebook || undefined,
@@ -1358,11 +1355,11 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
       data: {
         avatar: source.avatar,
         colorCode: source.colorCode,
-        countryCode: source.countryCode,
         lastName: source.lastName,
         rumble: source.rumble,
         truth: source.truth,
         pinterest: source.pinterest,
+        ...clearedDuplicateContactFields,
         ...(source.gender ? { gender: { connect: { id: source.gender.id } } } : {}),
         ...(source.maritalStatus ? { maritalStatus: { connect: { id: source.maritalStatus.id } } } : {}),
         ...(source.profession ? { profession: { connect: { id: source.profession.id } } } : {}),

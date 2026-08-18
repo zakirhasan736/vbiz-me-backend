@@ -1,3 +1,5 @@
+export const MIN_CARD_AGE_YEARS = 12
+
 export type CardActivationInput = {
   slug?: unknown
   name?: unknown
@@ -9,12 +11,24 @@ export type CardActivationInput = {
 export type CardActivationIssue = {
   field: keyof CardActivationInput
   label: string
-  reason: 'missing' | 'invalid'
+  reason: 'missing' | 'invalid' | 'underage'
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+export function localDateOnly(date = new Date()): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+}
+
+export function minCardAgeCutoffDate(now = new Date()): string {
+  return localDateOnly(new Date(now.getFullYear() - MIN_CARD_AGE_YEARS, now.getMonth(), now.getDate()))
+}
 
 export function normalizeCardPhone(value: unknown): string {
   return text(value).replace(/\D/g, '')
@@ -31,12 +45,17 @@ export function cardDateOnly(value: unknown): string {
   return text(value)
 }
 
-function isValidBirthDate(value: unknown): boolean {
+function isCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
+function birthDateIssueReason(value: unknown): 'invalid' | 'underage' | null {
   const normalized = cardDateOnly(value)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false
-  const parsed = new Date(`${normalized}T00:00:00.000Z`)
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== normalized) return false
-  return parsed.getTime() <= Date.now()
+  if (!isCalendarDate(normalized) || normalized > localDateOnly()) return 'invalid'
+  if (normalized > minCardAgeCutoffDate()) return 'underage'
+  return null
 }
 
 export function collectCardActivationIssues(input: CardActivationInput): CardActivationIssue[] {
@@ -58,17 +77,35 @@ export function collectCardActivationIssues(input: CardActivationInput): CardAct
   if (text(input.phone) && (phone.length < 7 || phone.length > 15)) {
     issues.push({ field: 'phone', label: 'Phone', reason: 'invalid' })
   }
-  if (cardDateOnly(input.dob) && !isValidBirthDate(input.dob)) {
-    issues.push({ field: 'dob', label: 'Date of birth', reason: 'invalid' })
+  if (cardDateOnly(input.dob)) {
+    const reason = birthDateIssueReason(input.dob)
+    if (reason) {
+      issues.push({ field: 'dob', label: 'Date of birth', reason })
+    }
   }
   return issues
 }
 
 export function cardActivationIssueMessage(issues: CardActivationIssue[]): string {
-  const missing = issues.filter((issue) => issue.reason === 'missing').map((issue) => issue.label)
-  const invalid = issues.filter((issue) => issue.reason === 'invalid').map((issue) => issue.label)
-  const parts: string[] = []
-  if (missing.length) parts.push(`complete ${missing.join(', ')}`)
-  if (invalid.length) parts.push(`correct ${invalid.join(', ')}`)
-  return `Card cannot be activated. Please ${parts.join(' and ')}.`
+  const missing = issues.filter((issue) => issue.reason === 'missing')
+  const invalid = issues.filter((issue) => issue.reason === 'invalid')
+  const underage = issues.some((issue) => issue.reason === 'underage')
+
+  if (issues.length === 1 && missing.length === 1 && missing[0].field === 'dob') {
+    return 'Card cannot be activated. Please enter your date of birth.'
+  }
+
+  const missingLabels = missing.map((issue) => issue.label)
+  const invalidLabels = invalid.filter((issue) => issue.field !== 'dob').map((issue) => issue.label)
+  const dobInvalid = invalid.some((issue) => issue.field === 'dob')
+
+  const pleaseParts: string[] = []
+  if (missingLabels.length) pleaseParts.push(`complete ${missingLabels.join(', ')}`)
+  if (invalidLabels.length) pleaseParts.push(`correct ${invalidLabels.join(', ')}`)
+  if (dobInvalid) pleaseParts.push('enter a valid date of birth')
+
+  const sentences: string[] = []
+  if (pleaseParts.length) sentences.push(`Please ${pleaseParts.join(' and ')}.`)
+  if (underage) sentences.push('You must be at least 12 years old.')
+  return `Card cannot be activated. ${sentences.join(' ')}`.trim()
 }
