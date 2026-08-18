@@ -88,6 +88,8 @@ const allowedCorsOrigins = Array.from(
     [
       frontendUrl,
       ...corsOrigins,
+      'https://app.nextcreavo.com',
+      'https://app.vbizme.com',
       'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:5173',
