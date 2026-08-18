@@ -82,6 +82,7 @@ export const masterBusinessProfileSchema = z.object({
   businessName: nullableString,
   ownerName: nullableString,
   ownerTitle: nullableString,
+  dateOfBirth: nullableString,
   industry: nullableString,
   businessType: nullableString,
   businessDescription: nullableString,
@@ -201,7 +202,8 @@ export const masterBusinessProfileSchema = z.object({
 export type MasterBusinessProfile = z.infer<typeof masterBusinessProfileSchema>
 
 export const MASTER_PROFILE_JSON_INSTRUCTION = `Return ONLY JSON for a Master Business Profile. FACT MODE:
-- Extract facts that appear in the sources. Do NOT invent names, phones, emails, addresses, licenses, years in business, or reviews.
+- Extract facts that appear in the sources. Do NOT invent names, birth dates, phones, emails, addresses, licenses, years in business, or reviews.
+- Set dateOfBirth only when the source explicitly states the owner's birth date. Format it as YYYY-MM-DD; otherwise use null.
 - Unknown facts must be null or [].
 - Never write fictional customer reviews into verifiedReviews or existingTestimonials.
 - If you find real testimonials/reviews in the source, put them in verifiedReviews or existingTestimonials with author/text when present.
@@ -214,6 +216,7 @@ Shape:
   "businessName": null,
   "ownerName": null,
   "ownerTitle": null,
+  "dateOfBirth": null,
   "industry": null,
   "businessType": null,
   "businessDescription": null,

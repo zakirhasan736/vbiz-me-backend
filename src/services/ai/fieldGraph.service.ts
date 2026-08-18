@@ -117,6 +117,16 @@ const FIELD_DEFS: FieldDef[] = [
   {
     tabId: 'home',
     sectionId: 'personal',
+    fieldKey: 'dob',
+    fieldLabel: 'Date of birth',
+    required: true,
+    aiGenerationAllowed: false,
+    prompt: "Required for activation. Use YYYY-MM-DD only when the source explicitly states the owner's birth date.",
+    getValue: (p) => p.dateOfBirth,
+  },
+  {
+    tabId: 'home',
+    sectionId: 'personal',
     fieldKey: 'website',
     fieldLabel: 'Website',
     aiGenerationAllowed: false,

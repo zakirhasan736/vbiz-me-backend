@@ -811,12 +811,17 @@ const getProfileSettings = async (profileId: string) => {
   })
   if (!profile) throw new AppError(404, 'Profile not found')
   const ps = profile.profileSettings
+  const storedTheme = (ps?.themeConfig || profile.themeConfig) as
+    { appearance?: { fontFamily?: unknown; buttonShadow?: unknown } } | null | undefined
+  const storedAppearance = storedTheme?.appearance
   return {
     appearance: {
       profileTemplate: ps?.profileTemplate || profile.template || 'v3',
       layoutStyle: ps?.layoutStyle || 'classic',
       buttonStyle: ps?.buttonStyle || 'solid',
       cornerStyle: ps?.cornerStyle || 'round',
+      ...(typeof storedAppearance?.fontFamily === 'string' ? { fontFamily: storedAppearance.fontFamily } : {}),
+      ...(typeof storedAppearance?.buttonShadow === 'string' ? { buttonShadow: storedAppearance.buttonShadow } : {}),
     },
     theme_config: ps?.themeConfig || profile.themeConfig || null,
   }
@@ -1139,14 +1144,15 @@ const getDynamicSection = async (
       try {
         const liveList = tab.storage === 'faq' || tab.storage === 'mission_statement'
         let rows = await DIRECT_SECTION_LOADERS[tab.storage](profileId, takeOverride ?? 100)
-        if (rows.length && !rows.some((row) => row.featuredImage || row.url)) {
+        if (rows.length && rows.some((row) => !row.featuredImage || !row.url)) {
           const extras = await prisma.tabItem
             .findMany({
               where: { profileId, tabKey: tab.key, deletedAt: null, status: '1' },
-              select: { title: true, featuredImage: true, url: true },
+              select: { id: true, title: true, featuredImage: true, url: true },
             })
             .catch(() => [])
           if (extras.length) {
+            const byId = new Map(extras.map((row) => [row.id, row] as const))
             const byTitle = new Map(
               extras.map(
                 (row) =>
@@ -1158,13 +1164,14 @@ const getDynamicSection = async (
                   ] as const
               )
             )
-            rows = rows.map((row, index) => {
+            rows = rows.map((row) => {
               const extra =
+                byId.get(row.id) ||
                 byTitle.get(
                   String(row.title || '')
                     .trim()
                     .toLowerCase()
-                ) || extras[index]
+                )
               if (!extra) return row
               return {
                 ...row,
@@ -1173,6 +1180,43 @@ const getDynamicSection = async (
               }
             })
           }
+        }
+        if (tab.storage === 'client' && rows.some((row) => !row.featuredImage)) {
+          const legacyPostIds = rows.map((row) => row.legacyPostId).filter((id): id is number => typeof id === 'number')
+          const directRowIds = rows.map((row) => row.id)
+          const legacyPosts = await prisma.post.findMany({
+            where: {
+              profileId,
+              deletedAt: null,
+              OR: [
+                ...(legacyPostIds.length ? [{ legacyId: { in: legacyPostIds } }] : []),
+                { id: { in: directRowIds } },
+              ],
+            },
+            select: {
+              id: true,
+              legacyId: true,
+              featuredImage: true,
+              attachments: { include: { attachmentType: true }, orderBy: { createdAt: 'asc' } },
+            },
+          })
+          const postsById = new Map(legacyPosts.map((post) => [post.id, post] as const))
+          const postsByLegacyId = new Map(
+            legacyPosts.filter((post) => post.legacyId != null).map((post) => [post.legacyId as number, post] as const)
+          )
+
+          rows = rows.map((row) => {
+            if (row.featuredImage) return row
+            const legacyPost =
+              postsById.get(row.id) ||
+              (typeof row.legacyPostId === 'number' ? postsByLegacyId.get(row.legacyPostId) : undefined)
+            if (!legacyPost) return row
+
+            const attachment = legacyPost.attachments.find((item) => item.url || item.docName)
+            const recoveredImage =
+              abs(legacyPost.featuredImage, null, 7, 'Featured Image') || resolveAttachmentUrl(attachment, legacyId)
+            return recoveredImage ? { ...row, featuredImage: recoveredImage } : row
+          })
         }
         if (rows.length) {
           return {

@@ -1,6 +1,11 @@
 import { Router } from 'express'
 import multer from 'multer'
-import { MEDIA_UPLOAD_MAX_BYTES } from '../constants/mediaUpload'
+import {
+  MEDIA_ATTACHMENT_POLICIES,
+  MEDIA_UPLOAD_MAX_BYTES,
+  mediaAttachmentTooLargeMessage,
+  mediaAttachmentTypeMessage,
+} from '../constants/mediaUpload'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import profileService from '../services/profile.service'
@@ -16,6 +21,33 @@ const upload = multer({
 
 const router = Router()
 
+type UploadedMediaKind = 'image' | 'video' | 'other'
+
+const uploadedMediaKind = (file: Express.Multer.File): UploadedMediaKind => {
+  if (file.mimetype.startsWith('image/') || /\.(avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(file.originalname)) {
+    return 'image'
+  }
+  if (file.mimetype.startsWith('video/') || /\.(m4v|mov|mp4|ogv|ogg|webm)$/i.test(file.originalname)) {
+    return 'video'
+  }
+  return 'other'
+}
+
+const validateAttachmentUpload = (file: Express.Multer.File, attachmentType?: string) => {
+  const policy = attachmentType
+    ? MEDIA_ATTACHMENT_POLICIES[attachmentType as keyof typeof MEDIA_ATTACHMENT_POLICIES]
+    : undefined
+  if (!policy) return
+
+  if (file.size > policy.maxBytes) {
+    throw new AppError(413, mediaAttachmentTooLargeMessage(policy))
+  }
+
+  if (!policy.allowedKinds.some((kind) => kind === uploadedMediaKind(file))) {
+    throw new AppError(415, mediaAttachmentTypeMessage(policy))
+  }
+}
+
 router.use(authMiddleware.isAuthenticateUser)
 router.use(authMiddleware.requireNotSuspended)
 
@@ -24,6 +56,7 @@ router.post(
   upload.single('file'),
   catchAsyncError(async (req, res) => {
     if (!req.file) throw new AppError(400, 'file is required')
+    validateAttachmentUpload(req.file, req.body.attachmentType as string | undefined)
     const result = await s3Utils.uploadBuffer(req.file.buffer, {
       contentType: req.file.mimetype,
       filename: req.file.originalname,

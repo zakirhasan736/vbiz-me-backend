@@ -1,4 +1,5 @@
 import AppError from '../../error/AppError'
+import { cardActivationIssueMessage, collectCardActivationIssues } from '../../utils/cardActivation'
 import { seoMetadataToSettings } from '../seoMetadata.service'
 import { summarizeExtraction } from './cardAgent.service'
 import { assembleAiCard } from './cardAssembler.service'
@@ -412,12 +413,23 @@ export async function applyJob(input: {
   if (ready.status !== 'READY' || !ready.blueprint) {
     throw new AppError(409, ready.errorMessage || 'Finish the remaining card details first.')
   }
-  await save(ready, { status: 'APPLYING' })
   const personal = ready.blueprint.personal
+  if (input.publish === true) {
+    const issues = collectCardActivationIssues({
+      slug: ready.blueprint.suggestedSlug,
+      name: personal.fullName || personal.company,
+      email: personal.email,
+      dob: personal.dob,
+      phone: personal.phone,
+    })
+    if (issues.length) throw new AppError(422, cardActivationIssueMessage(issues))
+  }
+  await save(ready, { status: 'APPLYING' })
   const profileService = (await import('../profile.service')).default
   const created = await profileService.create(input.userId, input.role, {
     name: personal.fullName || personal.company || 'My Card',
     email: personal.email,
+    dob: personal.dob || undefined,
     phone: personal.phone,
     whatsapp: personal.whatsapp,
     website: personal.website,

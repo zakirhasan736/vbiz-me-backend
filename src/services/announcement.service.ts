@@ -3,6 +3,7 @@ import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
 import { prisma } from '../utils/prisma'
+import type { PublicViewerIdentity } from '../utils/publicVisitor'
 import type {
   AnnouncementKind,
   AnnouncementStatus,
@@ -172,6 +173,78 @@ const archiveLockNotices = async (opts: { userId?: string; profileId?: string })
 function normalizeEmails(emails?: string[]): string[] {
   if (!emails?.length) return []
   return [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))]
+}
+
+type ViewerAnnouncementKind = 'global' | 'team_notice'
+
+async function isAnnouncementSuppressed(
+  kind: ViewerAnnouncementKind,
+  announcementId: string,
+  profileId: string,
+  viewer?: PublicViewerIdentity
+): Promise<boolean> {
+  if (!viewer?.browserKey) return false
+
+  const now = new Date()
+  type ViewerStateRow = { dismissedAt: Date | null; suppressUntil: Date | null } | null
+  const viewerState = (
+    prisma as unknown as {
+      announcementViewerState: { findFirst: (args: unknown) => Promise<ViewerStateRow> }
+    }
+  ).announcementViewerState
+
+  const row = await viewerState.findFirst({
+    where: {
+      announcementType: kind,
+      announcementId,
+      profileId,
+      OR: [{ browserKey: viewer.browserKey }, ...(viewer.visitorId ? [{ visitorId: viewer.visitorId }] : [])],
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+
+  if (!row) return false
+  if (row.dismissedAt) return true
+  if (row.suppressUntil && row.suppressUntil > now) return true
+  return false
+}
+
+async function writeAnnouncementViewerState(opts: {
+  kind: ViewerAnnouncementKind
+  announcementId: string
+  profileId: string
+  viewer: PublicViewerIdentity
+  dismissedAt?: Date | null
+  suppressUntil?: Date | null
+}) {
+  const viewerState = (
+    prisma as unknown as { announcementViewerState: { upsert: (args: unknown) => Promise<unknown> } }
+  ).announcementViewerState
+
+  await viewerState.upsert({
+    where: {
+      announcementType_announcementId_browserKey: {
+        announcementType: opts.kind,
+        announcementId: opts.announcementId,
+        browserKey: opts.viewer.browserKey,
+      },
+    },
+    create: {
+      announcementType: opts.kind,
+      announcementId: opts.announcementId,
+      profileId: opts.profileId,
+      visitorId: opts.viewer.visitorId,
+      browserKey: opts.viewer.browserKey,
+      dismissedAt: opts.dismissedAt ?? null,
+      suppressUntil: opts.suppressUntil ?? null,
+    },
+    update: {
+      profileId: opts.profileId,
+      visitorId: opts.viewer.visitorId ?? undefined,
+      dismissedAt: opts.dismissedAt ?? null,
+      suppressUntil: opts.suppressUntil ?? null,
+    },
+  })
 }
 
 const list = async (query: ListAnnouncementsQuery) => {
@@ -478,7 +551,7 @@ function isShowPublic(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue |
   return metaRecord(meta)?.showPublic === '1'
 }
 
-const getActiveForPublicCard = async (profileId: string) => {
+const getActiveForPublicCard = async (profileId: string, viewer?: PublicViewerIdentity) => {
   const id = profileId.trim()
   if (!id) return null
 
@@ -512,8 +585,36 @@ const getActiveForPublicCard = async (profileId: string) => {
   }
 
   const bannerRow = candidates.find((row) => isShowPublic(row.meta) && !isInboxOnly(row.meta) && matchesTarget(row))
+  if (!bannerRow) return null
+  if (await isAnnouncementSuppressed('global', bannerRow.id, id, viewer)) return null
+  return serializeAnnouncement(bannerRow)
+}
 
-  return bannerRow ? serializeAnnouncement(bannerRow) : null
+const dismissPublicAnnouncement = async (opts: {
+  profileId: string
+  announcementId: string
+  viewer: PublicViewerIdentity
+}) => {
+  const profileId = opts.profileId.trim()
+  const announcementId = opts.announcementId.trim()
+  if (!profileId || !announcementId) throw new AppError(400, 'profileId and announcementId are required')
+
+  const announcement = await prisma.announcement.findFirst({
+    where: { id: announcementId, status: 'active' },
+    select: { id: true },
+  })
+  if (!announcement) throw new AppError(404, 'Announcement not found')
+
+  await writeAnnouncementViewerState({
+    kind: 'global',
+    announcementId,
+    profileId,
+    viewer: opts.viewer,
+    dismissedAt: new Date(),
+    suppressUntil: null,
+  })
+
+  return { id: announcementId, dismissed: true }
 }
 
 const announcementService = {
@@ -526,6 +627,7 @@ const announcementService = {
   archiveLockNotices,
   getActiveForUser,
   getActiveForPublicCard,
+  dismissPublicAnnouncement,
 }
 
 export default announcementService

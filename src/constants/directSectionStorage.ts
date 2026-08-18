@@ -4,6 +4,7 @@ import { getTabByKey, getTabByPublicSectionName, type DirectSectionStorage } fro
 
 export type DirectSectionRow = {
   id: string
+  legacyPostId?: number | null
   title: string | null
   description: string | null
   url: string | null

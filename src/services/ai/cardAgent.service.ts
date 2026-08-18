@@ -1,6 +1,12 @@
 import { z } from 'zod'
 import AppError from '../../error/AppError'
-import { normalizeSeoMetadata } from '../seoMetadata.service'
+import {
+  MAX_OWNER_SEO_KEYWORDS,
+  MAX_SEO_DESCRIPTION_LENGTH,
+  MAX_SEO_TITLE_LENGTH,
+  normalizeSeoMetadata,
+  ownerSeoKeywords,
+} from '../seoMetadata.service'
 import { logAiUsage, logChatMeta } from './aiUsageLog.service'
 import { analyzeMasterProfile } from './businessAnalyzer.service'
 import {
@@ -519,7 +525,7 @@ export async function fillSection(input: {
   const schemaHint = FILL_SECTION_SCHEMA_HINTS[sectionId]
   const seoRule =
     sectionId === 'seo'
-      ? 'For SEO, write a concise business-specific title and description from verified facts. Include the five required vBiz Me keywords, then add no more than five relevant high-volume/high-intent search phrases when reasonably inferable. Never invent numeric search-volume claims.'
+      ? `For SEO, write a concise business-specific title (max ${MAX_SEO_TITLE_LENGTH} chars) and description (max ${MAX_SEO_DESCRIPTION_LENGTH} chars) from verified facts. Return 5-${MAX_OWNER_SEO_KEYWORDS} high-intent keywords about this business. Do not include vBiz Me platform keywords; those are added automatically. Never invent numeric search-volume claims.`
       : ''
   const complexity = assessComplexity({
     sourceCount: parts.length,
@@ -589,6 +595,137 @@ export async function fillSection(input: {
       : undefined
 
   return { section: sectionId, payload, ...(message ? { message } : {}), count }
+}
+
+const generateSeoInputSchema = z.object({
+  field: z.enum(['title', 'description', 'keywords']),
+  name: z.string().optional().default(''),
+  company: z.string().optional().default(''),
+  designation: z.string().optional().default(''),
+  profession: z.string().optional().default(''),
+  about: z.string().optional().default(''),
+  address: z.string().optional().default(''),
+  website: z.string().optional().default(''),
+  services: z.array(z.string()).optional().default([]),
+  metaTitle: z.string().optional().default(''),
+  metaDescription: z.string().optional().default(''),
+})
+
+const generateSeoResultSchema = z.object({
+  metaTitle: z.string().optional().default(''),
+  metaDescription: z.string().optional().default(''),
+  keywords: z.array(z.string()).optional().default([]),
+})
+
+export type GeneratedCardSeo = {
+  metaTitle?: string
+  metaDescription?: string
+  keywords?: string[]
+}
+
+function compactSeoFacts(input: z.infer<typeof generateSeoInputSchema>): string {
+  const services = input.services
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12)
+  return JSON.stringify(
+    {
+      name: input.name.trim(),
+      company: input.company.trim(),
+      designation: input.designation.trim(),
+      profession: input.profession.trim(),
+      about: input.about.trim().slice(0, 1200),
+      address: input.address.trim(),
+      website: input.website.trim(),
+      services,
+      metaTitle: input.metaTitle.trim(),
+      metaDescription: input.metaDescription.trim(),
+    },
+    null,
+    2
+  )
+}
+
+export async function generateSeo(input: unknown, userId?: string): Promise<GeneratedCardSeo> {
+  ensureOpenAiConfigured()
+  const parsedResult = generateSeoInputSchema.safeParse(input)
+  if (!parsedResult.success) {
+    throw new AppError(400, 'Invalid SEO generate request.')
+  }
+  const parsed = parsedResult.data
+  const facts = compactSeoFacts(parsed)
+  const hasBusiness = Boolean(
+    parsed.name.trim() ||
+    parsed.company.trim() ||
+    parsed.profession.trim() ||
+    parsed.designation.trim() ||
+    parsed.about.trim() ||
+    parsed.services.some((item) => item.trim())
+  )
+  const hasTitleOrDescription = Boolean(parsed.metaTitle.trim() || parsed.metaDescription.trim())
+
+  if (parsed.field === 'keywords') {
+    if (!hasTitleOrDescription && !hasBusiness) {
+      throw new AppError(400, 'Add a meta title or description first so AI can suggest keywords.')
+    }
+  } else if (!hasBusiness && !hasTitleOrDescription) {
+    throw new AppError(400, 'Add personal or business details first so AI can write SEO.')
+  }
+
+  const fieldPrompt =
+    parsed.field === 'title'
+      ? `Write one SEO meta title for this digital business card. Max ${MAX_SEO_TITLE_LENGTH} characters. Include the person or brand name and the main service or profession. No quotes. No clickbait. Do not mention vBiz Me. Return JSON: { "metaTitle": "..." }`
+      : parsed.field === 'description'
+        ? `Write one SEO meta description for this digital business card. Max ${MAX_SEO_DESCRIPTION_LENGTH} characters. Summarize who they are, what they offer, and why to open the card. No quotes. Do not mention vBiz Me. Return JSON: { "metaDescription": "..." }`
+        : `Propose 5 to ${MAX_OWNER_SEO_KEYWORDS} high-intent SEO keywords or short phrases for this card. Base them on the meta title, meta description, and business facts. Do not include vBiz Me, vbizme, virtual card, digital business card, or online business card — those are added automatically. Return JSON: { "keywords": ["...", "..."] }`
+
+  let raw: unknown
+  try {
+    const result = await chatJson<unknown>({
+      tier: 'luna',
+      temperature: 0.4,
+      system: `You write search metadata for one public digital business card. Use only the supplied facts. Never invent licenses, awards, years in business, or reviews. ${fieldPrompt}`,
+      user: `FIELD: ${parsed.field}\nCARD FACTS:\n${facts}`,
+    })
+    await logChatMeta(`generate_seo_${parsed.field}`, result.meta, { userId, success: true })
+    raw = result.data
+  } catch (e) {
+    await logAiUsage({
+      task: `generate_seo_${parsed.field}`,
+      model: 'unknown',
+      tier: 'luna',
+      inputTokens: 0,
+      outputTokens: 0,
+      estimatedCost: 0,
+      latencyMs: 0,
+      success: false,
+      userId,
+      error: e instanceof Error ? e.message : 'generate seo failed',
+    })
+    throw new AppError(502, e instanceof Error ? e.message : 'AI failed to generate SEO. Try again.', {
+      code: 'AI_SEO_FAILED',
+    })
+  }
+
+  let generated: z.infer<typeof generateSeoResultSchema>
+  try {
+    generated = generateSeoResultSchema.parse(raw)
+  } catch {
+    throw new AppError(502, 'AI returned invalid SEO JSON. Try again.', { code: 'AI_SEO_INVALID' })
+  }
+  if (parsed.field === 'title') {
+    const metaTitle = generated.metaTitle.trim().slice(0, MAX_SEO_TITLE_LENGTH)
+    if (!metaTitle) throw new AppError(502, 'AI did not return a meta title. Try again.')
+    return { metaTitle }
+  }
+  if (parsed.field === 'description') {
+    const metaDescription = generated.metaDescription.trim().slice(0, MAX_SEO_DESCRIPTION_LENGTH)
+    if (!metaDescription) throw new AppError(502, 'AI did not return a meta description. Try again.')
+    return { metaDescription }
+  }
+  const keywords = ownerSeoKeywords(generated.keywords)
+  if (!keywords.length) throw new AppError(502, 'AI did not return keywords. Try again.')
+  return { keywords }
 }
 
 export async function regenerateSection(input: {

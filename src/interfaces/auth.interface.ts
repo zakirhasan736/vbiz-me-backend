@@ -5,11 +5,13 @@ export type IRegisterBody = {
   email: string
   password: string
   role: UserRole
+  turnstileToken?: string
 }
 
 export type ILoginBody = {
   email: string
   password: string
+  turnstileToken?: string
 }
 
 export type IUpdateUserBody = {
@@ -33,6 +35,7 @@ export type IAuthUser = {
   isVerified: boolean
   isActive: boolean
   accountStatus: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+  completedTours: string[]
   createdAt: Date
   updatedAt: Date
 }
@@ -75,6 +78,7 @@ export type IVerifyEmailBody = {
 
 export type IForgotPasswordBody = {
   email: string
+  turnstileToken?: string
 }
 
 export type IVerifyForgotPasswordBody = {

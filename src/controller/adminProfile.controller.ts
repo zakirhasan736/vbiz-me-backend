@@ -59,11 +59,21 @@ const listPortfolioMembers = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Portfolio members fetched', data })
 })
 
+const sendProfileEmail = catchAsyncError(async (req, res) => {
+  if (!req.user?.id) throw new AppError(403, 'Unauthorized')
+  assertVcardsAccess(req.user)
+  const profileId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+  const body = AdminProfileZodSchema.sendProfileEmail.parse(req.body)
+  const data = await adminProfileService.sendProfileEmail({ id: req.user.id, email: req.user.email }, profileId, body)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Email delivered', data })
+})
+
 const adminProfileController = {
   list,
   filters,
   exportCsv,
   listPortfolioMembers,
+  sendProfileEmail,
 }
 
 export default adminProfileController

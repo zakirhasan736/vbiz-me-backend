@@ -31,6 +31,7 @@ router.get('/', profileController.list)
 router.post('/', authMiddleware.requireVcardMutable, profileController.create)
 router.get('/check-slug', profileController.checkSlug)
 router.get('/:id', profileController.getOne)
+router.post('/:id/duplicate', authMiddleware.requireVcardMutable, profileController.duplicate)
 router.patch('/:id', authMiddleware.requireVcardMutable, profileController.update)
 router.delete('/:id', authMiddleware.requireVcardMutable, profileController.remove)
 

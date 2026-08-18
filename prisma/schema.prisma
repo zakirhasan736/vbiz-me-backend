@@ -42,6 +42,7 @@ model User {
   companyName       String?
   staffRole         String?
   allowedModules    String[]      @default([])
+  completedTours    String[]      @default([])
   otpCode           Int?
   otpCoolDown       DateTime?
   otpExpiresAt      DateTime?
@@ -1585,6 +1586,25 @@ model TeamNotice {
   @@index([ownerId, createdAt])
   @@index([status, audience])
   @@index([targetProfileId])
+}
+
+/// Anonymous public-viewer dismiss / snooze state for global announcements and card notices.
+model AnnouncementViewerState {
+  id               String    @id @default(cuid())
+  announcementType String
+  announcementId   String
+  profileId        String?
+  visitorId        String?
+  browserKey       String
+  dismissedAt      DateTime?
+  suppressUntil    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([announcementType, announcementId, browserKey])
+  @@index([announcementType, announcementId])
+  @@index([profileId, visitorId])
+  @@index([browserKey])
 }
 
 /// Catalog metadata for fixed vCard shells (v1 / v2 / v3). Shell UI lives in the frontend.

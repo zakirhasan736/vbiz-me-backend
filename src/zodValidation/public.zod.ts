@@ -19,6 +19,11 @@ const trackEvent = z
     path: ['channel'],
   })
 
+const dismissAnnouncement = z.object({
+  announcementId: z.string().trim().min(1).optional(),
+  visitorId: z.string().trim().min(1).max(200).optional(),
+})
+
 const pushKeys = z.object({
   p256dh: z.string().min(1),
   auth: z.string().min(1),
@@ -87,6 +92,7 @@ const pushTest = z
 
 const PublicZodSchema = {
   trackEvent,
+  dismissAnnouncement,
   pushSubscribe,
   pushPreferences,
   pushUnsubscribe,

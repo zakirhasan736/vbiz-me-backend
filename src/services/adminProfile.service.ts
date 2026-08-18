@@ -1,5 +1,10 @@
 import type { Prisma } from '../../generated/prisma/client'
 import { toApiRole } from '../constants/userRole'
+import AppError from '../error/AppError'
+import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
+import { writeAuditLog } from '../utils/auditLog'
+import authUtils from '../utils/auth.utils'
+import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 import { loadProfileEngagementMetrics, type ProfileSocialClickRow } from '../utils/profileListMetrics'
@@ -7,6 +12,7 @@ import type {
   AdminProfileFiltersInput,
   ExportAdminProfilesQuery,
   ListAdminProfilesQuery,
+  SendProfileEmailInput,
 } from '../zodValidation/adminProfile.zod'
 
 const adminListInclude = {
@@ -76,14 +82,11 @@ function buildWhere(filters: AdminProfileFiltersInput): Prisma.ProfileWhereInput
     and.push({ status: { name: { equals: statusName, mode: 'insensitive' } } })
   }
 
-  // Lifecycle tabs: isDraft flag OR legacy Status.name === "Draft"
+  // Lifecycle flags are canonical. Status can be temporarily stale on legacy rows.
   if (filters.lifecycle === 'draft') {
-    and.push({
-      OR: [{ isDraft: true }, { status: { name: { equals: 'draft', mode: 'insensitive' } } }],
-    })
+    and.push({ isDraft: true })
   } else if (filters.lifecycle === 'active') {
     and.push({ isDraft: false })
-    and.push({ NOT: { status: { name: { equals: 'draft', mode: 'insensitive' } } } })
   }
 
   const professionName = filters.profession?.trim()
@@ -260,10 +263,88 @@ const exportCsv = async (query: ExportAdminProfilesQuery) => {
   return lines.join('\n')
 }
 
+function escapeHtml(value: string): string {
+  const entities: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  }
+  return value.replace(/[&<>"']/g, (character) => entities[character] || character)
+}
+
+const sendProfileEmail = async (
+  actor: { id: string; email?: string | null },
+  profileId: string,
+  input: SendProfileEmailInput
+) => {
+  await assertAdminCanContactProfile(actor.id, profileId)
+
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { id: true, name: true, email: true },
+  })
+  if (!profile) throw new AppError(404, 'Profile not found')
+
+  const recipient = profile.email.trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    throw new AppError(422, 'This card does not have a valid recipient email address')
+  }
+
+  const recipientName = profile.name.trim() || 'vCard owner'
+  const html = [
+    '<div style="margin:0 auto;max-width:640px;font-family:Arial,sans-serif;color:#172033;line-height:1.6">',
+    `<p>Hello ${escapeHtml(recipientName)},</p>`,
+    `<div style="white-space:pre-wrap">${escapeHtml(input.message)}</div>`,
+    '<p style="margin-top:24px">Regards,<br><strong>vBiz.me Team</strong></p>',
+    '</div>',
+  ].join('')
+
+  try {
+    const delivery = await authUtils.sendEmail({
+      receiverMail: recipient,
+      subject: input.subject,
+      html,
+    })
+    const rejected = Array.isArray(delivery.rejected)
+      ? delivery.rejected.map((address) => String(address).trim().toLowerCase())
+      : []
+    if (rejected.includes(recipient)) {
+      throw new Error('SMTP server rejected the recipient')
+    }
+  } catch (error) {
+    logger.error('Admin profile email delivery failed', { error, profileId, recipient })
+    const message = error instanceof Error ? error.message : ''
+    if (message.includes('MAIL_ADDRESS and MAIL_PASS')) {
+      throw new AppError(503, 'Email delivery is not configured on the server')
+    }
+    throw new AppError(502, 'Email could not be delivered. Please try again.')
+  }
+
+  try {
+    await writeAuditLog({
+      action: 'Direct Email Dispatched',
+      details: `Sent email to ${recipientName} (${recipient}) with subject: ${input.subject}`,
+      type: 'update',
+      actor: actor.email ?? null,
+      actorId: actor.id,
+      profileId,
+      meta: { recipient, subject: input.subject },
+    })
+  } catch (error) {
+    // Delivery already succeeded; an audit failure must not invite a duplicate resend.
+    logger.error('Admin profile email audit failed', { error, profileId, recipient })
+  }
+
+  return { recipient }
+}
+
 const adminProfileService = {
   list,
   getFilterOptions,
   exportCsv,
+  sendProfileEmail,
 }
 
 export default adminProfileService

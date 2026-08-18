@@ -3,20 +3,26 @@ import passport from 'passport'
 import config from '../configs/config'
 import authController, { oauthCallback } from '../controller/auth.controller'
 import authMiddleware from '../middlewares/authValidation'
+import verifyTurnstile from '../middlewares/turnstile'
 import { validSchema } from '../middlewares/validator'
 import AuthZodSchema from '../zodValidation/auth.zod'
 
 const router = Router()
 
-router.post('/register', validSchema(AuthZodSchema.register), authController.register)
-router.post('/login', validSchema(AuthZodSchema.login), authController.login)
+router.post('/register', validSchema(AuthZodSchema.register), verifyTurnstile, authController.register)
+router.post('/login', validSchema(AuthZodSchema.login), verifyTurnstile, authController.login)
 router.post(
   '/send-verification-email',
   validSchema(AuthZodSchema.sendVerificationEmail),
   authController.sendVerificationEmail
 )
 router.post('/verify-email', validSchema(AuthZodSchema.verifyEmail), authController.verifyEmail)
-router.post('/forgot-password', validSchema(AuthZodSchema.forgotPassword), authController.forgotPassword)
+router.post(
+  '/forgot-password',
+  validSchema(AuthZodSchema.forgotPassword),
+  verifyTurnstile,
+  authController.forgotPassword
+)
 router.post(
   '/forgot-password/verify',
   validSchema(AuthZodSchema.verifyForgotPassword),
@@ -51,6 +57,12 @@ router.patch(
   validSchema(AuthZodSchema.update),
   authMiddleware.optionalAuthenticateUser,
   authController.update
+)
+router.patch(
+  '/tours',
+  authMiddleware.isAuthenticateUser,
+  validSchema(AuthZodSchema.persistTours),
+  authController.persistTours
 )
 router.get('/author', authMiddleware.isAuthenticateUser, authController.author)
 router.post('/logout', authController.logout)

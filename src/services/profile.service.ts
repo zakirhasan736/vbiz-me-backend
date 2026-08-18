@@ -2,15 +2,24 @@ import { randomBytes } from 'node:crypto'
 import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
 import { AccountStatus } from '../../generated/prisma/enums'
+import config from '../configs/config'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
 import authUtils from '../utils/auth.utils'
 import {
+  cardActivationIssueMessage,
+  collectCardActivationIssues,
+  normalizeCardEmail,
+  normalizeCardPhone,
+  type CardActivationInput,
+} from '../utils/cardActivation'
+import {
   ensureStatusByName,
   isCardLifecycleStatus,
   lifecycleStatusFlags,
   normalizeCardStatusName,
+  resolveInitialCardLifecycle,
 } from '../utils/cardStatus'
 import {
   DASHBOARD_ALL_CHART_DAYS,
@@ -38,6 +47,7 @@ import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, safePrismaQuery } from '../utils/prismaErrors'
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
+import type { PublicViewerIdentity } from '../utils/publicVisitor'
 import announcementService from './announcement.service'
 import pushService from './push.service'
 import { normalizeSeoSettings } from './seoMetadata.service'
@@ -731,7 +741,7 @@ const buildListFiltersWhere = async (
     where.isDraft = false
     where.isPublic = true
     where.NOT = {
-      status: { name: { in: ['paused', 'suspended', 'inactive', 'draft'], mode: 'insensitive' } },
+      status: { name: { in: ['paused', 'suspended', 'inactive'], mode: 'insensitive' } },
     }
   } else if (status === 'inactive') {
     where.isDraft = false
@@ -933,21 +943,45 @@ const asOptionalString = (value: unknown): string | undefined => {
   return trimmed || undefined
 }
 
-const EMAIL_USED_IN_ANOTHER_VCARD = 'Provided email is used in another vCard.'
+const assertCardCanActivate = async (input: CardActivationInput, excludeProfileId?: string) => {
+  const issues = collectCardActivationIssues(input)
+  if (issues.length) throw new AppError(422, cardActivationIssueMessage(issues))
 
-/** Block create/update when email is already on another profile. Phone may be reused across cards. */
-const assertPhoneEmailAvailable = async (opts: { email?: string | null; excludeProfileId?: string }) => {
-  const email = typeof opts.email === 'string' ? opts.email.trim() : opts.email
-  if (!email) return
+  const email = normalizeCardEmail(input.email)
+  const phone = normalizeCardPhone(input.phone)
+  const excludedId = excludeProfileId || ''
+  const checkEmail = config.PROFILE_UNIQUE_CONTACT === 'email' || config.PROFILE_UNIQUE_CONTACT === 'both'
+  const checkPhone = config.PROFILE_UNIQUE_CONTACT === 'phone' || config.PROFILE_UNIQUE_CONTACT === 'both'
+  const [emailConflict, phoneConflicts] = await Promise.all([
+    checkEmail
+      ? prisma.profile.findFirst({
+          where: {
+            id: { not: excludedId },
+            isDraft: false,
+            email: { equals: email, mode: 'insensitive' },
+          },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
+    checkPhone
+      ? prisma.$queryRaw<Array<{ id: string }>>`
+          SELECT "id"
+          FROM "Profile"
+          WHERE "id" <> ${excludedId}
+            AND "isDraft" = FALSE
+            AND regexp_replace(COALESCE("phone", ''), '[^0-9]', '', 'g') = ${phone}
+          LIMIT 1
+        `
+      : Promise.resolve([]),
+  ])
 
-  const existing = await prisma.profile.findFirst({
-    where: {
-      email: { equals: email, mode: 'insensitive' },
-      ...(opts.excludeProfileId ? { NOT: { id: opts.excludeProfileId } } : {}),
-    },
-    select: { id: true },
-  })
-  if (existing) throw new AppError(400, EMAIL_USED_IN_ANOTHER_VCARD)
+  const conflicts = [emailConflict ? 'email' : '', phoneConflicts.length ? 'phone' : ''].filter(Boolean)
+  if (conflicts.length) {
+    throw new AppError(
+      409,
+      `Card cannot be activated. Use a unique ${conflicts.join(' and ')} not assigned to another active or inactive card.`
+    )
+  }
 }
 
 /** Upsert the primary Address row used for street address (line1). */
@@ -1079,10 +1113,20 @@ const create = async (
 
   const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
   const resolvedEmail = (raw.email as string) || profileOwnerEmail
-  await assertPhoneEmailAvailable({
-    email: resolvedEmail,
+  const initialLifecycle = resolveInitialCardLifecycle({
+    isDraft: raw.isDraft as boolean | undefined,
+    isPublic: raw.isPublic as boolean | undefined,
   })
-  const draftStatus = await ensureStatusByName('draft')
+  if (initialLifecycle.statusName === 'active') {
+    await assertCardCanActivate({
+      slug,
+      name: raw.name,
+      email: resolvedEmail,
+      dob: raw.dob,
+      phone: raw.phone,
+    })
+  }
+  const initialStatus = await ensureStatusByName(initialLifecycle.statusName)
   const profile = await prisma.profile.create({
     data: {
       userId: profileOwnerId,
@@ -1102,10 +1146,9 @@ const create = async (
       dob: raw.dob ? new Date(String(raw.dob)) : undefined,
       template: (raw.template as string) || 'default',
       themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
-      statusId: draftStatus.id,
-      isPublic: raw.isDraft === true ? false : raw.isPublic !== false,
-      // New cards start as drafts until the owner activates / completes them.
-      isDraft: raw.isDraft !== false,
+      statusId: initialStatus.id,
+      isPublic: initialLifecycle.isPublic,
+      isDraft: initialLifecycle.isDraft,
       facebook: raw.facebook as string | undefined,
       instagram: raw.instagram as string | undefined,
       twitter: raw.twitter as string | undefined,
@@ -1148,6 +1191,192 @@ const create = async (
   return created
 }
 
+const clonePrimaryProfileCollections = async (sourceProfileId: string, targetProfileId: string) => {
+  const [education, experiences, services, portfolios, reviews, skillTags, socialLinks, aboutMe] = await Promise.all([
+    prisma.education.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
+    prisma.experience.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
+    prisma.service.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
+    prisma.portfolio.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
+    prisma.review.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
+    prisma.skillTag.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
+    prisma.socialLink.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
+    prisma.aboutMe.findUnique({ where: { profileId: sourceProfileId } }),
+  ])
+
+  await prisma.$transaction(async (tx) => {
+    for (const [index, item] of education.entries()) {
+      await tx.education.create({
+        data: {
+          profileId: targetProfileId,
+          institute: item.institute,
+          degree: item.degree,
+          fromDate: item.fromDate,
+          toDate: item.toDate,
+          tillNow: item.tillNow,
+          description: item.description,
+          sortOrder: index,
+        },
+      })
+    }
+    for (const [index, item] of experiences.entries()) {
+      await tx.experience.create({
+        data: {
+          profileId: targetProfileId,
+          company: item.company,
+          jobTitle: item.jobTitle,
+          description: item.description,
+          fromDate: item.fromDate,
+          toDate: item.toDate,
+          tillNow: item.tillNow,
+          sortOrder: index,
+        },
+      })
+    }
+    for (const [index, item] of services.entries()) {
+      await tx.service.create({
+        data: {
+          profileId: targetProfileId,
+          title: item.title,
+          description: item.description,
+          status: item.status,
+          reviewUrl: item.reviewUrl,
+          imageUrl: item.imageUrl,
+          sortOrder: index,
+        },
+      })
+    }
+    for (const [index, item] of portfolios.entries()) {
+      await tx.portfolio.create({
+        data: {
+          profileId: targetProfileId,
+          title: item.title,
+          description: item.description,
+          status: item.status,
+          url: item.url,
+          imageUrl: item.imageUrl,
+          attachmentUrl: item.attachmentUrl,
+          attachmentName: item.attachmentName,
+          sortOrder: index,
+        },
+      })
+    }
+    for (const [index, item] of reviews.entries()) {
+      await tx.review.create({
+        data: {
+          profileId: targetProfileId,
+          author: item.author,
+          text: item.text,
+          rating: item.rating,
+          status: item.status,
+          sortOrder: index,
+        },
+      })
+    }
+    for (const [index, item] of skillTags.entries()) {
+      await tx.skillTag.create({
+        data: {
+          profileId: targetProfileId,
+          skillTypeId: item.skillTypeId,
+          name: item.name,
+          level: item.level,
+          sortOrder: index,
+        },
+      })
+    }
+    for (const [index, item] of socialLinks.entries()) {
+      await tx.socialLink.create({
+        data: {
+          profileId: targetProfileId,
+          name: item.name,
+          url: item.url,
+          icon: item.icon,
+          sortOrder: index,
+        },
+      })
+    }
+    if (aboutMe) {
+      await tx.aboutMe.create({
+        data: {
+          profileId: targetProfileId,
+          title: aboutMe.title,
+          description: aboutMe.description,
+          featuredMediaUrl: aboutMe.featuredMediaUrl,
+          status: aboutMe.status,
+        },
+      })
+    }
+  })
+}
+
+const duplicate = async (profileId: string, userId: string, role: string) => {
+  const source = await getOwned(profileId, userId, role)
+  const settings = Object.fromEntries(
+    source.settings
+      .filter((item) => typeof item.key === 'string' && typeof item.value === 'string')
+      .map((item) => [item.key, item.value as string])
+  )
+  const created = await create(userId, role, {
+    name: `${source.name?.trim() || 'Card'} (Copy)`,
+    email: source.email,
+    slug: `${source.slug?.trim() || source.name || 'card'}-copy`,
+    companyName: source.companyName || undefined,
+    designation: source.designation || undefined,
+    phone: source.phone || undefined,
+    whatsapp: source.whatsapp || undefined,
+    website: source.website || undefined,
+    address: source.address || undefined,
+    about: source.about || undefined,
+    prof: source.prof || undefined,
+    dob: source.dob || undefined,
+    template: source.template,
+    themeConfig: source.themeConfig || undefined,
+    facebook: source.facebook || undefined,
+    instagram: source.instagram || undefined,
+    twitter: source.twitter || undefined,
+    tiktok: source.tiktok || undefined,
+    youtube: source.youtube || undefined,
+    linkedin: source.linkedin || undefined,
+    isDraft: true,
+    isPublic: false,
+    settings,
+    profileSettings: source.profileSettings
+      ? {
+          profileTemplate: source.profileSettings.profileTemplate,
+          layoutStyle: source.profileSettings.layoutStyle || undefined,
+          buttonStyle: source.profileSettings.buttonStyle || undefined,
+          cornerStyle: source.profileSettings.cornerStyle || undefined,
+          themeConfig: source.profileSettings.themeConfig || undefined,
+        }
+      : undefined,
+  })
+
+  try {
+    await prisma.profile.update({
+      where: { id: created.id },
+      data: {
+        avatar: source.avatar,
+        colorCode: source.colorCode,
+        countryCode: source.countryCode,
+        lastName: source.lastName,
+        rumble: source.rumble,
+        truth: source.truth,
+        pinterest: source.pinterest,
+        ...(source.gender ? { gender: { connect: { id: source.gender.id } } } : {}),
+        ...(source.maritalStatus ? { maritalStatus: { connect: { id: source.maritalStatus.id } } } : {}),
+        ...(source.profession ? { profession: { connect: { id: source.profession.id } } } : {}),
+      },
+    })
+    await clonePrimaryProfileCollections(profileId, created.id)
+  } catch (error) {
+    await prisma.profile.delete({ where: { id: created.id } }).catch(() => undefined)
+    throw error
+  }
+
+  const duplicated = await loadProfileDetail({ id: created.id })
+  if (!duplicated) throw new AppError(404, 'Duplicated profile not found')
+  return duplicated
+}
+
 const update = async (
   profileId: string,
   userId: string,
@@ -1188,11 +1417,34 @@ const update = async (
     profileData.slug = await ensureUniqueSlug(profileData.slug, profileId)
   }
 
-  if ('email' in raw) {
-    await assertPhoneEmailAvailable({
-      email: raw.email as string | null | undefined,
-      excludeProfileId: profileId,
-    })
+  const currentProfile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: {
+      slug: true,
+      name: true,
+      email: true,
+      dob: true,
+      phone: true,
+      isDraft: true,
+      isPublic: true,
+    },
+  })
+  if (!currentProfile) throw new AppError(404, 'Profile not found')
+
+  const nextDraft = 'isDraft' in raw ? Boolean(raw.isDraft) : currentProfile.isDraft
+  const nextPublic = 'isPublic' in raw ? Boolean(raw.isPublic) : currentProfile.isPublic
+  const willBeActive = requestedStatus ? requestedStatus === 'active' : !nextDraft && nextPublic
+  if (willBeActive) {
+    await assertCardCanActivate(
+      {
+        slug: 'slug' in raw ? raw.slug : currentProfile.slug,
+        name: 'name' in raw ? raw.name : currentProfile.name,
+        email: 'email' in raw ? raw.email : currentProfile.email,
+        dob: 'dob' in raw ? raw.dob : currentProfile.dob,
+        phone: 'phone' in raw ? raw.phone : currentProfile.phone,
+      },
+      profileId
+    )
   }
 
   if (requestedStatus) {
@@ -2773,6 +3025,76 @@ function serializeTeamNotice(row: {
   }
 }
 
+async function isTeamNoticeSuppressed(
+  profileId: string,
+  noticeId: string,
+  viewer?: PublicViewerIdentity
+): Promise<boolean> {
+  if (!viewer?.browserKey) return false
+
+  const now = new Date()
+  const viewerState = (
+    prisma as unknown as {
+      announcementViewerState: {
+        findFirst: (args: unknown) => Promise<{ dismissedAt: Date | null; suppressUntil: Date | null } | null>
+        upsert: (args: unknown) => Promise<unknown>
+      }
+    }
+  ).announcementViewerState
+
+  const row = await viewerState.findFirst({
+    where: {
+      announcementType: 'team_notice',
+      announcementId: noticeId,
+      profileId,
+      OR: [{ browserKey: viewer.browserKey }, ...(viewer.visitorId ? [{ visitorId: viewer.visitorId }] : [])],
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+
+  if (!row) return false
+  if (row.dismissedAt) return true
+  if (row.suppressUntil && row.suppressUntil > now) return true
+  return false
+}
+
+async function writeTeamNoticeViewerState(opts: {
+  profileId: string
+  noticeId: string
+  viewer: PublicViewerIdentity
+  suppressUntil: Date
+}) {
+  const viewerState = (
+    prisma as unknown as {
+      announcementViewerState: { upsert: (args: unknown) => Promise<unknown> }
+    }
+  ).announcementViewerState
+
+  await viewerState.upsert({
+    where: {
+      announcementType_announcementId_browserKey: {
+        announcementType: 'team_notice',
+        announcementId: opts.noticeId,
+        browserKey: opts.viewer.browserKey,
+      },
+    },
+    create: {
+      announcementType: 'team_notice',
+      announcementId: opts.noticeId,
+      profileId: opts.profileId,
+      visitorId: opts.viewer.visitorId,
+      browserKey: opts.viewer.browserKey,
+      suppressUntil: opts.suppressUntil,
+    },
+    update: {
+      profileId: opts.profileId,
+      visitorId: opts.viewer.visitorId ?? undefined,
+      dismissedAt: null,
+      suppressUntil: opts.suppressUntil,
+    },
+  })
+}
+
 const listTeamNotices = async (userId: string): Promise<TeamNoticeRow[]> => {
   const rows = await prisma.teamNotice.findMany({
     where: { ownerId: userId },
@@ -2939,7 +3261,8 @@ const deleteTeamNotice = async (userId: string, role: string, noticeId: string) 
 /** Active public-banner notices for a profile — only notices targeted at this card. */
 const listPublicTeamNoticesForProfile = async (
   profileId: string,
-  knownOwnerIds?: string[]
+  knownOwnerIds?: string[],
+  viewer?: PublicViewerIdentity
 ): Promise<TeamNoticeRow[]> => {
   const ownerIds: string[] =
     knownOwnerIds ??
@@ -2964,7 +3287,42 @@ const listPublicTeamNoticesForProfile = async (
     orderBy: { createdAt: 'desc' },
     take: 10,
   })
-  return rows.map(serializeTeamNotice)
+  const filtered: typeof rows = []
+  for (const row of rows) {
+    if (await isTeamNoticeSuppressed(profileId, row.id, viewer)) continue
+    filtered.push(row)
+  }
+  return filtered.map(serializeTeamNotice)
+}
+
+const getLatestPublicTeamNoticeForProfile = async (
+  profileId: string,
+  viewer?: PublicViewerIdentity
+): Promise<TeamNoticeRow | null> => {
+  const notices = await listPublicTeamNoticesForProfile(profileId, undefined, viewer)
+  return notices[0] ?? null
+}
+
+const dismissPublicTeamNotice = async (opts: { profileId: string; noticeId: string; viewer: PublicViewerIdentity }) => {
+  const profileId = opts.profileId.trim()
+  const noticeId = opts.noticeId.trim()
+  if (!profileId || !noticeId) throw new AppError(400, 'profileId and noticeId are required')
+
+  const existing = await prisma.teamNotice.findFirst({
+    where: { id: noticeId, targetProfileId: profileId, status: 'active', audience: 'all' },
+    select: { id: true },
+  })
+  if (!existing) throw new AppError(404, 'Notice not found')
+
+  const suppressUntil = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  await writeTeamNoticeViewerState({
+    profileId,
+    noticeId,
+    viewer: opts.viewer,
+    suppressUntil,
+  })
+
+  return { id: noticeId, dismissed: true, suppressUntil: suppressUntil.toISOString() }
 }
 
 export type PortfolioMemberRow = {
@@ -3021,6 +3379,7 @@ const profileService = {
   getOwnedLite,
   getOwnedForWrite,
   create,
+  duplicate,
   update,
   remove,
   replaceCollection,
@@ -3046,6 +3405,8 @@ const profileService = {
   createTeamNotice,
   deleteTeamNotice,
   listPublicTeamNoticesForProfile,
+  getLatestPublicTeamNoticeForProfile,
+  dismissPublicTeamNotice,
   listPackages,
   listSubscriptions,
   ensureUniqueSlug,

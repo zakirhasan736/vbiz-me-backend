@@ -26,13 +26,20 @@ const exportAdminProfilesQuery = adminProfileFilters.extend({
   sortDir: z.enum(['asc', 'desc']).default('desc'),
 })
 
+const sendProfileEmail = z.object({
+  subject: z.string().trim().min(1, 'Subject is required').max(200),
+  message: z.string().trim().min(1, 'Message is required').max(10_000),
+})
+
 const AdminProfileZodSchema = {
   listAdminProfilesQuery,
   exportAdminProfilesQuery,
+  sendProfileEmail,
 }
 
 export type ListAdminProfilesQuery = z.infer<typeof listAdminProfilesQuery>
 export type ExportAdminProfilesQuery = z.infer<typeof exportAdminProfilesQuery>
 export type AdminProfileFiltersInput = z.infer<typeof adminProfileFilters>
+export type SendProfileEmailInput = z.infer<typeof sendProfileEmail>
 
 export default AdminProfileZodSchema

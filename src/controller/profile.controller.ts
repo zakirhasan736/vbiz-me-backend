@@ -40,6 +40,12 @@ const create = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 201, message: 'Profile created', data })
 })
 
+const duplicate = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const data = await profileService.duplicate(param(req.params.id), req.user.id, req.user.role)
+  sendResponse(res, { success: true, statusCode: 201, message: 'Profile duplicated as draft', data })
+})
+
 const update = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const data = await profileService.update(param(req.params.id), req.user.id, req.user.role, req.body)
@@ -453,6 +459,7 @@ const profileController = {
   list,
   getOne,
   create,
+  duplicate,
   update,
   remove,
   replaceEducation,

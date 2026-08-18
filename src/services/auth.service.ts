@@ -129,6 +129,34 @@ const getAuthor = async (userId: string): Promise<IAuthUser | null> => {
   return user ? authUtils.mapUser(user) : null
 }
 
+const TOUR_KEYS = new Set(['dashboard', 'create_card'])
+
+const persistCompletedTours = async (userId: string, keys: string[]): Promise<string[]> => {
+  const incoming = keys.filter((key) => TOUR_KEYS.has(key))
+  if (!incoming.length) {
+    throw new AppError(400, 'At least one valid tour key is required')
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, completedTours: true },
+  })
+
+  if (!user) {
+    throw new AppError(404, 'User not found')
+  }
+
+  const completedTours = [...new Set([...(user.completedTours ?? []), ...incoming])]
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    select: { completedTours: true },
+    data: { completedTours },
+  })
+
+  return updated.completedTours
+}
+
 const refreshToken = async (userId: string): Promise<{ accessToken: string; refreshToken: string }> => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -748,6 +776,7 @@ const authService = {
   register,
   login,
   getAuthor,
+  persistCompletedTours,
   refreshToken,
   updateUser,
   sendVerificationEmail,

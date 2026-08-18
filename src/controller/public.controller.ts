@@ -1,10 +1,12 @@
 import announcementService from '../services/announcement.service'
 import appleWalletService from '../services/appleWallet.service'
 import googleWalletService from '../services/googleWallet.service'
+import profileService from '../services/profile.service'
 import publicCardService from '../services/publicCard.service'
 import pushService from '../services/push.service'
 import catchAsyncError from '../utils/catchAsyncError'
 import { parseListQuery } from '../utils/pagination'
+import { getPublicViewerIdentity } from '../utils/publicVisitor'
 import sendPublicResponse from '../utils/sendPublicResponse'
 
 const param = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
@@ -38,7 +40,34 @@ const getSettings = catchAsyncError(async (req, res) => {
 })
 
 const getProfileAnnouncement = catchAsyncError(async (req, res) => {
-  const data = await announcementService.getActiveForPublicCard(param(req.params.id))
+  const viewer = getPublicViewerIdentity(req, req.query.visitorId)
+  const data = await announcementService.getActiveForPublicCard(param(req.params.id), viewer)
+  sendPublicResponse(res, { success: true, data })
+})
+
+const dismissProfileAnnouncement = catchAsyncError(async (req, res) => {
+  const viewer = getPublicViewerIdentity(req, req.body?.visitorId)
+  const data = await announcementService.dismissPublicAnnouncement({
+    profileId: param(req.params.id),
+    announcementId: String(req.body?.announcementId || ''),
+    viewer,
+  })
+  sendPublicResponse(res, { success: true, data })
+})
+
+const getProfileTeamNotice = catchAsyncError(async (req, res) => {
+  const viewer = getPublicViewerIdentity(req, req.query.visitorId)
+  const data = await profileService.getLatestPublicTeamNoticeForProfile(param(req.params.id), viewer)
+  sendPublicResponse(res, { success: true, data })
+})
+
+const dismissProfileTeamNotice = catchAsyncError(async (req, res) => {
+  const viewer = getPublicViewerIdentity(req, req.body?.visitorId)
+  const data = await profileService.dismissPublicTeamNotice({
+    profileId: param(req.params.id),
+    noticeId: param(req.params.noticeId),
+    viewer,
+  })
   sendPublicResponse(res, { success: true, data })
 })
 
@@ -260,6 +289,9 @@ const publicController = {
   getPostTypes,
   getSettings,
   getProfileAnnouncement,
+  dismissProfileAnnouncement,
+  getProfileTeamNotice,
+  dismissProfileTeamNotice,
   getAiData,
   getDynamicSection,
   getPublicCards,

@@ -34,6 +34,16 @@ test('invalid login payloads return 400 validation responses', async () => {
   assert.ok(Array.isArray(response.body.errorMessages))
 })
 
+test('PATCH /api/v1/auth/tours rejects unauthenticated requests with 403', async () => {
+  const response = await request(app)
+    .patch('/api/v1/auth/tours')
+    .send({ keys: ['dashboard'] })
+
+  assert.equal(response.status, 403)
+  assert.equal(response.body.success, false)
+  assert.equal(response.body.message, 'Unauthorized')
+})
+
 test('protected resources reject unauthenticated requests with 403', async () => {
   const response = await request(app).get('/api/v1/profiles')
 

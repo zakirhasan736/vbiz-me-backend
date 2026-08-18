@@ -1,7 +1,7 @@
 export const SEO_META_TITLE_SETTING_KEY = 'seo_meta_title'
 export const SEO_META_DESCRIPTION_SETTING_KEY = 'seo_meta_description'
 export const SEO_META_KEYWORDS_SETTING_KEY = 'seo_meta_keywords_json'
-export const MAX_SEO_KEYWORDS = 10
+export const MAX_OWNER_SEO_KEYWORDS = 10
 export const MAX_SEO_TITLE_LENGTH = 70
 export const MAX_SEO_DESCRIPTION_LENGTH = 160
 
@@ -13,6 +13,9 @@ export const SEO_FIXED_KEYWORDS = [
   'online business card',
 ] as const
 
+/** Stored/public keyword cap: hidden vBiz terms + owner-visible phrases. */
+export const MAX_SEO_KEYWORDS = SEO_FIXED_KEYWORDS.length + MAX_OWNER_SEO_KEYWORDS
+
 export type SeoMetadata = {
   metaTitle: string
   metaDescription: string
@@ -23,21 +26,37 @@ function cleanKeyword(value: unknown): string {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : ''
 }
 
-export function normalizeSeoKeywords(input: unknown): string[] {
-  const source = Array.isArray(input) ? input : typeof input === 'string' ? input.split(',') : []
+export function isFixedSeoKeyword(value: unknown): boolean {
+  const key = cleanKeyword(value).toLowerCase()
+  if (!key) return false
+  return SEO_FIXED_KEYWORDS.some((item) => item.toLowerCase() === key)
+}
+
+function uniqueKeywords(source: unknown[], limit: number): string[] {
   const seen = new Set<string>()
   const result: string[] = []
-
-  for (const keyword of [...SEO_FIXED_KEYWORDS, ...source]) {
+  for (const keyword of source) {
     const value = cleanKeyword(keyword)
     const key = value.toLowerCase()
     if (!value || seen.has(key)) continue
     seen.add(key)
     result.push(value)
-    if (result.length >= MAX_SEO_KEYWORDS) break
+    if (result.length >= limit) break
   }
-
   return result
+}
+
+/** Owner-visible keywords only — vBiz Me terms are prepended on persist/public output. */
+export function ownerSeoKeywords(input: unknown): string[] {
+  const source = Array.isArray(input) ? input : typeof input === 'string' ? input.split(',') : []
+  return uniqueKeywords(
+    source.filter((keyword) => !isFixedSeoKeyword(keyword)),
+    MAX_OWNER_SEO_KEYWORDS
+  )
+}
+
+export function normalizeSeoKeywords(input: unknown): string[] {
+  return uniqueKeywords([...SEO_FIXED_KEYWORDS, ...ownerSeoKeywords(input)], MAX_SEO_KEYWORDS)
 }
 
 export function normalizeSeoMetadata(input: Partial<SeoMetadata> | null | undefined): SeoMetadata {

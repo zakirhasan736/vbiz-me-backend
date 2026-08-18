@@ -22,6 +22,13 @@ export function looksLikePhone(value: string): boolean {
   return digits.length >= 7 && digits.length <= 15
 }
 
+export function looksLikeDateOnly(value: string): boolean {
+  const normalized = value.trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false
+  const parsed = new Date(`${normalized}T00:00:00.000Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized
+}
+
 function stripSampleReviews(blueprint: CardBlueprint): CardBlueprint {
   const reviews = (blueprint.reviews || []).filter((row) => {
     const blob = `${row.author} ${row.text}`.toLowerCase()
@@ -69,6 +76,14 @@ export function sanitizeBlueprint(raw: unknown): { blueprint: CardBlueprint; iss
   }
   if (parsed.personal.phone && !looksLikePhone(parsed.personal.phone)) {
     issues.push({ code: 'invalid_phone', field: 'personal.phone', message: 'Phone format looks incomplete.' })
+  }
+  if (parsed.personal.dob && !looksLikeDateOnly(parsed.personal.dob)) {
+    issues.push({
+      code: 'invalid_date_of_birth',
+      field: 'personal.dob',
+      message: 'Date of birth must use YYYY-MM-DD.',
+    })
+    parsed = { ...parsed, personal: { ...parsed.personal, dob: '' } }
   }
 
   const enabledTabs = (parsed.enabledTabs || []).filter((name) => CATALOG_NAMES.has(name))

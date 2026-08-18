@@ -154,6 +154,20 @@ router.post(
 )
 
 router.post(
+  '/generate-seo',
+  catchAsyncError(async (req, res) => {
+    rateLimitOrThrow(req, 'fill', 40)
+    const data = await cardAgentService.generateSeo(req.body, req.user?.id)
+    sendResponse(res, {
+      success: true,
+      statusCode: 200,
+      message: 'SEO generated',
+      data,
+    })
+  })
+)
+
+router.post(
   '/jobs',
   optionalMultipart,
   catchAsyncError(async (req, res) => {

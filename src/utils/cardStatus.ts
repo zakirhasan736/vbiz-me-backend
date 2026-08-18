@@ -47,6 +47,19 @@ export const lifecycleStatusFlags = (status: CardLifecycleStatus): { isDraft: bo
   return { isDraft: false, isPublic: false }
 }
 
+export const resolveInitialCardLifecycle = (input: {
+  isDraft?: boolean
+  isPublic?: boolean
+}): { statusName: 'draft' | 'active' | 'inactive'; isDraft: boolean; isPublic: boolean } => {
+  const isDraft = input.isDraft !== false
+  const isPublic = isDraft ? false : input.isPublic !== false
+  return {
+    statusName: isDraft ? 'draft' : isPublic ? 'active' : 'inactive',
+    isDraft,
+    isPublic,
+  }
+}
+
 export const parseAccountLockSnapshot = (raw: unknown): AccountLockSnapshot | null => {
   if (!raw || typeof raw !== 'object') return null
   const obj = raw as Record<string, unknown>

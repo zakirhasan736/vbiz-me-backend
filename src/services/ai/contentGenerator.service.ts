@@ -1,4 +1,3 @@
-import { SEO_FIXED_KEYWORDS } from '../seoMetadata.service'
 import { logChatMeta } from './aiUsageLog.service'
 import type { MasterBusinessProfile } from './businessProfile.schema'
 import {
@@ -48,6 +47,7 @@ export function profileToBlueprintFacts(
     personal: {
       fullName: name,
       email: profile.email || '',
+      dob: profile.dateOfBirth || '',
       phone: profile.phone || '',
       whatsapp: profile.whatsapp || profile.phone || '',
       designation: profile.ownerTitle || '',
@@ -140,7 +140,7 @@ export async function generateSectionFromProfile(input: {
       : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
   const seoRule =
     input.section === 'seo'
-      ? `For SEO, include these required keywords exactly: ${SEO_FIXED_KEYWORDS.join(', ')}. Add no more than five additional high-volume/high-intent phrases when reasonably inferable and never invent numeric search-volume claims.`
+      ? 'For SEO, write a concise business-specific title and description from verified facts. Return 5-10 high-intent keywords about this business. Do not include vBiz Me platform keywords; those are added automatically. Never invent numeric search-volume claims.'
       : ''
   const writing = selectModelForTask({
     task:

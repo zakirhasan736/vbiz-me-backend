@@ -99,6 +99,7 @@ const fillFaqItemSchema = z.object({
 const personalFillSchema = z.object({
   fullName: z.string().optional().default(''),
   email: z.string().optional().default(''),
+  dob: z.string().optional().default(''),
   phone: z.string().optional().default(''),
   designation: z.string().optional().default(''),
   company: z.string().optional().default(''),
@@ -141,8 +142,8 @@ export const FILL_SECTION_SCHEMA_HINTS: Record<FillSectionId, string> = {
   education: `{ "education": [{ "institute": "", "degree": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
   experience: `{ "experience": [{ "company": "", "jobTitle": "", "description": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
   faqs: `{ "faqs": [{ "question": "", "answer": "" }] }`,
-  personal: `{ "personal": { "fullName": "", "email": "", "phone": "", "designation": "", "company": "", "about": "", "website": "", "address": "" }, "socialHandles": {} }`,
-  seo: `{ "seo": { "metaTitle": "", "metaDescription": "", "keywords": ["vbizme", "vbiz me", "virtual card", "digital business card", "online business card"] } }`,
+  personal: `{ "personal": { "fullName": "", "email": "", "dob": "YYYY-MM-DD", "phone": "", "designation": "", "company": "", "about": "", "website": "", "address": "" }, "socialHandles": {} }`,
+  seo: `{ "seo": { "metaTitle": "", "metaDescription": "", "keywords": ["business phrase", "service phrase"] } }`,
 }
 
 export function countFillEntries(section: FillSectionId, payload: Record<string, unknown>): number {
@@ -239,6 +240,7 @@ export const cardBlueprintSchema = z.object({
   personal: z.object({
     fullName: z.string(),
     email: z.string().optional().default(''),
+    dob: z.string().optional().default(''),
     phone: z.string().optional().default(''),
     whatsapp: z.string().optional().default(''),
     designation: z.string().optional().default(''),
@@ -293,7 +295,7 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
   "businessSummary": "2-3 sentence summary",
   "suggestedSlug": "url-friendly-slug",
   "personal": {
-    "fullName": "", "email": "", "phone": "", "whatsapp": "",
+    "fullName": "", "email": "", "dob": "YYYY-MM-DD", "phone": "", "whatsapp": "",
     "designation": "", "company": "", "profession": "",
     "address": "", "website": "", "about": ""
   },
@@ -313,7 +315,7 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
     "pushNotifications": true, "emailNotifications": true
   }
 }
-Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, populate those arrays with real extracted items. For reviews/testimonials, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture distinct items present in the crawl, up to 30. Never invent customer reviews. If no real reviews exist, return an empty reviews array. Creative wording is allowed for about, FAQs, headlines, and blog ideas, but never invent factual claims (years in business, licenses, awards, phone, email). Missing facts stay empty. Dates as YYYY-MM-DD when known.
+Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, populate those arrays with real extracted items. For reviews/testimonials, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture distinct items present in the crawl, up to 30. Never invent customer reviews. If no real reviews exist, return an empty reviews array. Creative wording is allowed for about, FAQs, headlines, and blog ideas, but never invent factual claims (years in business, licenses, awards, phone, email). Missing facts stay empty. Dates as YYYY-MM-DD when known. Never infer a date of birth; include personal.dob only when a source explicitly provides it.
 For services.type use ONLY: Web Development, App Design, SEO, Marketing, or Other.
 enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal and About Me are present. Never put Public Cards or My Info in enabledTabs — the product pins those last automatically. Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, News/Blogs, Profile, Portfolio, Certifications/Licenses, FAQ).`
 

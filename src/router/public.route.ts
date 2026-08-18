@@ -21,6 +21,17 @@ router.get('/cards/:slug/bootstrap', publicController.getBootstrap)
 router.get('/post-types', publicController.getPostTypes)
 router.get('/profiles/:id/settings', publicController.getSettings)
 router.get('/profiles/:id/announcement', publicController.getProfileAnnouncement)
+router.post(
+  '/profiles/:id/announcement/dismiss',
+  validSchema(PublicZodSchema.dismissAnnouncement),
+  publicController.dismissProfileAnnouncement
+)
+router.get('/profiles/:id/team-notices/active', publicController.getProfileTeamNotice)
+router.post(
+  '/profiles/:id/team-notices/:noticeId/dismiss',
+  validSchema(PublicZodSchema.dismissAnnouncement),
+  publicController.dismissProfileTeamNotice
+)
 router.get('/profile-ai-data/:id', publicController.getAiData)
 router.get('/dynamic-section/:name', publicController.getDynamicSection)
 router.get('/public-cards', publicController.getPublicCards)

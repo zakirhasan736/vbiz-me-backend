@@ -191,6 +191,23 @@ const update = catchAsyncError(async (req, res) => {
   })
 })
 
+const persistTours = catchAsyncError(async (req, res) => {
+  const user = req.user
+  if (!user?.id) {
+    throw new AppError(401, 'Unauthorized')
+  }
+
+  const keys = (req.body as { keys?: string[] }).keys ?? []
+  const completedTours = await authService.persistCompletedTours(user.id, keys)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    data: { completedTours },
+    message: 'Tours saved',
+  })
+})
+
 const author = catchAsyncError(async (req, res) => {
   const user = req.user
   if (!user?.id) {
@@ -263,6 +280,7 @@ const authController = {
   changePassword,
   deactivateAccount,
   update,
+  persistTours,
   author,
   logout,
   refreshToken,

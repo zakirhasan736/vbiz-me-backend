@@ -23,6 +23,7 @@ export function assembleAiCard(input: {
   const personalPatch = {
     fullName: String(valueOf('fullName') || facts.personal?.fullName || ''),
     email: String(valueOf('email') || facts.personal?.email || ''),
+    dob: String(valueOf('dob') || facts.personal?.dob || ''),
     phone: String(valueOf('phone') || facts.personal?.phone || ''),
     designation: String(valueOf('designation') || facts.personal?.designation || ''),
     company: String(valueOf('company') || facts.personal?.company || ''),

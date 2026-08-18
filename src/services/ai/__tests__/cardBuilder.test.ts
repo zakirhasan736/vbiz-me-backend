@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  cardActivationIssueMessage,
+  collectCardActivationIssues,
+  normalizeCardPhone,
+} from '../../../utils/cardActivation'
+import { resolveInitialCardLifecycle } from '../../../utils/cardStatus'
+import {
   SEO_FIXED_KEYWORDS,
   normalizeSeoKeywords,
   normalizeSeoMetadata,
@@ -13,7 +19,7 @@ import { profileToBlueprintFacts } from '../contentGenerator.service'
 import { classifyWebsitePage, pdfTextLooksScanned, stripWebsiteBoilerplate } from '../extractDocumentText'
 import { assessComplexity, routeAiTier, selectModelForTask } from '../modelRouter.service'
 import { decideRecommendedTabs } from '../tabDecision.service'
-import { filterRealReviews, looksLikeEmail, sanitizeBlueprint } from '../validation.service'
+import { filterRealReviews, looksLikeDateOnly, looksLikeEmail, sanitizeBlueprint } from '../validation.service'
 
 function profile(partial: Partial<MasterBusinessProfile>): MasterBusinessProfile {
   return masterBusinessProfileSchema.parse({
@@ -29,7 +35,7 @@ function profile(partial: Partial<MasterBusinessProfile>): MasterBusinessProfile
 }
 
 describe('vBiz Me auto card builder', () => {
-  it('normalizes card SEO to five required terms and at most ten keywords', () => {
+  it('normalizes card SEO to five required terms plus owner phrases', () => {
     const seo = normalizeSeoMetadata({
       metaTitle: 't'.repeat(100),
       metaDescription: 'd'.repeat(220),
@@ -39,7 +45,7 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(seo.metaTitle.length, 70)
     assert.equal(seo.metaDescription.length, 160)
     assert.deepEqual(seo.keywords.slice(0, SEO_FIXED_KEYWORDS.length), [...SEO_FIXED_KEYWORDS])
-    assert.equal(seo.keywords.length, 10)
+    assert.equal(seo.keywords.length, SEO_FIXED_KEYWORDS.length + 6)
   })
 
   it('adds fixed SEO keywords when a partial settings update contains SEO metadata', () => {
@@ -269,8 +275,11 @@ describe('vBiz Me auto card builder', () => {
       selectedNavIds: ['home', 'services', 'faq'],
     })
     const phone = fields.find((f) => f.fieldKey === 'phone')
+    const dob = fields.find((f) => f.fieldKey === 'dob')
     const faq = fields.find((f) => f.fieldKey === 'faqs')
     assert.equal(phone?.status, 'READY')
+    assert.equal(dob?.status, 'EMPTY')
+    assert.equal(dob?.required, true)
     assert.equal(faq?.status, 'EMPTY')
     assert.equal(faq?.aiGenerationAllowed, true)
     const skipped = skipField(faq!)
@@ -321,5 +330,80 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(parsed.verifiedReviews[0]?.rating, undefined)
     assert.equal(parsed.suggestedTestimonialTemplates[0]?.rating, 5)
     assert.equal(parsed.suggestedTestimonialTemplates[1]?.rating, 5)
+  })
+
+  it('keeps an explicitly sourced date of birth through the AI blueprint', () => {
+    const facts = profileToBlueprintFacts(profile({ dateOfBirth: '1990-07-18' }), [])
+    assert.equal(facts.personal?.dob, '1990-07-18')
+
+    const valid = sanitizeBlueprint({
+      businessSummary: 'Profile',
+      suggestedSlug: 'profile',
+      personal: { fullName: 'Profile Owner', dob: '1990-07-18' },
+    })
+    assert.equal(valid.blueprint.personal.dob, '1990-07-18')
+    assert.equal(looksLikeDateOnly('1990-07-18'), true)
+  })
+
+  it('drops malformed dates of birth instead of persisting invalid dates', () => {
+    const result = sanitizeBlueprint({
+      businessSummary: 'Profile',
+      suggestedSlug: 'profile',
+      personal: { fullName: 'Profile Owner', dob: '1990-02-31' },
+    })
+    assert.equal(result.blueprint.personal.dob, '')
+    assert.ok(result.issues.some((issue) => issue.code === 'invalid_date_of_birth'))
+  })
+
+  it('resolves create lifecycle status from the published flags', () => {
+    assert.deepEqual(resolveInitialCardLifecycle({ isDraft: false, isPublic: true }), {
+      statusName: 'active',
+      isDraft: false,
+      isPublic: true,
+    })
+    assert.deepEqual(resolveInitialCardLifecycle({}), {
+      statusName: 'draft',
+      isDraft: true,
+      isPublic: false,
+    })
+  })
+
+  it('blocks activation until all starred card fields are complete', () => {
+    const issues = collectCardActivationIssues({
+      slug: 'profile-owner',
+      name: 'Profile Owner',
+      email: 'owner@example.com',
+      dob: '',
+      phone: '',
+    })
+    assert.deepEqual(
+      issues.map((issue) => issue.field),
+      ['dob', 'phone']
+    )
+    assert.match(cardActivationIssueMessage(issues), /Date of birth, Phone/)
+  })
+
+  it('normalizes phone formatting before uniqueness checks', () => {
+    assert.equal(normalizeCardPhone('+1 (202) 555-0101'), '12025550101')
+    assert.equal(
+      collectCardActivationIssues({
+        slug: 'profile-owner',
+        name: 'Profile Owner',
+        email: 'owner@example.com',
+        dob: '1990-07-18',
+        phone: '+1 (202) 555-0101',
+      }).length,
+      0
+    )
+    assert.equal(
+      collectCardActivationIssues({
+        slug: 'profile-owner',
+        name: 'Profile Owner',
+        email: 'owner@example.com',
+        dob: '1990-07-18T00:00:00.000Z',
+        phone: '+1 (202) 555-0101',
+      }).some((issue) => issue.field === 'dob' && issue.reason === 'invalid'),
+      true
+    )
   })
 })

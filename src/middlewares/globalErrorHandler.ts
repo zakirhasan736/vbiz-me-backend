@@ -41,6 +41,15 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
       message = error.message
       errorMessages = [{ path: error.field || 'file', message }]
     }
+  } else if (
+    error?.status === 413 ||
+    error?.statusCode === 413 ||
+    error?.type === 'entity.too.large' ||
+    error?.name === 'PayloadTooLargeError'
+  ) {
+    statusCode = 413
+    message = MEDIA_UPLOAD_TOO_LARGE_MESSAGE
+    errorMessages = [{ path: 'file', message }]
   } else if (error instanceof ZodError) {
     const simpleErr = handleZodError(error)
     statusCode = simpleErr.statusCode

@@ -38,6 +38,7 @@ const userSelect = {
   isVerified: true,
   isActive: true,
   accountStatus: true,
+  completedTours: true,
   deletedAt: true,
   createdAt: true,
   updatedAt: true,
@@ -56,6 +57,7 @@ type AuthUserRecord = {
   isVerified: boolean
   isActive: boolean
   accountStatus?: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
+  completedTours?: string[]
   deletedAt?: Date | null
   createdAt: Date
   updatedAt: Date
@@ -119,6 +121,7 @@ const mapUser = (user: AuthUserRecord): IAuthUser => ({
   isVerified: user.isVerified,
   isActive: user.isActive,
   accountStatus: user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED'),
+  completedTours: user.completedTours ?? [],
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 })

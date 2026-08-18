@@ -11,6 +11,8 @@ const strongPassword = z
   .regex(/[0-9]/, 'Password must contain at least one number')
   .regex(SPECIAL_CHAR_REGEX, 'Password must contain at least one special character')
 
+const turnstileToken = z.string().trim().min(1, 'Security verification is required').max(2048).optional()
+
 const register = z
   .object({
     name: z.string().min(1, 'Name is required'),
@@ -19,6 +21,7 @@ const register = z
     role: z.enum(['vcard-owner', 'corporate-owner'] as const, {
       errorMap: () => ({ message: 'Role must be vcard-owner or corporate-owner' }),
     }),
+    turnstileToken,
   })
   .refine((data) => data.password.trim().toLowerCase() !== data.email.trim().toLowerCase(), {
     message: PASSWORD_NOT_SAME_AS_EMAIL,
@@ -28,6 +31,7 @@ const register = z
 const login = z.object({
   email: z.string().email('Valid email is required'),
   password: z.string().min(1, 'Password is required'),
+  turnstileToken,
 })
 
 const update = z
@@ -53,6 +57,7 @@ const verifyEmail = z.object({
 
 const forgotPassword = z.object({
   email: z.string().email('Valid email is required'),
+  turnstileToken,
 })
 
 const verifyForgotPassword = z.object({
@@ -77,6 +82,10 @@ const resendPasswordSetup = z.object({
   email: z.string().email('Valid email is required'),
 })
 
+const persistTours = z.object({
+  keys: z.array(z.enum(['dashboard', 'create_card'])).min(1),
+})
+
 const AuthZodSchema = {
   register,
   login,
@@ -89,6 +98,7 @@ const AuthZodSchema = {
   changePassword,
   verifyPasswordSetup,
   resendPasswordSetup,
+  persistTours,
 }
 
 export default AuthZodSchema
