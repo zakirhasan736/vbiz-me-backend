@@ -10,6 +10,7 @@ import AppError from '../error/AppError'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
+import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
@@ -1219,6 +1220,22 @@ const getDynamicSection = async (
           })
         }
         if (rows.length) {
+          logPublicSectionMedia(
+            tab.publicSectionName,
+            profileId,
+            { items: rows },
+            {
+              storage: tab.storage,
+              source: 'direct-table',
+              db: rows.map((row) => ({
+                id: row.id,
+                title: row.title,
+                featuredImage: row.featuredImage,
+                url: row.url,
+                status: row.status,
+              })),
+            }
+          )
           return {
             type: tab.publicSectionName,
             postType: {
@@ -1315,6 +1332,30 @@ const getDynamicSection = async (
         : mappedLegacy.length
           ? mappedLegacy
           : hydrated
+      logPublicSectionMedia(
+        name,
+        profileId,
+        { items },
+        {
+          source: galleryHasMedia(hydrated) ? 'gallery' : mappedLegacy.length ? 'portfolio' : 'gallery-empty',
+          galleryDb: galleryRows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            featuredImage: row.featuredImage,
+            attachmentUrl: row.attachmentUrl,
+            url: row.url,
+            status: row.status,
+          })),
+          portfolioDb: legacy.map((row) => ({
+            id: row.id,
+            title: row.title,
+            imageUrl: row.imageUrl,
+            attachmentUrl: row.attachmentUrl,
+            url: row.url,
+            status: row.status,
+          })),
+        }
+      )
       if (items.length) {
         return {
           type: 'gallery',
@@ -1354,6 +1395,21 @@ const getDynamicSection = async (
       take: takeOverride ?? 200,
     })
     if (items.length) {
+      logPublicSectionMedia(
+        name,
+        profileId,
+        { items },
+        {
+          source: 'review-table',
+          db: items.map((row) => ({
+            id: row.id,
+            author: row.author,
+            imageUrl: row.imageUrl,
+            reviewUrl: row.reviewUrl,
+            status: row.status,
+          })),
+        }
+      )
       return {
         type: 'reviews',
         postType: { name: 'reviews', title: 'Reviews' },
