@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto'
 import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
 import { AccountStatus } from '../../generated/prisma/enums'
-import config from '../configs/config'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
@@ -11,7 +10,6 @@ import {
   cardActivationIssueMessage,
   collectCardActivationIssues,
   normalizeCardEmail,
-  normalizeCardPhone,
   type CardActivationInput,
 } from '../utils/cardActivation'
 import {
@@ -943,45 +941,42 @@ const asOptionalString = (value: unknown): string | undefined => {
   return trimmed || undefined
 }
 
+const CARD_EMAIL_CONFLICT_MESSAGE = 'This email is already assigned to another card. Use a different email.'
+
+const assertUniqueCardEmail = async (value: unknown, excludeProfileId?: string) => {
+  const email = normalizeCardEmail(value)
+  if (!email) return
+
+  const emailConflict = await prisma.profile.findFirst({
+    where: {
+      ...(excludeProfileId ? { id: { not: excludeProfileId } } : {}),
+      email: { equals: email, mode: 'insensitive' },
+    },
+    select: { id: true },
+  })
+
+  if (emailConflict) {
+    throw new AppError(409, CARD_EMAIL_CONFLICT_MESSAGE)
+  }
+}
+
+const withCardEmailConflict = async <T>(operation: () => Promise<T>): Promise<T> => {
+  try {
+    return await operation()
+  } catch (error) {
+    const prismaError = error as { code?: string; message?: string; meta?: { target?: unknown } }
+    const target = `${String(prismaError.meta?.target || '')} ${prismaError.message || ''}`
+    if (prismaError.code === 'P2002' && /email/i.test(target)) {
+      throw new AppError(409, CARD_EMAIL_CONFLICT_MESSAGE)
+    }
+    throw error
+  }
+}
+
 const assertCardCanActivate = async (input: CardActivationInput, excludeProfileId?: string) => {
   const issues = collectCardActivationIssues(input)
   if (issues.length) throw new AppError(422, cardActivationIssueMessage(issues))
-
-  const email = normalizeCardEmail(input.email)
-  const phone = normalizeCardPhone(input.phone)
-  const excludedId = excludeProfileId || ''
-  const checkEmail = config.PROFILE_UNIQUE_CONTACT === 'email' || config.PROFILE_UNIQUE_CONTACT === 'both'
-  const checkPhone = config.PROFILE_UNIQUE_CONTACT === 'phone' || config.PROFILE_UNIQUE_CONTACT === 'both'
-  const [emailConflict, phoneConflicts] = await Promise.all([
-    checkEmail
-      ? prisma.profile.findFirst({
-          where: {
-            id: { not: excludedId },
-            isDraft: false,
-            email: { equals: email, mode: 'insensitive' },
-          },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
-    checkPhone
-      ? prisma.$queryRaw<Array<{ id: string }>>`
-          SELECT "id"
-          FROM "Profile"
-          WHERE "id" <> ${excludedId}
-            AND "isDraft" = FALSE
-            AND regexp_replace(COALESCE("phone", ''), '[^0-9]', '', 'g') = ${phone}
-          LIMIT 1
-        `
-      : Promise.resolve([]),
-  ])
-
-  const conflicts = [emailConflict ? 'email' : '', phoneConflicts.length ? 'phone' : ''].filter(Boolean)
-  if (conflicts.length) {
-    throw new AppError(
-      409,
-      `Card cannot be activated. Use a unique ${conflicts.join(' and ')} not assigned to another active or inactive card.`
-    )
-  }
+  await assertUniqueCardEmail(input.email, excludeProfileId)
 }
 
 /** Upsert the primary Address row used for street address (line1). */
@@ -1112,7 +1107,8 @@ const create = async (
   await assertCanCreateCard(capacityUserId, capacityRole)
 
   const slug = await ensureUniqueSlug(String(raw.slug || raw.name))
-  const resolvedEmail = (raw.email as string) || profileOwnerEmail
+  const resolvedEmail =
+    'email' in raw ? (typeof raw.email === 'string' ? raw.email.trim() : '') : profileOwnerEmail.trim()
   const initialLifecycle = resolveInitialCardLifecycle({
     isDraft: raw.isDraft as boolean | undefined,
     isPublic: raw.isPublic as boolean | undefined,
@@ -1125,49 +1121,53 @@ const create = async (
       dob: raw.dob,
       phone: raw.phone,
     })
+  } else {
+    await assertUniqueCardEmail(resolvedEmail)
   }
   const initialStatus = await ensureStatusByName(initialLifecycle.statusName)
-  const profile = await prisma.profile.create({
-    data: {
-      userId: profileOwnerId,
-      createdById,
-      companyUserId,
-      name: String(raw.name),
-      email: resolvedEmail,
-      slug,
-      companyName: raw.companyName as string | undefined,
-      designation: raw.designation as string | undefined,
-      phone: raw.phone as string | undefined,
-      whatsapp: raw.whatsapp as string | undefined,
-      website: raw.website as string | undefined,
-      address: raw.address as string | undefined,
-      about: raw.about as string | undefined,
-      prof: raw.prof as string | undefined,
-      dob: raw.dob ? new Date(String(raw.dob)) : undefined,
-      template: (raw.template as string) || 'default',
-      themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
-      statusId: initialStatus.id,
-      isPublic: initialLifecycle.isPublic,
-      isDraft: initialLifecycle.isDraft,
-      facebook: raw.facebook as string | undefined,
-      instagram: raw.instagram as string | undefined,
-      twitter: raw.twitter as string | undefined,
-      tiktok: raw.tiktok as string | undefined,
-      youtube: raw.youtube as string | undefined,
-      linkedin: raw.linkedin as string | undefined,
-      profileSettings: {
-        create: {
-          profileTemplate:
-            profileSettings?.profileTemplate ||
-            (raw.template === 'dynamic' ? 'v1' : raw.template === 'classic' ? 'v2' : 'v3'),
-          layoutStyle: profileSettings?.layoutStyle,
-          buttonStyle: profileSettings?.buttonStyle,
-          cornerStyle: profileSettings?.cornerStyle,
-          themeConfig: profileSettings?.themeConfig as object | undefined,
+  const profile = await withCardEmailConflict(() =>
+    prisma.profile.create({
+      data: {
+        userId: profileOwnerId,
+        createdById,
+        companyUserId,
+        name: String(raw.name),
+        email: resolvedEmail,
+        slug,
+        companyName: raw.companyName as string | undefined,
+        designation: raw.designation as string | undefined,
+        phone: raw.phone as string | undefined,
+        whatsapp: raw.whatsapp as string | undefined,
+        website: raw.website as string | undefined,
+        address: raw.address as string | undefined,
+        about: raw.about as string | undefined,
+        prof: raw.prof as string | undefined,
+        dob: raw.dob ? new Date(String(raw.dob)) : undefined,
+        template: (raw.template as string) || 'default',
+        themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
+        statusId: initialStatus.id,
+        isPublic: initialLifecycle.isPublic,
+        isDraft: initialLifecycle.isDraft,
+        facebook: raw.facebook as string | undefined,
+        instagram: raw.instagram as string | undefined,
+        twitter: raw.twitter as string | undefined,
+        tiktok: raw.tiktok as string | undefined,
+        youtube: raw.youtube as string | undefined,
+        linkedin: raw.linkedin as string | undefined,
+        profileSettings: {
+          create: {
+            profileTemplate:
+              profileSettings?.profileTemplate ||
+              (raw.template === 'dynamic' ? 'v1' : raw.template === 'classic' ? 'v2' : 'v3'),
+            layoutStyle: profileSettings?.layoutStyle,
+            buttonStyle: profileSettings?.buttonStyle,
+            cornerStyle: profileSettings?.cornerStyle,
+            themeConfig: profileSettings?.themeConfig as object | undefined,
+          },
         },
       },
-    },
-  })
+    })
+  )
 
   await upsertPrimaryAddress(profile.id, {
     address: raw.address,
@@ -1268,6 +1268,8 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
           text: item.text,
           rating: item.rating,
           status: item.status,
+          imageUrl: item.imageUrl,
+          reviewUrl: item.reviewUrl,
           sortOrder: index,
         },
       })
@@ -1317,7 +1319,7 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
   )
   const created = await create(userId, role, {
     name: `${source.name?.trim() || 'Card'} (Copy)`,
-    email: source.email,
+    email: '',
     slug: `${source.slug?.trim() || source.name || 'card'}-copy`,
     companyName: source.companyName || undefined,
     designation: source.designation || undefined,
@@ -1408,6 +1410,10 @@ const update = async (
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
   const requestedStatus = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : undefined
 
+  if ('email' in raw) {
+    profileData.email = typeof raw.email === 'string' ? raw.email.trim() : ''
+  }
+
   if ('dob' in raw) {
     const dobValue = raw.dob
     profileData.dob = dobValue === null || dobValue === undefined || dobValue === '' ? null : new Date(String(dobValue))
@@ -1445,6 +1451,8 @@ const update = async (
       },
       profileId
     )
+  } else if ('email' in raw) {
+    await assertUniqueCardEmail(raw.email, profileId)
   }
 
   if (requestedStatus) {
@@ -1498,10 +1506,12 @@ const update = async (
     }
   }
 
-  await prisma.profile.update({
-    where: { id: profileId },
-    data: profileData,
-  })
+  await withCardEmailConflict(() =>
+    prisma.profile.update({
+      where: { id: profileId },
+      data: profileData,
+    })
+  )
 
   if ('address' in raw) {
     await upsertPrimaryAddress(profileId, {
@@ -1680,6 +1690,31 @@ const replaceCollection = async <T extends Record<string, unknown>>(
           ...mapItem(items[index]),
         },
       })
+    }
+    if (kind === 'portfolios') {
+      await tx.portfolio.deleteMany({ where: { profileId } })
+      for (let index = 0; index < items.length; index += 1) {
+        const mapped = mapItem(items[index])
+        const statusValue = Number(mapped.status)
+        await tx.portfolio.create({
+          data: {
+            profileId,
+            sortOrder: index,
+            title: typeof mapped.title === 'string' ? mapped.title : null,
+            description: typeof mapped.description === 'string' ? mapped.description : null,
+            status: Number.isFinite(statusValue) ? statusValue : 1,
+            url: typeof mapped.url === 'string' ? mapped.url : null,
+            imageUrl:
+              typeof mapped.featuredImage === 'string'
+                ? mapped.featuredImage
+                : typeof mapped.imageUrl === 'string'
+                  ? mapped.imageUrl
+                  : null,
+            attachmentUrl: typeof mapped.attachmentUrl === 'string' ? mapped.attachmentUrl : null,
+            attachmentName: typeof mapped.attachmentName === 'string' ? mapped.attachmentName : null,
+          },
+        })
+      }
     }
   })
   const owned = await getOwnedLite(profileId, userId, role)

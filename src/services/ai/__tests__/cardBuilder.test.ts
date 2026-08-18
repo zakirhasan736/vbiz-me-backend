@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import {
   cardActivationIssueMessage,
   collectCardActivationIssues,
+  normalizeCardEmail,
   normalizeCardPhone,
 } from '../../../utils/cardActivation'
 import { resolveInitialCardLifecycle } from '../../../utils/cardStatus'
@@ -383,7 +384,11 @@ describe('vBiz Me auto card builder', () => {
     assert.match(cardActivationIssueMessage(issues), /Date of birth, Phone/)
   })
 
-  it('normalizes phone formatting before uniqueness checks', () => {
+  it('normalizes card email casing and whitespace for uniqueness checks', () => {
+    assert.equal(normalizeCardEmail('  Owner@Example.COM '), 'owner@example.com')
+  })
+
+  it('normalizes phone formatting only for activation validation', () => {
     assert.equal(normalizeCardPhone('+1 (202) 555-0101'), '12025550101')
     assert.equal(
       collectCardActivationIssues({

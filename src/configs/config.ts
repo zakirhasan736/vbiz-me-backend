@@ -53,7 +53,6 @@ const {
   BIRTHDAY_CRON_ENABLED,
   BIRTHDAY_CRON_TZ,
   BIRTHDAY_CRON_EXPR,
-  PROFILE_UNIQUE_CONTACT,
   GOOGLE_WALLET_ISSUER_ID,
   GOOGLE_WALLET_SA_JSON,
   GOOGLE_WALLET_SA_EMAIL,
@@ -80,9 +79,6 @@ const parseCommaSeparatedList = (value?: string): string[] =>
 const frontendUrl = NODE_ENV === 'production' ? FRONTEND_URL : FRONTEND_URL || 'http://localhost:3000'
 const corsOrigins = parseCommaSeparatedList(CORS_ORIGINS)
 const turnstileEnabled = (TURNSTILE_ENABLED || 'false').trim().toLowerCase() === 'true'
-const profileUniqueContact = ['email', 'both'].includes((PROFILE_UNIQUE_CONTACT || '').trim().toLowerCase())
-  ? ((PROFILE_UNIQUE_CONTACT || '').trim().toLowerCase() as 'email' | 'both')
-  : 'phone'
 const allowedCorsOrigins = Array.from(
   new Set(
     [
@@ -173,7 +169,6 @@ export default {
     TZ: (BIRTHDAY_CRON_TZ || 'Asia/Dhaka').trim() || 'Asia/Dhaka',
     EXPR: (BIRTHDAY_CRON_EXPR || '0 9 * * *').trim() || '0 9 * * *',
   },
-  PROFILE_UNIQUE_CONTACT: profileUniqueContact,
   GOOGLE_WALLET: {
     ISSUER_ID: (GOOGLE_WALLET_ISSUER_ID || '').trim(),
     SA_JSON: (GOOGLE_WALLET_SA_JSON || '').trim() || undefined,

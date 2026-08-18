@@ -59,6 +59,30 @@ export const isAbsoluteMediaUrl = (value?: string | null): boolean => {
   return /^https?:\/\//i.test(value) || value.startsWith('//')
 }
 
+const MEDIA_FILE_EXT = /\.(jpe?g|png|gif|webp|avif|svg|bmp|mp4|webm|mov|m4v|avi|mkv|mp3|wav|ogg|pdf)(?:$|[?#])/i
+const EXTERNAL_PAGE_HOST =
+  /(youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|facebook\.com|fb\.watch|tiktok\.com|instagram\.com|linkedin\.com|google\.com|g\.page|maps\.app|rumble\.com)$/i
+
+/** Uploaded files and S3 keys — safe to treat as featured images/videos. */
+export const looksLikeMediaAssetUrl = (value?: string | null): boolean => {
+  if (!value) return false
+  const raw = value.trim()
+  if (!raw) return false
+  if (/\/storage\/ecard\//i.test(raw) || /amazonaws\.com|\.s3[.-]|cloudfront\.net/i.test(raw)) return true
+  return MEDIA_FILE_EXT.test(raw.split('?')[0] || raw)
+}
+
+/** Watch/page links (YouTube, Google review, etc.) must not be sent as featured images. */
+export const looksLikeExternalPageUrl = (value?: string | null): boolean => {
+  if (!value || looksLikeMediaAssetUrl(value)) return false
+  try {
+    const host = new URL(value.startsWith('//') ? `https:${value}` : value).hostname.toLowerCase()
+    return EXTERNAL_PAGE_HOST.test(host)
+  } catch {
+    return false
+  }
+}
+
 export const isAlreadyOnS3 = (url?: string | null): boolean => {
   if (!url) return false
   const base = (config.S3.PUBLIC_BASE_URL || '').replace(/\/$/, '')

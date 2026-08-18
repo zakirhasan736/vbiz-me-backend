@@ -10,7 +10,7 @@ import AppError from '../error/AppError'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
-import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
+import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
 import profileService from './profile.service'
@@ -1228,8 +1228,12 @@ const getDynamicSection = async (
             },
             profile: { id: profileId },
             items: rows.map((p) => {
-              const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
-              const urlFromField = liveList ? null : abs(p.url, null, 7, 'Featured Image')
+              const href = p.url?.trim() || ''
+              const featuredRaw = p.featuredImage?.trim() || ''
+              const featuredIsMedia = Boolean(featuredRaw) && !looksLikeExternalPageUrl(featuredRaw)
+              const urlIsMedia = Boolean(href) && looksLikeMediaAssetUrl(href) && !looksLikeExternalPageUrl(href)
+              const featuredFromField = featuredIsMedia ? abs(featuredRaw, null, 7, 'Featured Image') : null
+              const urlFromField = !liveList && urlIsMedia ? abs(href, null, 7, 'Featured Image') : null
               const asset = mediaAsset(p.id, p.title, featuredFromField)
               const urlAsset =
                 urlFromField && urlFromField !== featuredFromField
@@ -1243,6 +1247,7 @@ const getDynamicSection = async (
               const year = typeof metas.year === 'string' ? metas.year.trim() : ''
               const attachments = [asset, urlAsset].filter(Boolean)
               const featuredImage = liveList ? (asset ? [asset] : []) : asset
+              const isVideoTab = tab.storage === 'video_link' || tab.storage === 'video'
               return {
                 id: p.id,
                 title: p.title,
@@ -1251,8 +1256,10 @@ const getDynamicSection = async (
                 issuer,
                 year,
                 featured_image: featuredImage,
-                general_info_url: p.url,
-                review_link: { url: p.url || '', has_link: Boolean(p.url) },
+                general_info_url: href,
+                url: href,
+                video_url: isVideoTab ? href : undefined,
+                review_link: { url: href, has_link: Boolean(href) },
                 attachments,
                 metas,
                 created_at: p.createdAt,
@@ -1351,15 +1358,21 @@ const getDynamicSection = async (
         type: 'reviews',
         postType: { name: 'reviews', title: 'Reviews' },
         profile: { id: profileId },
-        items: items.map((r) => ({
-          id: r.id,
-          title: r.author,
-          description: r.text,
-          status: r.status,
-          rating: r.rating,
-          featured_image: null,
-          review_link: { url: '', has_link: false },
-        })),
+        items: items.map((r) => {
+          const imageUrl = abs(r.imageUrl, null, 7, 'Featured Image')
+          const reviewUrl = r.reviewUrl?.trim() || ''
+          const asset = mediaAsset(r.id, r.author, imageUrl)
+          return {
+            id: r.id,
+            title: r.author,
+            description: r.text,
+            status: r.status,
+            rating: r.rating,
+            featured_image: asset,
+            review_link: { url: reviewUrl, has_link: Boolean(reviewUrl) },
+            general_info_url: reviewUrl,
+          }
+        }),
       }
     }
   }

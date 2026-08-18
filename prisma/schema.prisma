@@ -1222,6 +1222,8 @@ model Review {
   rating    Int      @default(5)
   status    Int      @default(1)
   sortOrder Int      @default(0)
+  imageUrl  String?
+  reviewUrl String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

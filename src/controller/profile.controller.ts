@@ -173,6 +173,8 @@ const replaceReviews = catchAsyncError(async (req, res) => {
         text: item.text,
         rating,
         status: item.status ?? 1,
+        imageUrl: typeof item.imageUrl === 'string' ? item.imageUrl : item.featuredImage,
+        reviewUrl: typeof item.reviewUrl === 'string' ? item.reviewUrl : item.url,
       }
     }
   )

@@ -562,6 +562,8 @@ const createTabItem = async (profileId: string, tabKey: string, userId: string, 
                 text: str(input.description),
                 rating: Number(input.metas?.rating) || 5,
                 status: Number(statusOf(input.status)),
+                reviewUrl: str(input.url),
+                imageUrl: str(input.featuredImage),
               }
             : listCreateData(tab, input)
     const row = await model.create({ data: { profileId, sortOrder, ...data } })
@@ -615,6 +617,8 @@ const updateTabItem = async (
                 ...(input.description !== undefined ? { text: str(input.description) } : {}),
                 ...(input.status !== undefined ? { status: Number(statusOf(input.status)) } : {}),
                 ...(input.metas?.rating !== undefined ? { rating: Number(input.metas.rating) || 5 } : {}),
+                ...(input.url !== undefined ? { reviewUrl: str(input.url) } : {}),
+                ...(input.featuredImage !== undefined ? { imageUrl: str(input.featuredImage) } : {}),
               }
             : tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)
               ? {
