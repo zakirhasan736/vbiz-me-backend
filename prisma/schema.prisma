@@ -1048,9 +1048,11 @@ model TeamMember {
 }
 
 model Client {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id              String    @id @default(cuid())
+  legacyPostId    Int?      @unique
+  /** Laravel `services.id` when this client row was copied from a Service. */
+  legacyServiceId Int?      @unique
+  profileId       String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -1214,21 +1216,24 @@ model Portfolio {
 }
 
 model Review {
-  id        String   @id @default(cuid())
-  profileId String
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  author    String?
-  text      String?
-  rating    Int      @default(5)
-  status    Int      @default(1)
-  sortOrder Int      @default(0)
-  imageUrl  String?
-  reviewUrl String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  /// Laravel `services.id`; this is the authoritative legacy media/link relationship.
+  legacyServiceId Int?
+  profileId       String
+  profile         Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  author          String?
+  text            String?
+  rating          Int      @default(5)
+  status          Int      @default(1)
+  sortOrder       Int      @default(0)
+  imageUrl        String?
+  reviewUrl       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([profileId])
   @@index([profileId, status])
+  @@index([legacyServiceId])
 }
 
 model PostType {

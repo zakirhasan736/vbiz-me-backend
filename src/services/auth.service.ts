@@ -60,9 +60,7 @@ const register = async (body: IRegisterBody): Promise<VerificationCooldown> => {
     },
   })
 
-  if (body.role === 'corporate-owner') {
-    await subscriptionService.ensureCorporateStarterSubscription(user.id)
-  }
+  await subscriptionService.ensureOwnerStarterSubscription(user.id, body.role)
 
   return queueOrSendVerificationEmail(email, { awaitSend: false })
 }

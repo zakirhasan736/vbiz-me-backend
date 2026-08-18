@@ -85,6 +85,19 @@ export function collectCardActivationIssues(input: CardActivationInput): CardAct
   return issues
 }
 
+export function collectCardCreationIssues(input: Pick<CardActivationInput, 'dob'>): CardActivationIssue[] {
+  const dob = cardDateOnly(input.dob)
+  if (!dob) return [{ field: 'dob', label: 'Date of birth', reason: 'missing' }]
+  const reason = birthDateIssueReason(input.dob)
+  return reason ? [{ field: 'dob', label: 'Date of birth', reason }] : []
+}
+
+export function cardCreationIssueMessage(issue: CardActivationIssue): string {
+  if (issue.reason === 'missing') return 'Date of birth is required to create a card.'
+  if (issue.reason === 'underage') return 'You must be at least 12 years old to create a card.'
+  return 'Enter a valid date of birth in YYYY-MM-DD format.'
+}
+
 export function cardActivationIssueMessage(issues: CardActivationIssue[]): string {
   const missing = issues.filter((issue) => issue.reason === 'missing')
   const invalid = issues.filter((issue) => issue.reason === 'invalid')

@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { slugify } from '../../../middlewares/ownership'
 import {
   cardActivationIssueMessage,
+  cardCreationIssueMessage,
   collectCardActivationIssues,
+  collectCardCreationIssues,
   minCardAgeCutoffDate,
   normalizeCardEmail,
   normalizeCardPhone,
@@ -291,7 +294,9 @@ describe('vBiz Me auto card builder', () => {
       fields.map((f) => (f.id === faq!.id ? skipped : f)),
       ['home', 'services', 'faq']
     )
-    assert.ok(!next || next.fieldKey !== 'faqs')
+    assert.equal(next?.fieldKey, 'dob')
+    assert.match(next?.prompt || '', /required/i)
+    assert.match(next?.prompt || '', /cannot be inferred or generated/i)
   })
 
   it('does not allow AI to invent reviews or licenses', async () => {
@@ -392,6 +397,10 @@ describe('vBiz Me auto card builder', () => {
     })
   })
 
+  it('keeps slug candidates normalized before automatic uniqueness suffixing', () => {
+    assert.equal(slugify('  Jane Doe & Company  '), 'jane-doe-company')
+  })
+
   it('blocks activation until starred card fields are complete', () => {
     const issues = collectCardActivationIssues({
       slug: 'profile-owner',
@@ -420,6 +429,19 @@ describe('vBiz Me auto card builder', () => {
     )
   })
 
+  it('requires a valid date of birth for every new card, including drafts', () => {
+    const missing = collectCardCreationIssues({ dob: '' })
+    assert.deepEqual(
+      missing.map((issue) => issue.field),
+      ['dob']
+    )
+    assert.equal(cardCreationIssueMessage(missing[0]!), 'Date of birth is required to create a card.')
+
+    const invalid = collectCardCreationIssues({ dob: '1990-02-31' })
+    assert.equal(invalid[0]?.reason, 'invalid')
+    assert.equal(collectCardCreationIssues({ dob: '1990-07-18' }).length, 0)
+  })
+
   it('rejects an invalid phone number when one is provided', () => {
     const issues = collectCardActivationIssues({
       slug: 'profile-owner',
@@ -434,7 +456,7 @@ describe('vBiz Me auto card builder', () => {
     )
   })
 
-  it('normalizes card email casing and whitespace for uniqueness checks', () => {
+  it('normalizes card email casing and whitespace without imposing card uniqueness', () => {
     assert.equal(normalizeCardEmail('  Owner@Example.COM '), 'owner@example.com')
   })
 

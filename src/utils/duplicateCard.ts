@@ -1,5 +1,7 @@
-/** Unique or identity fields that must not be copied onto a duplicated vCard. Phone and WhatsApp may be reused. */
-export const clearedDuplicateContactFields = {
-  email: '',
-  dob: null,
-} as const
+/** Contact and identity fields are preserved when duplicating a card. */
+export function duplicateContactFields(source: { email?: string | null; dob?: Date | string | null }) {
+  return {
+    email: source.email || '',
+    dob: source.dob ?? null,
+  }
+}

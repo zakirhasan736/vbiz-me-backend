@@ -375,9 +375,7 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
     },
   })
 
-  if (body.role === 'corporate-owner') {
-    await subscriptionService.ensureCorporateStarterSubscription(user.id)
-  }
+  await subscriptionService.ensureOwnerStarterSubscription(user.id, body.role)
 
   await writeAuditLog({
     action: 'User Created',

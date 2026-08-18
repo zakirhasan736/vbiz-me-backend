@@ -1,5 +1,10 @@
 import AppError from '../../error/AppError'
-import { cardActivationIssueMessage, collectCardActivationIssues } from '../../utils/cardActivation'
+import {
+  cardActivationIssueMessage,
+  cardCreationIssueMessage,
+  collectCardActivationIssues,
+  collectCardCreationIssues,
+} from '../../utils/cardActivation'
 import { seoMetadataToSettings } from '../seoMetadata.service'
 import { summarizeExtraction } from './cardAgent.service'
 import { assembleAiCard } from './cardAssembler.service'
@@ -268,6 +273,9 @@ export async function applyFieldAction(input: {
 
   let next: AiCardField
   if (input.action === 'SKIP') {
+    if (field.required) {
+      throw new AppError(400, `${field.fieldLabel} is required and cannot be skipped.`)
+    }
     next = skipField(field)
   } else if (input.action === 'KEEP_THIS' || input.action === 'USE_EXISTING' || input.action === 'KEEP_NAMES_ONLY') {
     next = {
@@ -279,6 +287,10 @@ export async function applyFieldAction(input: {
   } else if (input.action === 'USER_INPUT' || input.action === 'UPLOAD') {
     if (input.value == null || (typeof input.value === 'string' && !input.value.trim())) {
       throw new AppError(400, 'Add a value before saving.')
+    }
+    if (field.fieldKey === 'dob') {
+      const issue = collectCardCreationIssues({ dob: input.value })[0]
+      if (issue) throw new AppError(400, cardCreationIssueMessage(issue))
     }
     next = applyUserFieldValue(field, input.value)
   } else if (input.action === 'AI_GENERATE' || input.action === 'IMPROVE_WITH_AI') {
@@ -314,7 +326,7 @@ export async function runFastMode(jobId: string, mode: 'ai' | 'found' | 'review'
 
   if (mode === 'found') {
     const fields = session.fieldGraph.map((field) =>
-      field.status === 'EMPTY' || field.status === 'PARTIAL' ? skipField(field) : field
+      !field.required && (field.status === 'EMPTY' || field.status === 'PARTIAL') ? skipField(field) : field
     )
     return publicJob(await assembleAndReady(await save(session, { fieldGraph: fields })))
   }
@@ -368,11 +380,7 @@ async function assembleAndReady(session: CardBuildSession) {
     selectedNavIds: assembling.selectedNavIds,
   })
   const requiredEmpty = assembling.fieldGraph.filter(
-    (field) =>
-      assembling.selectedNavIds.includes(field.tabId) &&
-      field.required &&
-      field.status !== 'READY' &&
-      field.status !== 'SKIPPED'
+    (field) => assembling.selectedNavIds.includes(field.tabId) && field.required && field.status !== 'READY'
   )
   if (requiredEmpty.length) {
     return save(assembling, {
@@ -414,6 +422,10 @@ export async function applyJob(input: {
     throw new AppError(409, ready.errorMessage || 'Finish the remaining card details first.')
   }
   const personal = ready.blueprint.personal
+  const dobIssue = collectCardCreationIssues({ dob: personal.dob })[0]
+  if (dobIssue) {
+    throw new AppError(400, cardCreationIssueMessage(dobIssue))
+  }
   if (input.publish === true) {
     const issues = collectCardActivationIssues({
       slug: ready.blueprint.suggestedSlug,

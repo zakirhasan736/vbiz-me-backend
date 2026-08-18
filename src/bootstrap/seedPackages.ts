@@ -9,23 +9,22 @@ const DEFAULT_PACKAGES = [
   {
     slug: 'corporate-starter',
     name: 'Corporate Starter',
-    description:
-      'Temporary free starter for corporate owners (pre-Stripe). Includes a fixed team card capacity for testing.',
+    description: 'Free starter package for corporate owners with a fixed team card capacity.',
     sortOrder: 0,
     maxCards: '15',
   },
   {
     slug: 'single-starter',
-    name: 'Single Card',
-    description: 'Default free package for single card owners (one vCard).',
+    name: 'Single Starter',
+    description: 'Free starter package for single card owners with one vCard.',
     sortOrder: 1,
     maxCards: '1',
   },
 ] as const
 
 /**
- * Idempotent startup seed: ensures starter packages exist with max_cards.
- * Does not overwrite package fields or existing max_cards values if an admin already edited them.
+ * Idempotent startup seed: creates explicitly free starter packages when absent.
+ * It never overwrites imported/admin-managed package fields, prices, or max_cards values.
  */
 const seedPackages = async (): Promise<void> => {
   for (const pkg of DEFAULT_PACKAGES) {

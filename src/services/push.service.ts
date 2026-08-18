@@ -4,7 +4,7 @@ import type { PushNotificationPreference } from '../../generated/prisma/client'
 import config from '../configs/config'
 import AppError from '../error/AppError'
 import logger from '../utils/logger'
-import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
+import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 
 export type PushPreferenceKey =
@@ -28,6 +28,8 @@ export type PushPayload = {
   url?: string
   businessName?: string
   icon?: string
+  badge?: string
+  image?: string
   avatarUrl?: string
   avatarImageUrl?: string
   profile_id?: string
@@ -129,33 +131,122 @@ const preferenceAllows = (prefs: PushNotificationPreference | null | undefined, 
   return Boolean(prefs[field])
 }
 
+const IMAGE_SETTING_KEY_RE = /logo|avatar|profile.?media|profile.?image|featured.?image|company.?icon|profile.?pic/i
+const VIDEO_MEDIA_RE = /\.(mp4|webm|mov|m4v|avi|mkv)(?:$|[?#])/i
+
+const profileMediaSelect = {
+  id: true,
+  slug: true,
+  name: true,
+  companyName: true,
+  avatar: true,
+  legacyId: true,
+  settings: { select: { key: true, value: true } },
+  attachments: {
+    select: {
+      url: true,
+      docName: true,
+      resourceType: true,
+      mimeType: true,
+      attachmentType: { select: { name: true, legacyId: true } },
+    },
+  },
+} as const
+
+type ProfileMediaSource = {
+  avatar: string | null
+  legacyId?: number | null
+  settings: Array<{ key: string; value: string | null }>
+  attachments?: Array<{
+    url: string | null
+    docName: string | null
+    resourceType?: string | null
+    mimeType?: string | null
+    attachmentType?: { name: string | null; legacyId?: number | null } | null
+  }>
+}
+
+const isVideoMediaUrl = (url: string) => VIDEO_MEDIA_RE.test(url) || /\/backgroundVideos\//i.test(url)
+
+const stillImageUrl = (raw?: string | null, ctx?: Parameters<typeof ensureAbsoluteMediaUrl>[1]): string | undefined => {
+  const value = raw?.trim()
+  if (!value) return undefined
+  if (/^[A-Za-z]{1,3}$/.test(value)) return undefined
+  const absolute = ensureAbsoluteMediaUrl(value, ctx)
+  if (!absolute) return undefined
+  if (isVideoMediaUrl(absolute) || looksLikeExternalPageUrl(absolute)) return undefined
+  if (!/^https?:\/\//i.test(absolute) && !absolute.startsWith('/')) return undefined
+  return absolute
+}
+
 const resolvePublicProfile = async (input: { profile_slug?: string; profile_id?: string }) => {
   const profile = await prisma.profile.findFirst({
     where: input.profile_id ? { id: input.profile_id, isPublic: true } : { slug: input.profile_slug, isPublic: true },
-    select: {
-      id: true,
-      slug: true,
-      name: true,
-      companyName: true,
-      avatar: true,
-      settings: { where: { key: { in: ['profile_media_url', 'company_logo'] } }, select: { key: true, value: true } },
-    },
+    select: profileMediaSelect,
   })
   if (!profile) throw new AppError(404, 'Profile not found')
   return profile
 }
 
-const mediaFromProfile = (profile: {
-  avatar: string | null
-  settings: Array<{ key: string; value: string | null }>
-}) => {
+export const mediaFromProfile = (profile: ProfileMediaSource) => {
+  const candidates: string[] = []
+  const pushUrl = (raw?: string | null, ctx?: Parameters<typeof ensureAbsoluteMediaUrl>[1]) => {
+    const url = stillImageUrl(raw, ctx)
+    if (url && !candidates.includes(url)) candidates.push(url)
+  }
+
   const settingMap = Object.fromEntries(profile.settings.map((s) => [s.key, s.value]))
-  const icon =
-    ensureAbsoluteMediaUrl(settingMap.profile_media_url) ||
-    ensureAbsoluteMediaUrl(settingMap.company_logo) ||
-    ensureAbsoluteMediaUrl(profile.avatar) ||
-    undefined
-  return { icon, avatarUrl: icon, avatarImageUrl: icon }
+  pushUrl(settingMap.profile_media_url)
+  pushUrl(settingMap.company_logo)
+  pushUrl(settingMap.company_icon_url)
+  pushUrl(profile.avatar)
+  pushUrl(settingMap.featured_image)
+  pushUrl(settingMap.featured_image_url)
+  pushUrl(settingMap.profile_image)
+  pushUrl(settingMap.profile_image_url)
+  pushUrl(settingMap.avatar)
+  pushUrl(settingMap.avatar_url)
+
+  for (const setting of profile.settings) {
+    if (!IMAGE_SETTING_KEY_RE.test(setting.key)) continue
+    pushUrl(setting.value)
+  }
+
+  for (const attachment of profile.attachments || []) {
+    const mime = `${attachment.mimeType || ''} ${attachment.resourceType || ''}`.toLowerCase()
+    if (mime.includes('video') || mime.includes('audio')) continue
+    pushUrl(attachment.url, {
+      docName: attachment.docName,
+      attachmentTypeLegacyId: attachment.attachmentType?.legacyId ?? null,
+      attachmentTypeName: attachment.attachmentType?.name ?? null,
+      profileLegacyId: profile.legacyId ?? null,
+    })
+  }
+
+  const icon = candidates[0]
+  return { icon, badge: icon, image: icon, avatarUrl: icon, avatarImageUrl: icon }
+}
+
+const webPushBody = (payload: PushPayload) => {
+  const icon = stillImageUrl(payload.icon) || stillImageUrl(payload.avatarUrl) || stillImageUrl(payload.avatarImageUrl)
+  const body: Record<string, unknown> = {
+    title: payload.title,
+    body: payload.body,
+    type: payload.type,
+    slug: payload.slug,
+    url: payload.url,
+    businessName: payload.businessName,
+    profile_id: payload.profile_id,
+    profileId: payload.profileId,
+  }
+  if (icon) {
+    body.icon = icon
+    body.badge = stillImageUrl(payload.badge) || icon
+    body.image = stillImageUrl(payload.image) || icon
+    body.avatarUrl = stillImageUrl(payload.avatarUrl) || icon
+    body.avatarImageUrl = stillImageUrl(payload.avatarImageUrl) || icon
+  }
+  return body
 }
 
 const subscribe = async (input: {
@@ -313,7 +404,7 @@ const sendOne = async (sub: { id: string; endpoint: string; p256dh: string; auth
         endpoint: sub.endpoint,
         keys: { p256dh: sub.p256dh, auth: sub.auth },
       },
-      JSON.stringify(payload)
+      JSON.stringify(webPushBody(payload))
     )
     await prisma.pushSubscription.update({
       where: { id: sub.id },
@@ -342,29 +433,29 @@ const buildProfilePayload = async (
 ): Promise<PushPayload | null> => {
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
-    select: {
-      id: true,
-      slug: true,
-      name: true,
-      companyName: true,
-      avatar: true,
-      isPublic: true,
-      settings: { where: { key: { in: ['profile_media_url', 'company_logo'] } }, select: { key: true, value: true } },
-    },
+    select: { ...profileMediaSelect, isPublic: true },
   })
   if (!profile?.isPublic || !profile.slug) return null
 
   const businessName = profile.companyName || profile.name || profile.slug
   const media = mediaFromProfile(profile)
+  const icon = stillImageUrl(partial.icon) || media.icon
+  const badge = stillImageUrl(partial.badge) || icon
+  const image = stillImageUrl(partial.image) || icon
 
   return {
     ...partial,
+    title: partial.title,
+    body: partial.body,
+    type: partial.type,
     slug: partial.slug || profile.slug,
     url: partial.url || `/v/${profile.slug}`,
     businessName: partial.businessName || businessName,
-    icon: partial.icon || media.icon,
-    avatarUrl: partial.avatarUrl || media.avatarUrl,
-    avatarImageUrl: partial.avatarImageUrl || media.avatarImageUrl,
+    icon,
+    badge,
+    image,
+    avatarUrl: stillImageUrl(partial.avatarUrl) || media.avatarUrl,
+    avatarImageUrl: stillImageUrl(partial.avatarImageUrl) || media.avatarImageUrl,
     profile_id: profile.id,
     profileId: profile.id,
   }

@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { DeleteObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { randomUUID } from 'crypto'
 import path from 'path'
 import config from '../configs/config'
@@ -61,6 +61,8 @@ const uploadBuffer = async (
   buffer: Buffer,
   options?: {
     folder?: string
+    /** Exact object key. When set, folder/filename timestamp naming is skipped. */
+    key?: string
     contentType?: string
     filename?: string
     resourceType?: 'image' | 'video' | 'raw' | 'auto'
@@ -69,7 +71,7 @@ const uploadBuffer = async (
   const s3 = ensureConfigured()
   const folder = options?.folder || config.S3.KEY_PREFIX
   const format = options?.filename ? path.extname(options.filename).replace(/^\./, '') || undefined : undefined
-  const key = buildKey(folder, options?.filename, format)
+  const key = options?.key?.replace(/^\/+/, '') || buildKey(folder, options?.filename, format)
   const contentType = options?.contentType || 'application/octet-stream'
 
   await s3.send(
@@ -150,6 +152,21 @@ const uploadFromUrl = async (
   })
 }
 
+const headObject = async (key: string): Promise<boolean> => {
+  const s3 = ensureConfigured()
+  try {
+    await s3.send(
+      new HeadObjectCommand({
+        Bucket: config.S3.BUCKET,
+        Key: key,
+      })
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
 const destroy = async (key: string) => {
   const s3 = ensureConfigured()
   await s3.send(
@@ -163,6 +180,7 @@ const destroy = async (key: string) => {
 const s3Utils = {
   uploadBuffer,
   uploadFromUrl,
+  headObject,
   destroy,
   ensureConfigured,
   publicUrlForKey,

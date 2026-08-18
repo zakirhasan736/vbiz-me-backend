@@ -1,4 +1,5 @@
-﻿import type { Attachment, Prisma, Setting } from '../../generated/prisma/client'
+import type { Attachment, Prisma, Setting } from '../../generated/prisma/client'
+import config from '../configs/config'
 import { DIRECT_SECTION_LOADERS, isGenericDirectStorage } from '../constants/directSectionStorage'
 import {
   getTabByPublicSectionName,
@@ -15,6 +16,7 @@ import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUr
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
 import profileService from './profile.service'
+import { mediaFromProfile } from './push.service'
 
 const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
   profile: ['profile picture', 'profile pic', 'profile_pic', 'avatar', 'profile image', 'profile'],
@@ -492,6 +494,14 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
   const intro_video = resolveIntroMedia(profile.attachments, settings, legacyId)
   const background_audio = resolveBackgroundAudio(profile.attachments, settings, legacyId)
   const profile_media = resolveProfileMedia(profile.attachments, settings, profile.avatar, legacyId)
+  const stillIcon = mediaFromProfile({
+    avatar: profile.avatar,
+    legacyId,
+    settings: profile.settings,
+    attachments: profile.attachments,
+  }).icon
+  const stillAvatar =
+    stillIcon || (profile_media.is_video ? profile_media.fallback_url : profile_media.url) || profile.avatar
 
   const template = profile.profileSettings?.profileTemplate || profile.template || 'default'
 
@@ -502,6 +512,7 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
       id: profile.id,
       name: profile.name,
       slug: profile.slug,
+      avatar: stillAvatar || profile.avatar,
       email: profile.email,
       phone: profile.phone,
       address: profile.address,
@@ -529,7 +540,9 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
     template,
     background_media,
     intro_video,
-    profile_media,
+    profile_media: profile_media.is_video
+      ? { ...profile_media, fallback_url: profile_media.fallback_url || stillIcon || profile_media.fallback_url }
+      : profile_media,
     action_buttons: {
       my_info: { enabled: settings.my_info_checkbox !== '0', label: 'My Info' },
       save_contact: {
@@ -542,6 +555,8 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
           company: profile.companyName || '',
           website: profile.website || '',
           note: profile.about || '',
+          imageUrl: stillIcon || stillAvatar || '',
+          slug: profile.slug || '',
         },
       },
       share: { enabled: settings.share_checkbox !== '0', label: 'Share' },
@@ -1391,7 +1406,7 @@ const getDynamicSection = async (
   if (registryTab?.storage === 'review' || /^testimonials?$/i.test(name)) {
     const items = await prisma.review.findMany({
       where: { profileId, status: 1 },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       take: takeOverride ?? 200,
     })
     if (items.length) {
@@ -1415,11 +1430,17 @@ const getDynamicSection = async (
         postType: { name: 'reviews', title: 'Reviews' },
         profile: { id: profileId },
         items: items.map((r) => {
-          const imageUrl = abs(r.imageUrl, null, 7, 'Featured Image')
+          // Review media/link fields are authoritative. Do not substitute profile or attachment media.
+          const imageUrl = r.imageUrl
           const reviewUrl = r.reviewUrl?.trim() || ''
           const asset = mediaAsset(r.id, r.author, imageUrl)
           return {
             id: r.id,
+            author: r.author,
+            text: r.text,
+            imageUrl: r.imageUrl,
+            reviewUrl: r.reviewUrl,
+            sortOrder: r.sortOrder,
             title: r.author,
             description: r.text,
             status: r.status,
@@ -1430,6 +1451,14 @@ const getDynamicSection = async (
           }
         }),
       }
+    }
+    // Reviews are authoritative in their dedicated table. Falling through to
+    // profile Posts/TabItems can assign unrelated media to a reviewer.
+    return {
+      type: 'reviews',
+      postType: { name: 'reviews', title: 'Reviews' },
+      profile: { id: profileId },
+      items: [],
     }
   }
 
@@ -2046,7 +2075,23 @@ const listNotes = async (profileId: string, visitorId: string) => {
 }
 
 const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; userAgent?: string }) => {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
+  const profile = await prisma.profile.findFirst({
+    where: { id: profileId, ...publicReadableWhere() },
+    include: {
+      gender: true,
+      profession: true,
+      settings: { select: { key: true, value: true } },
+      attachments: {
+        select: {
+          url: true,
+          docName: true,
+          resourceType: true,
+          mimeType: true,
+          attachmentType: { select: { name: true, legacyId: true } },
+        },
+      },
+    },
+  })
   if (!profile) throw new AppError(404, 'Profile not found')
 
   await logEvent(
@@ -2058,15 +2103,25 @@ const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; u
 
   liveDashboardHub.emitKpi('save', [profile.userId, profile.companyUserId])
 
+  const frontendBase = (config.FRONTEND_URL || '').replace(/\/$/, '')
+  const slug = profile.slug || ''
+  const profileUrl = slug && frontendBase ? `${frontendBase}/v/${encodeURIComponent(slug)}` : slug ? `/v/${slug}` : ''
+  const imageUrl = mediaFromProfile(profile).icon || ''
+
   return {
     action_buttons: {
       save_contact: {
         data: {
           name: profile.name,
           email: profile.email,
-          phone: profile.phone,
+          phone: profile.phone || '',
           company: profile.companyName || '',
+          profession: profile.profession?.name || profile.prof || profile.designation || '',
+          gender: profile.gender?.name || '',
           website: profile.website || '',
+          slug,
+          profileUrl,
+          imageUrl,
           note: profile.about || '',
           address: profile.address || '',
         },

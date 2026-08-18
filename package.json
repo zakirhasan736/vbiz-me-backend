@@ -25,6 +25,8 @@
     "migrate:direct-tabs": "tsx --env-file=.env scripts/backfill-direct-tabs-from-posts.ts",
     "migrate:media": "tsx --env-file=.env scripts/migrate-media-to-s3.ts",
     "migrate:media:profile": "tsx --env-file=.env scripts/migrate-media-by-profile.ts",
+    "repair:client-portfolio-media": "tsx --env-file=.env scripts/repairClientPortfolioMedia.ts",
+    "repair:review-media": "tsx --env-file=.env scripts/repairReviewMedia.ts",
     "sync:laravel-media": "tsx --env-file=.env scripts/sync-laravel-tab-media.ts",
     "s3:make-public": "tsx --env-file=.env scripts/make-s3-public.ts",
     "prepare": "husky",

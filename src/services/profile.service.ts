@@ -8,8 +8,9 @@ import { slugify } from '../middlewares/ownership'
 import authUtils from '../utils/auth.utils'
 import {
   cardActivationIssueMessage,
+  cardCreationIssueMessage,
   collectCardActivationIssues,
-  normalizeCardEmail,
+  collectCardCreationIssues,
   type CardActivationInput,
 } from '../utils/cardActivation'
 import {
@@ -38,7 +39,7 @@ import {
   type DashboardPeriod,
   type SocialChannel,
 } from '../utils/dashboardAnalytics'
-import { clearedDuplicateContactFields } from '../utils/duplicateCard'
+import { duplicateContactFields } from '../utils/duplicateCard'
 import { fillMissingGalleryMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
@@ -658,8 +659,8 @@ const defaultCardLimitForRole = (role: string): number => {
 const resolvePackageCardLimit = async (userId: string, role: string): Promise<number> => {
   if (isStaff(role)) return Number.MAX_SAFE_INTEGER
 
-  if (role === 'corporate-owner') {
-    await subscriptionService.ensureCorporateStarterSubscription(userId)
+  if (role === 'corporate-owner' || role === 'vcard-owner') {
+    await subscriptionService.ensureOwnerStarterSubscription(userId, role)
   }
 
   const now = new Date()
@@ -942,42 +943,15 @@ const asOptionalString = (value: unknown): string | undefined => {
   return trimmed || undefined
 }
 
-const CARD_EMAIL_CONFLICT_MESSAGE = 'This email is already assigned to another card. Use a different email.'
-
-const assertUniqueCardEmail = async (value: unknown, excludeProfileId?: string) => {
-  const email = normalizeCardEmail(value)
-  if (!email) return
-
-  const emailConflict = await prisma.profile.findFirst({
-    where: {
-      ...(excludeProfileId ? { id: { not: excludeProfileId } } : {}),
-      email: { equals: email, mode: 'insensitive' },
-    },
-    select: { id: true },
-  })
-
-  if (emailConflict) {
-    throw new AppError(409, CARD_EMAIL_CONFLICT_MESSAGE)
-  }
+const assertCardDobForCreate = (dob: unknown) => {
+  const issue = collectCardCreationIssues({ dob })[0]
+  if (!issue) return
+  throw new AppError(400, cardCreationIssueMessage(issue))
 }
 
-const withCardEmailConflict = async <T>(operation: () => Promise<T>): Promise<T> => {
-  try {
-    return await operation()
-  } catch (error) {
-    const prismaError = error as { code?: string; message?: string; meta?: { target?: unknown } }
-    const target = `${String(prismaError.meta?.target || '')} ${prismaError.message || ''}`
-    if (prismaError.code === 'P2002' && /email/i.test(target)) {
-      throw new AppError(409, CARD_EMAIL_CONFLICT_MESSAGE)
-    }
-    throw error
-  }
-}
-
-const assertCardCanActivate = async (input: CardActivationInput, excludeProfileId?: string) => {
+const assertCardCanActivate = (input: CardActivationInput) => {
   const issues = collectCardActivationIssues(input)
   if (issues.length) throw new AppError(422, cardActivationIssueMessage(issues))
-  await assertUniqueCardEmail(input.email, excludeProfileId)
 }
 
 /** Upsert the primary Address row used for street address (line1). */
@@ -1114,61 +1088,58 @@ const create = async (
     isDraft: raw.isDraft as boolean | undefined,
     isPublic: raw.isPublic as boolean | undefined,
   })
+  assertCardDobForCreate(raw.dob)
   if (initialLifecycle.statusName === 'active') {
-    await assertCardCanActivate({
+    assertCardCanActivate({
       slug,
       name: raw.name,
       email: resolvedEmail,
       dob: raw.dob,
       phone: raw.phone,
     })
-  } else {
-    await assertUniqueCardEmail(resolvedEmail)
   }
   const initialStatus = await ensureStatusByName(initialLifecycle.statusName)
-  const profile = await withCardEmailConflict(() =>
-    prisma.profile.create({
-      data: {
-        userId: profileOwnerId,
-        createdById,
-        companyUserId,
-        name: String(raw.name),
-        email: resolvedEmail,
-        slug,
-        companyName: raw.companyName as string | undefined,
-        designation: raw.designation as string | undefined,
-        phone: raw.phone as string | undefined,
-        whatsapp: raw.whatsapp as string | undefined,
-        website: raw.website as string | undefined,
-        address: raw.address as string | undefined,
-        about: raw.about as string | undefined,
-        prof: raw.prof as string | undefined,
-        dob: raw.dob ? new Date(String(raw.dob)) : undefined,
-        template: (raw.template as string) || 'default',
-        themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
-        statusId: initialStatus.id,
-        isPublic: initialLifecycle.isPublic,
-        isDraft: initialLifecycle.isDraft,
-        facebook: raw.facebook as string | undefined,
-        instagram: raw.instagram as string | undefined,
-        twitter: raw.twitter as string | undefined,
-        tiktok: raw.tiktok as string | undefined,
-        youtube: raw.youtube as string | undefined,
-        linkedin: raw.linkedin as string | undefined,
-        profileSettings: {
-          create: {
-            profileTemplate:
-              profileSettings?.profileTemplate ||
-              (raw.template === 'dynamic' ? 'v1' : raw.template === 'classic' ? 'v2' : 'v3'),
-            layoutStyle: profileSettings?.layoutStyle,
-            buttonStyle: profileSettings?.buttonStyle,
-            cornerStyle: profileSettings?.cornerStyle,
-            themeConfig: profileSettings?.themeConfig as object | undefined,
-          },
+  const profile = await prisma.profile.create({
+    data: {
+      userId: profileOwnerId,
+      createdById,
+      companyUserId,
+      name: String(raw.name),
+      email: resolvedEmail,
+      slug,
+      companyName: raw.companyName as string | undefined,
+      designation: raw.designation as string | undefined,
+      phone: raw.phone as string | undefined,
+      whatsapp: raw.whatsapp as string | undefined,
+      website: raw.website as string | undefined,
+      address: raw.address as string | undefined,
+      about: raw.about as string | undefined,
+      prof: raw.prof as string | undefined,
+      dob: raw.dob ? new Date(String(raw.dob)) : undefined,
+      template: (raw.template as string) || 'default',
+      themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
+      statusId: initialStatus.id,
+      isPublic: initialLifecycle.isPublic,
+      isDraft: initialLifecycle.isDraft,
+      facebook: raw.facebook as string | undefined,
+      instagram: raw.instagram as string | undefined,
+      twitter: raw.twitter as string | undefined,
+      tiktok: raw.tiktok as string | undefined,
+      youtube: raw.youtube as string | undefined,
+      linkedin: raw.linkedin as string | undefined,
+      profileSettings: {
+        create: {
+          profileTemplate:
+            profileSettings?.profileTemplate ||
+            (raw.template === 'dynamic' ? 'v1' : raw.template === 'classic' ? 'v2' : 'v3'),
+          layoutStyle: profileSettings?.layoutStyle,
+          buttonStyle: profileSettings?.buttonStyle,
+          cornerStyle: profileSettings?.cornerStyle,
+          themeConfig: profileSettings?.themeConfig as object | undefined,
         },
       },
-    })
-  )
+    },
+  })
 
   await upsertPrimaryAddress(profile.id, {
     address: raw.address,
@@ -1321,7 +1292,7 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
   const created = await create(userId, role, {
     name: `${source.name?.trim() || 'Card'} (Copy)`,
     slug: `${source.slug?.trim() || source.name || 'card'}-copy`,
-    ...clearedDuplicateContactFields,
+    ...duplicateContactFields(source),
     companyName: source.companyName || undefined,
     designation: source.designation || undefined,
     phone: source.phone || undefined,
@@ -1362,7 +1333,6 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
         rumble: source.rumble,
         truth: source.truth,
         pinterest: source.pinterest,
-        ...clearedDuplicateContactFields,
         ...(source.gender ? { gender: { connect: { id: source.gender.id } } } : {}),
         ...(source.maritalStatus ? { maritalStatus: { connect: { id: source.maritalStatus.id } } } : {}),
         ...(source.profession ? { profession: { connect: { id: source.profession.id } } } : {}),
@@ -1440,19 +1410,15 @@ const update = async (
   const nextDraft = 'isDraft' in raw ? Boolean(raw.isDraft) : currentProfile.isDraft
   const nextPublic = 'isPublic' in raw ? Boolean(raw.isPublic) : currentProfile.isPublic
   const willBeActive = requestedStatus ? requestedStatus === 'active' : !nextDraft && nextPublic
-  if (willBeActive) {
-    await assertCardCanActivate(
-      {
-        slug: 'slug' in raw ? raw.slug : currentProfile.slug,
-        name: 'name' in raw ? raw.name : currentProfile.name,
-        email: 'email' in raw ? raw.email : currentProfile.email,
-        dob: 'dob' in raw ? raw.dob : currentProfile.dob,
-        phone: 'phone' in raw ? raw.phone : currentProfile.phone,
-      },
-      profileId
-    )
-  } else if ('email' in raw) {
-    await assertUniqueCardEmail(raw.email, profileId)
+  const isActivationTransition = willBeActive && currentName !== 'active'
+  if (isActivationTransition) {
+    assertCardCanActivate({
+      slug: 'slug' in raw ? raw.slug : currentProfile.slug,
+      name: 'name' in raw ? raw.name : currentProfile.name,
+      email: 'email' in raw ? raw.email : currentProfile.email,
+      dob: 'dob' in raw ? raw.dob : currentProfile.dob,
+      phone: 'phone' in raw ? raw.phone : currentProfile.phone,
+    })
   }
 
   if (requestedStatus) {
@@ -1506,12 +1472,10 @@ const update = async (
     }
   }
 
-  await withCardEmailConflict(() =>
-    prisma.profile.update({
-      where: { id: profileId },
-      data: profileData,
-    })
-  )
+  await prisma.profile.update({
+    where: { id: profileId },
+    data: profileData,
+  })
 
   if ('address' in raw) {
     await upsertPrimaryAddress(profileId, {

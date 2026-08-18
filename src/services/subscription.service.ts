@@ -3,6 +3,7 @@ import { prisma } from '../utils/prisma'
 
 const MAX_CARDS_FEATURE_KEY = 'max_cards'
 const CORPORATE_STARTER_SLUG = 'corporate-starter'
+const SINGLE_STARTER_SLUG = 'single-starter'
 
 const activeSubscriptionWhere = (userId: string, now = new Date()) => ({
   userId,
@@ -17,44 +18,35 @@ const parseMaxCardsQuantity = (features: { featureKey: string; featureValue: str
   return parsed
 }
 
-const subscriptionHasCardLimit = (sub: {
-  quantity: number | null
-  package: { features: { featureKey: string; featureValue: string | null }[] } | null
-}): boolean => {
-  if (sub.quantity != null && Number.isFinite(sub.quantity) && sub.quantity > 0) return true
-  const fromFeatures = sub.package ? parseMaxCardsQuantity(sub.package.features) : null
-  return fromFeatures != null && fromFeatures > 0
-}
-
-/** Prefer seeded corporate-starter, else first active package that has max_cards, else first active. */
-const findCorporateStarterPackage = async () => {
+/**
+ * Prefer the explicitly free seeded starter. The fallback is limited to other
+ * free packages with a compatible card limit, so a paid package is never
+ * granted accidentally.
+ */
+const findStarterPackage = async (slug: string, acceptsCardLimit: (limit: number | null) => boolean) => {
   const bySlug = await prisma.package.findFirst({
-    where: { slug: CORPORATE_STARTER_SLUG, isActive: true },
+    where: { slug, isActive: true, monthlyPrice: 0, yearlyPrice: 0 },
     include: { features: true },
   })
-  if (bySlug) return bySlug
+  if (bySlug && acceptsCardLimit(parseMaxCardsQuantity(bySlug.features))) return bySlug
 
-  const withLimit = await prisma.package.findMany({
-    where: { isActive: true },
+  const freePackages = await prisma.package.findMany({
+    where: { isActive: true, monthlyPrice: 0, yearlyPrice: 0 },
     include: { features: true },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
   })
-  const withMaxCards = withLimit.find((p) => {
-    const n = parseMaxCardsQuantity(p.features)
-    return n != null && n > 0
-  })
-  if (withMaxCards) return withMaxCards
-
-  return withLimit[0] ?? null
+  return freePackages.find((pkg) => acceptsCardLimit(parseMaxCardsQuantity(pkg.features))) ?? null
 }
 
 /**
- * Ensures a corporate owner has an active free subscription with a real card limit.
- * Prefers the seeded `corporate-starter` package. Repairs existing subscriptions that
- * have no max_cards / quantity so capacity is not stuck at 0.
- * Temporary until Stripe checkout assigns paid packages at signup.
+ * Creates a starter subscription only when the owner has no active subscription.
+ * Existing subscriptions are never rewritten, including paid or imported plans.
  */
-const ensureCorporateStarterSubscription = async (userId: string) => {
+const ensureStarterSubscription = async (
+  userId: string,
+  slug: string,
+  acceptsCardLimit: (limit: number | null) => boolean
+) => {
   const now = new Date()
   const existing = await prisma.subscription.findFirst({
     where: activeSubscriptionWhere(userId, now),
@@ -62,34 +54,15 @@ const ensureCorporateStarterSubscription = async (userId: string) => {
     orderBy: { createdAt: 'desc' },
   })
 
-  if (existing && subscriptionHasCardLimit(existing)) {
-    return existing
-  }
+  if (existing) return existing
 
-  const starterPackage = await findCorporateStarterPackage()
+  const starterPackage = await findStarterPackage(slug, acceptsCardLimit)
   if (!starterPackage) {
-    logger.warn(
-      `No active package found for corporate starter subscription (user ${userId}). Run package seed / create corporate-starter.`
-    )
-    return existing ?? null
+    logger.warn(`No active free ${slug} package or compatible fallback found for user ${userId}`)
+    return null
   }
 
   const quantity = parseMaxCardsQuantity(starterPackage.features)
-
-  if (existing) {
-    return prisma.subscription.update({
-      where: { id: existing.id },
-      data: {
-        packageId: starterPackage.id,
-        name: starterPackage.name,
-        provider: existing.provider || 'admin',
-        stripeStatus: existing.stripeStatus || 'active',
-        endsAt: null,
-        ...(quantity != null ? { quantity } : {}),
-      },
-      include: { package: { include: { features: true } } },
-    })
-  }
 
   return prisma.subscription.create({
     data: {
@@ -105,10 +78,25 @@ const ensureCorporateStarterSubscription = async (userId: string) => {
   })
 }
 
+const ensureCorporateStarterSubscription = (userId: string) =>
+  ensureStarterSubscription(userId, CORPORATE_STARTER_SLUG, (limit) => limit != null && limit > 1)
+
+const ensureSingleStarterSubscription = (userId: string) =>
+  ensureStarterSubscription(userId, SINGLE_STARTER_SLUG, (limit) => limit === 1)
+
+const ensureOwnerStarterSubscription = (userId: string, role: string) => {
+  if (role === 'corporate-owner') return ensureCorporateStarterSubscription(userId)
+  if (role === 'vcard-owner') return ensureSingleStarterSubscription(userId)
+  return Promise.resolve(null)
+}
+
 const subscriptionService = {
   ensureCorporateStarterSubscription,
+  ensureSingleStarterSubscription,
+  ensureOwnerStarterSubscription,
   MAX_CARDS_FEATURE_KEY,
   CORPORATE_STARTER_SLUG,
+  SINGLE_STARTER_SLUG,
 }
 
 export default subscriptionService
