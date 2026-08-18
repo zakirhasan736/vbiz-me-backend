@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { minCardAgeCutoffDate } from '../../utils/cardActivation'
 import type { MasterBusinessProfile } from './businessProfile.schema'
 import { TAB_CATALOG, cardBlueprintSchema, type CardBlueprint, type FillSectionId } from './cardBlueprint.schema'
 
@@ -81,7 +82,14 @@ export function sanitizeBlueprint(raw: unknown): { blueprint: CardBlueprint; iss
     issues.push({
       code: 'invalid_date_of_birth',
       field: 'personal.dob',
-      message: 'Date of birth must use YYYY-MM-DD.',
+      message: 'Please enter a valid date of birth (YYYY-MM-DD).',
+    })
+    parsed = { ...parsed, personal: { ...parsed.personal, dob: '' } }
+  } else if (parsed.personal.dob && parsed.personal.dob > minCardAgeCutoffDate()) {
+    issues.push({
+      code: 'underage_date_of_birth',
+      field: 'personal.dob',
+      message: 'You must be at least 12 years old.',
     })
     parsed = { ...parsed, personal: { ...parsed.personal, dob: '' } }
   }
