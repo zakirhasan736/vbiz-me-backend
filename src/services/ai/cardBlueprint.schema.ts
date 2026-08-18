@@ -107,6 +107,12 @@ const personalFillSchema = z.object({
   address: z.string().optional().default(''),
 })
 
+const seoFillSchema = z.object({
+  metaTitle: z.string().optional().default(''),
+  metaDescription: z.string().optional().default(''),
+  keywords: z.array(z.string()).optional().default([]),
+})
+
 /** Per-section Zod schemas for fill-section responses. */
 export const fillSectionSchemas = {
   services: z.object({ services: z.array(fillServiceItemSchema).default([]) }),
@@ -121,6 +127,7 @@ export const fillSectionSchemas = {
     personal: personalFillSchema.default({}),
     socialHandles: socialHandlesSchema.optional().default({}),
   }),
+  seo: z.object({ seo: seoFillSchema.default({}) }),
 } as const
 
 export type FillSectionId = keyof typeof fillSectionSchemas
@@ -135,6 +142,7 @@ export const FILL_SECTION_SCHEMA_HINTS: Record<FillSectionId, string> = {
   experience: `{ "experience": [{ "company": "", "jobTitle": "", "description": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
   faqs: `{ "faqs": [{ "question": "", "answer": "" }] }`,
   personal: `{ "personal": { "fullName": "", "email": "", "phone": "", "designation": "", "company": "", "about": "", "website": "", "address": "" }, "socialHandles": {} }`,
+  seo: `{ "seo": { "metaTitle": "", "metaDescription": "", "keywords": ["vbizme", "vbiz me", "virtual card", "digital business card", "online business card"] } }`,
 }
 
 export function countFillEntries(section: FillSectionId, payload: Record<string, unknown>): number {
@@ -142,6 +150,14 @@ export function countFillEntries(section: FillSectionId, payload: Record<string,
     const personal = payload.personal
     if (!personal || typeof personal !== 'object') return 0
     return Object.values(personal as Record<string, unknown>).some((v) => String(v || '').trim()) ? 1 : 0
+  }
+  if (section === 'seo') {
+    const seo = payload.seo
+    if (!seo || typeof seo !== 'object') return 0
+    const value = seo as Record<string, unknown>
+    return String(value.metaTitle || '').trim().length > 0 || String(value.metaDescription || '').trim().length > 0
+      ? 1
+      : 0
   }
   const rows = payload[section]
   if (!Array.isArray(rows)) return 0

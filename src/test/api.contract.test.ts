@@ -42,6 +42,14 @@ test('protected resources reject unauthenticated requests with 403', async () =>
   assert.equal(response.body.message, 'Unauthorized')
 })
 
+test('public note reads require a visitor scope', async () => {
+  const response = await request(app).get('/api/v1/public/notes?profile_id=profile-1')
+
+  assert.equal(response.status, 400)
+  assert.equal(response.body.success, false)
+  assert.equal(response.body.error, 'profile_id and visitor_id are required')
+})
+
 test('expired access tokens return 401 when no refresh token is supplied', async () => {
   const expiredToken = jwt.sign({ id: 'expired-user', exp: Math.floor(Date.now() / 1000) - 60 }, 'test-secret')
   const response = await request(app).get('/api/v1/profiles').set('Authorization', `Bearer ${expiredToken}`)

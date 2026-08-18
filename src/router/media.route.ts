@@ -40,7 +40,7 @@ router.post(
       if (req.user.accountStatus === 'PAUSED') {
         throw new AppError(403, 'Account is paused. You cannot create or edit vCards. Please contact support.')
       }
-      await profileService.getOwned(profileId, req.user.id, req.user.role)
+      await profileService.getOwnedLite(profileId, req.user.id, req.user.role)
       let attachmentTypeId: string | undefined
       if (attachmentTypeName) {
         const type =

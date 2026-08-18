@@ -40,6 +40,7 @@ import { isPrismaColumnMismatch, isPrismaMissingTable, safePrismaQuery } from '.
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
 import announcementService from './announcement.service'
 import pushService from './push.service'
+import { normalizeSeoSettings } from './seoMetadata.service'
 import subscriptionService from './subscription.service'
 
 type LifecycleNotifyActor = { id: string; email: string; name?: string | null }
@@ -822,6 +823,47 @@ const getOwned = async (profileId: string, userId: string, role: string) => {
   return profile
 }
 
+/** Ownership + status only — never load collections. Used by tab/post writes and nested GETs. */
+const getOwnedLite = async (profileId: string, userId: string, role: string) => {
+  const where: Prisma.ProfileWhereInput = isAdminRole(role)
+    ? { id: profileId }
+    : { id: profileId, OR: [{ userId }, { companyUserId: userId }] }
+
+  const lite = await safePrismaQuery(
+    () =>
+      prisma.profile.findFirst({
+        where,
+        select: {
+          id: true,
+          userId: true,
+          companyUserId: true,
+          name: true,
+          companyName: true,
+          status: { select: { id: true, name: true } },
+        },
+      }),
+    null
+  )
+  if (lite) return lite
+
+  const row = await loadProfileRow(where)
+  if (!row?.id || typeof row.id !== 'string') throw new AppError(404, 'Profile not found')
+  if (!isAdminRole(role)) {
+    const ownerId = typeof row.userId === 'string' ? row.userId : ''
+    const companyId = typeof row.companyUserId === 'string' ? row.companyUserId : ''
+    if (ownerId !== userId && companyId !== userId) throw new AppError(404, 'Profile not found')
+  }
+  const lookups = await attachProfileLookups(row)
+  return {
+    id: row.id,
+    userId: typeof row.userId === 'string' ? row.userId : null,
+    companyUserId: typeof row.companyUserId === 'string' ? row.companyUserId : null,
+    name: typeof row.name === 'string' ? row.name : null,
+    companyName: typeof row.companyName === 'string' ? row.companyName : null,
+    status: lookups.status,
+  }
+}
+
 const assertOwnerAccountCanMutateVcards = async (userId: string, role: string) => {
   if (isAdminRole(role)) return
   const user = await prisma.user.findUnique({
@@ -849,7 +891,7 @@ const assertOwnerCanMutateCard = (profile: { status?: { name?: string | null } |
 
 const getOwnedForWrite = async (profileId: string, userId: string, role: string) => {
   await assertOwnerAccountCanMutateVcards(userId, role)
-  const profile = await getOwned(profileId, userId, role)
+  const profile = await getOwnedLite(profileId, userId, role)
   assertOwnerCanMutateCard(profile, role)
   return profile
 }
@@ -987,6 +1029,7 @@ const create = async (
     zipCode: _zipCode,
     ...raw
   } = input
+  const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
 
   let profileOwnerId = userId
   let profileOwnerEmail = actor.email
@@ -1087,16 +1130,16 @@ const create = async (
     address: raw.address,
   })
 
-  if (settings) {
+  if (normalizedSettings) {
     await Promise.all(
-      Object.entries(settings).map(([key, value]) =>
+      Object.entries(normalizedSettings).map(([key, value]) =>
         prisma.setting.create({
           data: { profileId: profile.id, key, value },
         })
       )
     )
-    if (typeof settings.custom_tabs_json === 'string') {
-      await syncCustomTabsJson(profile.id, settings.custom_tabs_json)
+    if (typeof normalizedSettings.custom_tabs_json === 'string') {
+      await syncCustomTabsJson(profile.id, normalizedSettings.custom_tabs_json)
     }
   }
 
@@ -1121,7 +1164,7 @@ const update = async (
     [key: string]: unknown
   }
 ) => {
-  const owned = await getOwned(profileId, userId, role)
+  const owned = await getOwnedLite(profileId, userId, role)
   const staff = isAdminRole(role)
   const currentName = normalizeCardStatusName(owned.status?.name)
 
@@ -1132,6 +1175,7 @@ const update = async (
   }
 
   const { settings, profileSettings, city: _city, state: _state, zipCode: _zipCode, status: rawStatus, ...raw } = data
+  const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
   const requestedStatus = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : undefined
 
@@ -1213,18 +1257,28 @@ const update = async (
     })
   }
 
-  if (settings) {
-    await Promise.all(
-      Object.entries(settings).map(([key, value]) =>
-        prisma.setting.upsert({
-          where: { profileId_key: { profileId, key } },
-          create: { profileId, key, value },
-          update: { value },
-        })
-      )
+  if (normalizedSettings) {
+    const existingSettings = await safePrismaQuery(
+      () => prisma.setting.findMany({ where: { profileId }, select: { key: true, value: true } }),
+      [] as Array<{ key: string; value: string }>
     )
-    if (typeof settings.custom_tabs_json === 'string') {
-      await syncCustomTabsJson(profileId, settings.custom_tabs_json)
+    const existingMap = new Map(existingSettings.map((row) => [row.key, row.value]))
+    const changedEntries = Object.entries(normalizedSettings).filter(([key, value]) => existingMap.get(key) !== value)
+    if (changedEntries.length) {
+      await Promise.all(
+        changedEntries.map(([key, value]) =>
+          prisma.setting.upsert({
+            where: { profileId_key: { profileId, key } },
+            create: { profileId, key, value },
+            update: { value },
+          })
+        )
+      )
+    }
+    const nextCustomTabs =
+      typeof normalizedSettings.custom_tabs_json === 'string' ? normalizedSettings.custom_tabs_json : null
+    if (nextCustomTabs != null && existingMap.get('custom_tabs_json') !== nextCustomTabs) {
+      await syncCustomTabsJson(profileId, nextCustomTabs)
     }
   }
 
@@ -1376,7 +1430,7 @@ const replaceCollection = async <T extends Record<string, unknown>>(
       })
     }
   })
-  const owned = await getOwned(profileId, userId, role)
+  const owned = await getOwnedLite(profileId, userId, role)
   const preferenceType = pushService.preferenceKeyForCollection(kind)
   if (preferenceType) {
     const titles: Record<string, { title: string; action: string }> = {
@@ -1489,7 +1543,7 @@ const upsertAboutMeSettingsFallback = async (
 }
 
 const getAboutMe = async (profileId: string, userId: string, role: string) => {
-  await getOwned(profileId, userId, role)
+  await getOwnedLite(profileId, userId, role)
   try {
     const row = await prisma.aboutMe.findUnique({ where: { profileId } })
     return row ? serializeAboutMe(row) : serializeAboutMeFromProfile(profileId)
@@ -1795,7 +1849,7 @@ const listPosts = async (
   skip = 0,
   limit = 200
 ) => {
-  await getOwned(profileId, userId, role)
+  await getOwnedLite(profileId, userId, role)
   const take = Math.min(200, Math.max(1, limit))
   const start = Math.max(0, skip)
   const where = {
@@ -2047,7 +2101,7 @@ const listContacts = async (
   profileId?: string,
   limit?: number
 ): Promise<OwnerContactRow[]> => {
-  if (profileId) await getOwned(profileId, userId, role)
+  if (profileId) await getOwnedLite(profileId, userId, role)
   const profiles = await listForUser(userId, role)
   const ids = profileId ? [profileId] : profiles.map((p) => p.id)
   if (emptyProfileIds(ids)) return []
@@ -2270,7 +2324,7 @@ const listRecentEngagement = async (userId: string, role: string, query: RecentE
   const limit = Math.min(50, Math.max(1, Number(query.limit) || 10))
 
   if (query.profileId) {
-    await getOwned(query.profileId, userId, role)
+    await getOwnedLite(query.profileId, userId, role)
   }
 
   const profiles = await listForUser(userId, role)
@@ -2401,7 +2455,7 @@ const getLiveSocialClicks = async (userId: string, role: string, profileId?: str
     const bundle = await getSocialClicksBundle(userId, role)
     return bundle.socialClicks
   }
-  const profile = await getOwned(profileId, userId, role)
+  const profile = await getOwnedLite(profileId, userId, role)
   const socialEvents = await prisma.eventLog.findMany({
     where: { profileId: profile.id, eventType: 'social_click' },
     select: { payload: true },
@@ -2774,7 +2828,7 @@ const createTeamNotice = async (
     if (staff) {
       await assertPersonallyOwnsProfile(targetProfileId, userId)
     } else {
-      const owned = await getOwned(targetProfileId, userId, role)
+      const owned = await getOwnedLite(targetProfileId, userId, role)
       assertOwnerCanMutateCard(owned, role)
     }
   } else if (staff) {
@@ -2872,7 +2926,7 @@ const deleteTeamNotice = async (userId: string, role: string, noticeId: string) 
     if (!existing.targetProfileId) throw new AppError(403, 'Not allowed to delete this notice')
     await assertPersonallyOwnsProfile(existing.targetProfileId, userId)
   } else if (existing.targetProfileId) {
-    const owned = await getOwned(existing.targetProfileId, userId, role)
+    const owned = await getOwnedLite(existing.targetProfileId, userId, role)
     assertOwnerCanMutateCard(owned, role)
   } else {
     throw new AppError(403, 'Not allowed to delete this notice')
@@ -2964,6 +3018,7 @@ const profileService = {
   listProfilesPage,
   getCardCapacity,
   getOwned,
+  getOwnedLite,
   getOwnedForWrite,
   create,
   update,

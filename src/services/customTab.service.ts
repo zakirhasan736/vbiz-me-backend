@@ -23,7 +23,7 @@ const getTab = async (profileId: string, tabId: string) => {
 }
 
 const listTabs = async (profileId: string, userId: string, role: string) => {
-  await profileService.getOwned(profileId, userId, role)
+  await profileService.getOwnedLite(profileId, userId, role)
   try {
     return await prisma.customTab.findMany({
       where: { profileId },
@@ -88,7 +88,7 @@ const deleteTab = async (profileId: string, tabId: string, userId: string, role:
 }
 
 const listItems = async (profileId: string, tabId: string, userId: string, role: string, skip = 0, limit = 200) => {
-  await profileService.getOwned(profileId, userId, role)
+  await profileService.getOwnedLite(profileId, userId, role)
   await getTab(profileId, tabId)
   const take = Math.min(200, Math.max(1, limit))
   const start = Math.max(0, skip)

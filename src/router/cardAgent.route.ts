@@ -237,6 +237,7 @@ router.post(
       userId: req.user.id,
       role: String(req.user.role || ''),
       publish: req.body?.publish === true,
+      seo: req.body?.seo,
     })
     sendResponse(res, { success: true, statusCode: 200, message: 'Card filled', data })
   })

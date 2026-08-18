@@ -92,6 +92,17 @@ const deleteBlog = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Blog deleted', data })
 })
 
+const listEditorSections = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const data = await directTabService.listEditorSections(param(req.params.id), req.user.id, req.user.role)
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: 'Editor sections fetched',
+    data,
+  })
+})
+
 const listTabItems = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const { skip, limit } = parseListQuery(req.query)
@@ -183,6 +194,7 @@ const directTabController = {
   createBlog,
   updateBlog,
   deleteBlog,
+  listEditorSections,
   listTabItems,
   createTabItem,
   updateTabItem,

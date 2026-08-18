@@ -1,4 +1,4 @@
-﻿import type { Attachment, Setting } from '../../generated/prisma/client'
+﻿import type { Attachment, Prisma, Setting } from '../../generated/prisma/client'
 import { DIRECT_SECTION_LOADERS, isGenericDirectStorage } from '../constants/directSectionStorage'
 import {
   getTabByPublicSectionName,
@@ -116,6 +116,8 @@ function collectEditorNavIds(map: Record<string, string>): string[] {
 }
 
 const EXTRA_NAV_POST_TYPES: Record<string, { name: string; title: string }> = {
+  home: { name: 'Home', title: 'Home' },
+  about: { name: 'About Me', title: 'About Me' },
   education: { name: 'Education', title: 'Education' },
   work: { name: 'Work Experience', title: 'Work Experience' },
   skills: { name: 'skills', title: 'Skills' },
@@ -641,35 +643,32 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
   const map = settingsToMap(settings)
   const enabledTabKeys = collectEnabledTabKeys(map)
   const editorNavIds = collectEditorNavIds(map)
-  const editorNavSet = new Set(editorNavIds)
 
-  const StaticLink = [
-    {
-      id: 'home',
-      title: 'Home',
-      name: 'Home',
-      post_type: 'static',
-      active: !editorNavSet.size || editorNavSet.has('home'),
-    },
-    {
-      id: 'about',
-      title: 'About Me',
-      name: 'About Me',
-      post_type: 'static',
-      active: editorNavSet.size
-        ? editorNavSet.has('about')
-        : map.aboutMeNav_checkbox === '1' || map.about_checkbox === '1' || enabledTabKeys.has('about_me'),
-    },
-    {
-      id: 'public-cards',
-      title: 'Public Cards',
-      name: 'Public Cards',
-      post_type: 'static',
-      active: editorNavSet.size
-        ? editorNavSet.has('public-cards')
-        : map.pCardsNav_checkbox === '1' || enabledTabKeys.has('public-cards'),
-    },
-  ].filter((i) => i.active)
+  const StaticLink = editorNavIds.length
+    ? []
+    : [
+        {
+          id: 'home',
+          title: 'Home',
+          name: 'Home',
+          post_type: 'static',
+          active: true,
+        },
+        {
+          id: 'about',
+          title: 'About Me',
+          name: 'About Me',
+          post_type: 'static',
+          active: map.aboutMeNav_checkbox === '1' || map.about_checkbox === '1' || enabledTabKeys.has('about_me'),
+        },
+        {
+          id: 'public-cards',
+          title: 'Public Cards',
+          name: 'Public Cards',
+          post_type: 'static',
+          active: map.pCardsNav_checkbox === '1' || enabledTabKeys.has('public-cards'),
+        },
+      ].filter((i) => i.active)
 
   type PublicPostType = {
     id: string
@@ -693,13 +692,12 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     })
 
   const rowFromNavId = (navId: string): PublicPostType | null => {
-    if (navId === 'home' || navId === 'about' || navId === 'public-cards') return null
     const tabKey = NAV_ID_TO_TAB_KEY[navId]
     const tab = (tabKey && TAB_REGISTRY[tabKey]) || TAB_REGISTRY[navId]
     if (tab) {
       return {
-        id: tab.key,
-        key: tab.key,
+        id: navId,
+        key: navId,
         name: tab.publicSectionName,
         title: tab.label,
         status: 'active',
@@ -722,17 +720,31 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
       }
     }
     const custom = customTabs.find((tab) => tab.id === navId || tab.key === navId || tab.slug === navId)
-    if (!custom) return null
-    return {
-      id: custom.id,
-      key: custom.id,
-      name: custom.id,
-      title: custom.label,
-      status: 'active',
-      type_id: null,
-      slug: custom.id,
-      type: 'custom',
+    if (custom) {
+      return {
+        id: custom.id,
+        key: custom.id,
+        name: custom.id,
+        title: custom.label,
+        status: 'active',
+        type_id: null,
+        slug: custom.id,
+        type: 'custom',
+      }
     }
+    if (navId.startsWith('custom-tab-')) {
+      return {
+        id: navId,
+        key: navId,
+        name: navId,
+        title: 'Custom tab',
+        status: 'active',
+        type_id: null,
+        slug: navId,
+        type: 'custom',
+      }
+    }
+    return null
   }
 
   if (editorNavIds.length) {
@@ -744,7 +756,7 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
       seen.add(row.key)
       post_types.push(row)
     }
-    return { StaticLink, post_types }
+    return { StaticLink: [], post_types }
   }
 
   const post_types: PublicPostType[] = []
@@ -1830,13 +1842,94 @@ const saveGuestUser = async (
   }
 }
 
-const saveNote = async (profileId: string, content: string) => {
+type PublicNoteOptions = {
+  authorName?: string
+  visitorId?: string
+}
+
+type PublicNoteMeta = {
+  fullName?: string
+  visitorId?: string
+  source?: string
+}
+
+type PublicNoteReplyMeta = {
+  lastReply?: string
+  lastReplyAt?: string
+}
+
+function publicNoteMeta(value: unknown): PublicNoteMeta {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const root = value as Record<string, unknown>
+  return {
+    fullName: typeof root.fullName === 'string' ? root.fullName : undefined,
+    visitorId: typeof root.visitorId === 'string' ? root.visitorId : undefined,
+    source: typeof root.source === 'string' ? root.source : undefined,
+  }
+}
+
+function publicNoteReplyMeta(value: unknown): PublicNoteReplyMeta {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const admin = (value as Record<string, unknown>).admin
+  if (!admin || typeof admin !== 'object' || Array.isArray(admin)) return {}
+  const reply = admin as Record<string, unknown>
+  return {
+    lastReply: typeof reply.lastReply === 'string' ? reply.lastReply : undefined,
+    lastReplyAt: typeof reply.lastReplyAt === 'string' ? reply.lastReplyAt : undefined,
+  }
+}
+
+const mapPublicNote = (note: {
+  id: string
+  profileId: string
+  content: string
+  meta: unknown
+  createdAt: Date
+  updatedAt: Date
+}) => {
+  const meta = publicNoteMeta(note.meta)
+  const reply = publicNoteReplyMeta(note.meta)
+  return {
+    id: note.id,
+    profile_id: note.profileId,
+    content: note.content,
+    author_name: meta.fullName || 'Guest',
+    created_at: note.createdAt.toISOString(),
+    updated_at: note.updatedAt.toISOString(),
+    reply: reply.lastReply || null,
+    reply_at: reply.lastReplyAt || null,
+  }
+}
+
+const saveNote = async (profileId: string, content: string, options: PublicNoteOptions = {}) => {
   const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
   if (!profile) throw new AppError(404, 'Profile not found')
+
+  const authorName = options.authorName?.trim().slice(0, 200)
+  const visitorId = options.visitorId?.trim().slice(0, 128)
+  const meta = {
+    ...(authorName ? { fullName: authorName } : {}),
+    ...(visitorId ? { visitorId } : {}),
+    source: 'public_notepad',
+  } satisfies Prisma.InputJsonValue
+
   const note = await prisma.userNote.create({
-    data: { profileId, content },
+    data: { profileId, content, meta },
   })
-  return { id: note.id, content: note.content, profile_id: profileId }
+  return mapPublicNote(note)
+}
+
+const listNotes = async (profileId: string, visitorId: string) => {
+  const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
+  if (!profile) throw new AppError(404, 'Profile not found')
+
+  const notes = await prisma.userNote.findMany({
+    where: { profileId },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  })
+
+  return notes.filter((note) => publicNoteMeta(note.meta).visitorId === visitorId).map(mapPublicNote)
 }
 
 const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; userAgent?: string }) => {
@@ -2002,6 +2095,7 @@ const publicCardService = {
   getPublicCards,
   saveGuestUser,
   saveNote,
+  listNotes,
   saveContactCard,
   logEvent,
   trackEvent,

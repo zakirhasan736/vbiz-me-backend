@@ -26,6 +26,7 @@ router.get('/dynamic-section/:name', publicController.getDynamicSection)
 router.get('/public-cards', publicController.getPublicCards)
 router.post('/save-guest-user', formData.none(), publicController.saveGuestUser)
 router.post('/save-note', publicController.saveNote)
+router.get('/notes', publicController.listNotes)
 router.get('/save-contact/:id', publicController.saveContact)
 router.post('/track-event', validSchema(PublicZodSchema.trackEvent), publicController.trackEvent)
 

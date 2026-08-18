@@ -46,6 +46,7 @@ router.put('/:id/about-me', authMiddleware.requireVcardMutable, profileControlle
 router.delete('/:id/about-me', authMiddleware.requireVcardMutable, profileController.deleteAboutMe)
 
 router.get('/:id/blogs', directTabController.listBlogs)
+router.get('/:id/editor-sections', directTabController.listEditorSections)
 router.post('/:id/blogs', authMiddleware.requireVcardMutable, directTabController.createBlog)
 router.patch('/:id/blogs/:blogId', authMiddleware.requireVcardMutable, directTabController.updateBlog)
 router.delete('/:id/blogs/:blogId', authMiddleware.requireVcardMutable, directTabController.deleteBlog)

@@ -11,13 +11,14 @@ const param = (value: string | string[]): string => (Array.isArray(value) ? valu
 
 const getMyCard = catchAsyncError(async (req, res) => {
   const data = await publicCardService.getMyCardBySlug(param(req.params.slug))
+  res.setHeader('Cache-Control', 'no-store')
   // profile_view is tracked client-side via POST /track-event with guestId (once per guest).
   sendPublicResponse(res, { success: true, data })
 })
 
 const getBootstrap = catchAsyncError(async (req, res) => {
   const data = await publicCardService.getPublicBootstrap(param(req.params.slug))
-  res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30')
+  res.setHeader('Cache-Control', 'no-store')
   sendPublicResponse(res, { success: true, data })
 })
 
@@ -32,6 +33,7 @@ const getPostTypes = catchAsyncError(async (req, res) => {
 
 const getSettings = catchAsyncError(async (req, res) => {
   const data = await publicCardService.getProfileSettings(param(req.params.id))
+  res.setHeader('Cache-Control', 'no-store')
   sendPublicResponse(res, { success: true, data })
 })
 
@@ -112,10 +114,32 @@ const saveGuestUser = catchAsyncError(async (req, res) => {
 const saveNote = catchAsyncError(async (req, res) => {
   const profileId = String(req.query.profile_id || req.body.profile_id || '')
   const content = String(req.query.content || req.body.content || '')
+  const authorName = String(req.query.author_name || req.body.author_name || '').trim()
+  const visitorId = String(req.query.visitor_id || req.body.visitor_id || '').trim()
   if (!profileId || !content) {
     return sendPublicResponse(res, { success: false, data: null, error: 'profile_id and content are required' }, 400)
   }
-  const data = await publicCardService.saveNote(profileId, content)
+  const data = await publicCardService.saveNote(profileId, content, { authorName, visitorId })
+  sendPublicResponse(res, { success: true, data })
+})
+
+const listNotes = catchAsyncError(async (req, res) => {
+  const profileId = String(req.query.profile_id || '').trim()
+  const visitorId = String(req.query.visitor_id || '').trim()
+  if (!profileId || !visitorId) {
+    return sendPublicResponse(
+      res,
+      {
+        success: false,
+        data: null,
+        error: 'profile_id and visitor_id are required',
+      },
+      400
+    )
+  }
+
+  const data = await publicCardService.listNotes(profileId, visitorId)
+  res.setHeader('Cache-Control', 'no-store')
   sendPublicResponse(res, { success: true, data })
 })
 
@@ -241,6 +265,7 @@ const publicController = {
   getPublicCards,
   saveGuestUser,
   saveNote,
+  listNotes,
   saveContact,
   googleWallet,
   appleWallet,

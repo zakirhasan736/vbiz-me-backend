@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import AppError from '../../error/AppError'
+import { normalizeSeoMetadata } from '../seoMetadata.service'
 import { logAiUsage, logChatMeta } from './aiUsageLog.service'
 import { analyzeMasterProfile } from './businessAnalyzer.service'
 import {
@@ -45,6 +46,7 @@ const SECTIONS = [
   'experience',
   'faqs',
   'personal',
+  'seo',
 ] as const
 
 export type CardAgentSection = (typeof SECTIONS)[number]
@@ -471,6 +473,11 @@ export async function fillSection(input: {
       userId: input.userId,
       sessionId: input.sessionId,
     })) as Record<string, unknown>
+    if (sectionId === 'seo' && payload.seo && typeof payload.seo === 'object') {
+      payload.seo = normalizeSeoMetadata(
+        payload.seo as { metaTitle?: string; metaDescription?: string; keywords?: string[] }
+      )
+    }
     const count = countFillEntries(sectionId, payload)
     const message =
       count === 0
@@ -510,6 +517,10 @@ export async function fillSection(input: {
   }
 
   const schemaHint = FILL_SECTION_SCHEMA_HINTS[sectionId]
+  const seoRule =
+    sectionId === 'seo'
+      ? 'For SEO, write a concise business-specific title and description from verified facts. Include the five required vBiz Me keywords, then add no more than five relevant high-volume/high-intent search phrases when reasonably inferable. Never invent numeric search-volume claims.'
+      : ''
   const complexity = assessComplexity({
     sourceCount: parts.length,
     ocrUsed: images.length > 0,
@@ -521,7 +532,7 @@ export async function fillSection(input: {
   try {
     const result = await chatJson<unknown>({
       tier: route.tier,
-      system: `You fill one vCard section from user materials and the Master Business Profile when present. Return ONLY JSON matching: ${schemaHint}. Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. Never invent customer reviews. If reviews are not in the sources, return an empty reviews array. If the requested section is not supported by the sources, return an empty array/object. For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other.`,
+      system: `You fill one vCard section from user materials and the Master Business Profile when present. Return ONLY JSON matching: ${schemaHint}. Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. Never invent customer reviews. If reviews are not in the sources, return an empty reviews array. If the requested section is not supported by the sources, return an empty array/object. For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
       user: `Fill section “${section}”.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nSources:\n${parts.join('\n\n---\n\n')}`,
       images,
     })
@@ -557,6 +568,12 @@ export async function fillSection(input: {
   try {
     const coerced = sectionId === 'services' ? coerceServiceTypes(raw) : raw
     payload = schema.parse(coerced) as Record<string, unknown>
+    if (sectionId === 'seo' && payload.seo && typeof payload.seo === 'object') {
+      const seo = normalizeSeoMetadata(
+        payload.seo as { metaTitle?: string; metaDescription?: string; keywords?: string[] }
+      )
+      payload.seo = seo
+    }
   } catch {
     throw new AppError(
       502,

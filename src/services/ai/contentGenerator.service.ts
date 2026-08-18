@@ -1,3 +1,4 @@
+import { SEO_FIXED_KEYWORDS } from '../seoMetadata.service'
 import { logChatMeta } from './aiUsageLog.service'
 import type { MasterBusinessProfile } from './businessProfile.schema'
 import {
@@ -137,6 +138,10 @@ export async function generateSectionFromProfile(input: {
     input.section === 'reviews'
       ? 'Only include real testimonials from verifiedReviews/existingTestimonials. Never output suggestedTestimonialTemplates as reviews. If none exist, return { "reviews": [] }.'
       : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
+  const seoRule =
+    input.section === 'seo'
+      ? `For SEO, include these required keywords exactly: ${SEO_FIXED_KEYWORDS.join(', ')}. Add no more than five additional high-volume/high-intent phrases when reasonably inferable and never invent numeric search-volume claims.`
+      : ''
   const writing = selectModelForTask({
     task:
       input.section === 'faqs' || input.section === 'blogs' || input.section === 'personal'
@@ -146,7 +151,7 @@ export async function generateSectionFromProfile(input: {
   const result = await chatJson<unknown>({
     tier: input.tier || (writing.tier === 'vision' ? 'luna' : writing.tier),
     temperature: input.section === 'reviews' ? 0.1 : 0.5,
-    system: `Fill one vCard section from the Master Business Profile only. Return ONLY JSON matching: ${schemaHint}. ${reviewRule} For services.type use ONLY: Web Development, App Design, SEO, Marketing, Other.`,
+    system: `Fill one vCard section from the Master Business Profile only. Return ONLY JSON matching: ${schemaHint}. ${reviewRule} For services.type use ONLY: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
     user: `Section: ${input.section}\nUser instruction: ${input.instruction || '(none)'}\nCurrent draft (partial):\n${(input.currentDraft || '').slice(0, 6000)}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}`,
   })
   await logChatMeta(`fill_${input.section}`, result.meta, {

@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import {
+  SEO_FIXED_KEYWORDS,
+  normalizeSeoKeywords,
+  normalizeSeoMetadata,
+  normalizeSeoSettings,
+} from '../../seoMetadata.service'
 import { masterBusinessProfileSchema, type MasterBusinessProfile } from '../businessProfile.schema'
 import { buildCompletenessReport } from '../completeness.service'
 import { detectSourceConflicts } from '../conflictDetection'
@@ -23,6 +29,25 @@ function profile(partial: Partial<MasterBusinessProfile>): MasterBusinessProfile
 }
 
 describe('vBiz Me auto card builder', () => {
+  it('normalizes card SEO to five required terms and at most ten keywords', () => {
+    const seo = normalizeSeoMetadata({
+      metaTitle: 't'.repeat(100),
+      metaDescription: 'd'.repeat(220),
+      keywords: ['plumber', 'VBIZME', 'local plumber', 'emergency service', 'service area', 'sixth', 'seventh'],
+    })
+
+    assert.equal(seo.metaTitle.length, 70)
+    assert.equal(seo.metaDescription.length, 160)
+    assert.deepEqual(seo.keywords.slice(0, SEO_FIXED_KEYWORDS.length), [...SEO_FIXED_KEYWORDS])
+    assert.equal(seo.keywords.length, 10)
+  })
+
+  it('adds fixed SEO keywords when a partial settings update contains SEO metadata', () => {
+    const settings = normalizeSeoSettings({ seo_meta_title: 'Acme Plumbing' })
+    assert.deepEqual(JSON.parse(settings.seo_meta_keywords_json), [...SEO_FIXED_KEYWORDS])
+    assert.deepEqual(normalizeSeoKeywords(JSON.parse(settings.seo_meta_keywords_json)), [...SEO_FIXED_KEYWORDS])
+  })
+
   it('1. simple local business prefers Luna', () => {
     const complexity = assessComplexity({ sourceCount: 1, pageCount: 3, textLength: 4000 })
     const route = routeAiTier({ confidence: 0.94, complexity: complexity.complexity })

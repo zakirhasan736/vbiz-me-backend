@@ -99,6 +99,7 @@ export function assertSupportedSection(section: string): section is FillSectionI
     'experience',
     'faqs',
     'personal',
+    'seo',
   ].includes(section)
 }
 

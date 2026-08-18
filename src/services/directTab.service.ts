@@ -120,8 +120,7 @@ const statusOf = (v: unknown, fallback = '1') => {
 
 /** ——— Blogs ——— */
 
-const listBlogs = async (profileId: string, userId: string, role: string, skip = 0, limit = 200) => {
-  await profileService.getOwned(profileId, userId, role)
+const queryBlogs = async (profileId: string, skip = 0, limit = 200) => {
   const take = Math.min(200, Math.max(1, limit))
   const start = Math.max(0, skip)
   const where = { profileId, deletedAt: null }
@@ -135,6 +134,11 @@ const listBlogs = async (profileId: string, userId: string, role: string, skip =
     prisma.blog.count({ where }),
   ])
   return { items: rows.map(serializeBlog), total, skip: start, limit: take }
+}
+
+const listBlogs = async (profileId: string, userId: string, role: string, skip = 0, limit = 200) => {
+  await profileService.getOwnedLite(profileId, userId, role)
+  return queryBlogs(profileId, skip, limit)
 }
 
 const createBlog = async (profileId: string, userId: string, role: string, input: BlogInput) => {
@@ -419,10 +423,9 @@ async function deleteGenericTabItem(tab: TabRegistryEntry, profileId: string, it
   }
 }
 
-const listTabItems = async (profileId: string, tabKey: string, userId: string, role: string, skip = 0, limit = 200) => {
+const queryTabItems = async (profileId: string, tabKey: string, skip = 0, limit = 200) => {
   const tab = assertDirectListTab(tabKey)
-  await profileService.getOwned(profileId, userId, role)
-  if (tab.storage === 'blog') return listBlogs(profileId, userId, role, skip, limit)
+  if (tab.storage === 'blog') return queryBlogs(profileId, skip, limit)
   const take = Math.min(200, Math.max(1, limit))
   const start = Math.max(0, skip)
   const pageArgs = { skip: start, take }
@@ -480,6 +483,30 @@ const listTabItems = async (profileId: string, tabKey: string, userId: string, r
     }
   }
   return { items: rows.map((row) => serializeDedicatedRow(tab, row)), total, skip: start, limit: take }
+}
+
+const listTabItems = async (profileId: string, tabKey: string, userId: string, role: string, skip = 0, limit = 200) => {
+  await profileService.getOwnedLite(profileId, userId, role)
+  return queryTabItems(profileId, tabKey, skip, limit)
+}
+
+const EDITOR_BUNDLE_TAB_KEYS = Object.values(TAB_REGISTRY)
+  .filter((tab) => tab.architecture === 'direct' && tab.key !== 'about_me' && tab.key !== 'blogs')
+  .map((tab) => tab.key)
+
+const listEditorSections = async (profileId: string, userId: string, role: string) => {
+  await profileService.getOwnedLite(profileId, userId, role)
+  const [blogs, ...tabPages] = await Promise.all([
+    queryBlogs(profileId, 0, 50),
+    ...EDITOR_BUNDLE_TAB_KEYS.map((tabKey) =>
+      queryTabItems(profileId, tabKey, 0, 50).catch(() => ({ items: [] as ReturnType<typeof serializeTabItem>[] }))
+    ),
+  ])
+  const tabs: Record<string, unknown[]> = {}
+  EDITOR_BUNDLE_TAB_KEYS.forEach((tabKey, index) => {
+    tabs[tabKey] = tabPages[index]?.items || []
+  })
+  return { blogs: blogs.items, tabs }
 }
 
 const createTabItem = async (profileId: string, tabKey: string, userId: string, role: string, input: TabItemInput) => {
@@ -681,6 +708,7 @@ const directTabService = {
   updateBlog,
   deleteBlog,
   listTabItems,
+  listEditorSections,
   createTabItem,
   updateTabItem,
   deleteTabItem,

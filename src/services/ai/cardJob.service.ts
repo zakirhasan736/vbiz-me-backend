@@ -1,4 +1,5 @@
 import AppError from '../../error/AppError'
+import { seoMetadataToSettings } from '../seoMetadata.service'
 import { summarizeExtraction } from './cardAgent.service'
 import { assembleAiCard } from './cardAssembler.service'
 import { cardBlueprintSchema, TAB_CATALOG } from './cardBlueprint.schema'
@@ -394,7 +395,13 @@ export async function assembleJob(jobId: string, userId?: string) {
   return publicJob(await assembleAndReady(session))
 }
 
-export async function applyJob(input: { jobId: string; userId: string; role: string; publish?: boolean }) {
+export async function applyJob(input: {
+  jobId: string
+  userId: string
+  role: string
+  publish?: boolean
+  seo?: { metaTitle?: string; metaDescription?: string; metaKeywords?: unknown[] }
+}) {
   const session = await loadCardSession(input.jobId)
   if (!session) throw new AppError(404, 'Card job not found.')
   assertJobOwner(session, input.userId)
@@ -427,6 +434,13 @@ export async function applyJob(input: { jobId: string; userId: string; role: str
     linkedin: ready.blueprint.socialHandles?.linkedin,
     youtube: ready.blueprint.socialHandles?.youtube,
     tiktok: ready.blueprint.socialHandles?.tiktok,
+    settings: input.seo
+      ? seoMetadataToSettings({
+          metaTitle: input.seo.metaTitle,
+          metaDescription: input.seo.metaDescription,
+          keywords: input.seo.metaKeywords?.filter((value): value is string => typeof value === 'string'),
+        })
+      : undefined,
   })
 
   const profileId = created.id as string
