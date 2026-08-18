@@ -5,6 +5,7 @@ import profileService from '../services/profile.service'
 import publicCardService from '../services/publicCard.service'
 import pushService from '../services/push.service'
 import catchAsyncError from '../utils/catchAsyncError'
+import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
 import { parseListQuery } from '../utils/pagination'
 import { getPublicViewerIdentity } from '../utils/publicVisitor'
 import sendPublicResponse from '../utils/sendPublicResponse'
@@ -93,6 +94,7 @@ const getDynamicSection = catchAsyncError(async (req, res) => {
     section.items = section.items.slice(skip, skip + limit)
   }
   const items = Array.isArray(section.items) ? section.items : null
+  logPublicSectionMedia(param(req.params.name), profileId, data)
   sendPublicResponse(res, {
     success: true,
     data,
