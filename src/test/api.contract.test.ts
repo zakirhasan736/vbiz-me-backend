@@ -69,6 +69,22 @@ test('expired access tokens return 401 when no refresh token is supplied', async
   assert.equal(response.body.message, 'Refresh token is missing')
 })
 
+test('refresh endpoint requires the refresh cookie instead of an access token', async () => {
+  const response = await request(app).post('/api/v1/auth/refresh-token')
+
+  assert.equal(response.status, 401)
+  assert.equal(response.body.success, false)
+  assert.equal(response.body.message, 'Refresh token is missing')
+})
+
+test('refresh endpoint rejects an invalid refresh cookie as an authentication error', async () => {
+  const response = await request(app).post('/api/v1/auth/refresh-token').set('Cookie', 'refreshToken=invalid-token')
+
+  assert.equal(response.status, 401)
+  assert.equal(response.body.success, false)
+  assert.equal(response.body.message, 'Refresh token is invalid or expired')
+})
+
 test('unknown API routes return 404 with the requested path', async () => {
   const response = await request(app).get('/api/v1/does-not-exist')
 
