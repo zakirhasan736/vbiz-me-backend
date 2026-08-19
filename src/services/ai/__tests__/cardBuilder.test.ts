@@ -6,6 +6,7 @@ import {
   cardCreationIssueMessage,
   collectCardActivationIssues,
   collectCardCreationIssues,
+  findCreateContactConflict,
   minCardAgeCutoffDate,
   normalizeCardEmail,
   normalizeCardPhone,
@@ -22,7 +23,14 @@ import { buildCompletenessReport } from '../completeness.service'
 import { detectSourceConflicts } from '../conflictDetection'
 import { profileToBlueprintFacts } from '../contentGenerator.service'
 import { classifyWebsitePage, pdfTextLooksScanned, stripWebsiteBoilerplate } from '../extractDocumentText'
-import { assessComplexity, getModelForTier, routeAiTier, selectModelForTask } from '../modelRouter.service'
+import {
+  assessComplexity,
+  getModelForTier,
+  isUnavailableModelError,
+  modelCandidatesForTier,
+  routeAiTier,
+  selectModelForTask,
+} from '../modelRouter.service'
 import { decideRecommendedTabs } from '../tabDecision.service'
 import { filterRealReviews, looksLikeDateOnly, looksLikeEmail, sanitizeBlueprint } from '../validation.service'
 
@@ -267,6 +275,14 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(getModelForTier('terra'), process.env.OPENAI_CARD_MODEL_TERRA?.trim() || 'gpt-5.6-terra')
     assert.equal(getModelForTier('luna'), process.env.OPENAI_CARD_MODEL_LUNA?.trim() || 'gpt-5.6-luna')
     assert.equal(getModelForTier('vision'), process.env.OPENAI_CARD_MODEL_VISION?.trim() || 'gpt-4o')
+    const solCandidates = modelCandidatesForTier('sol')
+    assert.equal(solCandidates[0], getModelForTier('sol'))
+    assert.ok(solCandidates.includes('gpt-4o') || solCandidates.includes('gpt-4.1'))
+    assert.equal(
+      isUnavailableModelError({ status: 404, code: 'model_not_found', message: 'model does not exist' }),
+      true
+    )
+    assert.equal(isUnavailableModelError({ status: 429, message: 'rate limit' }), false)
   })
 
   it('vision/images never use Luna for writing', () => {
@@ -287,6 +303,7 @@ describe('vBiz Me auto card builder', () => {
     const dob = fields.find((f) => f.fieldKey === 'dob')
     const faq = fields.find((f) => f.fieldKey === 'faqs')
     assert.equal(phone?.status, 'READY')
+    assert.equal(phone?.required, true)
     assert.equal(dob?.status, 'EMPTY')
     assert.equal(dob?.required, true)
     assert.equal(faq?.status, 'EMPTY')
@@ -301,6 +318,27 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(next?.fieldKey, 'dob')
     assert.match(next?.prompt || '', /required/i)
     assert.match(next?.prompt || '', /cannot be inferred or generated/i)
+  })
+
+  it('asks for missing email then phone then date of birth at creation, and reuses existing card contacts', async () => {
+    const { applyExistingCardToProfile, buildFieldGraph, nextActionableField } = await import('../fieldGraph.service')
+    const seeded = applyExistingCardToProfile(profile({ email: null, phone: null, dateOfBirth: null }), {
+      personal: { email: 'owner@card.test', phone: '8605550100', dob: '1990-05-05', fullName: 'Pat Owner' },
+    })
+    assert.equal(seeded.email, 'owner@card.test')
+    assert.equal(seeded.phone, '8605550100')
+    assert.equal(seeded.dateOfBirth, '1990-05-05')
+    const missing = buildFieldGraph({
+      profile: profile({ email: null, phone: null, dateOfBirth: null, ownerName: 'Pat' }),
+      recommendedTabs: decideRecommendedTabs(profile({})),
+      selectedNavIds: ['home', 'services'],
+    })
+    const first = nextActionableField(missing, ['home', 'services'])
+    assert.equal(first?.fieldKey, 'email')
+    const afterEmail = missing.map((field) =>
+      field.fieldKey === 'email' ? { ...field, status: 'READY' as const, currentValue: 'a@b.co' } : field
+    )
+    assert.equal(nextActionableField(afterEmail, ['home', 'services'])?.fieldKey, 'phone')
   })
 
   it('does not allow AI to invent reviews or licenses', async () => {
@@ -433,17 +471,35 @@ describe('vBiz Me auto card builder', () => {
     )
   })
 
-  it('requires a valid date of birth for every new card, including drafts', () => {
-    const missing = collectCardCreationIssues({ dob: '' })
+  it('requires email, phone, and date of birth for every new card, including drafts', () => {
+    const missing = collectCardCreationIssues({ email: '', phone: '', dob: '' })
     assert.deepEqual(
       missing.map((issue) => issue.field),
-      ['dob']
+      ['email', 'phone', 'dob']
     )
-    assert.equal(cardCreationIssueMessage(missing[0]!), 'Date of birth is required to create a card.')
+    assert.equal(cardCreationIssueMessage(missing[0]!), 'Email is required to create a card.')
 
-    const invalid = collectCardCreationIssues({ dob: '1990-02-31' })
+    const missingPhone = collectCardCreationIssues({
+      email: 'owner@example.com',
+      phone: '',
+      dob: '1990-07-18',
+    })
+    assert.equal(missingPhone[0]?.field, 'phone')
+
+    const invalid = collectCardCreationIssues({
+      email: 'owner@example.com',
+      phone: '12025550101',
+      dob: '1990-02-31',
+    })
     assert.equal(invalid[0]?.reason, 'invalid')
-    assert.equal(collectCardCreationIssues({ dob: '1990-07-18' }).length, 0)
+    assert.equal(
+      collectCardCreationIssues({
+        email: 'owner@example.com',
+        phone: '12025550101',
+        dob: '1990-07-18',
+      }).length,
+      0
+    )
   })
 
   it('rejects an invalid phone number when one is provided', () => {
@@ -462,6 +518,30 @@ describe('vBiz Me auto card builder', () => {
 
   it('normalizes card email casing and whitespace without imposing card uniqueness', () => {
     assert.equal(normalizeCardEmail('  Owner@Example.COM '), 'owner@example.com')
+  })
+
+  it('flags email or phone already used on another card only for create-time matching', () => {
+    assert.equal(
+      findCreateContactConflict(
+        { email: 'Owner@Example.COM', phone: '+1 (202) 555-0101' },
+        { email: 'owner@example.com', phone: '999' }
+      ),
+      'email'
+    )
+    assert.equal(
+      findCreateContactConflict(
+        { email: 'new@example.com', phone: '+1 (202) 555-0101' },
+        { email: 'owner@example.com', phone: '1 (202) 555-0101' }
+      ),
+      'phone'
+    )
+    assert.equal(
+      findCreateContactConflict(
+        { email: 'new@example.com', phone: '12025550199' },
+        { email: 'owner@example.com', phone: '12025550101' }
+      ),
+      null
+    )
   })
 
   it('normalizes phone formatting only for activation validation', () => {

@@ -69,7 +69,9 @@ Return JSON:
   "tabReasons": [{ "navId": "services", "reason": "short why" }]
 }
 
-Never invent tabs. Never invent phones, emails, licenses, awards, reviews, projects, or years in business.`,
+Never invent tabs. Never invent phones, emails, licenses, awards, reviews, projects, or years in business.
+
+First understand the business (type, customers, conversion goal, geography). Then recommend only catalog tab ids that fit. Prefer facts already on an existing card over weaker new source text. Leave unknown required personal facts null so the owner can be asked later.`,
     user: `${existingCardPrompt(input.existingCard)}\nAnalyze sources and design the best card from supported tabs only.\n\n${sourcePrompt(input.normalized)}`,
     images: input.normalized.images.slice(0, 4),
   })

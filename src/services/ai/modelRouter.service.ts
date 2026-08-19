@@ -49,6 +49,42 @@ export function getModelForTier(tier: AiTier): string {
   return TIER_ENV[tier]?.trim() || TIER_DEFAULTS[tier]
 }
 
+const TIER_FALLBACKS: Record<AiTier, string[]> = {
+  sol: ['gpt-5.6-sol', 'gpt-5.2', 'gpt-4.1', 'gpt-4o'],
+  terra: ['gpt-5.6-terra', 'gpt-5.2', 'gpt-4.1', 'gpt-4o'],
+  luna: ['gpt-5.6-luna', 'gpt-4o-mini', 'gpt-4o'],
+  vision: ['gpt-4o'],
+}
+
+/** Preferred model first, then compatible fallbacks. Never shown in the UI. */
+export function modelCandidatesForTier(tier: AiTier): string[] {
+  const preferred = getModelForTier(tier)
+  const seen = new Set<string>()
+  const list: string[] = []
+  for (const model of [preferred, ...TIER_FALLBACKS[tier]]) {
+    const id = model.trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    list.push(id)
+  }
+  return list
+}
+
+export function isUnavailableModelError(error: unknown): boolean {
+  const err = error as { status?: number; code?: string; message?: string }
+  const message = String(err.message || '')
+  return (
+    err.status === 404 ||
+    err.code === 'model_not_found' ||
+    /model[s]? .* (not found|does not exist|is not available)|invalid model|unknown model/i.test(message)
+  )
+}
+
+export function isUnsupportedParameterError(error: unknown): boolean {
+  const message = String((error as { message?: string })?.message || '')
+  return /unsupported.*(temperature|max_tokens|parameter)|unknown parameter|does not support/i.test(message)
+}
+
 export function estimateCostUsd(tier: AiTier, inputTokens: number, outputTokens: number): number {
   const rates = COST_PER_M[tier]
   return (inputTokens / 1_000_000) * rates.input + (outputTokens / 1_000_000) * rates.output

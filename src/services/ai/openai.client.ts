@@ -1,6 +1,15 @@
+import { randomUUID } from 'node:crypto'
 import OpenAI from 'openai'
 import AppError from '../../error/AppError'
-import { estimateCostUsd, getModelForTier, type AiTier } from './modelRouter.service'
+import logger from '../../utils/logger'
+import {
+  estimateCostUsd,
+  getModelForTier,
+  isUnavailableModelError,
+  isUnsupportedParameterError,
+  modelCandidatesForTier,
+  type AiTier,
+} from './modelRouter.service'
 
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 export const MAX_FILES = 6
@@ -47,6 +56,38 @@ function parseJsonObject(text: string): unknown {
   }
 }
 
+function publicAiFailure(status: number, message: string, code: string, extra?: Record<string, unknown>) {
+  const requestId = randomUUID()
+  return new AppError(status, message, {
+    code,
+    data: { requestId, retryable: status === 429 || status === 504, ...extra },
+  })
+}
+
+async function createJsonCompletion(
+  client: OpenAI,
+  input: {
+    model: string
+    temperature?: number
+    messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
+  }
+) {
+  const base = {
+    model: input.model,
+    response_format: { type: 'json_object' as const },
+    messages: input.messages,
+  }
+  try {
+    return await client.chat.completions.create({
+      ...base,
+      temperature: input.temperature ?? 0.4,
+    })
+  } catch (error) {
+    if (!isUnsupportedParameterError(error)) throw error
+    return client.chat.completions.create(base)
+  }
+}
+
 export async function chatJson<T>(params: {
   system: string
   user: string
@@ -59,7 +100,9 @@ export async function chatJson<T>(params: {
   const requested = params.tier || 'luna'
   const keepRequested = requested === 'sol' || Boolean(params.model)
   const tier = (params.images?.length && !keepRequested ? 'vision' : requested) as AiTier
-  const model = params.model || getModelForTier(tier)
+  const candidates = params.model
+    ? [params.model, ...modelCandidatesForTier(tier).filter((id) => id !== params.model)]
+    : modelCandidatesForTier(tier)
   const started = Date.now()
 
   const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: 'text', text: params.user }]
@@ -69,47 +112,65 @@ export async function chatJson<T>(params: {
       image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
     })
   }
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: 'system', content: params.system },
+    { role: 'user', content: userContent },
+  ]
 
-  let completion: OpenAI.Chat.Completions.ChatCompletion
-  try {
-    completion = await client.chat.completions.create({
-      model,
-      temperature: params.temperature ?? 0.4,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: params.system },
-        { role: 'user', content: userContent },
-      ],
-    })
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'OpenAI request failed'
-    if (/rate limit|429/i.test(message)) {
-      throw new AppError(429, 'The AI service is busy. Please try again in a moment.', { code: 'AI_RATE_LIMIT' })
+  let completion: OpenAI.Chat.Completions.ChatCompletion | undefined
+  let model = candidates[0]
+  for (const candidate of candidates) {
+    model = candidate
+    try {
+      completion = await createJsonCompletion(client, {
+        model: candidate,
+        temperature: params.temperature,
+        messages,
+      })
+      break
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenAI request failed'
+      if (/rate limit|429/i.test(message) || (error as { status?: number }).status === 429) {
+        throw publicAiFailure(429, 'The AI service is busy. Please try again in a moment.', 'AI_RATE_LIMIT')
+      }
+      if (/timeout|timed out|ETIMEDOUT/i.test(message)) {
+        throw publicAiFailure(504, 'The AI request timed out. Try again with fewer documents.', 'AI_TIMEOUT')
+      }
+      if (isUnavailableModelError(error)) {
+        logger.error('card_agent_model_unavailable', { tier, requestStage: 'chat_json' })
+        continue
+      }
+      logger.error('card_agent_openai_failed', { tier, requestStage: 'chat_json' })
+      throw publicAiFailure(502, 'AI request failed. Please try again.', 'AI_REQUEST_FAILED')
     }
-    if (/timeout|timed out|ETIMEDOUT/i.test(message)) {
-      throw new AppError(504, 'The AI request timed out. Try again with fewer documents.', { code: 'AI_TIMEOUT' })
-    }
-    throw new AppError(502, 'AI request failed. Please try again.', { code: 'AI_REQUEST_FAILED' })
+  }
+  if (!completion) {
+    logger.error('card_agent_all_models_unavailable', { tier, requestStage: 'chat_json' })
+    throw publicAiFailure(
+      502,
+      'The AI assistant could not start. Please try again in a moment.',
+      'AI_MODEL_UNAVAILABLE'
+    )
   }
 
   const text = completion.choices[0]?.message?.content
-  if (!text) throw new AppError(502, 'Empty response from OpenAI', { code: 'AI_EMPTY' })
+  if (!text) throw publicAiFailure(502, 'The AI assistant returned an empty response. Please try again.', 'AI_EMPTY')
 
   let data: T
   try {
     data = parseJsonObject(text) as T
   } catch {
-    const repair = await client.chat.completions.create({
-      model: getModelForTier('terra'),
+    const repair = await createJsonCompletion(client, {
+      model: getModelForTier('terra') === model ? modelCandidatesForTier('terra')[0] : getModelForTier('terra'),
       temperature: 0,
-      response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: 'Repair the following into valid JSON only. Do not add new facts.' },
         { role: 'user', content: text.slice(0, 20000) },
       ],
-    })
-    const repaired = repair.choices[0]?.message?.content
-    if (!repaired) throw new AppError(502, 'AI returned invalid JSON', { code: 'AI_INVALID_JSON' })
+    }).catch(() => null)
+    const repaired = repair?.choices[0]?.message?.content
+    if (!repaired)
+      throw publicAiFailure(502, 'The AI assistant returned an invalid response. Please try again.', 'AI_INVALID_JSON')
     data = parseJsonObject(repaired) as T
   }
 

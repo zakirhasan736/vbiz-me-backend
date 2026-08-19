@@ -11,6 +11,7 @@ const FACTUAL_KEYS = new Set([
   'company',
   'phone',
   'email',
+  'dob',
   'website',
   'address',
   'licenses',

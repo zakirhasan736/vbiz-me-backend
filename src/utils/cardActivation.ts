@@ -85,17 +85,66 @@ export function collectCardActivationIssues(input: CardActivationInput): CardAct
   return issues
 }
 
-export function collectCardCreationIssues(input: Pick<CardActivationInput, 'dob'>): CardActivationIssue[] {
+export function collectCardDobIssues(input: Pick<CardActivationInput, 'dob'>): CardActivationIssue[] {
   const dob = cardDateOnly(input.dob)
   if (!dob) return [{ field: 'dob', label: 'Date of birth', reason: 'missing' }]
   const reason = birthDateIssueReason(input.dob)
   return reason ? [{ field: 'dob', label: 'Date of birth', reason }] : []
 }
 
+export function collectCardCreationIssues(
+  input: Pick<CardActivationInput, 'email' | 'phone' | 'dob'>
+): CardActivationIssue[] {
+  const email = text(input.email)
+  const phoneRaw = text(input.phone)
+  const phone = normalizeCardPhone(input.phone)
+  const issues: CardActivationIssue[] = []
+
+  if (!email) issues.push({ field: 'email', label: 'Email', reason: 'missing' })
+  else if (!EMAIL_PATTERN.test(email)) issues.push({ field: 'email', label: 'Email', reason: 'invalid' })
+
+  if (!phoneRaw) issues.push({ field: 'phone', label: 'Phone', reason: 'missing' })
+  else if (phone.length < 7 || phone.length > 15) {
+    issues.push({ field: 'phone', label: 'Phone', reason: 'invalid' })
+  }
+
+  issues.push(...collectCardDobIssues(input))
+  return issues
+}
+
 export function cardCreationIssueMessage(issue: CardActivationIssue): string {
+  if (issue.field === 'email') {
+    return issue.reason === 'missing'
+      ? 'Email is required to create a card.'
+      : 'Enter a valid email address to create a card.'
+  }
+  if (issue.field === 'phone') {
+    return issue.reason === 'missing'
+      ? 'Phone number is required to create a card.'
+      : 'Enter a valid phone number to create a card.'
+  }
   if (issue.reason === 'missing') return 'Date of birth is required to create a card.'
   if (issue.reason === 'underage') return 'You must be at least 12 years old to create a card.'
   return 'Enter a valid date of birth in YYYY-MM-DD format.'
+}
+
+/** Used only when creating a new card. Edits and already-saved cards are not checked. */
+export function findCreateContactConflict(
+  input: { email?: unknown; phone?: unknown },
+  existing: { email?: string | null; phone?: string | null }
+): 'email' | 'phone' | null {
+  const email = normalizeCardEmail(input.email)
+  const phone = normalizeCardPhone(input.phone)
+  if (email && normalizeCardEmail(existing.email) === email) return 'email'
+  if (phone && normalizeCardPhone(existing.phone) === phone) return 'phone'
+  return null
+}
+
+export function createContactConflictMessage(field: 'email' | 'phone'): string {
+  if (field === 'email') {
+    return 'This email is already used on another card. Use a different email to create a new card.'
+  }
+  return 'This phone number is already used on another card. Use a different phone number to create a new card.'
 }
 
 export function cardActivationIssueMessage(issues: CardActivationIssue[]): string {

@@ -1,4 +1,4 @@
-/** Contact and identity fields are preserved when duplicating a card. */
+/** Contact fields are copied on duplicate; uniqueness is not re-checked. */
 export function duplicateContactFields(source: { email?: string | null; dob?: Date | string | null }) {
   return {
     email: source.email || '',

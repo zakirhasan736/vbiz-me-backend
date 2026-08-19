@@ -15,6 +15,7 @@ describe('duplicateContactFields', () => {
     const createInput = {
       name: 'Card (Copy)',
       slug: 'card-copy',
+      skipCreateContactRules: true,
       ...duplicateContactFields({ email: 'owner@example.com', dob: '1990-07-18' }),
     }
 

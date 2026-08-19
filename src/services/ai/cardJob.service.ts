@@ -4,6 +4,9 @@ import {
   cardCreationIssueMessage,
   collectCardActivationIssues,
   collectCardCreationIssues,
+  collectCardDobIssues,
+  normalizeCardEmail,
+  normalizeCardPhone,
 } from '../../utils/cardActivation'
 import { seoMetadataToSettings } from '../seoMetadata.service'
 import { summarizeExtraction } from './cardAgent.service'
@@ -21,6 +24,7 @@ import { profileToBlueprintFacts } from './contentGenerator.service'
 import type { UploadedPart } from './extractDocumentText'
 import { applyUserFieldValue, generateFieldCopy, skipField, type FieldAction } from './fieldCompletion.service'
 import {
+  applyExistingCardToProfile,
   buildFieldGraph,
   buildTabPlan,
   fieldsForAddedTab,
@@ -183,11 +187,12 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       sessionId: session.id,
       existingCard,
     })
+    const profile = applyExistingCardToProfile(architecture.masterBusinessProfile, existingCard)
     await save(session, {
       status: 'MAPPING_FIELDS',
-      businessProfile: architecture.masterBusinessProfile,
+      businessProfile: profile,
       recommendedTabs: architecture.recommendedTabs,
-      architecture,
+      architecture: { ...architecture, masterBusinessProfile: profile },
       userProgress: progress({ ...session, userProgress: progress(session, 'understand', 'done') }, 'design', 'done'),
     })
     const selectedNavIds = [
@@ -198,24 +203,24 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       'my-info',
     ].filter((id, index, all) => all.indexOf(id) === index)
     const fieldGraph = buildFieldGraph({
-      profile: architecture.masterBusinessProfile,
+      profile,
       recommendedTabs: architecture.recommendedTabs,
       selectedNavIds,
     })
-    const facts = profileToBlueprintFacts(architecture.masterBusinessProfile, architecture.recommendedTabs)
+    const facts = profileToBlueprintFacts(profile, architecture.recommendedTabs)
     const { blueprint } = sanitizeBlueprint(
       cardBlueprintSchema.parse({
         ...facts,
-        businessSummary: facts.businessSummary || architecture.masterBusinessProfile.businessDescription || '',
+        businessSummary: facts.businessSummary || profile.businessDescription || '',
         suggestedSlug: facts.suggestedSlug || 'my-card',
         personal: facts.personal,
       })
     )
     await save(session, {
       status: 'WAITING_FOR_USER_INPUT',
-      businessProfile: architecture.masterBusinessProfile,
+      businessProfile: profile,
       recommendedTabs: architecture.recommendedTabs,
-      architecture,
+      architecture: { ...architecture, masterBusinessProfile: profile },
       selectedNavIds,
       fieldGraph,
       blueprint,
@@ -289,10 +294,24 @@ export async function applyFieldAction(input: {
       throw new AppError(400, 'Add a value before saving.')
     }
     if (field.fieldKey === 'dob') {
-      const issue = collectCardCreationIssues({ dob: input.value })[0]
+      const issue = collectCardDobIssues({ dob: input.value })[0]
       if (issue) throw new AppError(400, cardCreationIssueMessage(issue))
     }
-    next = applyUserFieldValue(field, input.value)
+    if (field.fieldKey === 'email') {
+      const email = normalizeCardEmail(input.value)
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new AppError(400, 'Enter a valid email address for this card.')
+      }
+      next = applyUserFieldValue(field, email)
+    } else if (field.fieldKey === 'phone') {
+      const digits = normalizeCardPhone(input.value)
+      if (digits.length < 7 || digits.length > 15) {
+        throw new AppError(400, 'Enter a valid phone number for this card.')
+      }
+      next = applyUserFieldValue(field, String(input.value).trim())
+    } else {
+      next = applyUserFieldValue(field, input.value)
+    }
   } else if (input.action === 'AI_GENERATE' || input.action === 'IMPROVE_WITH_AI') {
     const generated = await generateFieldCopy({
       field,
@@ -422,9 +441,13 @@ export async function applyJob(input: {
     throw new AppError(409, ready.errorMessage || 'Finish the remaining card details first.')
   }
   const personal = ready.blueprint.personal
-  const dobIssue = collectCardCreationIssues({ dob: personal.dob })[0]
-  if (dobIssue) {
-    throw new AppError(400, cardCreationIssueMessage(dobIssue))
+  const identityIssue = collectCardCreationIssues({
+    email: personal.email,
+    phone: personal.phone,
+    dob: personal.dob,
+  })[0]
+  if (identityIssue) {
+    throw new AppError(400, cardCreationIssueMessage(identityIssue))
   }
   if (input.publish === true) {
     const issues = collectCardActivationIssues({
