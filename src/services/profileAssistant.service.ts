@@ -3,6 +3,7 @@ import { NAV_CHECKBOX_TO_TAB_KEY, NAV_ID_TO_TAB_KEY, TAB_REGISTRY } from '../con
 import AppError from '../error/AppError'
 import { publicReadableWhere } from '../utils/cardStatus'
 import { prisma } from '../utils/prisma'
+import { safePrismaQuery } from '../utils/prismaErrors'
 import { extractTextFromBuffer, type UploadedPart } from './ai/extractDocumentText'
 import {
   ASSISTANT_SETTING_KEY,
@@ -23,6 +24,30 @@ const cleanText = (value: unknown, max: number): string =>
     .trim()
     .slice(0, max)
 
+async function loadAssistantExtras(profileId: string) {
+  const [assistantConfig, assistantKnowledge] = await Promise.all([
+    safePrismaQuery(() => prisma.profileAssistantConfig.findUnique({ where: { profileId } }), null),
+    safePrismaQuery(
+      () =>
+        prisma.profileAssistantKnowledge.findMany({
+          where: { profileId },
+          orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+          take: 100,
+          select: {
+            id: true,
+            profileId: true,
+            label: true,
+            tabScope: true,
+            extractedText: true,
+            createdAt: true,
+          },
+        }),
+      []
+    ),
+  ])
+  return { assistantConfig, assistantKnowledge }
+}
+
 async function legacyEnabled(profileId: string): Promise<boolean> {
   const setting = await prisma.setting.findUnique({
     where: { profileId_key: { profileId, key: ASSISTANT_SETTING_KEY } },
@@ -33,7 +58,7 @@ async function legacyEnabled(profileId: string): Promise<boolean> {
 
 export async function getConfig(profileId: string) {
   const [stored, legacy] = await Promise.all([
-    prisma.profileAssistantConfig.findUnique({ where: { profileId } }),
+    safePrismaQuery(() => prisma.profileAssistantConfig.findUnique({ where: { profileId } }), null),
     legacyEnabled(profileId),
   ])
   return {
@@ -212,19 +237,6 @@ export async function getPublicAssistantState(profileId: string) {
       phone: true,
       whatsapp: true,
       settings: { select: { key: true, value: true } },
-      assistantConfig: true,
-      assistantKnowledge: {
-        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-        take: 100,
-        select: {
-          id: true,
-          profileId: true,
-          label: true,
-          tabScope: true,
-          extractedText: true,
-          createdAt: true,
-        },
-      },
       aboutMe: { select: { title: true, description: true, status: true } },
       education: {
         orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
@@ -280,9 +292,10 @@ export async function getPublicAssistantState(profileId: string) {
   })
   if (!profile) throw new AppError(404, 'Profile not found')
 
+  const { assistantConfig, assistantKnowledge } = await loadAssistantExtras(profileId)
   const legacyValue = profile.settings.find((setting) => setting.key === ASSISTANT_SETTING_KEY)?.value
-  const enabled = isAssistantEnabled(profile.assistantConfig?.enabled, legacyValue)
-  const knowledgeText = enabled ? boundKnowledgeContext(profileId, profile.assistantKnowledge) : ''
+  const enabled = isAssistantEnabled(assistantConfig?.enabled, legacyValue)
+  const knowledgeText = enabled ? boundKnowledgeContext(profileId, assistantKnowledge) : ''
   const { tabKeys, navIds } = enabledPublicTabKeys(profile.settings)
   const visibleTabSet = new Set(tabKeys)
   const directSections = await Promise.all(
@@ -326,7 +339,7 @@ export async function getPublicAssistantState(profileId: string) {
   const context = [
     'PUBLIC CARD FACTS:',
     JSON.stringify(publicCard),
-    profile.assistantConfig?.businessBrief ? `BUSINESS BRIEF:\n${profile.assistantConfig.businessBrief}` : '',
+    assistantConfig?.businessBrief ? `BUSINESS BRIEF:\n${assistantConfig.businessBrief}` : '',
     knowledgeText ? `OWNER-SUPPLIED PUBLIC KNOWLEDGE:\n${knowledgeText}` : '',
   ]
     .filter(Boolean)
@@ -337,9 +350,9 @@ export async function getPublicAssistantState(profileId: string) {
     profileId,
     enabled,
     modelContext: context,
-    businessBrief: enabled ? profile.assistantConfig?.businessBrief || '' : '',
+    businessBrief: enabled ? assistantConfig?.businessBrief || '' : '',
     knowledgeText,
-    systemPromptAddendum: enabled ? profile.assistantConfig?.systemPromptAddendum || null : null,
+    systemPromptAddendum: enabled ? assistantConfig?.systemPromptAddendum || null : null,
   }
 }
 
@@ -347,22 +360,17 @@ export async function getPublicAssistantSupplement(profileId: string) {
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: {
-      assistantConfig: { select: { enabled: true, businessBrief: true } },
       settings: { where: { key: ASSISTANT_SETTING_KEY }, select: { value: true } },
-      assistantKnowledge: {
-        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-        take: 100,
-        select: { id: true, profileId: true, label: true, tabScope: true, extractedText: true },
-      },
     },
   })
   if (!profile) throw new AppError(404, 'Profile not found')
-  const enabled = isAssistantEnabled(profile.assistantConfig?.enabled, profile.settings[0]?.value)
+  const { assistantConfig, assistantKnowledge } = await loadAssistantExtras(profileId)
+  const enabled = isAssistantEnabled(assistantConfig?.enabled, profile.settings[0]?.value)
   return enabled
     ? {
         enabled: true,
-        businessBrief: profile.assistantConfig?.businessBrief || '',
-        knowledgeText: boundKnowledgeContext(profileId, profile.assistantKnowledge),
+        businessBrief: assistantConfig?.businessBrief || '',
+        knowledgeText: boundKnowledgeContext(profileId, assistantKnowledge),
       }
     : { enabled: false, businessBrief: '', knowledgeText: '' }
 }

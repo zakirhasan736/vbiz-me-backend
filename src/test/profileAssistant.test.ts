@@ -87,6 +87,14 @@ test('Gemini public response includes only short-lived token metadata', () => {
   assert.equal('GEMINI_API_KEY' in response, false)
 })
 
+test('live-token profile load does not join assistant tables on the main query', async () => {
+  const source = await readFile(new URL('../services/profileAssistant.service.ts', import.meta.url), 'utf8')
+  assert.match(source, /async function loadAssistantExtras/)
+  assert.match(source, /safePrismaQuery/)
+  const mainQuery = source.slice(source.indexOf('export async function getPublicAssistantState'))
+  assert.doesNotMatch(mainQuery.slice(0, mainQuery.indexOf('if (!profile)')), /assistantConfig:|assistantKnowledge:/)
+})
+
 test('existing card creation and fill-section route contracts remain separate', async () => {
   const routeSource = await readFile(new URL('../router/cardAgent.route.ts', import.meta.url), 'utf8')
   assert.match(routeSource, /router\.post\(\s*['"]\/fill-section['"]/)
