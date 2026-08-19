@@ -9,7 +9,7 @@ import { assessComplexity, routeAiTier, type AiTier } from './modelRouter.servic
 import { chatJson } from './openai.client'
 import type { NormalizedSourceData } from './sourceNormalizer.service'
 
-const PROFILE_SOURCE_CAP = 28000
+const PROFILE_SOURCE_CAP = 70000
 
 function sourcePrompt(normalized: NormalizedSourceData): string {
   return normalized.extractedText.slice(0, PROFILE_SOURCE_CAP)

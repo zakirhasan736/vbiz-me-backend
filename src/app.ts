@@ -6,6 +6,7 @@ import helmet from 'helmet'
 import config from './configs/config'
 import './configs/passport'
 import globalErrorHandler from './middlewares/globalErrorHandler'
+import { requestIdMiddleware } from './middlewares/requestId'
 import router from './router/index'
 import logger from './utils/logger'
 import sendResponse from './utils/sendResponse'
@@ -18,6 +19,7 @@ app.set('trust proxy', 1)
 app.use(helmet())
 app.use(compression())
 app.use(cookieParser())
+app.use(requestIdMiddleware)
 app.use((req: Request, res: Response, next: NextFunction) => {
   const startedAt = performance.now()
   res.on('finish', () => {
@@ -40,6 +42,7 @@ app.use(
       callback(null, false)
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    exposedHeaders: ['x-vbiz-request-id'],
     credentials: true,
   })
 )

@@ -196,8 +196,8 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'TERRA',
     prompt:
-      'Write evergreen educational content. Do not invent company news events. If none exist in sources, ask to draft up to 5.',
-    getValue: () => [],
+      'Use real articles found on the website. Place titles, excerpts, URLs, and images on News/Blogs. Only ask to draft extra posts if none were found. Do not invent company news events.',
+    getValue: (p) => p.blogs,
   },
   {
     tabId: 'reviews',

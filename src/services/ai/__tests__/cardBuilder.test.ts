@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { slugify } from '../../../middlewares/ownership'
 import {
@@ -22,7 +24,13 @@ import { masterBusinessProfileSchema, type MasterBusinessProfile } from '../busi
 import { buildCompletenessReport } from '../completeness.service'
 import { detectSourceConflicts } from '../conflictDetection'
 import { profileToBlueprintFacts } from '../contentGenerator.service'
-import { classifyWebsitePage, pdfTextLooksScanned, stripWebsiteBoilerplate } from '../extractDocumentText'
+import {
+  classifyWebsitePage,
+  extractPageImageUrls,
+  parseSitemapLocs,
+  pdfTextLooksScanned,
+  stripWebsiteBoilerplate,
+} from '../extractDocumentText'
 import {
   assessComplexity,
   getModelForTier,
@@ -31,6 +39,7 @@ import {
   routeAiTier,
   selectModelForTask,
 } from '../modelRouter.service'
+import { seedProfileFromCrawledPages } from '../sourceNormalizer.service'
 import { decideRecommendedTabs } from '../tabDecision.service'
 import { filterRealReviews, looksLikeDateOnly, looksLikeEmail, sanitizeBlueprint } from '../validation.service'
 
@@ -233,8 +242,71 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(classifyWebsitePage('https://ex.com/services', 'Our services'), 'services')
     assert.equal(classifyWebsitePage('https://ex.com/about-us', 'About us'), 'about')
     assert.equal(classifyWebsitePage('https://ex.com/faq', 'FAQ'), 'faq')
+    assert.equal(classifyWebsitePage('https://ex.com/portfolio', 'Our work'), 'portfolio')
+    assert.equal(classifyWebsitePage('https://ex.com/blog/new-office', 'Company news'), 'blog')
     const cleaned = stripWebsiteBoilerplate('Welcome We use cookies Accept all cookies Hello')
     assert.ok(!/accept all cookies/i.test(cleaned))
+  })
+
+  it('parses sitemap locs and page images from HTML', () => {
+    const locs = parseSitemapLocs(
+      `<urlset><url><loc>https://ex.com/about</loc></url><url><loc>https://other.com/skip</loc></url><url><loc>https://ex.com/blog/one</loc></url></urlset>`,
+      'ex.com'
+    )
+    assert.deepEqual(locs, ['https://ex.com/about', 'https://ex.com/blog/one'])
+    const images = extractPageImageUrls(
+      `<meta property="og:image" content="/uploads/hero.jpg"><img src="https://cdn.ex.com/media/card.png">`,
+      'https://ex.com'
+    )
+    assert.ok(images.includes('https://ex.com/uploads/hero.jpg'))
+    assert.ok(images.includes('https://cdn.ex.com/media/card.png'))
+  })
+
+  it('crawled blogs become card blog facts and recommend the News/Blogs tab', () => {
+    const withBlogs = profile({
+      blogs: [
+        {
+          title: 'How we winterize pipes',
+          description: 'Seasonal plumbing tips',
+          url: 'https://acme.test/blog/winterize',
+          imageUrl: 'https://cdn.acme.test/winter.jpg',
+          category: 'News',
+        },
+      ],
+    })
+    const tabs = decideRecommendedTabs(withBlogs)
+    assert.ok(tabs.some((t) => t.navId === 'blog'))
+    const facts = profileToBlueprintFacts(withBlogs, tabs)
+    assert.equal(facts.blogs?.[0]?.title, 'How we winterize pipes')
+    assert.equal(facts.blogs?.[0]?.imageUrl, 'https://cdn.acme.test/winter.jpg')
+  })
+
+  it('seeds blogs and portfolio from crawled pages when the architect left them empty', async () => {
+    const seeded = seedProfileFromCrawledPages(profile({ blogs: [], portfolio: [] }), [
+      {
+        url: 'https://acme.test/blog',
+        category: 'blog',
+        title: 'Blog',
+        text: 'Index of posts',
+      },
+      {
+        url: 'https://acme.test/blog/winterize',
+        category: 'blog',
+        title: 'How we winterize pipes',
+        text: 'Seasonal plumbing tips for homeowners.',
+        imageUrls: ['https://cdn.acme.test/winter.jpg'],
+      },
+      {
+        url: 'https://acme.test/portfolio/kitchen',
+        category: 'portfolio',
+        title: 'Kitchen remodel',
+        text: 'Full kitchen replacement.',
+        imageUrls: ['https://cdn.acme.test/kitchen.jpg'],
+      },
+    ])
+    assert.equal(seeded.blogs?.[0]?.title, 'How we winterize pipes')
+    assert.equal(seeded.blogs?.[0]?.imageUrl, 'https://cdn.acme.test/winter.jpg')
+    assert.equal(seeded.portfolio?.[0]?.title, 'Kitchen remodel')
   })
 
   it('plumbing company gets trade tabs', () => {
@@ -652,5 +724,19 @@ describe('vBiz Me auto card builder', () => {
       cardActivationIssueMessage(underageIssues),
       'Card cannot be activated. You must be at least 12 years old.'
     )
+  })
+
+  it('persists normalized sources on session updates and returns jobs before crawl', () => {
+    const store = readFileSync(resolve(process.cwd(), 'src/services/ai/cardSession.store.ts'), 'utf8')
+    const jobs = readFileSync(resolve(process.cwd(), 'src/services/ai/cardJob.service.ts'), 'utf8')
+    const route = readFileSync(resolve(process.cwd(), 'src/router/cardAgent.route.ts'), 'utf8')
+    assert.match(store, /normalizedSources: persistableNormalized\(session\.normalized\)/)
+    assert.match(store, /websiteUrl: session\.websiteUrl \|\| null/)
+    assert.match(store, /sourceHash: session\.sourceHash \|\| null/)
+    assert.match(jobs, /queueWorker\(session\.id\)/)
+    assert.match(jobs, /return publicJob\(session\)/)
+    assert.match(route, /statusCode: 202/)
+    assert.match(route, /builderMode/)
+    assert.match(route, /profileId/)
   })
 })

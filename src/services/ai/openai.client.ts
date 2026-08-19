@@ -30,7 +30,7 @@ export function getCardAgentModel(): string {
 }
 
 export function createOpenAIClient(): OpenAI {
-  return new OpenAI({ apiKey: getOpenAiApiKey() })
+  return new OpenAI({ apiKey: getOpenAiApiKey(), timeout: 240_000 })
 }
 
 export type ChatJsonMeta = {

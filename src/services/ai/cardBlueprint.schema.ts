@@ -55,6 +55,7 @@ const fillPortfolioItemSchema = z.object({
   title: z.string().optional().default(''),
   description: z.string().optional().default(''),
   url: z.string().optional().default(''),
+  imageUrl: z.string().optional().default(''),
 })
 
 const fillReviewItemSchema = z.object({
@@ -67,6 +68,8 @@ const fillBlogItemSchema = z.object({
   title: z.string().optional().default(''),
   description: z.string().optional().default(''),
   category: z.string().optional().default('News'),
+  url: z.string().optional().default(''),
+  imageUrl: z.string().optional().default(''),
 })
 
 const fillSkillItemSchema = z.object({
@@ -135,8 +138,8 @@ export type FillSectionId = keyof typeof fillSectionSchemas
 
 export const FILL_SECTION_SCHEMA_HINTS: Record<FillSectionId, string> = {
   services: `{ "services": [{ "type": "Web Development"|"App Design"|"SEO"|"Marketing"|"Other", "title": "", "description": "", "url": "" }] }`,
-  blogs: `{ "blogs": [{ "title": "", "description": "", "category": "News" }] }`,
-  portfolio: `{ "portfolio": [{ "title": "", "description": "", "url": "" }] }`,
+  blogs: `{ "blogs": [{ "title": "", "description": "", "category": "News", "url": "", "imageUrl": "" }] }`,
+  portfolio: `{ "portfolio": [{ "title": "", "description": "", "url": "", "imageUrl": "" }] }`,
   reviews: `{ "reviews": [{ "author": "", "text": "", "rating": 5 }] }`,
   skills: `{ "skills": [{ "type": "Core", "skills": [""] }] }`,
   education: `{ "education": [{ "institute": "", "degree": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
@@ -193,6 +196,7 @@ const blueprintPortfolioItemSchema = z.object({
   title: z.string(),
   description: z.string().optional().default(''),
   url: z.string().optional().default(''),
+  imageUrl: z.string().optional().default(''),
 })
 
 const blueprintReviewItemSchema = z.object({
@@ -205,6 +209,8 @@ const blueprintBlogItemSchema = z.object({
   title: z.string(),
   description: z.string().optional().default(''),
   category: z.string().optional().default('News'),
+  url: z.string().optional().default(''),
+  imageUrl: z.string().optional().default(''),
 })
 
 const blueprintSkillItemSchema = z.object({
@@ -304,9 +310,9 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
   "experience": [{ "company": "", "jobTitle": "", "description": "", "fromDate": "", "toDate": "", "tillNow": false }],
   "skills": [{ "type": "Core", "skills": ["Skill"] }],
   "services": [{ "type": "Web Development"|"App Design"|"SEO"|"Marketing"|"Other", "title": "", "description": "", "url": "" }],
-  "portfolio": [{ "title": "", "description": "", "url": "" }],
+  "portfolio": [{ "title": "", "description": "", "url": "", "imageUrl": "" }],
   "reviews": [{ "author": "", "text": "", "rating": 5 }],
-  "blogs": [{ "title": "", "description": "", "category": "News" }],
+  "blogs": [{ "title": "", "description": "", "category": "News", "url": "", "imageUrl": "" }],
   "faqs": [{ "question": "", "answer": "" }],
   "enabledTabs": ["Personal", "Services", "Skill"],
   "recommendedTabs": [{ "tab": "Portfolio", "reason": "why", "priority": "high" }],
@@ -315,7 +321,7 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
     "pushNotifications": true, "emailNotifications": true
   }
 }
-Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, populate those arrays with real extracted items. For reviews/testimonials, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture distinct items present in the crawl, up to 30. Never invent customer reviews. If no real reviews exist, return an empty reviews array. Creative wording is allowed for about, FAQs, headlines, and blog ideas, but never invent factual claims (years in business, licenses, awards, phone, email). Missing facts stay empty. Dates as YYYY-MM-DD when known. Never infer a date of birth; include personal.dob only when a source explicitly provides it.
+Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, populate those arrays with real extracted items, including page URLs and image URLs when present. For blogs, copy real article titles and excerpts onto the News/Blogs tab — do not invent company news. For reviews/testimonials, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture distinct items present in the crawl, up to 30. Never invent customer reviews. If no real reviews exist, return an empty reviews array. Creative wording is allowed for about, FAQs, headlines, and extra blog ideas only when the owner asked to generate them, but never invent factual claims (years in business, licenses, awards, phone, email). Missing facts stay empty. Dates as YYYY-MM-DD when known. Never infer a date of birth; include personal.dob only when a source explicitly provides it.
 For services.type use ONLY: Web Development, App Design, SEO, Marketing, or Other.
 enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal and About Me are present. Never put Public Cards or My Info in enabledTabs — those are fixed product tabs. My Info Call/Text/Email is filled from Personal Info (phone, WhatsApp, email). Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, News/Blogs, Profile, Portfolio, Certifications/Licenses, FAQ).`
 

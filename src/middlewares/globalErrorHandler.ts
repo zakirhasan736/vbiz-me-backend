@@ -1,4 +1,4 @@
-import { ErrorRequestHandler } from 'express'
+import { ErrorRequestHandler, Request } from 'express'
 import multer from 'multer'
 import { ZodError } from 'zod'
 import { MEDIA_UPLOAD_TOO_LARGE_MESSAGE } from '../constants/mediaUpload'
@@ -70,14 +70,21 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     errorMessages = [{ path: '', message }]
   }
 
+  const requestId =
+    (req as Request & { requestId?: string }).requestId ||
+    (typeof res.getHeader('x-vbiz-request-id') === 'string' ? String(res.getHeader('x-vbiz-request-id')) : undefined)
+
   logger.error(`${req.method} ${req.originalUrl} ${message}`, {
     statusCode,
+    requestId,
+    code,
   })
 
   return res.status(statusCode).json({
     success: false,
     statusCode,
     message,
+    requestId,
     ...(code ? { code } : {}),
     ...(data !== undefined ? { data } : {}),
     errorMessages,

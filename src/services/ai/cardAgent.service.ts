@@ -507,26 +507,30 @@ export async function fillSection(input: {
       `MASTER BUSINESS PROFILE (prefer this over re-reading raw sources):\n${JSON.stringify(profile).slice(0, 14000)}`
     )
   }
-  if (websiteUrl && !profile) {
-    try {
-      const crawled = await crawlWebsiteDeep(websiteUrl, section)
-      parts.push(
-        `WEBSITE URL: ${websiteUrl}\nFOCUSED SECTION: ${section}\nCRAWLED ${crawled.pages.length} PAGE(S):\n${crawled.combined}`
-      )
-    } catch (e) {
-      parts.push(
-        `WEBSITE URL: ${websiteUrl}\n(Could not re-crawl site for ${section}: ${e instanceof Error ? e.message : 'error'}.)`
-      )
-    }
-  }
   if (text) parts.push(`USER TEXT:\n${text}`)
-  for (const file of files) {
-    const extracted = await extractTextFromBuffer(file)
-    const body = needsServerOcr(extracted)
-      ? await extractWithOcrFallback(file, extracted.extractionMethod === 'ocr_needed' ? 'scanned PDF' : 'image')
-      : extracted.text
-    parts.push(`DOCUMENT “${extracted.label}”:\n${body}`)
-  }
+
+  const websiteTask = websiteUrl
+    ? crawlWebsiteDeep(websiteUrl, section).then(
+        (crawled) =>
+          `WEBSITE URL: ${websiteUrl}\nFOCUSED SECTION: ${section}\nCRAWLED ${crawled.pages.length} PAGE(S):\n${crawled.combined}`,
+        (error) =>
+          `WEBSITE URL: ${websiteUrl}\n(Could not re-crawl site for ${section}: ${error instanceof Error ? error.message : 'error'}.)`
+      )
+    : Promise.resolve(null)
+
+  const filesTask = Promise.all(
+    files.map(async (file) => {
+      const extracted = await extractTextFromBuffer(file)
+      const body = needsServerOcr(extracted)
+        ? await extractWithOcrFallback(file, extracted.extractionMethod === 'ocr_needed' ? 'scanned PDF' : 'image')
+        : extracted.text
+      return `DOCUMENT “${extracted.label}”:\n${body}`
+    })
+  )
+
+  const [websitePart, fileParts] = await Promise.all([websiteTask, filesTask])
+  if (websitePart) parts.push(websitePart)
+  parts.push(...fileParts)
 
   const readyText = parts.join('\n\n---\n\n').trim()
   if (!readyText) {

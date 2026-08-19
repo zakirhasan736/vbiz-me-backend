@@ -82,7 +82,13 @@ export function profileToBlueprintFacts(
       text: r.text || '',
       rating: r.rating || 5,
     })),
-    blogs: [],
+    blogs: (profile.blogs || []).map((post) => ({
+      title: post.title,
+      description: post.description || '',
+      category: post.category || 'News',
+      url: post.url || '',
+      imageUrl: post.imageUrl || '',
+    })),
     faqs: [],
     enabledTabs: recommendedTabNames(tabs),
     recommendedTabs: tabs

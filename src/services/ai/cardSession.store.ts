@@ -45,6 +45,11 @@ export type CardBuildSession = {
   assembledDraft?: unknown
   userProgress: UserProgressStep[]
   errorMessage?: string | null
+  errorCode?: string | null
+  errorStage?: string | null
+  requestId?: string
+  builderMode?: 'create' | 'update'
+  rawSources?: Record<string, unknown>
   architectureVersion: number
   createdAt: number
 }
@@ -63,6 +68,25 @@ function prune() {
   const now = Date.now()
   for (const [id, session] of memory) {
     if (now - session.createdAt > TTL_MS) memory.delete(id)
+  }
+}
+
+function restoreMeta(row: {
+  rawSources?: unknown
+  architecture?: unknown
+  errorMessage?: string | null
+}): Pick<CardBuildSession, 'requestId' | 'builderMode' | 'errorCode' | 'errorStage' | 'rawSources'> {
+  const raw = (row.rawSources && typeof row.rawSources === 'object' ? row.rawSources : {}) as Record<string, unknown>
+  const architecture = (row.architecture && typeof row.architecture === 'object' ? row.architecture : {}) as {
+    builderMeta?: { requestId?: string; builderMode?: 'create' | 'update'; stage?: string; errorCode?: string }
+  }
+  return {
+    rawSources: raw,
+    requestId: typeof raw.requestId === 'string' ? raw.requestId : architecture.builderMeta?.requestId,
+    builderMode:
+      raw.builderMode === 'update' || architecture.builderMeta?.builderMode === 'update' ? 'update' : 'create',
+    errorCode: typeof raw.errorCode === 'string' ? raw.errorCode : architecture.builderMeta?.errorCode || undefined,
+    errorStage: typeof raw.errorStage === 'string' ? raw.errorStage : architecture.builderMeta?.stage || undefined,
   }
 }
 
@@ -135,6 +159,7 @@ export async function loadCardSession(id?: string | null): Promise<CardBuildSess
       errorMessage: row.errorMessage,
       architectureVersion: row.architectureVersion || 1,
       createdAt: row.createdAt.getTime(),
+      ...restoreMeta(row),
     }
     memory.set(restored.id, restored)
     return restored
@@ -144,6 +169,23 @@ export async function loadCardSession(id?: string | null): Promise<CardBuildSess
 }
 
 async function persistSession(session: CardBuildSession) {
+  const architecture = {
+    ...((session.architecture && typeof session.architecture === 'object' ? session.architecture : {}) as object),
+    recommendedTabs: session.recommendedTabs,
+    builderMeta: {
+      requestId: session.requestId,
+      builderMode: session.builderMode || 'create',
+      stage: session.errorStage,
+      errorCode: session.errorCode,
+    },
+  }
+  const rawSources = {
+    ...(session.rawSources || {}),
+    requestId: session.requestId,
+    builderMode: session.builderMode || 'create',
+    errorCode: session.errorCode,
+    errorStage: session.errorStage,
+  }
   try {
     const { prisma } = await import('../../utils/prisma')
     await prisma.aiCardSession.upsert({
@@ -155,10 +197,11 @@ async function persistSession(session: CardBuildSession) {
         websiteUrl: session.websiteUrl || null,
         sourceHash: session.sourceHash || null,
         status: session.status,
+        rawSources: rawSources as object,
         normalizedSources: persistableNormalized(session.normalized) as object,
         businessProfile: session.businessProfile as object | undefined,
         finalBlueprint: session.blueprint as object | undefined,
-        architecture: (session.architecture || { recommendedTabs: session.recommendedTabs }) as object,
+        architecture: architecture as object,
         selectedNavIds: session.selectedNavIds as object,
         fieldGraph: session.fieldGraph as object,
         assembledDraft: session.assembledDraft as object | undefined,
@@ -169,10 +212,14 @@ async function persistSession(session: CardBuildSession) {
       },
       update: {
         profileId: session.profileId || null,
+        websiteUrl: session.websiteUrl || null,
+        sourceHash: session.sourceHash || null,
         status: session.status,
+        rawSources: rawSources as object,
+        normalizedSources: persistableNormalized(session.normalized) as object,
         businessProfile: session.businessProfile as object | undefined,
         finalBlueprint: session.blueprint as object | undefined,
-        architecture: (session.architecture || { recommendedTabs: session.recommendedTabs }) as object,
+        architecture: architecture as object,
         selectedNavIds: session.selectedNavIds as object,
         fieldGraph: session.fieldGraph as object,
         assembledDraft: session.assembledDraft as object | undefined,
@@ -182,9 +229,19 @@ async function persistSession(session: CardBuildSession) {
         updatedAt: new Date(),
       },
     })
-  } catch {
-    /* optional persistence */
+  } catch (error) {
+    const { default: logger } = await import('../../utils/logger')
+    logger.error('AI_BUILDER_ERROR', {
+      stage: 'persistence',
+      jobId: session.id,
+      requestId: session.requestId,
+      error: error instanceof Error ? error.message : 'persist failed',
+    })
   }
+}
+
+export async function persistCardSession(session: CardBuildSession) {
+  await persistSession(session)
 }
 
 export function assertJobOwner(session: CardBuildSession, userId?: string) {

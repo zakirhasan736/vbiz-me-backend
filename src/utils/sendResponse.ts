@@ -17,6 +17,7 @@ type IResponse<T> = {
 }
 
 const sendResponse = <T>(res: Response, data: IResponse<T>) => {
+  const requestId = res.getHeader('x-vbiz-request-id')
   res.status(data.statusCode || 200).json({
     success: data.success,
     statusCode: data.statusCode || 200,
@@ -24,6 +25,7 @@ const sendResponse = <T>(res: Response, data: IResponse<T>) => {
     data: data.data,
     totalDoc: data.totalDoc ?? data.meta?.total,
     meta: data.meta,
+    ...(typeof requestId === 'string' && requestId ? { requestId } : {}),
   })
 }
 

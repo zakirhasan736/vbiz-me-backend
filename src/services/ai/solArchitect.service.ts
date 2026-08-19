@@ -30,7 +30,7 @@ export type SolArchitecture = {
 }
 
 function sourcePrompt(normalized: NormalizedSourceData): string {
-  return normalized.extractedText.slice(0, 28000)
+  return normalized.extractedText.slice(0, 70000)
 }
 
 function existingCardPrompt(existingCard?: unknown): string {
@@ -69,18 +69,19 @@ Return JSON:
   "tabReasons": [{ "navId": "services", "reason": "short why" }]
 }
 
-First understand the business:
+First understand the business thoroughly from ALL provided sources (full website crawl, OCR/documents, and owner-typed notes):
 1. What is this business and who is the owner/professional?
 2. Industry, services/products, target customers, buying journey, conversion opportunities.
 3. Geography/service area, branding/tone, differentiators, social presence, contact, media.
 4. Verified reviews, projects, experience, certifications — only if present in sources.
-5. Likely FAQ topics, educational blog topics, and SEO opportunities from verified facts.
+5. Real blog/news articles and portfolio/project pages from the crawl — copy titles, excerpts, URLs, and images. Likely FAQ topics and SEO opportunities from verified facts.
 6. Which EXISTING catalog tabs fit, which fields can be filled now, what must be asked of the owner, and what is required for a 90–100% ready card.
 
+Owner-typed notes and OCR text outrank weaker website guesses when they conflict.
 Never invent tabs. Never invent phones, emails, licenses, awards, reviews, projects, or years in business.
 Prefer facts already on an existing card over weaker new source text. Leave unknown required personal facts null so the owner can be asked later.`,
     user: `${existingCardPrompt(input.existingCard)}\nAnalyze sources and design the best card from supported tabs only.\n\n${sourcePrompt(input.normalized)}`,
-    images: input.normalized.images.slice(0, 4),
+    images: input.normalized.images.slice(0, 6),
   })
   await logChatMeta('sol_architecture', result.meta, {
     userId: input.userId,

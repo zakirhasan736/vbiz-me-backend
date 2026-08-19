@@ -16,8 +16,21 @@ export type WebsitePageCategory =
   | 'locations'
   | 'certifications'
   | 'blog'
+  | 'portfolio'
   | 'social'
   | 'other'
+
+export type CrawledWebsitePage = {
+  url: string
+  text: string
+  category: WebsitePageCategory
+  title?: string
+  imageUrls?: string[]
+}
+
+export const PAGE_FETCH_TIMEOUT_MS = 20_000
+export const DEFAULT_CRAWL_MAX_PAGES = 40
+export const FOCUSED_CRAWL_MAX_PAGES = 48
 
 export type ExtractedSource = {
   label: string
@@ -89,13 +102,14 @@ export function classifyWebsitePage(url: string, text = ''): WebsitePageCategory
   if (/\/(faq|faqs|help|support)\b/.test(hay) || /\bfrequently asked\b/.test(hay)) return 'faq'
   if (/review|testimonial|feedback/.test(hay)) return 'reviews'
   if (/\/(about|our-story|who-we-are)\b/.test(hay) || /\babout (us|me)\b/.test(hay)) return 'about'
+  if (/portfolio|project|gallery|case.?stud|our-work/.test(hay)) return 'portfolio'
+  if (/blog|news|article|press/.test(hay)) return 'blog'
   if (/service|offer|package|solution/.test(hay)) return 'services'
   if (/product|shop|store/.test(hay)) return 'products'
   if (/team|staff|our people/.test(hay)) return 'team'
   if (/contact|get in touch/.test(hay)) return 'contact'
   if (/location|offices|service area/.test(hay)) return 'locations'
   if (/certif|licen[cs]e|accreditation|insured/.test(hay)) return 'certifications'
-  if (/blog|news|article|press/.test(hay)) return 'blog'
   if (/facebook|instagram|linkedin|youtube|tiktok/.test(hay)) return 'social'
   try {
     const parsed = new URL(url.startsWith('http') ? url : `https://${url}`)
@@ -218,15 +232,15 @@ export async function extractTextFromBuffer(file: UploadedPart): Promise<Extract
   }
 }
 
-async function fetchHtml(url: string): Promise<string> {
+async function fetchHtml(url: string, timeoutMs = PAGE_FETCH_TIMEOUT_MS): Promise<string> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 12000)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'vBizCardAgent/1.0 (+https://vbiz.me)',
-        Accept: 'text/html,application/xhtml+xml',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
       redirect: 'follow',
     })
@@ -235,6 +249,70 @@ async function fetchHtml(url: string): Promise<string> {
   } finally {
     clearTimeout(timer)
   }
+}
+
+const SKIP_PATH_RE =
+  /\/(?:wp-admin|wp-login|cart|checkout|account|login|signin|signup|register|privacy|terms|cookie|cgi-bin)(?:\/|$)/i
+
+export function parseSitemapLocs(xml: string, originHost: string): string[] {
+  const locs = Array.from(xml.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)).map((m) => decodeHtmlEntities(m[1].trim()))
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const loc of locs) {
+    try {
+      const parsed = new URL(loc)
+      if (parsed.hostname !== originHost) continue
+      if (SKIP_PATH_RE.test(parsed.pathname)) continue
+      parsed.hash = ''
+      const abs = parsed.toString()
+      if (seen.has(abs)) continue
+      seen.add(abs)
+      out.push(abs)
+    } catch {
+      /* ignore */
+    }
+  }
+  return out
+}
+
+export function extractPageTitle(html: string): string {
+  const og = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+  return cleanText(og || title || '').slice(0, 180)
+}
+
+export function extractPageImageUrls(html: string, baseUrl: string): string[] {
+  const raw: string[] = []
+  const og =
+    html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1]
+  if (og) raw.push(og)
+  const twitter = html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
+  if (twitter) raw.push(twitter)
+  for (const match of html.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)) {
+    raw.push(match[1])
+    if (raw.length >= 16) break
+  }
+  const seen = new Set<string>()
+  const abs: string[] = []
+  for (const href of raw) {
+    try {
+      const parsed = new URL(href, baseUrl)
+      if (!/^https?:$/i.test(parsed.protocol)) continue
+      const path = parsed.pathname.toLowerCase()
+      const looksImage =
+        /\.(?:jpe?g|png|webp|gif)(?:\?|$)/i.test(path) ||
+        /\/(?:uploads|wp-content|cdn|images?|media|assets)\//i.test(path)
+      if (!looksImage) continue
+      const next = parsed.toString()
+      if (seen.has(next)) continue
+      seen.add(next)
+      abs.push(next)
+    } catch {
+      /* ignore */
+    }
+  }
+  return abs.slice(0, 8)
 }
 
 function collectJsonStrings(value: unknown, out: string[] = [], seen = new Set<unknown>()): string[] {
@@ -400,10 +478,11 @@ function extractSameOriginLinks(html: string, baseUrl: string, focus?: string, l
     if (!abs || abs === base.toString()) continue
     const parsed = new URL(abs)
     const path = parsed.pathname.toLowerCase()
-    if (/\.(?:jpg|jpeg|png|gif|webp|svg|mp4|mov|zip|css|js|ico|woff2?)$/i.test(path)) continue
+    if (SKIP_PATH_RE.test(path)) continue
+    if (/\.(?:jpg|jpeg|png|gif|webp|svg|mp4|mov|zip|css|js|ico|woff2?|pdf)$/i.test(path)) continue
     const target = `${path} ${parsed.search} ${href}`
-    if (!SECTION_LINK_RE.test(target) && !(focusPattern && focusPattern.test(target))) continue
     let score = 1
+    if (SECTION_LINK_RE.test(target)) score += 2
     if (focusPattern && focusPattern.test(target)) score += 6
     if (/service|product|offer|pricing|solution/i.test(target)) score += 3
     if (/portfolio|project|gallery|case|detail/i.test(target)) score += 3
@@ -421,74 +500,130 @@ function extractSameOriginLinks(html: string, baseUrl: string, focus?: string, l
     .slice(0, limit)
 }
 
-/** Crawl homepage + related section pages (services, portfolio, blog, faq, reviews…). */
+async function fetchSettledInChunks<T>(items: T[], size: number, fn: (item: T) => Promise<unknown>) {
+  const out: PromiseSettledResult<unknown>[] = []
+  for (let i = 0; i < items.length; i += size) {
+    const chunk = items.slice(i, i + size)
+    out.push(...(await Promise.allSettled(chunk.map(fn))))
+  }
+  return out
+}
+
+async function discoverSitemapUrls(home: string): Promise<string[]> {
+  try {
+    const origin = new URL(home)
+    const sitemapUrl = new URL('/sitemap.xml', origin).toString()
+    const xml = await fetchHtml(sitemapUrl, 12_000)
+    const locs = parseSitemapLocs(xml, origin.hostname)
+    const nested = locs.filter((loc) => /sitemap/i.test(loc)).slice(0, 4)
+    const nestedLocs: string[] = []
+    for (const nestedUrl of nested) {
+      try {
+        nestedLocs.push(...parseSitemapLocs(await fetchHtml(nestedUrl, 12_000), origin.hostname))
+      } catch {
+        /* ignore nested sitemap failures */
+      }
+    }
+    return [...locs, ...nestedLocs].filter((loc) => !/sitemap/i.test(loc))
+  } catch {
+    return []
+  }
+}
+
+type FetchedPage = {
+  url: string
+  html: string
+  text: string
+  title: string
+  imageUrls: string[]
+}
+
+/** Crawl homepage + inner pages (services, portfolio, blog, faq, reviews…) including sitemap URLs. */
 export async function crawlWebsiteDeep(
   url: string,
   focus?: string
-): Promise<{ pages: Array<{ url: string; text: string; category: WebsitePageCategory }>; combined: string }> {
+): Promise<{ pages: CrawledWebsitePage[]; combined: string }> {
   const home = url.startsWith('http') ? url : `https://${url}`
-  const cacheId = cacheKey(['crawl', home, focus || ''])
-  const cached = cacheGet<{
-    pages: Array<{ url: string; text: string; category: WebsitePageCategory }>
-    combined: string
-  }>(cacheId)
+  const cacheId = cacheKey(['crawl-v2', home, focus || ''])
+  const cached = cacheGet<{ pages: CrawledWebsitePage[]; combined: string }>(cacheId)
   if (cached) return cached
 
   const homeHtml = await fetchHtml(home)
   const homeText = htmlToText(homeHtml)
-  const pages: Array<{ url: string; text: string; category: WebsitePageCategory }> = [
-    { url: home, text: truncate(homeText, 14000), category: classifyWebsitePage(home, homeText) },
+  const pages: CrawledWebsitePage[] = [
+    {
+      url: home,
+      text: truncate(homeText, 16000),
+      category: classifyWebsitePage(home, homeText),
+      title: extractPageTitle(homeHtml),
+      imageUrls: extractPageImageUrls(homeHtml, home),
+    },
   ]
   const visited = new Set<string>([home])
-  const maxPages = focus ? 18 : 14
+  const maxPages = focus ? FOCUSED_CRAWL_MAX_PAGES : DEFAULT_CRAWL_MAX_PAGES
 
-  async function fetchPage(link: string) {
+  async function fetchPage(link: string): Promise<FetchedPage> {
     const html = await fetchHtml(link)
-    return { url: link, html, text: truncate(htmlToText(html), focus ? 12000 : 9000) }
+    return {
+      url: link,
+      html,
+      text: truncate(htmlToText(html), focus ? 14000 : 12000),
+      title: extractPageTitle(html),
+      imageUrls: extractPageImageUrls(html, link),
+    }
   }
 
-  const firstLinks = extractSameOriginLinks(homeHtml, home, focus, focus ? 14 : 10).filter((link) => {
-    if (visited.has(link)) return false
+  function remember(link: string) {
+    if (visited.has(link) || pages.length >= maxPages) return false
     visited.add(link)
     return true
-  })
+  }
 
-  const firstResults = await Promise.allSettled(firstLinks.map(fetchPage))
+  function acceptPage(page: FetchedPage) {
+    if (page.text.length <= 80 && !page.title) return
+    pages.push({
+      url: page.url,
+      text: page.text,
+      category: classifyWebsitePage(page.url, `${page.title} ${page.text}`),
+      title: page.title,
+      imageUrls: page.imageUrls,
+    })
+  }
+
+  const sitemapPromise = discoverSitemapUrls(home)
+  const firstLinks = extractSameOriginLinks(homeHtml, home, focus, focus ? 20 : 16).filter(remember)
+  const firstResults = await fetchSettledInChunks(firstLinks, 8, fetchPage)
   const childLinks: string[] = []
   for (const result of firstResults) {
     if (result.status !== 'fulfilled') continue
-    const page = result.value
-    if (page.text.length > 80) {
-      pages.push({ url: page.url, text: page.text, category: classifyWebsitePage(page.url, page.text) })
-    }
-    childLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 8))
+    const page = result.value as FetchedPage
+    acceptPage(page)
+    childLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 12))
   }
 
-  const secondLinks = childLinks.filter((link) => {
-    if (pages.length >= maxPages || visited.has(link)) return false
-    visited.add(link)
-    return true
-  })
-
-  if (pages.length < maxPages && secondLinks.length) {
-    const remaining = secondLinks.slice(0, maxPages - pages.length)
-    const secondResults = await Promise.allSettled(remaining.map(fetchPage))
+  const sitemapCandidates = (await sitemapPromise).filter((link) => !visited.has(link))
+  const childCandidates = childLinks.filter((link) => !visited.has(link))
+  const secondLinks = [...sitemapCandidates, ...childCandidates]
+    .filter((link, index, all) => all.indexOf(link) === index)
+    .slice(0, Math.max(0, maxPages - pages.length))
+  for (const link of secondLinks) visited.add(link)
+  if (secondLinks.length) {
+    const secondResults = await fetchSettledInChunks(secondLinks, 8, fetchPage)
     for (const result of secondResults) {
-      if (result.status === 'fulfilled' && result.value.text.length > 80) {
-        pages.push({
-          url: result.value.url,
-          text: result.value.text,
-          category: classifyWebsitePage(result.value.url, result.value.text),
-        })
-      }
+      if (result.status !== 'fulfilled') continue
+      acceptPage(result.value as FetchedPage)
     }
   }
 
   const combined = pages
-    .map((p, i) => `=== PAGE ${i + 1} [${p.category.toUpperCase()}]: ${p.url} ===\n${p.text}`)
+    .map((p, i) => {
+      const media = p.imageUrls?.length ? `\nIMAGES: ${p.imageUrls.slice(0, 3).join(' | ')}` : ''
+      const title = p.title ? `\nTITLE: ${p.title}` : ''
+      return `=== PAGE ${i + 1} [${p.category.toUpperCase()}]: ${p.url} ===${title}${media}\n${p.text}`
+    })
     .join('\n\n')
 
-  const result = { pages, combined: truncate(combined, focus ? 90000 : 70000) }
+  const result = { pages, combined: truncate(combined, focus ? 120000 : 110000) }
   cacheSet(cacheId, result)
   return result
 }

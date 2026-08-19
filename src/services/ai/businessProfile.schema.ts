@@ -152,6 +152,19 @@ export const masterBusinessProfileSchema = z.object({
         title: z.string(),
         description: z.string().optional().default(''),
         url: z.string().optional().default(''),
+        imageUrl: z.string().optional().default(''),
+      })
+    )
+    .optional()
+    .default([]),
+  blogs: z
+    .array(
+      z.object({
+        title: z.string(),
+        description: z.string().optional().default(''),
+        url: z.string().optional().default(''),
+        imageUrl: z.string().optional().default(''),
+        category: z.string().optional().default('News'),
       })
     )
     .optional()
@@ -209,7 +222,9 @@ export const MASTER_PROFILE_JSON_INSTRUCTION = `Return ONLY JSON for a Master Bu
 - If you find real testimonials/reviews in the source, put them in verifiedReviews or existingTestimonials with author/text when present.
 - If no real reviews exist, you MAY add suggestedTestimonialTemplates marked as DRAFT / SAMPLE — never as real reviews.
 - If sources disagree, put the disagreement in conflicts and leave the field null rather than guessing.
-- Preserve source hints when obvious (website vs document vs instructions).
+- Preserve source hints when obvious (website vs document vs owner-typed notes).
+- Owner-provided / pasted business text is high-trust. OCR document text is high-trust for contact and offerings.
+- Read every crawled page. If the site has blog/news/article pages, put real posts in blogs[]. If it has portfolio/project pages, put them in portfolio[]. Keep titles, excerpts, URLs, and image URLs when present. Do not invent extra articles.
 
 Shape:
 {
@@ -238,7 +253,8 @@ Shape:
   "education": [],
   "experience": [],
   "skills": [{ "type": "Core", "skills": [] }],
-  "portfolio": [{ "title": "", "description": "", "url": "" }],
+  "portfolio": [{ "title": "", "description": "", "url": "", "imageUrl": "" }],
+  "blogs": [{ "title": "", "description": "", "url": "", "imageUrl": "", "category": "News" }],
   "socialMedia": { "facebook": null, "instagram": null, "linkedin": null, "youtube": null, "tiktok": null, "x": null, "website": null, "whatsapp": null },
   "verifiedReviews": [{ "author": "", "text": "", "rating": 5, "source": "website", "sourceUrl": "" }],
   "existingTestimonials": [],

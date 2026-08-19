@@ -2,6 +2,7 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import multer from 'multer'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
+import { getRequestId } from '../middlewares/requestId'
 import * as cardAgentService from '../services/ai/cardAgent.service'
 import * as cardJobService from '../services/ai/cardJob.service'
 import { filesFromMulter } from '../services/ai/extractDocumentText'
@@ -185,7 +186,11 @@ router.post(
       files,
       existingCard,
       userId: req.user?.id,
+      role: String(req.user?.role || ''),
       sessionId: String(req.body?.sessionId || ''),
+      profileId: String(req.body?.profileId || req.body?.cardId || '').trim(),
+      builderMode: String(req.body?.builderMode || '') === 'update' ? 'update' : 'create',
+      requestId: getRequestId(req),
     })
     sendResponse(res, { success: true, statusCode: 202, message: 'Card job started', data })
   })

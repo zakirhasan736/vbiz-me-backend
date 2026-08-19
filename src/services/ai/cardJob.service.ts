@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import AppError from '../../error/AppError'
 import {
   cardActivationIssueMessage,
@@ -8,20 +9,23 @@ import {
   normalizeCardEmail,
   normalizeCardPhone,
 } from '../../utils/cardActivation'
+import profileService from '../profile.service'
 import { seoMetadataToSettings } from '../seoMetadata.service'
+import { builderError, logBuilderEvent, newRequestId, type BuilderErrorCode, type BuilderStage } from './builderErrors'
 import { summarizeExtraction } from './cardAgent.service'
 import { assembleAiCard } from './cardAssembler.service'
 import { cardBlueprintSchema, TAB_CATALOG } from './cardBlueprint.schema'
 import {
   assertJobOwner,
   loadCardSession,
+  persistCardSession,
   putCardSession,
   type CardBuildSession,
   type UserProgressStep,
 } from './cardSession.store'
 import { buildCompletenessReport } from './completeness.service'
 import { generateSectionFromProfile, profileToBlueprintFacts } from './contentGenerator.service'
-import type { UploadedPart } from './extractDocumentText'
+import { hashBuffer, type UploadedPart } from './extractDocumentText'
 import { applyUserFieldValue, generateFieldCopy, skipField, type FieldAction } from './fieldCompletion.service'
 import {
   applyExistingCardToProfile,
@@ -33,11 +37,55 @@ import {
   type AiCardField,
 } from './fieldGraph.service'
 import { runSolArchitect } from './solArchitect.service'
-import { normalizeSources } from './sourceNormalizer.service'
+import { emptyNormalizedSources, normalizeSources, seedProfileFromCrawledPages } from './sourceNormalizer.service'
+import { normalizeWebsiteUrl } from './sourceUrl'
 import { autoFillSelectedFields, capGeneratedList } from './tabBuild.service'
 import { sanitizeBlueprint } from './validation.service'
 
 const running = new Set<string>()
+const pendingWork = new Map<
+  string,
+  { websiteUrl: string; businessText: string; files: UploadedPart[]; existingCard?: unknown }
+>()
+
+export function computeSourceHash(input: {
+  websiteUrl: string
+  businessText: string
+  files: UploadedPart[]
+  profileId?: string
+  builderMode?: string
+}) {
+  const digest = createHash('sha256')
+  digest.update(input.websiteUrl)
+  digest.update('\n')
+  digest.update(input.businessText)
+  digest.update('\n')
+  digest.update(input.profileId || '')
+  digest.update('\n')
+  digest.update(input.builderMode || 'create')
+  for (const sha of input.files.map((file) => hashBuffer(file.buffer)).sort()) {
+    digest.update(sha)
+  }
+  return digest.digest('hex')
+}
+
+function productErrorMessage(code: BuilderErrorCode, fallback: string) {
+  if (code === 'WEBSITE_FETCH_FAILED') {
+    return "I couldn't read that website. Your current card is safe. Try the URL again, paste the information, or upload a document."
+  }
+  if (code === 'DOCUMENT_READ_FAILED' || code === 'OCR_FAILED') {
+    return "I couldn't finish reading that document. Try uploading it again or use another file."
+  }
+  if (code === 'AI_PLANNING_FAILED') {
+    return "I read your source, but the AI couldn't finish planning the update. Your current card is unchanged. Try again."
+  }
+  if (code === 'TIMEOUT') {
+    return 'That source took too long to analyze. Your card is unchanged. Try again or use a smaller source.'
+  }
+  if (code === 'INVALID_URL' || code === 'VALIDATION_FAILED') return fallback
+  if (code === 'PROFILE_REQUIRED') return fallback
+  return "We couldn't finish analyzing that source. Your existing card was not overwritten."
+}
 
 function progress(
   session: CardBuildSession,
@@ -88,6 +136,11 @@ function publicJob(session: CardBuildSession) {
     conflicts: session.businessProfile?.conflicts || [],
     warnings: session.normalized?.warnings || [],
     errorMessage: session.errorMessage || null,
+    errorCode: session.errorCode || null,
+    errorStage: session.errorStage || null,
+    requestId: session.requestId || null,
+    builderMode: session.builderMode || 'create',
+    retryable: Boolean(session.errorCode && session.status === 'FAILED'),
     addableTabs: TAB_CATALOG.filter(
       (t) =>
         t.navId !== 'public-cards' &&
@@ -103,16 +156,55 @@ export async function getJob(jobId: string, userId?: string) {
   const session = await loadCardSession(jobId)
   if (!session) throw new AppError(404, 'Card job not found.')
   assertJobOwner(session, userId)
-  return publicJob(session)
+  await resumeIfIdle(session)
+  const latest = (await loadCardSession(jobId)) || session
+  return publicJob(latest)
+}
+
+async function resumeIfIdle(session: CardBuildSession) {
+  const active =
+    session.status === 'QUEUED' ||
+    session.status === 'EXTRACTING' ||
+    session.status === 'ARCHITECTING' ||
+    session.status === 'MAPPING_FIELDS'
+  if (!active || running.has(session.id)) return
+  const work = pendingWork.get(session.id)
+  if (work) {
+    queueWorker(session.id)
+    return
+  }
+  if (session.normalized?.extractedText) {
+    queueWorker(session.id, { architectureOnly: true })
+    return
+  }
+  if (Date.now() - session.createdAt < 120_000) return
+  await save(session, {
+    status: 'FAILED',
+    errorCode: 'TIMEOUT',
+    errorStage: 'source_fetch',
+    errorMessage: productErrorMessage('TIMEOUT', 'That source took too long to analyze.'),
+  })
+}
+
+function queueWorker(jobId: string, opts?: { architectureOnly?: boolean }) {
+  if (running.has(jobId)) return
+  running.add(jobId)
+  const task = opts?.architectureOnly ? runArchitecture(jobId) : runExtractAndArchitecture(jobId)
+  void task.finally(() => {
+    running.delete(jobId)
+    pendingWork.delete(jobId)
+  })
 }
 
 async function save(session: CardBuildSession, patch: Partial<CardBuildSession>) {
-  return putCardSession({
+  const next = putCardSession({
     ...session,
     ...patch,
     id: session.id,
     createdAt: session.createdAt,
   })
+  await persistCardSession(next)
+  return next
 }
 
 export async function startCardJob(input: {
@@ -121,63 +213,285 @@ export async function startCardJob(input: {
   files?: UploadedPart[]
   existingCard?: unknown
   userId?: string
+  role?: string
   sessionId?: string
+  profileId?: string
+  builderMode?: 'create' | 'update'
+  requestId?: string
 }) {
-  const websiteUrl = (input.websiteUrl || '').trim()
+  const requestId = newRequestId(input.requestId)
+  const builderMode = input.builderMode === 'update' ? 'update' : 'create'
+  const profileId = String(input.profileId || '').trim()
   const businessText = (input.businessText || '').trim()
   const files = input.files || []
-  if (!websiteUrl && !businessText && files.length === 0 && !input.existingCard) {
-    throw new AppError(400, 'Provide a website URL, business text, and/or document uploads.')
+  const websiteUrl = input.websiteUrl?.trim() ? normalizeWebsiteUrl(input.websiteUrl, requestId) : ''
+
+  if (builderMode === 'update') {
+    if (!profileId) {
+      throw builderError(400, 'PROFILE_REQUIRED', 'Existing-card updates require profileId and builderMode=update.', {
+        requestId,
+        stage: 'existing_card_load',
+        retryable: false,
+      })
+    }
+    if (!input.userId) throw new AppError(403, 'Unauthorized')
+    logBuilderEvent('AI_BUILDER_STAGE', {
+      requestId,
+      profileId,
+      builderMode,
+      stage: 'existing_card_load',
+    })
+    await profileService.getOwnedForWrite(profileId, input.userId, input.role || 'user')
   }
 
-  const normalized = await normalizeSources({ websiteUrl, businessText, files })
+  if (!websiteUrl && !businessText && files.length === 0 && !input.existingCard) {
+    throw builderError(400, 'VALIDATION_FAILED', 'Provide a website URL, business text, and/or document uploads.', {
+      requestId,
+      stage: 'source_fetch',
+      retryable: false,
+    })
+  }
+
+  const sourceHash = computeSourceHash({ websiteUrl, businessText, files, profileId, builderMode })
+  if (input.sessionId) {
+    const existing = await loadCardSession(input.sessionId)
+    if (existing && existing.userId === input.userId && existing.sourceHash === sourceHash) {
+      if (
+        existing.status === 'WAITING_FOR_USER_INPUT' ||
+        existing.status === 'READY' ||
+        existing.status === 'COMPLETED'
+      ) {
+        return publicJob(existing)
+      }
+      if (existing.status === 'FAILED' && existing.normalized?.extractedText) {
+        const resumed = await save(existing, {
+          status: 'ARCHITECTING',
+          errorMessage: null,
+          errorCode: null,
+          errorStage: null,
+          requestId,
+        })
+        pendingWork.set(resumed.id, { websiteUrl, businessText, files, existingCard: input.existingCard })
+        queueWorker(resumed.id, { architectureOnly: true })
+        return publicJob(resumed)
+      }
+      if (
+        existing.status === 'QUEUED' ||
+        existing.status === 'EXTRACTING' ||
+        existing.status === 'ARCHITECTING' ||
+        existing.status === 'MAPPING_FIELDS'
+      ) {
+        pendingWork.set(existing.id, { websiteUrl, businessText, files, existingCard: input.existingCard })
+        queueWorker(existing.id)
+        return publicJob(existing)
+      }
+    }
+  }
+
   const session = putCardSession({
     id: input.sessionId || undefined,
     userId: input.userId,
+    profileId: profileId || undefined,
     websiteUrl,
+    sourceHash,
+    requestId,
+    builderMode,
     status: 'EXTRACTING',
-    normalized,
+    normalized: emptyNormalizedSources(websiteUrl),
     businessProfile: null,
     blueprint: null,
     selectedNavIds: ['home'],
     fieldGraph: [],
     recommendedTabs: [],
-    userProgress: [],
+    rawSources: {
+      websiteUrl,
+      businessText,
+      existingCard: input.existingCard,
+      builderMode,
+      requestId,
+      profileId,
+      fileMeta: files.map((file) => ({
+        name: file.name,
+        mime: file.mimeType,
+        size: file.buffer.length,
+        sha256: hashBuffer(file.buffer),
+      })),
+    },
+    userProgress: [
+      {
+        id: 'website',
+        label: 'Reading your website',
+        status: websiteUrl ? 'active' : 'skipped',
+        detail: websiteUrl
+          ? 'Reading every public page we can reach, including blogs and portfolio.'
+          : 'No website was provided.',
+      },
+      {
+        id: 'documents',
+        label: 'Reading your documents',
+        status: files.length ? 'active' : 'skipped',
+        detail: files.length
+          ? 'OCR and document reading run at the same time as the website crawl.'
+          : 'No files were uploaded.',
+      },
+      { id: 'understand', label: 'Understanding your business', status: 'pending' },
+      { id: 'design', label: 'Designing your card', status: 'pending' },
+      { id: 'map', label: 'Matching what we found', status: 'pending' },
+    ],
     architectureVersion: 1,
   })
+  await persistCardSession(session)
 
-  const extraction = summarizeExtraction(session.normalized)
-  const next = await save(session, {
-    status: 'ARCHITECTING',
-    userProgress: [
-      ...(extraction.steps || []).map((s) => ({
-        id: s.id,
-        label: s.label,
-        status: s.status,
-        detail: s.detail,
-      })),
-      { id: 'understand', label: 'Understanding your business', status: 'active' as const },
-      { id: 'design', label: 'Designing your card', status: 'pending' as const },
-      { id: 'map', label: 'Matching what we found', status: 'pending' as const },
-    ],
+  pendingWork.set(session.id, { websiteUrl, businessText, files, existingCard: input.existingCard })
+  queueWorker(session.id)
+  logBuilderEvent('AI_BUILDER_STAGE', {
+    requestId,
+    profileId,
+    builderMode,
+    stage: 'source_fetch',
+    jobId: session.id,
+    sourceType: websiteUrl ? 'url' : files.length ? 'document' : 'text',
   })
+  return publicJob(session)
+}
 
-  if (!running.has(next.id)) {
-    running.add(next.id)
-    void runArchitecture(next.id, input.existingCard).finally(() => running.delete(next.id))
+function classifyExtractFailure(
+  error: unknown,
+  normalized?: CardBuildSession['normalized']
+): {
+  code: BuilderErrorCode
+  stage: BuilderStage
+} {
+  const message = error instanceof Error ? error.message : String(error || '')
+  if (/timeout|timed out|abort/i.test(message)) return { code: 'TIMEOUT', stage: 'website_scrape' }
+  if (normalized?.website.scrapeFailed && !normalized.documents.length && !normalized.manualText) {
+    return { code: 'WEBSITE_FETCH_FAILED', stage: 'website_scrape' }
   }
+  if (/ocr/i.test(message)) return { code: 'OCR_FAILED', stage: 'ocr' }
+  if (/document|pdf|file/i.test(message)) return { code: 'DOCUMENT_READ_FAILED', stage: 'document_parse' }
+  return { code: 'SOURCE_ANALYSIS_FAILED', stage: 'source_fetch' }
+}
 
-  return publicJob(next)
+async function runExtractAndArchitecture(jobId: string) {
+  const session = await loadCardSession(jobId)
+  const work = pendingWork.get(jobId)
+  if (!session) return
+  const websiteUrl = work?.websiteUrl || session.websiteUrl || ''
+  const businessText = work?.businessText || String(session.rawSources?.businessText || '')
+  const files = work?.files || []
+  const existingCard = work?.existingCard ?? session.rawSources?.existingCard
+  try {
+    logBuilderEvent('AI_BUILDER_STAGE', {
+      requestId: session.requestId,
+      profileId: session.profileId,
+      builderMode: session.builderMode,
+      stage: websiteUrl ? 'website_scrape' : files.length ? 'document_parse' : 'source_fetch',
+      jobId,
+    })
+    await save(session, { status: 'EXTRACTING' })
+    const normalized = session.normalized?.extractedText
+      ? session.normalized
+      : await normalizeSources({
+          websiteUrl,
+          businessText,
+          files,
+        })
+
+    const hasOtherSource =
+      Boolean(businessText) ||
+      Boolean(existingCard) ||
+      normalized.documents.some((doc) => doc.text.trim()) ||
+      normalized.ocrResults.some((doc) => doc.text.trim())
+    if (normalized.website.scrapeFailed && websiteUrl && !hasOtherSource) {
+      throw builderError(
+        422,
+        'WEBSITE_FETCH_FAILED',
+        productErrorMessage('WEBSITE_FETCH_FAILED', "I couldn't read that website."),
+        { requestId: session.requestId, stage: 'website_scrape', retryable: true }
+      )
+    }
+    const docsFailed = [...normalized.documents, ...normalized.ocrResults]
+    const docsHaveText = docsFailed.some((doc) => doc.text.trim())
+    if (files.length && !docsHaveText && !websiteUrl && !businessText && !existingCard) {
+      throw builderError(
+        422,
+        'DOCUMENT_READ_FAILED',
+        productErrorMessage('DOCUMENT_READ_FAILED', "I couldn't finish reading that document."),
+        { requestId: session.requestId, stage: 'document_parse', retryable: true }
+      )
+    }
+
+    const extraction = summarizeExtraction(normalized)
+    const next = await save(session, {
+      status: 'ARCHITECTING',
+      normalized,
+      websiteUrl,
+      sourceHash: session.sourceHash,
+      rawSources: {
+        ...(session.rawSources || {}),
+        websiteUrl,
+        businessText,
+        existingCard,
+      },
+      userProgress: [
+        ...(extraction.steps || []).map((s) => ({
+          id: s.id,
+          label: s.label,
+          status: s.status,
+          detail: s.detail,
+        })),
+        {
+          id: 'understand',
+          label: 'Understanding your business',
+          status: 'active' as const,
+          detail: 'Taking extra time to understand the business from the full site, notes, and documents.',
+        },
+        { id: 'design', label: 'Designing your card', status: 'pending' as const },
+        { id: 'map', label: 'Matching what we found', status: 'pending' as const },
+      ],
+    })
+    await runArchitecture(next.id, existingCard)
+  } catch (error) {
+    const classified = classifyExtractFailure(error, session.normalized)
+    const code = error instanceof AppError && error.code ? (error.code as BuilderErrorCode) : classified.code
+    const stage =
+      (error instanceof AppError && (error.data as { stage?: BuilderStage } | undefined)?.stage) || classified.stage
+    const message = productErrorMessage(code, error instanceof Error ? error.message : 'Could not read your sources.')
+    logBuilderEvent('AI_BUILDER_ERROR', {
+      requestId: session.requestId,
+      profileId: session.profileId,
+      builderMode: session.builderMode,
+      stage,
+      jobId,
+      sourceType: websiteUrl ? 'url' : files.length ? 'document' : 'text',
+      error: error instanceof Error ? error.message : String(error),
+    })
+    await save(session, {
+      status: 'FAILED',
+      errorCode: code,
+      errorStage: stage,
+      errorMessage: message,
+      userProgress: progress(session, websiteUrl ? 'website' : 'documents', 'failed', message),
+    })
+  }
 }
 
 async function runArchitecture(jobId: string, existingCard?: unknown) {
   const session = await loadCardSession(jobId)
   if (!session) return
+  const cardSnapshot = existingCard ?? session.rawSources?.existingCard
   try {
     if (session.architecture && session.businessProfile && session.fieldGraph.length) {
       await save(session, { status: 'WAITING_FOR_USER_INPUT' })
       return
     }
+    logBuilderEvent('AI_BUILDER_STAGE', {
+      requestId: session.requestId,
+      profileId: session.profileId,
+      builderMode: session.builderMode,
+      stage: 'sol_architecture',
+      jobId,
+    })
     await save(session, {
       status: 'ARCHITECTING',
       userProgress: progress(session, 'understand', 'active'),
@@ -186,9 +500,12 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       normalized: session.normalized,
       userId: session.userId,
       sessionId: session.id,
-      existingCard,
+      existingCard: cardSnapshot,
     })
-    const profile = applyExistingCardToProfile(architecture.masterBusinessProfile, existingCard)
+    const profile = seedProfileFromCrawledPages(
+      applyExistingCardToProfile(architecture.masterBusinessProfile, cardSnapshot),
+      session.normalized.website.pages
+    )
     await save(session, {
       status: 'MAPPING_FIELDS',
       businessProfile: profile,
@@ -230,10 +547,25 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       ),
     })
   } catch (error) {
+    logBuilderEvent('AI_BUILDER_ERROR', {
+      requestId: session.requestId,
+      profileId: session.profileId,
+      builderMode: session.builderMode,
+      stage: 'sol_architecture',
+      jobId,
+      error: error instanceof Error ? error.message : String(error),
+    })
     await save(session, {
       status: 'FAILED',
-      errorMessage: error instanceof Error ? error.message : 'Could not design the card.',
-      userProgress: progress(session, 'understand', 'failed', error instanceof Error ? error.message : undefined),
+      errorCode: 'AI_PLANNING_FAILED',
+      errorStage: 'sol_architecture',
+      errorMessage: productErrorMessage('AI_PLANNING_FAILED', 'Could not design the card.'),
+      userProgress: progress(
+        session,
+        'understand',
+        'failed',
+        productErrorMessage('AI_PLANNING_FAILED', 'Could not design the card.')
+      ),
     })
   }
 }
@@ -649,6 +981,8 @@ export async function applyJob(input: {
       postTypeName: 'blog',
       title: title || 'Article',
       description,
+      url: String(blog.url || '').trim() || undefined,
+      featuredImage: String(blog.imageUrl || '').trim() || undefined,
       status: '1',
       metas: { category: String(blog.category || 'News') },
     })
