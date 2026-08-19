@@ -62,7 +62,6 @@ export function collectCardActivationIssues(input: CardActivationInput): CardAct
   const required: Array<[keyof CardActivationInput, string]> = [
     ['slug', 'URL slug'],
     ['name', 'Name'],
-    ['email', 'Email'],
     ['dob', 'Date of birth'],
   ]
   const issues: CardActivationIssue[] = required

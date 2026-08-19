@@ -458,6 +458,19 @@ describe('vBiz Me auto card builder', () => {
     assert.match(cardActivationIssueMessage(issues), /date of birth/)
   })
 
+  it('allows activation without a unique email', () => {
+    assert.equal(
+      collectCardActivationIssues({
+        slug: 'profile-owner',
+        name: 'Profile Owner',
+        email: '',
+        dob: '1990-07-18',
+        phone: '',
+      }).length,
+      0
+    )
+  })
+
   it('allows activation without a phone number', () => {
     assert.equal(
       collectCardActivationIssues({

@@ -50,7 +50,12 @@ import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
-import { isPrismaColumnMismatch, isPrismaMissingTable, safePrismaQuery } from '../utils/prismaErrors'
+import {
+  isPrismaColumnMismatch,
+  isPrismaMissingTable,
+  isPrismaUniqueConstraint,
+  safePrismaQuery,
+} from '../utils/prismaErrors'
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
 import announcementService from './announcement.service'
@@ -1523,10 +1528,19 @@ const update = async (
     }
   }
 
-  await prisma.profile.update({
-    where: { id: profileId },
-    data: profileData,
-  })
+  try {
+    await prisma.profile.update({
+      where: { id: profileId },
+      data: profileData,
+    })
+  } catch (error) {
+    if (!isPrismaUniqueConstraint(error, 'email')) throw error
+    const { email: _ignoredEmail, ...withoutEmail } = profileData
+    await prisma.profile.update({
+      where: { id: profileId },
+      data: withoutEmail,
+    })
+  }
 
   if ('address' in raw) {
     await upsertPrimaryAddress(profileId, {

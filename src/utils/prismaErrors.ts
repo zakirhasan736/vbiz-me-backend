@@ -25,6 +25,23 @@ export function isPrismaTypeMismatch(error: unknown): boolean {
   return /inconsistent column data|conversion failed|operator does not exist/i.test(message)
 }
 
+/** True when Postgres/Prisma rejected a unique constraint (P2002 / 23505). */
+export function isPrismaUniqueConstraint(error: unknown, field?: string): boolean {
+  if (!error || typeof error !== 'object') return false
+  const err = error as { code?: string; meta?: { target?: unknown }; message?: string }
+  const message = String(err.message || '')
+  const isUnique = err.code === 'P2002' || /unique constraint|23505/i.test(message)
+  if (!isUnique) return false
+  if (!field) return true
+  const target = Array.isArray(err.meta?.target) ? err.meta.target.map((value) => String(value).toLowerCase()) : []
+  const needle = field.toLowerCase()
+  return (
+    target.some((value) => value.includes(needle)) ||
+    message.toLowerCase().includes(needle) ||
+    message.toLowerCase().includes('profile_email_unique')
+  )
+}
+
 export function isPrismaSchemaDrift(error: unknown): boolean {
   return isPrismaMissingTable(error) || isPrismaColumnMismatch(error) || isPrismaTypeMismatch(error)
 }
