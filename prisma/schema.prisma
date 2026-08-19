@@ -26,6 +26,11 @@ enum AccountStatus {
   SUSPENDED
 }
 
+enum PackageOwnerMode {
+  SINGLE    @map("single")
+  CORPORATE @map("corporate")
+}
+
 model User {
   id                String        @id @default(cuid())
   legacyId          Int?          @unique
@@ -58,6 +63,7 @@ model User {
 
   forgotPasswordTokens ForgotPasswordToken[]
   passwordSetupTokens  PasswordSetupToken[]
+  authChallenges       AuthChallenge[]
   profiles             Profile[]             @relation("ProfileOwner")
   companyProfiles      Profile[]             @relation("ProfileCompany")
   createdProfiles      Profile[]             @relation("ProfileCreatedBy")
@@ -76,6 +82,7 @@ model User {
   canvaOAuthPendings   CanvaOAuthPending[]
   aiGenerationLogs     AiGenerationLog[]
   aiCardSessions       AiCardSession[]
+  featureOverrides     CorporateFeatureOverride[]
 
   @@index([provider, providerId])
 }
@@ -98,6 +105,26 @@ model PasswordSetupToken {
   createdAt DateTime @default(now())
 
   @@index([userId])
+}
+
+enum AuthChallengePurpose {
+  LOGIN
+  ACTIVATE
+}
+
+model AuthChallenge {
+  id           String                @id @default(cuid())
+  userId       String
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose      AuthChallengePurpose
+  codeHash     String
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  attemptCount Int                   @default(0)
+  createdAt    DateTime              @default(now())
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
 }
 
 /**
@@ -1705,19 +1732,23 @@ model PushNotificationPreference {
 }
 
 model Package {
-  id            String           @id @default(cuid())
-  legacyId      Int?             @unique
-  name          String
-  slug          String?          @unique
-  description   String?
-  monthlyPrice  Int              @default(0)
-  yearlyPrice   Int              @default(0)
-  isActive      Boolean          @default(true)
-  sortOrder     Int              @default(0)
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  features      PackageFeature[]
-  subscriptions Subscription[]
+  id              String           @id @default(cuid())
+  legacyId        Int?             @unique
+  name            String
+  slug            String?          @unique
+  description     String?
+  monthlyPrice    Int              @default(0)
+  yearlyPrice     Int              @default(0)
+  signupFeeCents  Int              @default(0)
+  stripePriceId   String?
+  stripeSignupPriceId String?
+  ownerMode       PackageOwnerMode @default(SINGLE)
+  isActive        Boolean          @default(true)
+  sortOrder       Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  features        PackageFeature[]
+  subscriptions   Subscription[]
 }
 
 model PackageFeature {
@@ -1734,23 +1765,38 @@ model PackageFeature {
   @@index([packageId])
 }
 
-model Subscription {
-  id           String    @id @default(cuid())
-  legacyId     Int?      @unique
+model CorporateFeatureOverride {
+  id           String   @id @default(cuid())
   userId       String
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  packageId    String?
-  package      Package?  @relation(fields: [packageId], references: [id], onDelete: SetNull)
-  name         String?
-  stripeId     String?
-  stripeStatus String?
-  stripePrice  String?
-  quantity     Int?
-  trialEndsAt  DateTime?
-  endsAt       DateTime?
-  provider     String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  featureKey   String
+  featureValue String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, featureKey])
+  @@index([userId])
+}
+
+model Subscription {
+  id                       String    @id @default(cuid())
+  legacyId                 Int?      @unique
+  userId                   String
+  user                     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  packageId                String?
+  package                  Package?  @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  name                     String?
+  stripeId                 String?
+  stripeStatus             String?
+  stripePrice              String?
+  quantity                 Int?
+  trialEndsAt              DateTime?
+  endsAt                   DateTime?
+  provider                 String?
+  negotiatedMonthlyCents   Int?
+  signupFeeChargedAt       DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   items        SubscriptionItem[]
   transactions Transaction[]
@@ -1791,6 +1837,13 @@ model Transaction {
 
   @@index([userId])
   @@index([subscriptionId])
+}
+
+model StripeEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique
+  type        String
+  createdAt   DateTime @default(now())
 }
 
 model CompanyEmployee {

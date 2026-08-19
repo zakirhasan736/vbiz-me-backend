@@ -1,9 +1,11 @@
 import type { Prisma } from '../../generated/prisma/client'
 import { AccountStatus, AuthProvider, UserRole as PrismaUserRole } from '../../generated/prisma/enums'
+import { resolveOwnerMode, roleForOwnerMode, type OwnerMode } from '../constants/packageOwnerMode'
 import { toApiRole, toPrismaRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
+import { resolveFirstInvoiceCents, resolveMonthlyCents, resolveRecurringInvoiceCents } from '../utils/billingQuote'
 import {
   ensureStatusByName,
   lifecycleStatusFlags,
@@ -11,7 +13,9 @@ import {
   parseAccountLockSnapshot,
   type AccountLockSnapshot,
 } from '../utils/cardStatus'
+import { buildEffectiveEntitlements } from '../utils/effectiveEntitlements'
 import logger from '../utils/logger'
+import { resolveSubscriptionAccessStatus, type SubscriptionAccessStatus } from '../utils/paidAccess'
 import { prisma } from '../utils/prisma'
 import type {
   AccountStatusValue,
@@ -21,6 +25,13 @@ import type {
   UpdateAdminUserBody,
 } from '../zodValidation/adminUser.zod'
 import announcementService from './announcement.service'
+import { inviteOwnerPasswordSetup } from './auth.service'
+import {
+  replaceCorporateFeatureOverrides,
+  setCorporateCardLimit,
+  setNegotiatedMonthlyCents,
+} from './entitlement.service'
+import stripeService from './stripe.service'
 import subscriptionService from './subscription.service'
 
 export type AdminUserRow = {
@@ -30,6 +41,22 @@ export type AdminUserRow = {
   role: string
   companyName: string | null
   registeredCards: number
+  ownerMode: OwnerMode | null
+  cardLimit: number | null
+  packageCardLimit: number | null
+  packageMonthlyCents: number | null
+  signupFeeCents: number | null
+  negotiatedMonthlyCents: number | null
+  monthlyCents: number | null
+  firstInvoiceCents: number | null
+  recurringInvoiceCents: number | null
+  signupFeeChargedAt: Date | null
+  subscriptionStatus: SubscriptionAccessStatus
+  subscriptionProvider: string | null
+  stripeStatus: string | null
+  paymentLinkUrl?: string | null
+  featureOverrides: { featureKey: string; featureValue: string | null }[]
+  packageFeatures: { featureKey: string; featureValue: string | null }[]
   accountStatus: AccountStatusValue
   isActive: boolean
   isVerified: boolean
@@ -58,6 +85,148 @@ type ActorContext = {
 
 function syncIsActive(status: AccountStatusValue): boolean {
   return status === 'ACTIVE'
+}
+
+function activeSubscriptionSelect() {
+  return {
+    where: {
+      OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }],
+    },
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+    select: {
+      id: true,
+      quantity: true,
+      endsAt: true,
+      provider: true,
+      stripeStatus: true,
+      negotiatedMonthlyCents: true,
+      signupFeeChargedAt: true,
+      package: {
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          ownerMode: true,
+          monthlyPrice: true,
+          signupFeeCents: true,
+          features: { select: { featureKey: true, featureValue: true } },
+        },
+      },
+    },
+  }
+}
+
+function adminUserRowSelect() {
+  return {
+    id: true,
+    name: true,
+    email: true,
+    role: true,
+    companyName: true,
+    accountStatus: true,
+    isActive: true,
+    isVerified: true,
+    createdAt: true,
+    _count: { select: { profiles: true } },
+    subscriptions: activeSubscriptionSelect(),
+    featureOverrides: { select: { featureKey: true, featureValue: true } },
+  } satisfies Prisma.UserSelect
+}
+
+type AdminUserRecord = Prisma.UserGetPayload<{ select: ReturnType<typeof adminUserRowSelect> }>
+
+function mapRow(user: AdminUserRecord): AdminUserRow {
+  const apiRole = toApiRole(user.role)
+  const subscription = user.subscriptions[0]
+  const featureOverrides = (user.featureOverrides || []).map((row) => ({
+    featureKey: row.featureKey,
+    featureValue: row.featureValue ?? null,
+  }))
+  const entitlements = buildEffectiveEntitlements({
+    role: apiRole,
+    pkg: subscription?.package
+      ? {
+          id: subscription.package.id,
+          slug: subscription.package.slug,
+          name: subscription.package.name,
+          ownerMode: subscription.package.ownerMode,
+        }
+      : null,
+    features: subscription?.package?.features,
+    subscription: subscription
+      ? {
+          id: subscription.id,
+          quantity: subscription.quantity,
+          endsAt: subscription.endsAt,
+          provider: subscription.provider,
+          stripeStatus: subscription.stripeStatus,
+        }
+      : null,
+    overrides: featureOverrides,
+  })
+
+  const packageMonthlyCents = subscription?.package?.monthlyPrice ?? null
+  const signupFeeCents = subscription?.package?.signupFeeCents ?? null
+  const negotiatedMonthlyCents = subscription?.negotiatedMonthlyCents ?? null
+  const monthlyCents = subscription
+    ? resolveMonthlyCents({
+        ownerMode: entitlements.ownerMode,
+        packageMonthlyCents,
+        negotiatedMonthlyCents,
+      })
+    : null
+  const firstInvoiceCents =
+    monthlyCents == null
+      ? null
+      : resolveFirstInvoiceCents({
+          monthlyCents,
+          signupFeeCents,
+          signupFeeChargedAt: subscription?.signupFeeChargedAt ?? null,
+        })
+  const recurringInvoiceCents = monthlyCents == null ? null : resolveRecurringInvoiceCents(monthlyCents)
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: apiRole,
+    companyName: user.companyName,
+    registeredCards: user._count.profiles,
+    ownerMode: entitlements.ownerMode,
+    cardLimit:
+      entitlements.ownerMode === 'corporate'
+        ? (subscription?.quantity ?? entitlements.limits.maxCards)
+        : entitlements.limits.maxCards,
+    packageCardLimit: entitlements.limits.packageMaxCards,
+    packageMonthlyCents,
+    signupFeeCents,
+    negotiatedMonthlyCents,
+    monthlyCents,
+    firstInvoiceCents,
+    recurringInvoiceCents,
+    signupFeeChargedAt: subscription?.signupFeeChargedAt ?? null,
+    subscriptionStatus: resolveSubscriptionAccessStatus(
+      subscription
+        ? {
+            endsAt: subscription.endsAt,
+            provider: subscription.provider,
+            stripeStatus: subscription.stripeStatus,
+          }
+        : null
+    ),
+    subscriptionProvider: subscription?.provider ?? null,
+    stripeStatus: subscription?.stripeStatus ?? null,
+    featureOverrides,
+    packageFeatures: (subscription?.package?.features || []).map((row) => ({
+      featureKey: row.featureKey,
+      featureValue: row.featureValue ?? null,
+    })),
+    accountStatus: user.accountStatus,
+    isActive: user.isActive,
+    isVerified: user.isVerified,
+    createdAt: user.createdAt,
+  }
 }
 
 function escapeHtml(value: string) {
@@ -268,32 +437,6 @@ function buildWhere(query: ListAdminUsersQuery): Prisma.UserWhereInput {
   return where
 }
 
-function mapRow(user: {
-  id: string
-  name: string | null
-  email: string
-  role: PrismaUserRole
-  companyName: string | null
-  accountStatus: AccountStatus
-  isActive: boolean
-  isVerified: boolean
-  createdAt: Date
-  _count: { profiles: number }
-}): AdminUserRow {
-  return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: toApiRole(user.role),
-    companyName: user.companyName,
-    registeredCards: user._count.profiles,
-    accountStatus: user.accountStatus,
-    isActive: user.isActive,
-    isVerified: user.isVerified,
-    createdAt: user.createdAt,
-  }
-}
-
 const list = async (query: ListAdminUsersQuery): Promise<AdminUsersListPage> => {
   const where = buildWhere(query)
   const [total, rows] = await Promise.all([
@@ -303,18 +446,7 @@ const list = async (query: ListAdminUsersQuery): Promise<AdminUsersListPage> => 
       skip: query.skip,
       take: query.limit,
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        companyName: true,
-        accountStatus: true,
-        isActive: true,
-        isVerified: true,
-        createdAt: true,
-        _count: { select: { profiles: true } },
-      },
+      select: adminUserRowSelect(),
     }),
   ])
 
@@ -345,48 +477,80 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
     throw new AppError(400, 'Email already registered')
   }
 
-  const hashedPassword = await authUtils.hashPassword(body.password)
+  const pkg = await subscriptionService.loadAssignablePackage(body.packageId)
+  const ownerMode = resolveOwnerMode(pkg)
+  const role = roleForOwnerMode(ownerMode)
   const companyName = body.companyName?.trim() || null
+  if (ownerMode === 'corporate' && !companyName) {
+    throw new AppError(400, 'Company / organization is required for Corporate accounts')
+  }
+  if (ownerMode === 'single' && body.featureOverrides?.length) {
+    throw new AppError(400, 'Feature overrides apply only to Corporate package accounts.')
+  }
 
   const user = await prisma.user.create({
     data: {
       name: body.name.trim(),
       email,
-      password: hashedPassword,
-      role: toPrismaRole(body.role),
+      password: null,
+      role: toPrismaRole(role),
       provider: AuthProvider.LOCAL,
-      isVerified: true,
+      isVerified: false,
       isActive: true,
       accountStatus: AccountStatus.ACTIVE,
       companyName,
       createdById: actor.actorId,
     },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      companyName: true,
-      accountStatus: true,
-      isActive: true,
-      isVerified: true,
-      createdAt: true,
-      _count: { select: { profiles: true } },
-    },
+    select: adminUserRowSelect(),
   })
 
-  await subscriptionService.ensureOwnerStarterSubscription(user.id, body.role)
+  await subscriptionService.assignPackageSubscription(user.id, pkg.id, {
+    cardLimit: body.cardLimit,
+    negotiatedMonthlyCents: ownerMode === 'corporate' ? body.negotiatedMonthlyCents : undefined,
+  })
+
+  if (ownerMode === 'corporate' && body.featureOverrides) {
+    await replaceCorporateFeatureOverrides(user.id, role, body.featureOverrides)
+  }
+
+  await inviteOwnerPasswordSetup({ id: user.id, email: user.email, provider: 'LOCAL' })
+
+  let paymentLinkUrl: string | null = null
+  try {
+    const link = await stripeService.createPaymentLinkForUser(user.id)
+    paymentLinkUrl = link.url
+  } catch (error) {
+    logger.warn('Could not generate Stripe payment link for new owner', {
+      userId: user.id,
+      error: error instanceof Error ? error.message : error,
+    })
+  }
 
   await writeAuditLog({
     action: 'User Created',
-    details: `Provisioned user account for ${user.name ?? user.email} (${toApiRole(user.role)})`,
+    details: `Provisioned ${pkg.name} account for ${user.name ?? user.email} (${role}, ${ownerMode} back office)`,
     type: 'create',
     actorId: actor.actorId,
     actor: actor.actorName || actor.actorEmail || null,
-    meta: { userId: user.id, email: user.email, role: toApiRole(user.role) },
+    meta: {
+      userId: user.id,
+      email: user.email,
+      role,
+      ownerMode,
+      packageId: pkg.id,
+      packageSlug: pkg.slug,
+      negotiatedMonthlyCents: ownerMode === 'corporate' ? (body.negotiatedMonthlyCents ?? null) : null,
+    },
   })
 
-  return mapRow(user)
+  const withSubscription = await prisma.user.findFirst({
+    where: { id: user.id, deletedAt: null },
+    select: adminUserRowSelect(),
+  })
+  return {
+    ...mapRow(withSubscription || user),
+    paymentLinkUrl,
+  }
 }
 
 const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext): Promise<AdminUserRow> => {
@@ -429,19 +593,18 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
   const user = await prisma.user.update({
     where: { id },
     data,
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      companyName: true,
-      accountStatus: true,
-      isActive: true,
-      isVerified: true,
-      createdAt: true,
-      _count: { select: { profiles: true } },
-    },
+    select: adminUserRowSelect(),
   })
+
+  if (body.cardLimit !== undefined) {
+    await setCorporateCardLimit(user.id, toApiRole(user.role), body.cardLimit)
+  }
+  if (body.negotiatedMonthlyCents !== undefined) {
+    await setNegotiatedMonthlyCents(user.id, toApiRole(user.role), body.negotiatedMonthlyCents)
+  }
+  if (body.featureOverrides !== undefined) {
+    await replaceCorporateFeatureOverrides(user.id, toApiRole(user.role), body.featureOverrides)
+  }
 
   await writeAuditLog({
     action: 'User Modified',
@@ -451,8 +614,26 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
     type: 'update',
     actorId: actor.actorId,
     actor: actor.actorName || actor.actorEmail || null,
-    meta: { userId: user.id, passwordReset: Boolean(body.password) },
+    meta: {
+      userId: user.id,
+      passwordReset: Boolean(body.password),
+      cardLimit: body.cardLimit,
+      negotiatedMonthlyCents: body.negotiatedMonthlyCents,
+      featureOverrideCount: body.featureOverrides?.length,
+    },
   })
+
+  if (
+    body.cardLimit !== undefined ||
+    body.negotiatedMonthlyCents !== undefined ||
+    body.featureOverrides !== undefined
+  ) {
+    const refreshed = await prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      select: adminUserRowSelect(),
+    })
+    if (refreshed) return mapRow(refreshed)
+  }
 
   return mapRow(user)
 }
@@ -478,18 +659,7 @@ const setStatus = async (id: string, body: SetAdminUserStatusBody, actor: ActorC
       accountStatus: nextStatus as AccountStatus,
       isActive: syncIsActive(nextStatus),
     },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      companyName: true,
-      accountStatus: true,
-      isActive: true,
-      isVerified: true,
-      createdAt: true,
-      _count: { select: { profiles: true } },
-    },
+    select: adminUserRowSelect(),
   })
 
   await cascadeOwnedCardsForAccountStatus(user.id, nextStatus)
@@ -562,6 +732,29 @@ const remove = async (id: string, actor: ActorContext): Promise<null> => {
   return null
 }
 
+const createPaymentLink = async (id: string, actor: ActorContext): Promise<AdminUserRow> => {
+  const existing = await prisma.user.findFirst({
+    where: { id, deletedAt: null },
+    select: adminUserRowSelect(),
+  })
+  if (!existing) throw new AppError(404, 'User not found')
+
+  const link = await stripeService.createPaymentLinkForUser(id)
+  await writeAuditLog({
+    action: 'Payment Link Generated',
+    details: `Generated Stripe payment link for ${existing.name ?? existing.email}`,
+    type: 'update',
+    actorId: actor.actorId,
+    actor: actor.actorName || actor.actorEmail || null,
+    meta: { userId: existing.id, firstInvoiceCents: link.firstInvoiceCents },
+  })
+
+  return {
+    ...mapRow(existing),
+    paymentLinkUrl: link.url,
+  }
+}
+
 const adminUserService = {
   list,
   stats,
@@ -569,6 +762,7 @@ const adminUserService = {
   update,
   setStatus,
   remove,
+  createPaymentLink,
 }
 
 export default adminUserService

@@ -2,6 +2,12 @@ import { randomBytes } from 'node:crypto'
 import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
 import { AccountStatus } from '../../generated/prisma/enums'
+import {
+  CORPORATE_CARD_LIMIT_REACHED,
+  FEATURE_LIMIT_REACHED,
+  featureLimitReachedError,
+} from '../constants/packageErrors'
+import { resolveOwnerMode } from '../constants/packageOwnerMode'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
@@ -48,7 +54,14 @@ import { duplicateContactFields } from '../utils/duplicateCard'
 import { fillMissingGalleryMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
+import { catalogGateForWallpaperChange, catalogGatesForSettingChange } from '../utils/mediaFeatureGates'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
+import {
+  canCreateAnotherCard,
+  countFilledExtraFields,
+  countFilledSocialLinks,
+  remainingCardSlots,
+} from '../utils/packageLimits'
 import { prisma } from '../utils/prisma'
 import {
   isPrismaColumnMismatch,
@@ -59,6 +72,11 @@ import {
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
 import announcementService from './announcement.service'
+import {
+  assertCatalogFeatureGate,
+  assertCountWithinPackageLimit,
+  getEffectiveEntitlements,
+} from './entitlement.service'
 import pushService from './push.service'
 import { normalizeSeoSettings } from './seoMetadata.service'
 import subscriptionService from './subscription.service'
@@ -529,13 +547,12 @@ const listInclude = {
   _count: { select: { services: true, portfolios: true, posts: true } },
 } satisfies Prisma.ProfileInclude
 
-const MAX_CARDS_FEATURE_KEY = 'max_cards'
-
 type ListProfileRow = Prisma.ProfileGetPayload<{ include: typeof listInclude }>
 
 export type CardCapacity = {
-  limit: number
+  limit: number | null
   used: number
+  remaining: number | null
   canCreate: boolean
 }
 
@@ -660,63 +677,51 @@ const resolveOwnershipWhere = async (
   return { OR: [{ userId }, { companyUserId: userId }] }
 }
 
-const defaultCardLimitForRole = (role: string): number => {
-  if (role === 'vcard-owner') return 1
-  if (role === 'corporate-owner') return 0
-  return Number.MAX_SAFE_INTEGER
-}
-
-const resolvePackageCardLimit = async (userId: string, role: string): Promise<number> => {
-  if (isStaff(role)) return Number.MAX_SAFE_INTEGER
+const getCardCapacity = async (userId: string, role: string): Promise<CardCapacity> => {
+  const where = await resolveOwnershipWhere(userId, role)
+  if (isStaff(role) || isAdminRole(role)) {
+    const used = await prisma.profile.count({ where })
+    return { limit: null, used, remaining: null, canCreate: true }
+  }
 
   if (role === 'corporate-owner' || role === 'vcard-owner') {
     await subscriptionService.ensureOwnerStarterSubscription(userId, role)
   }
 
-  const now = new Date()
-  const subscription = await prisma.subscription.findFirst({
-    where: {
-      userId,
-      OR: [{ endsAt: null }, { endsAt: { gt: now } }],
-    },
-    include: { package: { include: { features: true } } },
-    orderBy: { createdAt: 'desc' },
-  })
-
-  if (subscription?.package?.features?.length) {
-    const feature = subscription.package.features.find(
-      (f) => f.featureKey.trim().toLowerCase() === MAX_CARDS_FEATURE_KEY
-    )
-    if (feature?.featureValue != null && String(feature.featureValue).trim() !== '') {
-      const parsed = Number.parseInt(String(feature.featureValue).trim(), 10)
-      if (Number.isFinite(parsed) && parsed >= 0) return parsed
-    }
-  }
-
-  if (subscription?.quantity != null && Number.isFinite(subscription.quantity) && subscription.quantity >= 0) {
-    return subscription.quantity
-  }
-
-  return defaultCardLimitForRole(role)
-}
-
-const getCardCapacity = async (userId: string, role: string): Promise<CardCapacity> => {
-  const where = await resolveOwnershipWhere(userId, role)
-  const [limit, used] = await Promise.all([resolvePackageCardLimit(userId, role), prisma.profile.count({ where })])
+  const [entitlements, used] = await Promise.all([
+    getEffectiveEntitlements(userId, role),
+    prisma.profile.count({ where }),
+  ])
+  const limit = entitlements.limits.maxCards
   return {
     limit,
     used,
-    canCreate: isStaff(role) || isAdminRole(role) || used < limit,
+    remaining: remainingCardSlots(used, limit),
+    canCreate: canCreateAnotherCard(used, limit),
   }
 }
 
 const assertCanCreateCard = async (userId: string, role: string) => {
-  if (isStaff(role)) return
+  if (isStaff(role) || isAdminRole(role)) return
   const capacity = await getCardCapacity(userId, role)
   if (capacity.canCreate) return
-  throw new AppError(
-    403,
-    `Card limit reached (${capacity.used}/${capacity.limit}). Upgrade your package to create more cards.`
+
+  const entitlements = await getEffectiveEntitlements(userId, role)
+  const { used, limit, remaining } = capacity
+  const corporate = entitlements.ownerMode === 'corporate'
+  const noCapacity = limit != null && limit <= 0
+  const message = noCapacity
+    ? 'No active package with card capacity. Upgrade your package to create cards.'
+    : corporate
+      ? `Corporate card limit reached (${used}/${limit}). Existing cards were not removed.`
+      : `Card limit reached (${used}/${limit}). Upgrade your package to create more cards.`
+
+  throw featureLimitReachedError(
+    message,
+    { limit, used, remaining },
+    {
+      code: corporate ? CORPORATE_CARD_LIMIT_REACHED : FEATURE_LIMIT_REACHED,
+    }
   )
 }
 
@@ -1116,7 +1121,8 @@ const create = async (
       profileOwnerId = target.id
       profileOwnerEmail = target.email
       createdById = userId
-      companyUserId = targetApiRole === 'corporate-owner' ? target.id : undefined
+      const targetEntitlements = await getEffectiveEntitlements(target.id, targetApiRole)
+      companyUserId = targetEntitlements.ownerMode === 'corporate' ? target.id : undefined
       capacityUserId = target.id
       capacityRole = targetApiRole
     } else {
@@ -1459,6 +1465,7 @@ const update = async (
       phone: true,
       isDraft: true,
       isPublic: true,
+      themeConfig: true,
     },
   })
   if (!currentProfile) throw new AppError(404, 'Profile not found')
@@ -1554,6 +1561,19 @@ const update = async (
       [] as Array<{ key: string; value: string }>
     )
     const existingMap = new Map(existingSettings.map((row) => [row.key, row.value]))
+    if ('extra_fields_json' in normalizedSettings) {
+      const nextCount = countFilledExtraFields(normalizedSettings.extra_fields_json)
+      const currentCount = countFilledExtraFields(existingMap.get('extra_fields_json'))
+      if (nextCount > currentCount) {
+        await assertCountWithinPackageLimit(userId, role, 'maxExtraFields', nextCount)
+      }
+    }
+    for (const [key, value] of Object.entries(normalizedSettings)) {
+      const gates = catalogGatesForSettingChange(key, value, existingMap.get(key))
+      for (const gate of gates) {
+        await assertCatalogFeatureGate(userId, role, gate)
+      }
+    }
     const changedEntries = Object.entries(normalizedSettings).filter(([key, value]) => existingMap.get(key) !== value)
     if (changedEntries.length) {
       await Promise.all(
@@ -1574,6 +1594,17 @@ const update = async (
   }
 
   if (profileSettings) {
+    if (profileSettings.themeConfig !== undefined) {
+      const existingTheme = await safePrismaQuery(
+        () => prisma.profileSetting.findUnique({ where: { profileId }, select: { themeConfig: true } }),
+        null as { themeConfig: unknown } | null
+      )
+      const wallpaperGate = catalogGateForWallpaperChange(
+        profileSettings.themeConfig,
+        existingTheme?.themeConfig ?? currentProfile.themeConfig
+      )
+      if (wallpaperGate) await assertCatalogFeatureGate(userId, role, wallpaperGate)
+    }
     await prisma.profileSetting.upsert({
       where: { profileId },
       create: {
@@ -1701,6 +1732,17 @@ const replaceCollection = async <T extends Record<string, unknown>>(
   mapItem: (item: T) => Record<string, unknown>
 ) => {
   await getOwnedForWrite(profileId, userId, role)
+  if (kind === 'socialLinks') {
+    const nextCount = countFilledSocialLinks(items)
+    const existing = await prisma.socialLink.findMany({
+      where: { profileId },
+      select: { name: true, url: true },
+    })
+    const currentCount = countFilledSocialLinks(existing)
+    if (nextCount > currentCount) {
+      await assertCountWithinPackageLimit(userId, role, 'maxSocialLinks', nextCount)
+    }
+  }
   const delegate = COLLECTION_DELEGATE[kind]
   await prisma.$transaction(async (tx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2691,20 +2733,29 @@ const listRecentEngagement = async (userId: string, role: string, query: RecentE
 }
 
 const listPackages = async () => {
-  return prisma.package.findMany({
+  const rows = await prisma.package.findMany({
     where: { isActive: true },
     include: { features: true },
     orderBy: { sortOrder: 'asc' },
   })
+  return rows.map((pkg) => ({ ...pkg, ownerMode: resolveOwnerMode(pkg) }))
 }
 
 const listSubscriptions = async (userId: string, role: string) => {
   const where = isAdminRole(role) ? {} : { userId }
-  return prisma.subscription.findMany({
+  const rows = await prisma.subscription.findMany({
     where,
     include: { package: { include: { features: true } }, items: true, transactions: true },
     orderBy: { createdAt: 'desc' },
   })
+  return rows.map((sub) => ({
+    ...sub,
+    package: sub.package ? { ...sub.package, ownerMode: resolveOwnerMode(sub.package) } : sub.package,
+  }))
+}
+
+const getEntitlements = async (userId: string, role: string) => {
+  return getEffectiveEntitlements(userId, role)
 }
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
@@ -3473,6 +3524,7 @@ const profileService = {
   dismissPublicTeamNotice,
   listPackages,
   listSubscriptions,
+  getEntitlements,
   ensureUniqueSlug,
   checkSlugAvailability,
   listPortfolioMembers,

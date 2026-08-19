@@ -39,6 +39,49 @@
 8. Verify public card `/v/<slug>` and dashboard My vCards against production data.
 9. Decommission Laravel API / old media host / stop writing to old MySQL.
 
+---
+
+# Package / auth / Stripe go-live (plan Step 13)
+
+Do **not** delete cards. Admin-granted subscriptions stay active. Stripe paid access activates only after a successful payment.
+
+## Env (backend)
+
+- [ ] `LOGIN_OTP_REQUIRED=true` (default). Staff remain password-only.
+- [ ] Mail working (`MAIL_ADDRESS` / `MAIL_PASS`) so owner OTP and password-setup mail send.
+- [ ] `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` if Checkout is going live.
+- [ ] Stripe Dashboard webhook: `POST https://<api-host>/api/v1/billing/webhook` (raw JSON body).
+- [ ] Frontend: `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_PUBLIC_API_URL` already pointing at this API.
+
+## Order
+
+Run migrate/backfill only on a host whose `DATABASE_URL` authenticates. Do not delete cards. Do not invent credentials.
+
+1. Deploy **backend** with the new code.
+2. `yarn migrate:deploy`  
+   Must include at least: `auth_challenge`, `corporate_feature_override`, `signup_fee_and_negotiated_monthly`, `stripe_events`, `package_owner_mode`.
+3. Backfill report only: `yarn backfill:owner-packages`  
+   Review Corporate owners on Free (listed, not auto-demoted). Existing cards are never deleted.
+4. If the report is accepted: `yarn backfill:owner-packages -- --apply`
+5. Deploy **administration** frontend (`corepack yarn build` then your usual host start).
+6. Preflight: `yarn cutover:check`  
+   Optional live health: `SMOKE_API_URL=https://<api-host> yarn cutover:check`
+
+## Smoke
+
+- [ ] `GET /api/v1/health`
+- [ ] Staff login (password only)
+- [ ] Card-owner login: password → email OTP → session
+- [ ] One Single owner → `/`
+- [ ] One Corporate owner → `/teamvcard`
+- [ ] Admin package edit
+- [ ] Create-card blocked at cap; existing cards still there
+- [ ] Media flag off → upload 403 `FEATURE_NOT_INCLUDED`; existing files still on the card
+
+## Rollback (OTP mail failure)
+
+If owners cannot receive OTP mail, set `LOGIN_OTP_REQUIRED=false` on the API and restart. Do not roll back migrations. Do not delete cards.
+
 ## Rollback
 
 - Keep Laravel + MySQL read-only for 48h.

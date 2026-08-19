@@ -6,6 +6,7 @@ import AppError from '../error/AppError'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
+import { assertProfileOwnerPackageAccess, profileOwnerAllowsPackageAccess } from './entitlement.service'
 
 export type PushPreferenceKey =
   | 'service_updates'
@@ -269,6 +270,7 @@ const subscribe = async (input: {
   }
 
   const profile = await resolvePublicProfile(input)
+  await assertProfileOwnerPackageAccess(profile.id, 'allow_push_notification')
   const endpointHash = hashEndpoint(input.endpoint)
   const preferenceData = snakeToPrismaData(input.preferences || {})
   const hasPreferencePayload = Object.keys(preferenceData).length > 0
@@ -471,6 +473,9 @@ const sendToProfile = async (
     return { sent: 0, skipped: true as const }
   }
 
+  const allowed = await profileOwnerAllowsPackageAccess(profileId, 'allow_push_notification')
+  if (!allowed) return { sent: 0, skipped: true as const }
+
   const payload = await buildProfilePayload(profileId, partial)
   if (!payload) return { sent: 0, skipped: true as const }
 
@@ -518,6 +523,7 @@ const sendTest = async (input: {
     profile_id: input.profile_id,
     profile_slug: slug,
   })
+  await assertProfileOwnerPackageAccess(profile.id, 'allow_push_notification')
   const endpointHash = hashEndpoint(input.endpoint)
   const sub = await prisma.pushSubscription.findFirst({
     where: { profileId: profile.id, endpointHash, isActive: true },

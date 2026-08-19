@@ -1,5 +1,7 @@
 import { NextFunction, Request, RequestHandler, Response } from 'express'
 import config from '../configs/config'
+import { homePathForOwnerMode } from '../constants/packageOwnerMode'
+import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import {
   IChangePasswordBody,
@@ -16,6 +18,7 @@ import {
 import authService from '../services/auth.service'
 import authUtils from '../utils/auth.utils'
 import catchAsyncError from '../utils/catchAsyncError'
+import { ACCOUNT_LOOKUP_OK_MESSAGE } from '../utils/publicSignup'
 import sendResponse from '../utils/sendResponse'
 
 const register = catchAsyncError(async (req, res) => {
@@ -44,6 +47,35 @@ const login = catchAsyncError(async (req, res) => {
       accessToken: result.accessToken,
     },
     message: 'Login successful',
+  })
+})
+
+const verifyLoginOtp = catchAsyncError(async (req, res) => {
+  const body = req.body as { email: string; otp: string }
+  const result = await authService.verifyLoginOtp(body)
+
+  authUtils.setAuthCookies(res, result.accessToken, result.refreshToken)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    data: {
+      profile: result.profile,
+      accessToken: result.accessToken,
+    },
+    message: 'Login successful',
+  })
+})
+
+const resendLoginOtp = catchAsyncError(async (req, res) => {
+  const { email } = req.body as { email: string }
+  const data = await authService.resendLoginVerification(email)
+
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    data,
+    message: 'Sign-in code sent',
   })
 })
 
@@ -79,7 +111,7 @@ const forgotPassword = catchAsyncError(async (req, res) => {
     data: null,
     success: true,
     statusCode: 200,
-    message: 'Reset password email sent successfully',
+    message: ACCOUNT_LOOKUP_OK_MESSAGE,
   })
 })
 
@@ -265,13 +297,16 @@ export const oauthCallback: RequestHandler = (req: Request, res: Response, next:
   }
 
   authUtils.setAuthCookies(res, accessToken, refreshTokenCookie)
-  // Frontend AuthProvider restores the session from these httpOnly cookies via /auth/author.
-  res.redirect(`${config.FRONTEND_URL!}/`)
+  const profile = req.user?.user as { role?: string | null; ownerMode?: 'single' | 'corporate' | null } | undefined
+  const nextPath = isStaffRole(profile?.role) ? '/admin/dashboard' : homePathForOwnerMode(profile?.ownerMode ?? null)
+  res.redirect(`${config.FRONTEND_URL!}${nextPath}`)
 }
 
 const authController = {
   register,
   login,
+  verifyLoginOtp,
+  resendLoginOtp,
   sendVerificationEmail,
   verifyEmail,
   forgotPassword,

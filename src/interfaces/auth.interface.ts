@@ -36,6 +36,7 @@ export type IAuthUser = {
   isActive: boolean
   accountStatus: 'ACTIVE' | 'PAUSED' | 'SUSPENDED'
   completedTours: string[]
+  ownerMode: 'single' | 'corporate' | null
   createdAt: Date
   updatedAt: Date
 }

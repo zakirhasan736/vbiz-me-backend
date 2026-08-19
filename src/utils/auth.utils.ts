@@ -122,6 +122,7 @@ const mapUser = (user: AuthUserRecord): IAuthUser => ({
   isActive: user.isActive,
   accountStatus: user.accountStatus ?? (user.isActive ? 'ACTIVE' : 'PAUSED'),
   completedTours: user.completedTours ?? [],
+  ownerMode: null,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 })

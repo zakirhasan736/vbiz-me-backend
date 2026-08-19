@@ -26,18 +26,24 @@ const listAdminUsersQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(8),
 })
 
-const createAdminUser = z
-  .object({
-    name: z.string().trim().min(1, 'Name is required'),
-    email: z.string().trim().email('Valid email is required'),
-    password: strongPassword,
-    role: ownerRole,
-    companyName: z.string().trim().max(200).optional().nullable(),
-  })
-  .refine((data) => data.password.trim().toLowerCase() !== data.email.trim().toLowerCase(), {
-    message: PASSWORD_NOT_SAME_AS_EMAIL,
-    path: ['password'],
-  })
+const createAdminUser = z.object({
+  name: z.string().trim().min(1, 'Name is required'),
+  email: z.string().trim().email('Valid email is required'),
+  password: strongPassword.optional(),
+  packageId: z.string().trim().min(1, 'Package is required'),
+  companyName: z.string().trim().max(200).optional().nullable(),
+  cardLimit: z.number().int().min(0).max(100000).optional(),
+  negotiatedMonthlyCents: z.number().int().min(0).nullable().optional(),
+  featureOverrides: z
+    .array(
+      z.object({
+        featureKey: z.string().trim().min(1).max(80),
+        featureValue: z.string().trim().max(80).nullable(),
+      })
+    )
+    .max(100)
+    .optional(),
+})
 
 const updateAdminUser = z
   .object({
@@ -46,6 +52,17 @@ const updateAdminUser = z
     role: ownerRole.optional(),
     companyName: z.string().trim().max(200).optional().nullable(),
     password: strongPassword.optional(),
+    cardLimit: z.number().int().min(0).max(100000).optional(),
+    negotiatedMonthlyCents: z.number().int().min(0).nullable().optional(),
+    featureOverrides: z
+      .array(
+        z.object({
+          featureKey: z.string().trim().min(1).max(80),
+          featureValue: z.string().trim().max(80).nullable(),
+        })
+      )
+      .max(100)
+      .optional(),
   })
   .refine(
     (data) =>
@@ -53,7 +70,10 @@ const updateAdminUser = z
       data.email !== undefined ||
       data.role !== undefined ||
       data.companyName !== undefined ||
-      data.password !== undefined,
+      data.password !== undefined ||
+      data.cardLimit !== undefined ||
+      data.negotiatedMonthlyCents !== undefined ||
+      data.featureOverrides !== undefined,
     {
       message: 'At least one field to update is required',
     }

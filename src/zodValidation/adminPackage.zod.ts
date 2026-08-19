@@ -18,6 +18,7 @@ const createAdminPackage = z.object({
   description: z.string().trim().max(2000).optional().nullable(),
   monthlyPrice: z.coerce.number().int().min(0).default(0),
   yearlyPrice: z.coerce.number().int().min(0).default(0),
+  signupFeeCents: z.coerce.number().int().min(0).default(0),
   isActive: z.boolean().optional().default(true),
   sortOrder: z.coerce.number().int().min(0).optional().default(0),
   features: z.array(packageFeature).optional().default([]),
@@ -37,6 +38,7 @@ const updateAdminPackage = z
     description: z.string().trim().max(2000).optional().nullable(),
     monthlyPrice: z.coerce.number().int().min(0).optional(),
     yearlyPrice: z.coerce.number().int().min(0).optional(),
+    signupFeeCents: z.coerce.number().int().min(0).optional(),
     isActive: z.boolean().optional(),
     sortOrder: z.coerce.number().int().min(0).optional(),
     features: z.array(packageFeature).optional(),
@@ -48,6 +50,7 @@ const updateAdminPackage = z
       data.description !== undefined ||
       data.monthlyPrice !== undefined ||
       data.yearlyPrice !== undefined ||
+      data.signupFeeCents !== undefined ||
       data.isActive !== undefined ||
       data.sortOrder !== undefined ||
       data.features !== undefined,
