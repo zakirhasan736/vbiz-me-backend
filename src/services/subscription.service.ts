@@ -19,9 +19,9 @@ const parseMaxCardsQuantity = (features: { featureKey: string; featureValue: str
 }
 
 /**
- * Prefer the explicitly free seeded starter. The fallback is limited to other
- * free packages with a compatible card limit, so a paid package is never
- * granted accidentally.
+ * Prefer a free package matching the requested slug. Corporate Starter and
+ * Single Starter are retired; the fallback is another free active package with
+ * a compatible card limit so a paid plan is never granted accidentally.
  */
 const findStarterPackage = async (slug: string, acceptsCardLimit: (limit: number | null) => boolean) => {
   const bySlug = await prisma.package.findFirst({

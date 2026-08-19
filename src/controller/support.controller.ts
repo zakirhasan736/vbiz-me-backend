@@ -1,3 +1,4 @@
+import { assertUserPackageAccess } from '../constants/packageAccess'
 import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import supportService from '../services/support.service'
@@ -46,6 +47,9 @@ const getOne = catchAsyncError(async (req, res) => {
 
 const create = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
+  if (!isStaffRole(req.user.role)) {
+    await assertUserPackageAccess(req.user.id, req.user.role, 'allow_support_ticket')
+  }
   const body = SupportZodSchema.createSupportTicket.parse(req.body)
   const actor = await resolveActor(req.user.id)
   const fromRole = mapApiRoleToTicketRole(req.user.role)

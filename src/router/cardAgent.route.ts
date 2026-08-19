@@ -1,5 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import multer from 'multer'
+import { assertUserPackageAccess } from '../constants/packageAccess'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import { getRequestId } from '../middlewares/requestId'
@@ -20,6 +21,11 @@ const router = Router()
 router.use(authMiddleware.isAuthenticateUser)
 router.use(authMiddleware.requireNotSuspended)
 router.use(authMiddleware.requireVcardMutable)
+
+async function requireAutoCardBuilder(req: IUserInfoRequest) {
+  if (!req.user?.id) throw new AppError(403, 'Unauthorized')
+  await assertUserPackageAccess(req.user.id, req.user.role, 'allow_auto_card_builder')
+}
 
 function rateLimitOrThrow(req: IUserInfoRequest, action: string, limit: number) {
   const userKey = req.user?.id || req.ip || 'anon'
@@ -43,6 +49,7 @@ router.post(
   '/extract-sources',
   optionalMultipart,
   catchAsyncError(async (req, res) => {
+    await requireAutoCardBuilder(req)
     rateLimitOrThrow(req, 'extract', 20)
     const websiteUrl = String(req.body?.websiteUrl || '').trim()
     const businessText = String(req.body?.businessText || '').trim()
@@ -67,6 +74,7 @@ router.post(
   '/analyze',
   optionalMultipart,
   catchAsyncError(async (req, res) => {
+    await requireAutoCardBuilder(req)
     // Deep crawl + GPT can exceed default; Express itself has no timeout here — client may wait ~2m
     rateLimitOrThrow(req, 'analyze', 20)
     const websiteUrl = String(req.body?.websiteUrl || '').trim()
@@ -157,6 +165,8 @@ router.post(
 router.post(
   '/generate-seo',
   catchAsyncError(async (req, res) => {
+    if (!req.user?.id) throw new AppError(403, 'Unauthorized')
+    await assertUserPackageAccess(req.user.id, req.user.role, 'allow_seo')
     rateLimitOrThrow(req, 'fill', 40)
     const data = await cardAgentService.generateSeo(req.body, req.user?.id)
     sendResponse(res, {
@@ -172,6 +182,7 @@ router.post(
   '/jobs',
   optionalMultipart,
   catchAsyncError(async (req, res) => {
+    await requireAutoCardBuilder(req)
     rateLimitOrThrow(req, 'extract', 20)
     const files = filesFromMulter(req.files as Express.Multer.File[] | undefined)
     let existingCard: unknown

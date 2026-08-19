@@ -1,68 +1,53 @@
 import { UserRole as PrismaUserRole } from '../../generated/prisma/enums'
+import { RETIRED_PACKAGE_SLUGS } from '../constants/packageAccess'
 import subscriptionService from '../services/subscription.service'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 
-const MAX_CARDS_FEATURE_KEY = 'max_cards'
-
-const DEFAULT_PACKAGES = [
-  {
-    slug: 'corporate-starter',
-    name: 'Corporate Starter',
-    description: 'Free starter package for corporate owners with a fixed team card capacity.',
-    sortOrder: 0,
-    maxCards: '15',
-  },
-  {
-    slug: 'single-starter',
-    name: 'Single Starter',
-    description: 'Free starter package for single card owners with one vCard.',
-    sortOrder: 1,
-    maxCards: '1',
-  },
-] as const
+const RETIRED_NAMES = ['Corporate Starter', 'Single Starter', 'Single Card']
 
 /**
- * Idempotent startup seed: creates explicitly free starter packages when absent.
- * It never overwrites imported/admin-managed package fields, prices, or max_cards values.
+ * Idempotent startup: retire unused starter packages (Corporate Starter / Single Card)
+ * and attach remaining free-plan fallbacks to corporate owners who have no subscription.
  */
 const seedPackages = async (): Promise<void> => {
-  for (const pkg of DEFAULT_PACKAGES) {
-    const row = await prisma.package.upsert({
-      where: { slug: pkg.slug },
-      create: {
-        slug: pkg.slug,
-        name: pkg.name,
-        description: pkg.description,
-        monthlyPrice: 0,
-        yearlyPrice: 0,
-        isActive: true,
-        sortOrder: pkg.sortOrder,
-      },
-      // Leave admin-edited name/prices/active/sortOrder alone on re-run.
-      update: {},
-    })
+  const retired = await prisma.package.findMany({
+    where: {
+      OR: [
+        { slug: { in: [...RETIRED_PACKAGE_SLUGS] } },
+        ...RETIRED_NAMES.map((name) => ({ name: { equals: name, mode: 'insensitive' as const } })),
+      ],
+    },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      _count: { select: { subscriptions: true } },
+    },
+  })
 
-    await prisma.packageFeature.upsert({
-      where: {
-        packageId_featureKey: {
-          packageId: row.id,
-          featureKey: MAX_CARDS_FEATURE_KEY,
-        },
-      },
-      create: {
-        packageId: row.id,
-        featureKey: MAX_CARDS_FEATURE_KEY,
-        featureValue: pkg.maxCards,
-      },
-      // Do not overwrite admin-edited max_cards.
-      update: {},
+  let deleted = 0
+  let deactivated = 0
+  for (const pkg of retired) {
+    if (pkg._count.subscriptions === 0) {
+      await prisma.packageFeature.deleteMany({ where: { packageId: pkg.id } })
+      await prisma.package.delete({ where: { id: pkg.id } })
+      deleted += 1
+      continue
+    }
+    await prisma.package.update({
+      where: { id: pkg.id },
+      data: { isActive: false },
     })
+    deactivated += 1
   }
 
-  logger.info('Package seed ensured (corporate-starter, single-starter)')
+  if (retired.length) {
+    logger.info(
+      `Retired starter packages: deleted ${deleted}, deactivated ${deactivated} (corporate-starter / single-starter)`
+    )
+  }
 
-  // Repair corporate accounts that signed up before packages existed
   const owners = await prisma.user.findMany({
     where: {
       role: PrismaUserRole.CORPORATE_OWNER,
@@ -79,7 +64,7 @@ const seedPackages = async (): Promise<void> => {
   }
 
   if (owners.length) {
-    logger.info(`Corporate starter subscriptions ensured for ${linked}/${owners.length} corporate owners`)
+    logger.info(`Owner subscriptions ensured for ${linked}/${owners.length} corporate owners`)
   }
 }
 

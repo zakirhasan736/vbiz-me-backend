@@ -1,5 +1,6 @@
 /**
- * Manually seed starter packages + attach corporate-starter to existing corporate owners.
+ * Retire unused starter packages and attach a remaining free-plan fallback to
+ * corporate owners who have no subscription.
  * Usage: yarn seed:packages
  */
 import seedPackages from '../src/bootstrap/seedPackages'
