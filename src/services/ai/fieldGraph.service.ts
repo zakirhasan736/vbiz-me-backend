@@ -1,5 +1,5 @@
 import type { MasterBusinessProfile } from './businessProfile.schema'
-import { TAB_CATALOG } from './cardBlueprint.schema'
+import { isAiContentNavId, TAB_CATALOG } from './cardBlueprint.schema'
 import type { RecommendedTab } from './tabDecision.service'
 
 export type FieldStatus = 'READY' | 'PARTIAL' | 'EMPTY' | 'WAITING_FOR_USER' | 'GENERATING' | 'SKIPPED'
@@ -154,7 +154,7 @@ const FIELD_DEFS: FieldDef[] = [
     getValue: (p) => p.ownerTitle,
   },
   {
-    tabId: 'profile',
+    tabId: 'about',
     sectionId: 'about',
     fieldKey: 'about',
     fieldLabel: 'About',
@@ -183,8 +183,9 @@ const FIELD_DEFS: FieldDef[] = [
     special: 'faq',
     aiGenerationAllowed: true,
     recommendedTier: 'TERRA',
-    prompt: 'FAQs must be answerable from verified facts. Do not invent policies.',
-    getValue: (_p) => [],
+    prompt:
+      'FAQs must be answerable from verified facts. Do not invent policies. If none exist in sources, ask to create up to 5.',
+    getValue: () => [],
   },
   {
     tabId: 'blog',
@@ -194,8 +195,9 @@ const FIELD_DEFS: FieldDef[] = [
     special: 'blog',
     aiGenerationAllowed: true,
     recommendedTier: 'TERRA',
-    prompt: 'Write evergreen educational content. Do not invent company news events.',
-    getValue: (_p) => [],
+    prompt:
+      'Write evergreen educational content. Do not invent company news events. If none exist in sources, ask to draft up to 5.',
+    getValue: () => [],
   },
   {
     tabId: 'reviews',
@@ -288,8 +290,9 @@ export function buildFieldGraph(input: {
         source = 'WEBSITE'
       }
       if (def.special === 'faq' || def.special === 'blog') {
-        status = 'EMPTY'
-        source = 'NONE'
+        const items = Array.isArray(value) ? value : []
+        status = items.length ? 'READY' : 'EMPTY'
+        source = items.length ? 'WEBSITE' : 'NONE'
       }
       if (def.special === 'reviews') {
         const real = Array.isArray(value)
@@ -382,7 +385,7 @@ export function buildTabPlan(input: {
   const recommended = new Set(input.recommendedTabs.map((t) => t.navId))
   const reasons = Object.fromEntries(input.recommendedTabs.map((t) => [t.navId, t.reason]))
   const navIds = [...new Set(['home', ...input.selectedNavIds, ...input.recommendedTabs.map((t) => t.navId)])].filter(
-    (id) => byNav[id]
+    (id) => byNav[id] && isAiContentNavId(id)
   )
 
   const tabs: TabPlan[] = navIds.map((tabId) => {

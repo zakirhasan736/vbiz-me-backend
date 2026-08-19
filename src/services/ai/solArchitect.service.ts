@@ -69,9 +69,16 @@ Return JSON:
   "tabReasons": [{ "navId": "services", "reason": "short why" }]
 }
 
-Never invent tabs. Never invent phones, emails, licenses, awards, reviews, projects, or years in business.
+First understand the business:
+1. What is this business and who is the owner/professional?
+2. Industry, services/products, target customers, buying journey, conversion opportunities.
+3. Geography/service area, branding/tone, differentiators, social presence, contact, media.
+4. Verified reviews, projects, experience, certifications — only if present in sources.
+5. Likely FAQ topics, educational blog topics, and SEO opportunities from verified facts.
+6. Which EXISTING catalog tabs fit, which fields can be filled now, what must be asked of the owner, and what is required for a 90–100% ready card.
 
-First understand the business (type, customers, conversion goal, geography). Then recommend only catalog tab ids that fit. Prefer facts already on an existing card over weaker new source text. Leave unknown required personal facts null so the owner can be asked later.`,
+Never invent tabs. Never invent phones, emails, licenses, awards, reviews, projects, or years in business.
+Prefer facts already on an existing card over weaker new source text. Leave unknown required personal facts null so the owner can be asked later.`,
     user: `${existingCardPrompt(input.existingCard)}\nAnalyze sources and design the best card from supported tabs only.\n\n${sourcePrompt(input.normalized)}`,
     images: input.normalized.images.slice(0, 4),
   })

@@ -317,10 +317,14 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
 }
 Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, populate those arrays with real extracted items. For reviews/testimonials, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture distinct items present in the crawl, up to 30. Never invent customer reviews. If no real reviews exist, return an empty reviews array. Creative wording is allowed for about, FAQs, headlines, and blog ideas, but never invent factual claims (years in business, licenses, awards, phone, email). Missing facts stay empty. Dates as YYYY-MM-DD when known. Never infer a date of birth; include personal.dob only when a source explicitly provides it.
 For services.type use ONLY: Web Development, App Design, SEO, Marketing, or Other.
-enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal and About Me are present. Never put Public Cards or My Info in enabledTabs — the product pins those last automatically. Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, News/Blogs, Profile, Portfolio, Certifications/Licenses, FAQ).`
+enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal and About Me are present. Never put Public Cards or My Info in enabledTabs — those are fixed product tabs. My Info Call/Text/Email is filled from Personal Info (phone, WhatsApp, email). Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, News/Blogs, Profile, Portfolio, Certifications/Licenses, FAQ).`
 
 export const TAB_CATALOG = [
-  { name: 'Personal', navId: 'home', description: 'Profile, contact details, media & socials (always first)' },
+  {
+    name: 'Personal',
+    navId: 'home',
+    description: 'Personal Info: name, email, phone, company, title, website, address (always first)',
+  },
   { name: 'About Me', navId: 'about', description: 'Company story, bio, and featured media (always second)' },
   { name: 'Education', navId: 'education', description: 'Degrees, schools, and years' },
   { name: 'Experience', navId: 'work', description: 'Work history and roles' },
@@ -336,11 +340,17 @@ export const TAB_CATALOG = [
   {
     name: 'Public Cards',
     navId: 'public-cards',
-    description: 'Directory of other public vBiz cards — ALWAYS second-to-last',
+    description: 'Fixed directory of other public vBiz cards — never an AI fill target',
   },
   {
     name: 'My Info',
     navId: 'my-info',
-    description: 'Call/text/email actions from personal info — ALWAYS last',
+    description: 'Fixed Call/text/email dock filled from Personal Info — never an AI fill target',
   },
 ]
+
+export const AI_SYSTEM_NAV_IDS = ['public-cards', 'my-info'] as const
+
+export function isAiContentNavId(navId: string): boolean {
+  return !(AI_SYSTEM_NAV_IDS as readonly string[]).includes(navId)
+}

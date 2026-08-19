@@ -11,6 +11,7 @@ import {
 } from '../seoMetadata.service'
 import { logAiUsage, logChatMeta } from './aiUsageLog.service'
 import { analyzeMasterProfile } from './businessAnalyzer.service'
+import { assembleAiCard } from './cardAssembler.service'
 import {
   FILL_SECTION_SCHEMA_HINTS,
   TAB_CATALOG,
@@ -21,7 +22,7 @@ import {
   type CardBlueprint,
   type FillSectionId,
 } from './cardBlueprint.schema'
-import { getCardSession, putCardSession } from './cardSession.store'
+import { getCardSession, loadCardSession, putCardSession } from './cardSession.store'
 import { buildCompletenessReport } from './completeness.service'
 import { generateCardContent, generateSectionFromProfile, profileToBlueprintFacts } from './contentGenerator.service'
 import { crawlWebsiteDeep, extractTextFromBuffer, type UploadedPart } from './extractDocumentText'
@@ -30,6 +31,7 @@ import { routeAiTier } from './modelRouter.service'
 import { chatJson, getOpenAiApiKey } from './openai.client'
 import { runSolArchitect } from './solArchitect.service'
 import { normalizeSources } from './sourceNormalizer.service'
+import { applySectionPayloadToFields } from './tabBuild.service'
 import { decideRecommendedTabs, type RecommendedTab } from './tabDecision.service'
 import { sanitizeBlueprint } from './validation.service'
 
@@ -458,7 +460,7 @@ export async function fillSection(input: {
   }
   const sectionId = section as FillSectionId
 
-  const session = getCardSession(input.sessionId)
+  const session = (await loadCardSession(input.sessionId)) || getCardSession(input.sessionId)
   let profile = session?.businessProfile || null
   if (!profile && input.masterProfile) {
     try {
@@ -491,6 +493,7 @@ export async function fillSection(input: {
       count === 0
         ? `No ${section} found in the saved business profile. Add a note or document if you want this section filled.`
         : undefined
+    await persistFillToJob(input.sessionId, sectionId, payload)
     return { section: sectionId, payload, ...(message ? { message } : {}), count, usedProfile: true }
   }
 
@@ -596,7 +599,30 @@ export async function fillSection(input: {
       ? `No ${section} found in the provided sources. Try a clearer document, image, or paste the list as text.`
       : undefined
 
+  await persistFillToJob(input.sessionId, sectionId, payload)
   return { section: sectionId, payload, ...(message ? { message } : {}), count }
+}
+
+async function persistFillToJob(
+  sessionId: string | undefined,
+  sectionId: FillSectionId,
+  payload: Record<string, unknown>
+) {
+  const session = await loadCardSession(sessionId)
+  if (!session?.businessProfile) return
+  const fields = applySectionPayloadToFields(session.fieldGraph, sectionId, payload)
+  const { blueprint } = assembleAiCard({
+    profile: session.businessProfile,
+    fields,
+    recommendedTabs: session.recommendedTabs,
+    selectedNavIds: session.selectedNavIds,
+  })
+  putCardSession({
+    ...session,
+    fieldGraph: fields,
+    blueprint,
+    assembledDraft: blueprint,
+  })
 }
 
 const generateSeoInputSchema = z.object({

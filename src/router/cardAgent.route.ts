@@ -235,6 +235,20 @@ router.post(
 )
 
 router.post(
+  '/jobs/:jobId/generate-content',
+  catchAsyncError(async (req, res) => {
+    rateLimitOrThrow(req, 'fill', 20)
+    const kind = String(req.body?.kind || '') === 'blog' ? 'blog' : 'faq'
+    const data = await cardJobService.generatePermissionedContent({
+      jobId: String(req.params.jobId),
+      kind,
+      userId: req.user?.id,
+    })
+    sendResponse(res, { success: true, statusCode: 200, message: 'Content generated', data })
+  })
+)
+
+router.post(
   '/jobs/:jobId/assemble',
   catchAsyncError(async (req, res) => {
     const data = await cardJobService.assembleJob(String(req.params.jobId), req.user?.id)

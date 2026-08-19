@@ -20,7 +20,7 @@ import {
   type UserProgressStep,
 } from './cardSession.store'
 import { buildCompletenessReport } from './completeness.service'
-import { profileToBlueprintFacts } from './contentGenerator.service'
+import { generateSectionFromProfile, profileToBlueprintFacts } from './contentGenerator.service'
 import type { UploadedPart } from './extractDocumentText'
 import { applyUserFieldValue, generateFieldCopy, skipField, type FieldAction } from './fieldCompletion.service'
 import {
@@ -34,6 +34,7 @@ import {
 } from './fieldGraph.service'
 import { runSolArchitect } from './solArchitect.service'
 import { normalizeSources } from './sourceNormalizer.service'
+import { autoFillSelectedFields, capGeneratedList } from './tabBuild.service'
 import { sanitizeBlueprint } from './validation.service'
 
 const running = new Set<string>()
@@ -257,8 +258,63 @@ export async function setSelectedTabs(jobId: string, selectedNavIds: string[], u
       fields = [...fields, ...fieldsForAddedTab(navId, session.businessProfile)]
     }
   }
-  const updated = await save(session, { selectedNavIds: unique, fieldGraph: fields, status: 'WAITING_FOR_USER_INPUT' })
+  const withContent = await autoFillSelectedFields({
+    fields,
+    selectedNavIds: unique,
+    profile: session.businessProfile,
+    userId,
+    sessionId: session.id,
+  })
+  const { blueprint } = assembleAiCard({
+    profile: session.businessProfile,
+    fields: withContent,
+    recommendedTabs: session.recommendedTabs,
+    selectedNavIds: unique,
+  })
+  const updated = await save(session, {
+    selectedNavIds: unique,
+    fieldGraph: withContent,
+    blueprint,
+    assembledDraft: blueprint,
+    status: 'WAITING_FOR_USER_INPUT',
+  })
   return publicJob(updated)
+}
+
+export async function generatePermissionedContent(input: { jobId: string; kind: 'faq' | 'blog'; userId?: string }) {
+  const session = await loadCardSession(input.jobId)
+  if (!session) throw new AppError(404, 'Card job not found.')
+  assertJobOwner(session, input.userId)
+  if (!session.businessProfile) throw new AppError(409, 'The card plan is not ready yet.')
+  const section = input.kind === 'faq' ? 'faqs' : 'blogs'
+  const payload = await generateSectionFromProfile({
+    section,
+    profile: session.businessProfile,
+    instruction:
+      input.kind === 'faq'
+        ? 'Create up to 5 helpful FAQs from verified services and business facts. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas.'
+        : 'Draft up to 5 evergreen educational articles. Do not invent news events, dates, awards, or statistics.',
+    userId: input.userId,
+    sessionId: session.id,
+  })
+  const fieldKey = input.kind === 'faq' ? 'faqs' : 'blogs'
+  const field = session.fieldGraph.find((row) => row.fieldKey === fieldKey)
+  const value = capGeneratedList(
+    section === 'faqs' ? (payload as { faqs?: unknown[] }).faqs : (payload as { blogs?: unknown[] }).blogs
+  )
+  let fields = session.fieldGraph
+  if (field) {
+    fields = mergeFieldDecision(fields, {
+      id: field.id,
+      currentValue: value,
+      status: Array.isArray(value) && value.length ? 'READY' : 'EMPTY',
+      source: 'AI',
+      userDecision: true,
+    })
+  }
+  const updated = await save(session, { fieldGraph: fields, status: 'WAITING_FOR_USER_INPUT' })
+  const assembled = await assembleAndReady(updated)
+  return { ...publicJob(assembled), payload, generatedCount: Array.isArray(value) ? value.length : 0 }
 }
 
 export async function applyFieldAction(input: {
@@ -313,6 +369,13 @@ export async function applyFieldAction(input: {
       next = applyUserFieldValue(field, input.value)
     }
   } else if (input.action === 'AI_GENERATE' || input.action === 'IMPROVE_WITH_AI') {
+    if (field.special === 'faq' || field.special === 'blog') {
+      return generatePermissionedContent({
+        jobId: input.jobId,
+        kind: field.special === 'faq' ? 'faq' : 'blog',
+        userId: input.userId,
+      })
+    }
     const generated = await generateFieldCopy({
       field,
       profile: session.businessProfile,
@@ -355,38 +418,14 @@ export async function runFastMode(jobId: string, mode: 'ai' | 'found' | 'review'
   }
 
   await save(session, { status: 'GENERATING' })
-  let fields = [...session.fieldGraph]
-  const auto = fields.filter(
-    (field) =>
-      session.selectedNavIds.includes(field.tabId) &&
-      field.aiGenerationAllowed &&
-      (field.status === 'EMPTY' || field.status === 'PARTIAL')
-  )
-  await Promise.all(
-    auto.slice(0, 6).map(async (field) => {
-      try {
-        const generated = await generateFieldCopy({
-          field,
-          profile: session.businessProfile!,
-          userId,
-          sessionId: session.id,
-        })
-        fields = mergeFieldDecision(fields, {
-          id: field.id,
-          currentValue: generated,
-          status: 'READY',
-          source: 'AI',
-          userDecision: true,
-        })
-      } catch {
-        fields = mergeFieldDecision(fields, skipField(field))
-      }
-    })
-  )
-  const leftover = fields.map((field) =>
-    !field.aiGenerationAllowed && (field.status === 'EMPTY' || field.status === 'PARTIAL') ? field : field
-  )
-  return publicJob(await assembleAndReady(await save(session, { fieldGraph: leftover })))
+  const filled = await autoFillSelectedFields({
+    fields: session.fieldGraph,
+    selectedNavIds: session.selectedNavIds,
+    profile: session.businessProfile,
+    userId,
+    sessionId: session.id,
+  })
+  return publicJob(await assembleAndReady(await save(session, { fieldGraph: filled })))
 }
 
 async function assembleAndReady(session: CardBuildSession) {
@@ -493,7 +532,7 @@ export async function applyJob(input: {
   const profileId = created.id as string
   const collections: Array<
     [
-      'services' | 'education' | 'experiences' | 'portfolios' | 'reviews',
+      'services' | 'education' | 'experiences' | 'portfolios' | 'reviews' | 'skillTags',
       unknown[],
       (item: Record<string, unknown>) => Record<string, unknown>,
     ]
@@ -556,6 +595,18 @@ export async function applyJob(input: {
         reviewUrl: item.reviewUrl || item.url,
       }),
     ],
+    [
+      'skillTags',
+      (ready.blueprint.skills || []).flatMap((group) => {
+        const category = String(group.type || 'General')
+        const names = Array.isArray(group.skills) ? group.skills : []
+        return names.filter((name) => String(name || '').trim()).map((name) => ({ name, level: category }))
+      }),
+      (item) => ({
+        name: item.name,
+        level: item.level || null,
+      }),
+    ],
   ]
 
   for (const [key, items, map] of collections) {
@@ -568,6 +619,39 @@ export async function applyJob(input: {
       items as Array<Record<string, unknown>>,
       map
     )
+  }
+
+  const aboutText = String(personal.about || '').trim()
+  if (aboutText) {
+    await profileService.upsertAboutMe(profileId, input.userId, input.role, {
+      title: personal.fullName || personal.company || '',
+      description: aboutText.includes('<') ? aboutText : `<p>${aboutText}</p>`,
+      status: '1',
+    })
+  }
+
+  for (const faq of ready.blueprint.faqs || []) {
+    const question = String(faq.question || '').trim()
+    const answer = String(faq.answer || '').trim()
+    if (!question && !answer) continue
+    await profileService.createPost(profileId, input.userId, input.role, {
+      postTypeName: 'Faq',
+      title: question || 'FAQ',
+      description: answer,
+      status: '1',
+    })
+  }
+  for (const blog of ready.blueprint.blogs || []) {
+    const title = String(blog.title || '').trim()
+    const description = String(blog.description || '').trim()
+    if (!title && !description) continue
+    await profileService.createPost(profileId, input.userId, input.role, {
+      postTypeName: 'blog',
+      title: title || 'Article',
+      description,
+      status: '1',
+      metas: { category: String(blog.category || 'News') },
+    })
   }
 
   const completed = await save(ready, { status: 'COMPLETED', profileId })

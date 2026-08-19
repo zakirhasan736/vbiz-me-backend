@@ -320,6 +320,51 @@ describe('vBiz Me auto card builder', () => {
     assert.match(next?.prompt || '', /cannot be inferred or generated/i)
   })
 
+  it('places About on the about tab and does not force generated FAQs empty after fill', async () => {
+    const { buildFieldGraph } = await import('../fieldGraph.service')
+    const { applySectionPayloadToFields, capGeneratedList } = await import('../tabBuild.service')
+    const fields = buildFieldGraph({
+      profile: profile({
+        businessDescription:
+          'Acme Plumbing keeps homes dry with emergency repairs, drain clearing, and trusted local service for homeowners.',
+      }),
+      recommendedTabs: decideRecommendedTabs(profile({})),
+      selectedNavIds: ['home', 'about', 'services', 'faq', 'blog'],
+    })
+    const about = fields.find((f) => f.fieldKey === 'about')
+    assert.equal(about?.tabId, 'about')
+    assert.equal(about?.status, 'READY')
+    const faq = fields.find((f) => f.fieldKey === 'faqs')
+    assert.equal(faq?.status, 'EMPTY')
+    const filled = applySectionPayloadToFields(fields, 'faqs', {
+      faqs: Array.from({ length: 7 }, (_, i) => ({ question: `Q${i}`, answer: `A${i}` })),
+    })
+    const faqReady = filled.find((f) => f.fieldKey === 'faqs')
+    assert.equal(faqReady?.status, 'READY')
+    assert.equal(Array.isArray(faqReady?.currentValue) ? faqReady?.currentValue.length : 0, 5)
+    assert.equal((capGeneratedList([1, 2, 3, 4, 5, 6]) as number[]).length, 5)
+  })
+
+  it('does not score Public Cards or My Info in the AI completion plan', async () => {
+    const { buildFieldGraph, buildTabPlan } = await import('../fieldGraph.service')
+    const tabs = decideRecommendedTabs(profile({}))
+    const fields = buildFieldGraph({
+      profile: profile({}),
+      recommendedTabs: tabs,
+      selectedNavIds: ['home', 'about', 'services', 'public-cards', 'my-info'],
+    })
+    const plan = buildTabPlan({
+      recommendedTabs: tabs,
+      selectedNavIds: ['home', 'about', 'services', 'public-cards', 'my-info'],
+      fields,
+    })
+    assert.equal(
+      plan.tabs.some((tab) => tab.tabId === 'public-cards' || tab.tabId === 'my-info'),
+      false
+    )
+    assert.ok(plan.tabs.some((tab) => tab.tabId === 'home'))
+  })
+
   it('asks for missing email then phone then date of birth at creation, and reuses existing card contacts', async () => {
     const { applyExistingCardToProfile, buildFieldGraph, nextActionableField } = await import('../fieldGraph.service')
     const seeded = applyExistingCardToProfile(profile({ email: null, phone: null, dateOfBirth: null }), {
