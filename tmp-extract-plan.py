@@ -1,58 +1,40 @@
 import json
 
 path = r"C:\Users\zakir\.cursor\projects\c-Users-zakir-Desktop-vbiz-me-administration\agent-transcripts\2427107d-ae61-4a7c-b19f-7fc6d7a2b6af\2427107d-ae61-4a7c-b19f-7fc6d7a2b6af.jsonl"
-needles = [
-    "Remaining work",
-    "13. Build",
-    "per-Corporate",
-    "Payment Link",
-    "IMPLEMENTATION PLAN",
-    "Gaps still",
+keys = [
+    "One-Time Signup Fee",
+    "GLOBAL PAC",
+    "$10",
+    "10 USD",
     "signup fee",
+    "Manage Access",
 ]
-
-found = 0
-chunks = []
+out = []
 with open(path, encoding="utf-8") as f:
     for i, line in enumerate(f, 1):
-        try:
-            obj = json.loads(line)
-        except Exception:
+        if i not in (3583, 3584, 3587):
             continue
-        role = obj.get("role")
+        obj = json.loads(line)
         content = obj.get("message", {}).get("content", [])
         texts = []
         for c in content:
-            if isinstance(c, dict) and c.get("type") == "text":
-                texts.append(c.get("text", ""))
-            elif isinstance(c, dict) and "text" in c:
-                texts.append(c.get("text", ""))
+            if isinstance(c, dict) and "text" in c:
+                texts.append(c["text"])
         text = "\n".join(texts)
-        if role == "user" and i in (3583, 3584) and "signup" in text.lower():
-            chunks.append(f"=== USER LINE {i} len {len(text)} ===\n")
-            for key in ["SIGNUP", "signup", "Payment Link", "Corporate", "IMPLEMENTATION"]:
-                idx = text.find(key)
-                if idx >= 0:
-                    chunks.append(f"--- user {key} at {idx} ---\n")
-                    chunks.append(text[idx : idx + 1800] + "\n\n")
-            continue
-        if role != "assistant":
-            continue
-        if not any(n in text for n in needles):
-            continue
-        if "IMPLEMENTATION PLAN" not in text and "Remaining work" not in text and "13. Build" not in text:
-            continue
-        chunks.append(f"=== LINE {i} len {len(text)} ===\n")
-        for key in needles:
-            idx = text.find(key)
-            if idx >= 0:
-                chunks.append(f"--- {key} at {idx} ---\n")
-                chunks.append(text[idx : idx + 2800] + "\n\n")
-        found += 1
-        if found >= 6:
-            break
-out = r"C:\Users\zakir\Desktop\vbiz-me-backend\tmp-extract-plan.out.txt"
-with open(out, "w", encoding="utf-8") as wf:
-    wf.write("".join(chunks))
-    wf.write(f"FOUND {found}\n")
-print("wrote", out, "FOUND", found)
+        out.append(f"===== {obj.get('role')} line {i} =====\n")
+        for key in keys:
+            idx = 0
+            n = 0
+            while n < 3:
+                found = text.find(key, idx)
+                if found < 0:
+                    break
+                start = max(0, found - 200)
+                out.append(f"\n--- {key} @{found} ---\n")
+                out.append(text[start : found + 1600] + "\n")
+                idx = found + len(key)
+                n += 1
+
+with open(r"C:\Users\zakir\Desktop\vbiz-me-backend\tmp-extract-plan.out.txt", "w", encoding="utf-8") as wf:
+    wf.write("".join(out))
+print("ok")
