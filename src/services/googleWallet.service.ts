@@ -54,10 +54,10 @@ function publicSiteBase(): string {
   return (config.FRONTEND_URL || config.SERVER_URL || 'https://app.vbizme.com').replace(/\/$/, '')
 }
 
-function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' | 'wide' = 'card'): string | undefined {
+function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' | 'logo' | 'icon' = 'hero'): string | undefined {
   const base = publicSiteBase()
   if (!/^https:\/\//i.test(base)) return undefined
-  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=metal1`
+  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=face4`
 }
 
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
@@ -123,6 +123,8 @@ function buildGenericObject(input: {
   name: string
   background: string
   heroUrl?: string
+  logoUrl?: string
+  cardUrl?: string
 }) {
   return {
     id: input.objectId,
@@ -131,12 +133,28 @@ function buildGenericObject(input: {
     genericType: 'GENERIC_TYPE_UNSPECIFIED',
     hexBackgroundColor: input.background,
     cardTitle: localized(ISSUER_NAME),
-    header: localized(ISSUER_NAME),
+    header: localized(input.name || ISSUER_NAME),
+    logo: input.logoUrl
+      ? {
+          sourceUri: { uri: input.logoUrl },
+          contentDescription: localized(input.name || ISSUER_NAME),
+        }
+      : undefined,
     heroImage: input.heroUrl
       ? {
           sourceUri: { uri: input.heroUrl },
           contentDescription: localized(input.name || ISSUER_NAME),
         }
+      : undefined,
+    imageModulesData: input.cardUrl
+      ? [
+          {
+            mainImage: {
+              sourceUri: { uri: input.cardUrl },
+              contentDescription: localized(input.name || ISSUER_NAME),
+            },
+          },
+        ]
       : undefined,
   }
 }
@@ -157,8 +175,8 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
   if (!profile) throw new AppError(404, 'Card not found')
 
   const slugForPass = profile.slug?.trim() || trimmed
-  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-metal1`)
-  const objectSuffix = sanitizeWalletSuffix(`metal1-${slugForPass || profile.id}`)
+  const classSuffix = sanitizeWalletSuffix(`${config.GOOGLE_WALLET.CLASS_SUFFIX || 'vbiz-card'}-face4`)
+  const objectSuffix = sanitizeWalletSuffix(`face4-${slugForPass || profile.id}`)
   const classId = `${issuerId}.${classSuffix}`
   const objectId = `${issuerId}.${objectSuffix}`
 
@@ -176,7 +194,9 @@ export async function createGoogleWalletSaveUrl(slug: string): Promise<{ wallet_
           classId,
           name: profile.name?.trim() || slugForPass,
           background: faceBackgroundFromTheme(profile.themeConfig),
-          heroUrl: walletArtUrl(slugForPass, 'card'),
+          heroUrl: walletArtUrl(slugForPass, 'hero'),
+          logoUrl: walletArtUrl(slugForPass, 'logo'),
+          cardUrl: walletArtUrl(slugForPass, 'card'),
         }),
       ],
     },

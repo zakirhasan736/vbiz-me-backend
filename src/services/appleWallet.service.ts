@@ -100,8 +100,11 @@ function publicCardUrl(slug: string): string {
   return `${publicSiteBase()}/v/${encodeURIComponent(slug)}`
 }
 
-function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' = 'strip'): string {
-  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=metal1`
+function walletArtUrl(
+  slug: string,
+  format: 'card' | 'hero' | 'strip' | 'strip2x' | 'strip1x' | 'icon' = 'strip'
+): string {
+  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=face4`
 }
 
 function hexToRgbCss(hex: string, fallback = 'rgb(11, 31, 58)'): string {
@@ -170,7 +173,7 @@ function primaryFromTheme(themeConfig: unknown): string {
 
 async function fetchPng(url: string): Promise<Buffer | undefined> {
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    const response = await fetch(url, { signal: AbortSignal.timeout(20000) })
     if (!response.ok) return undefined
     const buffer = Buffer.from(await response.arrayBuffer())
     if (buffer.length < 8 || buffer[0] !== 0x89 || buffer[1] !== 0x50) return undefined
@@ -223,17 +226,28 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
   const primary = primaryFromTheme(profile.themeConfig)
   const darkBg = hexLuminance(primary) <= 0.55
   const brandRgb = hexToRgb(primary)
-  const strip = (await fetchPng(walletArtUrl(slugForPass, 'strip'))) || createSolidPng(1125, 432, brandRgb)
-  const icon = createSolidPng(58, 58, brandRgb)
+  const [strip3x, strip2x, strip1x, icon3x] = await Promise.all([
+    fetchPng(walletArtUrl(slugForPass, 'strip')),
+    fetchPng(walletArtUrl(slugForPass, 'strip2x')),
+    fetchPng(walletArtUrl(slugForPass, 'strip1x')),
+    fetchPng(walletArtUrl(slugForPass, 'icon')),
+  ])
+  const stripHi = strip3x || createSolidPng(1125, 432, brandRgb)
+  const stripMid = strip2x || strip3x || createSolidPng(750, 288, brandRgb)
+  const stripLo = strip1x || strip2x || strip3x || createSolidPng(375, 144, brandRgb)
+  const iconHi = icon3x || createSolidPng(261, 261, brandRgb)
+  const iconMid = icon3x || createSolidPng(58, 58, brandRgb)
+  const iconLo = icon3x || createSolidPng(29, 29, brandRgb)
 
   try {
     const pass = new PKPass(
       {
-        'icon.png': icon,
-        'icon@2x.png': icon,
-        'strip.png': strip,
-        'strip@2x.png': strip,
-        'strip@3x.png': strip,
+        'icon.png': iconLo,
+        'icon@2x.png': iconMid,
+        'icon@3x.png': iconHi,
+        'strip.png': stripLo,
+        'strip@2x.png': stripMid,
+        'strip@3x.png': stripHi,
       },
       {
         wwdr: loadWwdrPem(),
@@ -245,7 +259,7 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
         formatVersion: 1,
         passTypeIdentifier: passTypeId,
         teamIdentifier: teamId,
-        serialNumber: `card-face2-${profile.id}`.slice(0, 64),
+        serialNumber: `card-face4-${profile.id}`.slice(0, 64),
         organizationName: config.APPLE_WALLET.ORGANIZATION,
         description: `${name} digital card`,
         logoText: (name || config.APPLE_WALLET.ORGANIZATION).slice(0, 40),

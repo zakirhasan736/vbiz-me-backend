@@ -728,7 +728,12 @@ export async function applyFieldAction(input: {
   }
 
   const fields = mergeFieldDecision(session.fieldGraph, next)
-  const updated = await save(session, { fieldGraph: fields, status: 'WAITING_FOR_USER_INPUT' })
+  let updated = await save(session, { fieldGraph: fields, status: 'WAITING_FOR_USER_INPUT' })
+  try {
+    if (updated.businessProfile) updated = await assembleAndReady(updated)
+  } catch {
+    /* keep the saved field even if assembly still needs other required values */
+  }
   return { ...publicJob(updated), field: next }
 }
 
