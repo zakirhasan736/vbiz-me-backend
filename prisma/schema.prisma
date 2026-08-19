@@ -1794,6 +1794,7 @@ model Subscription {
   endsAt                   DateTime?
   provider                 String?
   negotiatedMonthlyCents   Int?
+  negotiatedSignupFeeCents Int?
   signupFeeChargedAt       DateTime?
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt

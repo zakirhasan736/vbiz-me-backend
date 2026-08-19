@@ -6,6 +6,7 @@ import {
   resolveFirstInvoiceCents,
   resolveMonthlyCents,
   resolveRecurringInvoiceCents,
+  resolveSignupFeeCents,
 } from '../utils/billingQuote'
 
 describe('billing quotes', () => {
@@ -39,6 +40,33 @@ describe('billing quotes', () => {
     )
   })
 
+  it('uses negotiated Corporate signup fee when set, otherwise the catalog fee', () => {
+    assert.equal(
+      resolveSignupFeeCents({
+        ownerMode: 'corporate',
+        packageSignupFeeCents: 1000,
+        negotiatedSignupFeeCents: 2500,
+      }),
+      2500
+    )
+    assert.equal(
+      resolveSignupFeeCents({
+        ownerMode: 'corporate',
+        packageSignupFeeCents: 1000,
+        negotiatedSignupFeeCents: 0,
+      }),
+      0
+    )
+    assert.equal(
+      resolveSignupFeeCents({
+        ownerMode: 'single',
+        packageSignupFeeCents: 1000,
+        negotiatedSignupFeeCents: 2500,
+      }),
+      1000
+    )
+  })
+
   it('adds signup fee only on the first invoice', () => {
     assert.equal(resolveFirstInvoiceCents({ monthlyCents: 2900, signupFeeCents: 5000, signupFeeChargedAt: null }), 7900)
     assert.equal(
@@ -61,6 +89,16 @@ describe('billing quotes', () => {
       provider: 'stripe',
       stripeStatus: 'incomplete',
     })
+    assert.deepEqual(
+      adminAssignBilling({
+        monthlyPrice: 0,
+        signupFeeCents: 0,
+        ownerMode: 'corporate',
+        negotiatedMonthlyCents: 20000,
+        negotiatedSignupFeeCents: 1000,
+      }),
+      { provider: 'stripe', stripeStatus: 'incomplete' }
+    )
     assert.equal(packageRequiresStripe({ monthlyPrice: 2900, signupFeeCents: 0 }), true)
     assert.equal(packageRequiresStripe({ monthlyPrice: 0, signupFeeCents: 0 }), false)
   })

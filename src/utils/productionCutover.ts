@@ -22,6 +22,7 @@ export const PACKAGE_LAUNCH_MIGRATIONS = [
   '20260820020000_signup_fee_and_negotiated_monthly',
   '20260820030000_stripe_events',
   '20260820040000_package_owner_mode',
+  '20260820050000_negotiated_signup_fee',
 ] as const
 
 export const PRODUCTION_SMOKE_CHECKS = [

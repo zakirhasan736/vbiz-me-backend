@@ -23,6 +23,7 @@ describe('production cutover', () => {
   it('lists the package-launch migrations and smoke checks', () => {
     assert.ok(PACKAGE_LAUNCH_MIGRATIONS.includes('20260820030000_stripe_events'))
     assert.ok(PACKAGE_LAUNCH_MIGRATIONS.includes('20260820040000_package_owner_mode'))
+    assert.ok(PACKAGE_LAUNCH_MIGRATIONS.includes('20260820050000_negotiated_signup_fee'))
     assert.ok(PRODUCTION_SMOKE_CHECKS.some((item) => item.includes('email OTP')))
     assert.ok(PRODUCTION_SMOKE_CHECKS.some((item) => item.includes('card cap')))
     assert.ok(PRODUCTION_SMOKE_CHECKS.some((item) => item.includes('FEATURE_NOT_INCLUDED')))

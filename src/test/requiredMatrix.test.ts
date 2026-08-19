@@ -23,6 +23,7 @@ import {
   resolveFirstInvoiceCents,
   resolveMonthlyCents,
   resolveRecurringInvoiceCents,
+  resolveSignupFeeCents,
 } from '../utils/billingQuote'
 import { sanitizeCorporateFeatureOverrides } from '../utils/corporateFeatureOverrides'
 import { buildEffectiveEntitlements, isCatalogFeatureAllowed } from '../utils/effectiveEntitlements'
@@ -432,6 +433,18 @@ describe('required matrix: STRIPE', () => {
 
   it('Corporate first payment includes signup fee + first month', () => {
     assert.equal(resolveFirstInvoiceCents({ monthlyCents: 7500, signupFeeCents: 2000, signupFeeChargedAt: null }), 9500)
+    assert.equal(
+      resolveFirstInvoiceCents({
+        monthlyCents: 20000,
+        signupFeeCents: resolveSignupFeeCents({
+          ownerMode: 'corporate',
+          packageSignupFeeCents: 1000,
+          negotiatedSignupFeeCents: 1000,
+        }),
+        signupFeeChargedAt: null,
+      }),
+      21000
+    )
   })
 
   it('Following Corporate invoices contain recurring amount only', () => {

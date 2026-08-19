@@ -9,12 +9,36 @@ import {
 } from '../constants/packageOwnerMode'
 import { isStaffRole, toApiRole, toPrismaRole } from '../constants/userRole'
 import AppError from '../error/AppError'
-import { resolveFirstInvoiceCents, resolveMonthlyCents } from '../utils/billingQuote'
+import { resolveFirstInvoiceCents, resolveMonthlyCents, resolveSignupFeeCents } from '../utils/billingQuote'
 import logger from '../utils/logger'
 import { isPaidAccess } from '../utils/paidAccess'
 import { prisma } from '../utils/prisma'
 import { buildCheckoutLineItems, checkoutModeForItems, toStripeSubscriptionLineItems } from '../utils/stripeCheckout'
 import { decideStripeEvent, stripeOwnerRefs } from '../utils/stripeWebhook'
+
+function quoteAgreement(
+  pkg: {
+    monthlyPrice: number
+    signupFeeCents: number
+    slug?: string | null
+    name?: string | null
+    ownerMode?: string | null
+  },
+  existing?: { negotiatedMonthlyCents?: number | null; negotiatedSignupFeeCents?: number | null } | null
+) {
+  const ownerMode = resolveOwnerMode(pkg)
+  const monthlyCents = resolveMonthlyCents({
+    ownerMode,
+    packageMonthlyCents: pkg.monthlyPrice,
+    negotiatedMonthlyCents: ownerMode === 'corporate' ? existing?.negotiatedMonthlyCents : null,
+  })
+  const signupFeeCents = resolveSignupFeeCents({
+    ownerMode,
+    packageSignupFeeCents: pkg.signupFeeCents,
+    negotiatedSignupFeeCents: ownerMode === 'corporate' ? existing?.negotiatedSignupFeeCents : null,
+  })
+  return { ownerMode, monthlyCents, signupFeeCents }
+}
 
 function getStripe(): Stripe {
   const key = (config.STRIPE.SECRET_KEY || '').trim()
@@ -76,6 +100,7 @@ const assignFreePackage = async (userId: string, packageId: string) => {
         stripeStatus: 'active',
         endsAt: null,
         negotiatedMonthlyCents: ownerMode === 'corporate' ? existing.negotiatedMonthlyCents : null,
+        negotiatedSignupFeeCents: ownerMode === 'corporate' ? existing.negotiatedSignupFeeCents : null,
         ...(quantity != null ? { quantity } : {}),
       },
     })
@@ -114,17 +139,12 @@ const createCheckoutSession = async (
 
   const pkg = await loadActivePackage(packageId)
   const existing = await latestSubscription(userId)
-  const ownerMode = resolveOwnerMode(pkg)
-  const monthlyCents = resolveMonthlyCents({
-    ownerMode,
-    packageMonthlyCents: pkg.monthlyPrice,
-    negotiatedMonthlyCents: ownerMode === 'corporate' ? existing?.negotiatedMonthlyCents : null,
-  })
+  const { monthlyCents, signupFeeCents } = quoteAgreement(pkg, existing)
   const includeSignup = !existing?.signupFeeChargedAt
   const items = buildCheckoutLineItems({
     productName: pkg.name,
     monthlyCents,
-    signupFeeCents: pkg.signupFeeCents,
+    signupFeeCents,
     includeSignup,
   })
   const mode = checkoutModeForItems(items)
@@ -152,7 +172,7 @@ const createCheckoutSession = async (
 
   const firstInvoiceCents = resolveFirstInvoiceCents({
     monthlyCents,
-    signupFeeCents: pkg.signupFeeCents,
+    signupFeeCents,
     signupFeeChargedAt: existing?.signupFeeChargedAt,
   })
 
@@ -250,6 +270,7 @@ async function activatePaidAccess(object: Record<string, unknown>, markSignupCha
 
   const ownerMode = resolveOwnerMode(pkg)
   const existing = (await findSubscriptionFromEvent(object)) || (await latestSubscription(userId))
+  const { monthlyCents, signupFeeCents } = quoteAgreement(pkg, existing)
   const stripeSubId =
     typeof object.subscription === 'string'
       ? object.subscription
@@ -267,12 +288,8 @@ async function activatePaidAccess(object: Record<string, unknown>, markSignupCha
       : typeof object.amount_paid === 'number'
         ? object.amount_paid
         : resolveFirstInvoiceCents({
-            monthlyCents: resolveMonthlyCents({
-              ownerMode,
-              packageMonthlyCents: pkg.monthlyPrice,
-              negotiatedMonthlyCents: ownerMode === 'corporate' ? existing?.negotiatedMonthlyCents : null,
-            }),
-            signupFeeCents: markSignupCharged ? pkg.signupFeeCents : 0,
+            monthlyCents,
+            signupFeeCents: markSignupCharged ? signupFeeCents : 0,
             signupFeeChargedAt: markSignupCharged ? null : existing?.signupFeeChargedAt,
           })
 
@@ -285,8 +302,9 @@ async function activatePaidAccess(object: Record<string, unknown>, markSignupCha
     stripeId: stripeSubId,
     endsAt: null,
     negotiatedMonthlyCents: ownerMode === 'corporate' ? (existing?.negotiatedMonthlyCents ?? null) : null,
+    negotiatedSignupFeeCents: ownerMode === 'corporate' ? (existing?.negotiatedSignupFeeCents ?? null) : null,
     ...(quantity != null ? { quantity } : {}),
-    ...(markSignupCharged || pkg.signupFeeCents <= 0 ? { signupFeeChargedAt: new Date() } : {}),
+    ...(markSignupCharged || signupFeeCents <= 0 ? { signupFeeChargedAt: new Date() } : {}),
   }
 
   const sub = existing

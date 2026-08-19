@@ -96,7 +96,11 @@ const loadAssignablePackage = async (packageId: string) => {
 const assignPackageSubscription = async (
   userId: string,
   packageId: string,
-  options?: { cardLimit?: number | null; negotiatedMonthlyCents?: number | null }
+  options?: {
+    cardLimit?: number | null
+    negotiatedMonthlyCents?: number | null
+    negotiatedSignupFeeCents?: number | null
+  }
 ) => {
   const pkg = await loadAssignablePackage(packageId)
   const ownerMode = resolveOwnerMode(pkg)
@@ -119,8 +123,18 @@ const assignPackageSubscription = async (
     ownerMode === 'corporate' && options?.negotiatedMonthlyCents != null
       ? Math.max(0, Math.round(Number(options.negotiatedMonthlyCents) || 0))
       : null
+  const negotiatedSignupFeeCents =
+    ownerMode === 'corporate' && options?.negotiatedSignupFeeCents != null
+      ? Math.max(0, Math.round(Number(options.negotiatedSignupFeeCents) || 0))
+      : null
 
-  const billing = adminAssignBilling(pkg)
+  const billing = adminAssignBilling({
+    monthlyPrice: pkg.monthlyPrice,
+    signupFeeCents: pkg.signupFeeCents,
+    ownerMode,
+    negotiatedMonthlyCents,
+    negotiatedSignupFeeCents,
+  })
 
   return prisma.subscription.create({
     data: {
@@ -132,6 +146,7 @@ const assignPackageSubscription = async (
       endsAt: null,
       ...(quantity != null ? { quantity } : {}),
       ...(negotiatedMonthlyCents != null ? { negotiatedMonthlyCents } : {}),
+      ...(negotiatedSignupFeeCents != null ? { negotiatedSignupFeeCents } : {}),
     },
     include: { package: { include: { features: true } } },
   })

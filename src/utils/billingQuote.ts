@@ -12,6 +12,18 @@ export function resolveMonthlyCents(input: {
   return catalog
 }
 
+export function resolveSignupFeeCents(input: {
+  ownerMode: OwnerMode | null | undefined
+  packageSignupFeeCents?: number | null
+  negotiatedSignupFeeCents?: number | null
+}): number {
+  const catalog = Math.max(0, Math.round(Number(input.packageSignupFeeCents) || 0))
+  if (input.ownerMode === 'corporate' && input.negotiatedSignupFeeCents != null) {
+    return Math.max(0, Math.round(Number(input.negotiatedSignupFeeCents) || 0))
+  }
+  return catalog
+}
+
 export function resolveRecurringInvoiceCents(monthlyCents: number): number {
   return Math.max(0, Math.round(Number(monthlyCents) || 0))
 }
@@ -42,11 +54,27 @@ export function packageRequiresStripe(
   )
 }
 
-export function adminAssignBilling(pkg: { monthlyPrice?: number | null; signupFeeCents?: number | null }): {
+export function adminAssignBilling(pkg: {
+  monthlyPrice?: number | null
+  signupFeeCents?: number | null
+  ownerMode?: OwnerMode | null
+  negotiatedMonthlyCents?: number | null
+  negotiatedSignupFeeCents?: number | null
+}): {
   provider: 'stripe' | 'admin'
   stripeStatus: 'incomplete' | 'active'
 } {
-  if (packageRequiresStripe(pkg)) {
+  const monthlyCents = resolveMonthlyCents({
+    ownerMode: pkg.ownerMode,
+    packageMonthlyCents: pkg.monthlyPrice,
+    negotiatedMonthlyCents: pkg.negotiatedMonthlyCents,
+  })
+  const signupFeeCents = resolveSignupFeeCents({
+    ownerMode: pkg.ownerMode,
+    packageSignupFeeCents: pkg.signupFeeCents,
+    negotiatedSignupFeeCents: pkg.negotiatedSignupFeeCents,
+  })
+  if (monthlyCents > 0 || signupFeeCents > 0) {
     return { provider: 'stripe', stripeStatus: 'incomplete' }
   }
   return { provider: 'admin', stripeStatus: 'active' }

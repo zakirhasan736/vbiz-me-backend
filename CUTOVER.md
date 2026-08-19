@@ -59,7 +59,7 @@ Run migrate/backfill only on a host whose `DATABASE_URL` authenticates. Do not d
 
 1. Deploy **backend** with the new code.
 2. `yarn migrate:deploy`  
-   Must include at least: `auth_challenge`, `corporate_feature_override`, `signup_fee_and_negotiated_monthly`, `stripe_events`, `package_owner_mode`.
+   Must include at least: `auth_challenge`, `corporate_feature_override`, `signup_fee_and_negotiated_monthly`, `stripe_events`, `package_owner_mode`, `negotiated_signup_fee`.
 3. Backfill report only: `yarn backfill:owner-packages`  
    Review Corporate owners on Free (listed, not auto-demoted). Existing cards are never deleted.
 4. If the report is accepted: `yarn backfill:owner-packages -- --apply`

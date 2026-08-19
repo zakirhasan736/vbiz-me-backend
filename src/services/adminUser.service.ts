@@ -5,7 +5,12 @@ import { toApiRole, toPrismaRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
-import { resolveFirstInvoiceCents, resolveMonthlyCents, resolveRecurringInvoiceCents } from '../utils/billingQuote'
+import {
+  resolveFirstInvoiceCents,
+  resolveMonthlyCents,
+  resolveRecurringInvoiceCents,
+  resolveSignupFeeCents,
+} from '../utils/billingQuote'
 import {
   ensureStatusByName,
   lifecycleStatusFlags,
@@ -30,6 +35,7 @@ import {
   replaceCorporateFeatureOverrides,
   setCorporateCardLimit,
   setNegotiatedMonthlyCents,
+  setNegotiatedSignupFeeCents,
 } from './entitlement.service'
 import stripeService from './stripe.service'
 import subscriptionService from './subscription.service'
@@ -47,6 +53,7 @@ export type AdminUserRow = {
   packageMonthlyCents: number | null
   signupFeeCents: number | null
   negotiatedMonthlyCents: number | null
+  negotiatedSignupFeeCents: number | null
   monthlyCents: number | null
   firstInvoiceCents: number | null
   recurringInvoiceCents: number | null
@@ -101,6 +108,7 @@ function activeSubscriptionSelect() {
       provider: true,
       stripeStatus: true,
       negotiatedMonthlyCents: true,
+      negotiatedSignupFeeCents: true,
       signupFeeChargedAt: true,
       package: {
         select: {
@@ -169,6 +177,7 @@ function mapRow(user: AdminUserRecord): AdminUserRow {
   const packageMonthlyCents = subscription?.package?.monthlyPrice ?? null
   const signupFeeCents = subscription?.package?.signupFeeCents ?? null
   const negotiatedMonthlyCents = subscription?.negotiatedMonthlyCents ?? null
+  const negotiatedSignupFeeCents = subscription?.negotiatedSignupFeeCents ?? null
   const monthlyCents = subscription
     ? resolveMonthlyCents({
         ownerMode: entitlements.ownerMode,
@@ -176,12 +185,19 @@ function mapRow(user: AdminUserRecord): AdminUserRow {
         negotiatedMonthlyCents,
       })
     : null
+  const effectiveSignupFeeCents = subscription
+    ? resolveSignupFeeCents({
+        ownerMode: entitlements.ownerMode,
+        packageSignupFeeCents: signupFeeCents,
+        negotiatedSignupFeeCents,
+      })
+    : null
   const firstInvoiceCents =
     monthlyCents == null
       ? null
       : resolveFirstInvoiceCents({
           monthlyCents,
-          signupFeeCents,
+          signupFeeCents: effectiveSignupFeeCents,
           signupFeeChargedAt: subscription?.signupFeeChargedAt ?? null,
         })
   const recurringInvoiceCents = monthlyCents == null ? null : resolveRecurringInvoiceCents(monthlyCents)
@@ -202,6 +218,7 @@ function mapRow(user: AdminUserRecord): AdminUserRow {
     packageMonthlyCents,
     signupFeeCents,
     negotiatedMonthlyCents,
+    negotiatedSignupFeeCents,
     monthlyCents,
     firstInvoiceCents,
     recurringInvoiceCents,
@@ -507,6 +524,7 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
   await subscriptionService.assignPackageSubscription(user.id, pkg.id, {
     cardLimit: body.cardLimit,
     negotiatedMonthlyCents: ownerMode === 'corporate' ? body.negotiatedMonthlyCents : undefined,
+    negotiatedSignupFeeCents: ownerMode === 'corporate' ? body.negotiatedSignupFeeCents : undefined,
   })
 
   if (ownerMode === 'corporate' && body.featureOverrides) {
@@ -540,6 +558,7 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
       packageId: pkg.id,
       packageSlug: pkg.slug,
       negotiatedMonthlyCents: ownerMode === 'corporate' ? (body.negotiatedMonthlyCents ?? null) : null,
+      negotiatedSignupFeeCents: ownerMode === 'corporate' ? (body.negotiatedSignupFeeCents ?? null) : null,
     },
   })
 
@@ -602,6 +621,9 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
   if (body.negotiatedMonthlyCents !== undefined) {
     await setNegotiatedMonthlyCents(user.id, toApiRole(user.role), body.negotiatedMonthlyCents)
   }
+  if (body.negotiatedSignupFeeCents !== undefined) {
+    await setNegotiatedSignupFeeCents(user.id, toApiRole(user.role), body.negotiatedSignupFeeCents)
+  }
   if (body.featureOverrides !== undefined) {
     await replaceCorporateFeatureOverrides(user.id, toApiRole(user.role), body.featureOverrides)
   }
@@ -619,6 +641,7 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
       passwordReset: Boolean(body.password),
       cardLimit: body.cardLimit,
       negotiatedMonthlyCents: body.negotiatedMonthlyCents,
+      negotiatedSignupFeeCents: body.negotiatedSignupFeeCents,
       featureOverrideCount: body.featureOverrides?.length,
     },
   })
@@ -626,6 +649,7 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
   if (
     body.cardLimit !== undefined ||
     body.negotiatedMonthlyCents !== undefined ||
+    body.negotiatedSignupFeeCents !== undefined ||
     body.featureOverrides !== undefined
   ) {
     const refreshed = await prisma.user.findFirst({

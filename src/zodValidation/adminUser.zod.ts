@@ -34,6 +34,7 @@ const createAdminUser = z.object({
   companyName: z.string().trim().max(200).optional().nullable(),
   cardLimit: z.number().int().min(0).max(100000).optional(),
   negotiatedMonthlyCents: z.number().int().min(0).nullable().optional(),
+  negotiatedSignupFeeCents: z.number().int().min(0).nullable().optional(),
   featureOverrides: z
     .array(
       z.object({
@@ -54,6 +55,7 @@ const updateAdminUser = z
     password: strongPassword.optional(),
     cardLimit: z.number().int().min(0).max(100000).optional(),
     negotiatedMonthlyCents: z.number().int().min(0).nullable().optional(),
+    negotiatedSignupFeeCents: z.number().int().min(0).nullable().optional(),
     featureOverrides: z
       .array(
         z.object({
@@ -73,6 +75,7 @@ const updateAdminUser = z
       data.password !== undefined ||
       data.cardLimit !== undefined ||
       data.negotiatedMonthlyCents !== undefined ||
+      data.negotiatedSignupFeeCents !== undefined ||
       data.featureOverrides !== undefined,
     {
       message: 'At least one field to update is required',

@@ -266,6 +266,35 @@ export async function setNegotiatedMonthlyCents(
   })
 }
 
+export async function setNegotiatedSignupFeeCents(
+  userId: string,
+  role: string | null | undefined,
+  negotiatedSignupFeeCents: number | null
+): Promise<void> {
+  if (
+    negotiatedSignupFeeCents != null &&
+    (!Number.isInteger(negotiatedSignupFeeCents) || negotiatedSignupFeeCents < 0)
+  ) {
+    throw new AppError(400, 'Negotiated signup fee must be a whole number of cents, 0 or more.')
+  }
+  if (isStaffRole(role)) {
+    throw new AppError(400, 'Staff accounts do not use a negotiated signup fee.')
+  }
+
+  const entitlements = await getEffectiveEntitlements(userId, role)
+  if (entitlements.ownerMode !== 'corporate') {
+    throw new AppError(400, 'Negotiated signup fees apply only to Corporate package accounts.')
+  }
+  if (!entitlements.subscriptionId) {
+    throw new AppError(400, 'This account has no active subscription to attach a negotiated signup fee.')
+  }
+
+  await prisma.subscription.update({
+    where: { id: entitlements.subscriptionId },
+    data: { negotiatedSignupFeeCents },
+  })
+}
+
 export { sanitizeCorporateFeatureOverrides } from '../utils/corporateFeatureOverrides'
 export type { CorporateFeatureOverrideInput } from '../utils/corporateFeatureOverrides'
 

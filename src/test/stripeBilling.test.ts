@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { resolveFirstInvoiceCents, resolveMonthlyCents, resolveRecurringInvoiceCents } from '../utils/billingQuote'
+import {
+  resolveFirstInvoiceCents,
+  resolveMonthlyCents,
+  resolveRecurringInvoiceCents,
+  resolveSignupFeeCents,
+} from '../utils/billingQuote'
 import { isPaidAccess } from '../utils/paidAccess'
 import { buildCheckoutLineItems, checkoutModeForItems } from '../utils/stripeCheckout'
 import { decideStripeEvent, stripeOwnerRefs } from '../utils/stripeWebhook'
@@ -48,6 +53,18 @@ describe('Stripe checkout quotes', () => {
     assert.equal(
       resolveFirstInvoiceCents({ monthlyCents: monthly, signupFeeCents: 2000, signupFeeChargedAt: null }),
       9500
+    )
+    assert.equal(
+      resolveFirstInvoiceCents({
+        monthlyCents: monthly,
+        signupFeeCents: resolveSignupFeeCents({
+          ownerMode: 'corporate',
+          packageSignupFeeCents: 2000,
+          negotiatedSignupFeeCents: 1000,
+        }),
+        signupFeeChargedAt: null,
+      }),
+      8500
     )
     assert.equal(
       resolveFirstInvoiceCents({
