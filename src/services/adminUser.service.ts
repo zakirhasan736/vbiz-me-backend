@@ -30,7 +30,7 @@ import type {
   UpdateAdminUserBody,
 } from '../zodValidation/adminUser.zod'
 import announcementService from './announcement.service'
-import { inviteOwnerPasswordSetup } from './auth.service'
+import { inviteOwnerEmailVerification, inviteOwnerPasswordSetup } from './auth.service'
 import {
   replaceCorporateFeatureOverrides,
   setCorporateCardLimit,
@@ -504,12 +504,13 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
   if (ownerMode === 'single' && body.featureOverrides?.length) {
     throw new AppError(400, 'Feature overrides apply only to Corporate package accounts.')
   }
+  const hashedPassword = body.password ? await authUtils.hashPassword(body.password) : null
 
   const user = await prisma.user.create({
     data: {
       name: body.name.trim(),
       email,
-      password: null,
+      password: hashedPassword,
       role: toPrismaRole(role),
       provider: AuthProvider.LOCAL,
       isVerified: false,
@@ -531,7 +532,11 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
     await replaceCorporateFeatureOverrides(user.id, role, body.featureOverrides)
   }
 
-  await inviteOwnerPasswordSetup({ id: user.id, email: user.email, provider: 'LOCAL' })
+  if (hashedPassword) {
+    await inviteOwnerEmailVerification(user.email)
+  } else {
+    await inviteOwnerPasswordSetup({ id: user.id, email: user.email, provider: 'LOCAL' })
+  }
 
   let paymentLinkUrl: string | null = null
   try {

@@ -26,25 +26,30 @@ const listAdminUsersQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(8),
 })
 
-const createAdminUser = z.object({
-  name: z.string().trim().min(1, 'Name is required'),
-  email: z.string().trim().email('Valid email is required'),
-  password: strongPassword.optional(),
-  packageId: z.string().trim().min(1, 'Package is required'),
-  companyName: z.string().trim().max(200).optional().nullable(),
-  cardLimit: z.number().int().min(0).max(100000).optional(),
-  negotiatedMonthlyCents: z.number().int().min(0).nullable().optional(),
-  negotiatedSignupFeeCents: z.number().int().min(0).nullable().optional(),
-  featureOverrides: z
-    .array(
-      z.object({
-        featureKey: z.string().trim().min(1).max(80),
-        featureValue: z.string().trim().max(80).nullable(),
-      })
-    )
-    .max(100)
-    .optional(),
-})
+const createAdminUser = z
+  .object({
+    name: z.string().trim().min(1, 'Name is required'),
+    email: z.string().trim().email('Valid email is required'),
+    password: strongPassword.optional(),
+    packageId: z.string().trim().min(1, 'Package is required'),
+    companyName: z.string().trim().max(200).optional().nullable(),
+    cardLimit: z.number().int().min(0).max(100000).optional(),
+    negotiatedMonthlyCents: z.number().int().min(0).nullable().optional(),
+    negotiatedSignupFeeCents: z.number().int().min(0).nullable().optional(),
+    featureOverrides: z
+      .array(
+        z.object({
+          featureKey: z.string().trim().min(1).max(80),
+          featureValue: z.string().trim().max(80).nullable(),
+        })
+      )
+      .max(100)
+      .optional(),
+  })
+  .refine((data) => !data.password || data.password.trim().toLowerCase() !== data.email.trim().toLowerCase(), {
+    message: PASSWORD_NOT_SAME_AS_EMAIL,
+    path: ['password'],
+  })
 
 const updateAdminUser = z
   .object({

@@ -21,6 +21,26 @@ export function capGeneratedList(value: unknown, max = MAX_GENERATED_ITEMS): unk
   return value.slice(0, max)
 }
 
+export function capGeneratedSkills(value: unknown, max = MAX_GENERATED_ITEMS): unknown {
+  if (!Array.isArray(value)) return value
+  let remaining = max
+  const groups: Array<Record<string, unknown>> = []
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || remaining <= 0) continue
+    const group = raw as Record<string, unknown>
+    const skills = Array.isArray(group.skills)
+      ? group.skills
+          .map((skill) => String(skill || '').trim())
+          .filter(Boolean)
+          .slice(0, remaining)
+      : []
+    if (!skills.length) continue
+    groups.push({ ...group, skills })
+    remaining -= skills.length
+  }
+  return groups
+}
+
 export function extractSectionValue(section: FillSectionId, payload: unknown): unknown {
   if (!payload || typeof payload !== 'object') return payload
   const rec = payload as Record<string, unknown>
@@ -49,7 +69,12 @@ export function applySectionPayloadToFields(
 ): AiCardField[] {
   const value = extractSectionValue(section, payload)
   if (!present(value)) return fields
-  const capped = section === 'faqs' || section === 'blogs' ? capGeneratedList(value) : value
+  const capped =
+    section === 'faqs' || section === 'blogs'
+      ? capGeneratedList(value)
+      : section === 'skills'
+        ? capGeneratedSkills(value)
+        : value
   const matchKeys =
     section === 'personal'
       ? ['about']
@@ -147,7 +172,12 @@ export async function autoFillSelectedFields(input: {
         userId: input.userId,
         sessionId: input.sessionId,
       })
-      const value = field.special === 'faq' || field.special === 'blog' ? capGeneratedList(generated) : generated
+      const value =
+        field.special === 'faq' || field.special === 'blog'
+          ? capGeneratedList(generated)
+          : field.fieldKey === 'skills'
+            ? capGeneratedSkills(generated)
+            : generated
       if (!present(value)) continue
       fields = mergeFieldDecision(fields, {
         id: field.id,

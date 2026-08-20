@@ -39,7 +39,7 @@ import {
 import { runSolArchitect } from './solArchitect.service'
 import { emptyNormalizedSources, normalizeSources, seedProfileFromCrawledPages } from './sourceNormalizer.service'
 import { normalizeWebsiteUrl } from './sourceUrl'
-import { autoFillSelectedFields, capGeneratedList } from './tabBuild.service'
+import { autoFillSelectedFields, capGeneratedList, capGeneratedSkills } from './tabBuild.service'
 import { sanitizeBlueprint } from './validation.service'
 
 const running = new Set<string>()
@@ -613,27 +613,34 @@ export async function setSelectedTabs(jobId: string, selectedNavIds: string[], u
   return publicJob(updated)
 }
 
-export async function generatePermissionedContent(input: { jobId: string; kind: 'faq' | 'blog'; userId?: string }) {
+export async function generatePermissionedContent(input: {
+  jobId: string
+  kind: 'faq' | 'blog' | 'skills'
+  userId?: string
+}) {
   const session = await loadCardSession(input.jobId)
   if (!session) throw new AppError(404, 'Card job not found.')
   assertJobOwner(session, input.userId)
   if (!session.businessProfile) throw new AppError(409, 'The card plan is not ready yet.')
-  const section = input.kind === 'faq' ? 'faqs' : 'blogs'
-  const payload = await generateSectionFromProfile({
+  const section = input.kind === 'faq' ? 'faqs' : input.kind === 'blog' ? 'blogs' : 'skills'
+  const rawPayload = await generateSectionFromProfile({
     section,
     profile: session.businessProfile,
     instruction:
       input.kind === 'faq'
         ? 'Create up to 5 helpful FAQs from verified services and business facts. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas.'
-        : 'Draft up to 5 evergreen educational articles. Do not invent news events, dates, awards, or statistics.',
+        : input.kind === 'blog'
+          ? 'Draft up to 5 evergreen educational articles. Do not invent news events, dates, awards, or statistics.'
+          : 'Create at most 5 concise skills from verified services, expertise, and experience. Group them using the editor shape { type, skills }.',
     userId: input.userId,
     sessionId: session.id,
   })
-  const fieldKey = input.kind === 'faq' ? 'faqs' : 'blogs'
+  const fieldKey = section
   const field = session.fieldGraph.find((row) => row.fieldKey === fieldKey)
-  const value = capGeneratedList(
-    section === 'faqs' ? (payload as { faqs?: unknown[] }).faqs : (payload as { blogs?: unknown[] }).blogs
-  )
+  const normalizedPayload = rawPayload && typeof rawPayload === 'object' ? (rawPayload as Record<string, unknown>) : {}
+  const rawValue = normalizedPayload[section]
+  const value = section === 'skills' ? capGeneratedSkills(rawValue) : capGeneratedList(rawValue)
+  const payload = { ...normalizedPayload, [section]: value }
   let fields = session.fieldGraph
   if (field) {
     fields = mergeFieldDecision(fields, {
@@ -646,7 +653,17 @@ export async function generatePermissionedContent(input: { jobId: string; kind: 
   }
   const updated = await save(session, { fieldGraph: fields, status: 'WAITING_FOR_USER_INPUT' })
   const assembled = await assembleAndReady(updated)
-  return { ...publicJob(assembled), payload, generatedCount: Array.isArray(value) ? value.length : 0 }
+  const generatedCount =
+    section === 'skills' && Array.isArray(value)
+      ? value.reduce((count, group) => {
+          if (!group || typeof group !== 'object') return count
+          const skills = (group as { skills?: unknown }).skills
+          return count + (Array.isArray(skills) ? skills.length : 0)
+        }, 0)
+      : Array.isArray(value)
+        ? value.length
+        : 0
+  return { ...publicJob(assembled), payload, generatedCount }
 }
 
 export async function applyFieldAction(input: {

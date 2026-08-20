@@ -266,7 +266,8 @@ router.post(
   catchAsyncError(async (req, res) => {
     await requireAutoCardBuilder(req)
     rateLimitOrThrow(req, 'fill', 20)
-    const kind = String(req.body?.kind || '') === 'blog' ? 'blog' : 'faq'
+    const requestedKind = String(req.body?.kind || '')
+    const kind = requestedKind === 'blog' ? 'blog' : requestedKind === 'skills' ? 'skills' : 'faq'
     const data = await cardJobService.generatePermissionedContent({
       jobId: String(req.params.jobId),
       kind,

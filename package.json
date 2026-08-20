@@ -37,7 +37,7 @@
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/services/ai/__tests__/cardBuilder.test.ts src/services/ai/__tests__/cardJobStart.test.ts src/test/duplicateCard.test.ts src/test/profileAssistant.test.ts src/test/authChallenge.test.ts src/test/packageOwnerMode.test.ts src/test/entitlement.test.ts src/test/corporateFeatureOverrides.test.ts src/test/billingQuote.test.ts src/test/packageLimits.test.ts src/test/packageBackfill.test.ts src/test/stripeBilling.test.ts src/test/requiredMatrix.test.ts src/test/productionCutover.test.ts src/test/publicSignup.test.ts src/test/mediaFeatureGates.test.ts src/test/profilePersistence.test.ts",
+    "test": "tsx --test src/services/ai/__tests__/cardBuilder.test.ts src/services/ai/__tests__/cardJobStart.test.ts src/test/duplicateCard.test.ts src/test/profileAssistant.test.ts src/test/authChallenge.test.ts src/test/packageOwnerMode.test.ts src/test/entitlement.test.ts src/test/corporateFeatureOverrides.test.ts src/test/adminUserProvisioning.test.ts src/test/billingQuote.test.ts src/test/packageLimits.test.ts src/test/packageBackfill.test.ts src/test/stripeBilling.test.ts src/test/requiredMatrix.test.ts src/test/productionCutover.test.ts src/test/publicSignup.test.ts src/test/mediaFeatureGates.test.ts src/test/profilePersistence.test.ts",
     "test:turnstile": "tsx --test src/test/turnstile.test.ts",
     "test:duplicate": "tsx --test src/test/duplicateCard.test.ts",
     "test:api": "tsx --test src/test/api.contract.test.ts"

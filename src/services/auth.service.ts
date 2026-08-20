@@ -718,6 +718,14 @@ export const inviteOwnerPasswordSetup = async (user: { id: string; email: string
   }
 }
 
+export const inviteOwnerEmailVerification = async (email: string) => {
+  try {
+    await queueOrSendVerificationEmail(email, { awaitSend: false })
+  } catch (error) {
+    logger.error('Failed to send owner email verification invite', error)
+  }
+}
+
 const sendPasswordSetupEmail = async (user: { id: string; email: string; provider: string }) => {
   const existingToken = await prisma.passwordSetupToken.findFirst({
     where: {
@@ -852,6 +860,7 @@ const authService = {
   verifyPasswordSetup,
   resendPasswordSetupEmail,
   inviteOwnerPasswordSetup,
+  inviteOwnerEmailVerification,
 }
 
 export default authService
