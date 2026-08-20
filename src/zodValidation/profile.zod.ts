@@ -59,6 +59,7 @@ const createTeamNoticeBody = z.object({
 const createProfileBody = z
   .object({
     ownerUserId: z.string().trim().min(1).optional(),
+    creationKey: z.string().trim().min(8).max(128).optional(),
   })
   .passthrough()
 

@@ -1057,6 +1057,7 @@ const create = async (
     youtube?: string
     linkedin?: string
     ownerUserId?: string
+    creationKey?: string
     settings?: Record<string, string>
     profileSettings?: {
       profileTemplate?: string
@@ -1075,6 +1076,7 @@ const create = async (
 
   const {
     ownerUserId: requestedOwnerUserId,
+    creationKey: creationKeyRaw,
     settings,
     profileSettings,
     city: _city,
@@ -1083,7 +1085,20 @@ const create = async (
     skipCreateContactRules: skipCreateContactRulesRaw,
     ...raw
   } = input
+  const creationKey = typeof creationKeyRaw === 'string' ? creationKeyRaw.trim() : ''
   const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
+
+  if (creationKey) {
+    const existing = await prisma.profile.findFirst({
+      where: { creationKey, createdById: userId },
+      select: { id: true },
+    })
+    if (existing) {
+      const detail = await loadProfileDetail({ id: existing.id })
+      if (!detail) throw new AppError(404, 'Profile not found')
+      return detail
+    }
+  }
 
   let profileOwnerId = userId
   let profileOwnerEmail = actor.email
@@ -1160,47 +1175,62 @@ const create = async (
     })
   }
   const initialStatus = await ensureStatusByName(initialLifecycle.statusName)
-  const profile = await prisma.profile.create({
-    data: {
-      userId: profileOwnerId,
-      createdById,
-      companyUserId,
-      name: String(raw.name),
-      email: resolvedEmail,
-      slug,
-      companyName: raw.companyName as string | undefined,
-      designation: raw.designation as string | undefined,
-      phone: raw.phone as string | undefined,
-      whatsapp: raw.whatsapp as string | undefined,
-      website: raw.website as string | undefined,
-      address: raw.address as string | undefined,
-      about: raw.about as string | undefined,
-      prof: raw.prof as string | undefined,
-      dob: raw.dob ? new Date(String(raw.dob)) : undefined,
-      template: (raw.template as string) || 'default',
-      themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
-      statusId: initialStatus.id,
-      isPublic: initialLifecycle.isPublic,
-      isDraft: initialLifecycle.isDraft,
-      facebook: raw.facebook as string | undefined,
-      instagram: raw.instagram as string | undefined,
-      twitter: raw.twitter as string | undefined,
-      tiktok: raw.tiktok as string | undefined,
-      youtube: raw.youtube as string | undefined,
-      linkedin: raw.linkedin as string | undefined,
-      profileSettings: {
-        create: {
-          profileTemplate:
-            profileSettings?.profileTemplate ||
-            (raw.template === 'dynamic' ? 'v1' : raw.template === 'classic' ? 'v2' : 'v3'),
-          layoutStyle: profileSettings?.layoutStyle,
-          buttonStyle: profileSettings?.buttonStyle,
-          cornerStyle: profileSettings?.cornerStyle,
-          themeConfig: profileSettings?.themeConfig as object | undefined,
+  let profile: { id: string }
+  try {
+    profile = await prisma.profile.create({
+      data: {
+        userId: profileOwnerId,
+        createdById,
+        companyUserId,
+        creationKey: creationKey || undefined,
+        name: String(raw.name),
+        email: resolvedEmail,
+        slug,
+        companyName: raw.companyName as string | undefined,
+        designation: raw.designation as string | undefined,
+        phone: raw.phone as string | undefined,
+        whatsapp: raw.whatsapp as string | undefined,
+        website: raw.website as string | undefined,
+        address: raw.address as string | undefined,
+        about: raw.about as string | undefined,
+        prof: raw.prof as string | undefined,
+        dob: raw.dob ? new Date(String(raw.dob)) : undefined,
+        template: (raw.template as string) || 'default',
+        themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
+        statusId: initialStatus.id,
+        isPublic: initialLifecycle.isPublic,
+        isDraft: initialLifecycle.isDraft,
+        facebook: raw.facebook as string | undefined,
+        instagram: raw.instagram as string | undefined,
+        twitter: raw.twitter as string | undefined,
+        tiktok: raw.tiktok as string | undefined,
+        youtube: raw.youtube as string | undefined,
+        linkedin: raw.linkedin as string | undefined,
+        profileSettings: {
+          create: {
+            profileTemplate:
+              profileSettings?.profileTemplate ||
+              (raw.template === 'dynamic' ? 'v1' : raw.template === 'classic' ? 'v2' : 'v3'),
+            layoutStyle: profileSettings?.layoutStyle,
+            buttonStyle: profileSettings?.buttonStyle,
+            cornerStyle: profileSettings?.cornerStyle,
+            themeConfig: profileSettings?.themeConfig as object | undefined,
+          },
         },
       },
-    },
-  })
+      select: { id: true },
+    })
+  } catch (error) {
+    if (!creationKey || !isPrismaUniqueConstraint(error, 'creationKey')) throw error
+    const existing = await prisma.profile.findFirst({
+      where: { creationKey, createdById: userId },
+      select: { id: true },
+    })
+    if (!existing) throw error
+    const detail = await loadProfileDetail({ id: existing.id })
+    if (!detail) throw new AppError(404, 'Profile not found')
+    return detail
+  }
 
   await upsertPrimaryAddress(profile.id, {
     address: raw.address,
@@ -1535,6 +1565,42 @@ const update = async (
     }
   }
 
+  // Complete entitlement validation before changing the parent Profile. A denied
+  // setting must not leave scalar fields partially saved behind an error response.
+  let existingSettingsMap: Map<string, string | null> | null = null
+  if (normalizedSettings) {
+    const existingSettings = await safePrismaQuery(
+      () => prisma.setting.findMany({ where: { profileId }, select: { key: true, value: true } }),
+      [] as Array<{ key: string; value: string }>
+    )
+    existingSettingsMap = new Map(existingSettings.map((row) => [row.key, row.value]))
+    if ('extra_fields_json' in normalizedSettings) {
+      const nextCount = countFilledExtraFields(normalizedSettings.extra_fields_json)
+      const currentCount = countFilledExtraFields(existingSettingsMap.get('extra_fields_json'))
+      if (nextCount > currentCount) {
+        await assertCountWithinPackageLimit(userId, role, 'maxExtraFields', nextCount)
+      }
+    }
+    for (const [key, value] of Object.entries(normalizedSettings)) {
+      const gates = catalogGatesForSettingChange(key, value, existingSettingsMap.get(key))
+      for (const gate of gates) {
+        await assertCatalogFeatureGate(userId, role, gate)
+      }
+    }
+  }
+
+  if (profileSettings?.themeConfig !== undefined) {
+    const existingTheme = await safePrismaQuery(
+      () => prisma.profileSetting.findUnique({ where: { profileId }, select: { themeConfig: true } }),
+      null as { themeConfig: unknown } | null
+    )
+    const wallpaperGate = catalogGateForWallpaperChange(
+      profileSettings.themeConfig,
+      existingTheme?.themeConfig ?? currentProfile.themeConfig
+    )
+    if (wallpaperGate) await assertCatalogFeatureGate(userId, role, wallpaperGate)
+  }
+
   try {
     await prisma.profile.update({
       where: { id: profileId },
@@ -1542,10 +1608,9 @@ const update = async (
     })
   } catch (error) {
     if (!isPrismaUniqueConstraint(error, 'email')) throw error
-    const { email: _ignoredEmail, ...withoutEmail } = profileData
-    await prisma.profile.update({
-      where: { id: profileId },
-      data: withoutEmail,
+    throw new AppError(409, 'This email is already used by another card.', {
+      code: 'PROFILE_EMAIL_CONFLICT',
+      data: { field: 'email' },
     })
   }
 
@@ -1556,24 +1621,7 @@ const update = async (
   }
 
   if (normalizedSettings) {
-    const existingSettings = await safePrismaQuery(
-      () => prisma.setting.findMany({ where: { profileId }, select: { key: true, value: true } }),
-      [] as Array<{ key: string; value: string }>
-    )
-    const existingMap = new Map(existingSettings.map((row) => [row.key, row.value]))
-    if ('extra_fields_json' in normalizedSettings) {
-      const nextCount = countFilledExtraFields(normalizedSettings.extra_fields_json)
-      const currentCount = countFilledExtraFields(existingMap.get('extra_fields_json'))
-      if (nextCount > currentCount) {
-        await assertCountWithinPackageLimit(userId, role, 'maxExtraFields', nextCount)
-      }
-    }
-    for (const [key, value] of Object.entries(normalizedSettings)) {
-      const gates = catalogGatesForSettingChange(key, value, existingMap.get(key))
-      for (const gate of gates) {
-        await assertCatalogFeatureGate(userId, role, gate)
-      }
-    }
+    const existingMap = existingSettingsMap ?? new Map<string, string | null>()
     const changedEntries = Object.entries(normalizedSettings).filter(([key, value]) => existingMap.get(key) !== value)
     if (changedEntries.length) {
       await Promise.all(
@@ -1594,17 +1642,6 @@ const update = async (
   }
 
   if (profileSettings) {
-    if (profileSettings.themeConfig !== undefined) {
-      const existingTheme = await safePrismaQuery(
-        () => prisma.profileSetting.findUnique({ where: { profileId }, select: { themeConfig: true } }),
-        null as { themeConfig: unknown } | null
-      )
-      const wallpaperGate = catalogGateForWallpaperChange(
-        profileSettings.themeConfig,
-        existingTheme?.themeConfig ?? currentProfile.themeConfig
-      )
-      if (wallpaperGate) await assertCatalogFeatureGate(userId, role, wallpaperGate)
-    }
     await prisma.profileSetting.upsert({
       where: { profileId },
       create: {

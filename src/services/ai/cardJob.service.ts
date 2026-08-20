@@ -803,6 +803,7 @@ export async function applyJob(input: {
   jobId: string
   userId: string
   role: string
+  ownerUserId?: string
   publish?: boolean
   seo?: { metaTitle?: string; metaDescription?: string; metaKeywords?: unknown[] }
 }) {
@@ -837,7 +838,7 @@ export async function applyJob(input: {
   }
   await save(ready, { status: 'APPLYING' })
   const profileService = (await import('../profile.service')).default
-  const created = await profileService.create(input.userId, input.role, {
+  const profilePayload = {
     name: personal.fullName || personal.company || 'My Card',
     email: personal.email,
     dob: personal.dob || undefined,
@@ -864,9 +865,20 @@ export async function applyJob(input: {
           keywords: input.seo.metaKeywords?.filter((value): value is string => typeof value === 'string'),
         })
       : undefined,
-  })
+  }
+  const isUpdate = ready.builderMode === 'update'
+  if (isUpdate && !ready.profileId) {
+    throw new AppError(409, 'AI update session is missing its persisted profile ID.')
+  }
+  const persisted = isUpdate
+    ? await profileService.update(String(ready.profileId), input.userId, input.role, profilePayload)
+    : await profileService.create(input.userId, input.role, {
+        ...profilePayload,
+        ownerUserId: input.ownerUserId,
+        creationKey: `ai-card-job:${ready.id}`,
+      })
 
-  const profileId = created.id as string
+  const profileId = persisted.id as string
   const collections: Array<
     [
       'services' | 'education' | 'experiences' | 'portfolios' | 'reviews' | 'skillTags',

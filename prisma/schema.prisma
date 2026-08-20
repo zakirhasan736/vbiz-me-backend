@@ -244,6 +244,7 @@ model City {
 model Profile {
   id              String         @id @default(cuid())
   legacyId        Int?           @unique
+  creationKey     String?        @unique
   userId          String?
   user            User?          @relation("ProfileOwner", fields: [userId], references: [id], onDelete: SetNull)
   companyUserId   String?

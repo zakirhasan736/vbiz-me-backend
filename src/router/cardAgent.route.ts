@@ -297,6 +297,7 @@ router.post(
       jobId: String(req.params.jobId),
       userId: req.user.id,
       role: String(req.user.role || ''),
+      ownerUserId: typeof req.body?.ownerUserId === 'string' ? req.body.ownerUserId.trim() : undefined,
       publish: req.body?.publish === true,
       seo: req.body?.seo,
     })

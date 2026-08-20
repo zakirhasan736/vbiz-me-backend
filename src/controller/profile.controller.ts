@@ -35,6 +35,7 @@ const create = catchAsyncError(async (req, res) => {
   const body = ProfileZodSchema.createProfileBody.parse(req.body) as {
     name: string
     ownerUserId?: string
+    creationKey?: string
     [key: string]: unknown
   }
   const data = await profileService.create(req.user.id, req.user.role, body)
