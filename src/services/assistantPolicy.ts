@@ -2,12 +2,24 @@ import AppError from '../error/AppError'
 import { FILL_SECTION_SCHEMA_HINTS, fillSectionSchemas, type FillSectionId } from './ai/cardBlueprint.schema'
 
 export const ASSISTANT_SETTING_KEY = 'aiAssistance_checkbox'
+export const DEFAULT_AI_ASSISTANCE_ENABLED_SLUGS = ['michaelangelo-casanova-2'] as const
 export const MAX_ASSISTANT_CONTEXT_CHARS = 48_000
 export const MAX_KNOWLEDGE_TEXT_CHARS = 24_000
 export const MAX_BUSINESS_BRIEF_CHARS = 8_000
 export const MAX_PROMPT_ADDENDUM_CHARS = 2_000
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on', 'enabled'])
+
+export function normalizeCardSlug(slug?: string | null): string {
+  return String(slug || '')
+    .trim()
+    .toLowerCase()
+}
+
+export function isDefaultAiAssistanceSlug(slug?: string | null): boolean {
+  const normalized = normalizeCardSlug(slug)
+  return (DEFAULT_AI_ASSISTANCE_ENABLED_SLUGS as readonly string[]).includes(normalized)
+}
 
 export function assertProfileId(value: unknown): string {
   const profileId = String(value ?? '').trim()
@@ -25,16 +37,18 @@ export function parseAssistantEnabled(value: unknown): boolean {
   )
 }
 
-export function isAssistantEnabled(configEnabled: unknown, legacySettingValue: unknown): boolean {
+export function isAssistantEnabled(configEnabled: unknown, legacySettingValue: unknown, slug?: string | null): boolean {
+  if (isDefaultAiAssistanceSlug(slug)) return true
   return parseAssistantEnabled(configEnabled) || parseAssistantEnabled(legacySettingValue)
 }
 
 export function assertPublicAssistantGate(
   publicReadable: boolean,
   configEnabled: unknown,
-  legacySettingValue: unknown
+  legacySettingValue: unknown,
+  slug?: string | null
 ): void {
-  if (!publicReadable || !isAssistantEnabled(configEnabled, legacySettingValue)) {
+  if (!publicReadable || !isAssistantEnabled(configEnabled, legacySettingValue, slug)) {
     throw new AppError(404, 'Public AI assistant is not enabled for this profile.')
   }
 }

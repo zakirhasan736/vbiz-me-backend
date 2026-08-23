@@ -282,7 +282,7 @@ export const cardBlueprintSchema = z.object({
     .default([]),
   optionalFeatures: z
     .object({
-      aiAssistance: z.boolean().optional().default(true),
+      aiAssistance: z.boolean().optional().default(false),
       canva: z.boolean().optional().default(true),
       seo: z.boolean().optional().default(true),
       pushNotifications: z.boolean().optional().default(true),
@@ -290,7 +290,7 @@ export const cardBlueprintSchema = z.object({
     })
     .optional()
     .default({
-      aiAssistance: true,
+      aiAssistance: false,
       canva: true,
       seo: true,
       pushNotifications: true,
@@ -321,7 +321,7 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
   "enabledTabs": ["Personal", "Services", "Skill"],
   "recommendedTabs": [{ "tab": "Portfolio", "reason": "why", "priority": "high" }],
   "optionalFeatures": {
-    "aiAssistance": true, "canva": true, "seo": true,
+    "aiAssistance": false, "canva": true, "seo": true,
     "pushNotifications": true, "emailNotifications": true
   }
 }

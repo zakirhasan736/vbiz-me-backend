@@ -67,12 +67,21 @@ export function entitlementsFromFeatures(
   whenMissing = true
 ): PackageAccessMap {
   const map = whenMissing ? allPackageAccessEnabled() : allPackageAccessDisabled()
+  // Premium add-on: missing allow_ai_assistance stays locked unless explicitly enabled.
+  map.allow_ai_assistance = false
   if (!features?.length) return map
   for (const item of PACKAGE_ACCESS_FEATURES) {
     const row = features.find((feature) => feature.featureKey.trim().toLowerCase() === item.key)
-    if (row) map[item.key] = parseAccessFlag(row.featureValue, whenMissing)
+    if (!row) continue
+    const defaultWhenMissing = item.key === 'allow_ai_assistance' ? false : whenMissing
+    map[item.key] = parseAccessFlag(row.featureValue, defaultWhenMissing)
   }
   return map
+}
+
+/** Default explicit allow_* featureValue used when backfilling missing package flags. */
+export function defaultAllowFlagValue(featureKey: string): '0' | '1' {
+  return featureKey.trim().toLowerCase() === 'allow_ai_assistance' ? '0' : '1'
 }
 
 export function isUnlimitedFeatureValue(value: string | null | undefined): boolean {

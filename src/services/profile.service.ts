@@ -693,23 +693,20 @@ const resolveCreatedScopeWhere = async (userId: string, role: string): Promise<P
     select: { id: true },
   })
   const teamCreatedUserIds = teamCreatedUsers.map((row) => row.id)
-
-  return {
-    OR: [
-      // Cards owned by admin-team-created users only
-      { userId: { in: teamCreatedUserIds } },
-      { companyUserId: { in: teamCreatedUserIds } },
-      // Staff members' own cards (e.g. michaelangelo-casanova-2)
-      { userId: { in: staffIdList } },
-      // Guaranteed include for the known assigned card slugs
-      {
-        slug: {
-          in: [...ADMIN_MY_CARDS_OWNER_SLUGS],
-          mode: 'insensitive',
-        },
-      },
-    ],
+  const or: Prisma.ProfileWhereInput[] = []
+  if (teamCreatedUserIds.length) {
+    or.push({ userId: { in: teamCreatedUserIds } }, { companyUserId: { in: teamCreatedUserIds } })
   }
+  if (staffIdList.length) {
+    or.push({ userId: { in: staffIdList } })
+  }
+  or.push({
+    slug: {
+      in: [...ADMIN_MY_CARDS_OWNER_SLUGS],
+      mode: 'insensitive',
+    },
+  })
+  return { OR: or }
 }
 
 const resolveOwnershipWhere = async (
@@ -839,6 +836,36 @@ const listForUser = async (userId: string, role: string, scope?: ProfileListScop
       socialClicks: metrics?.socialClicks ?? [],
     } satisfies EnrichedListProfile
   })
+}
+
+/** Lightweight card rows for dashboard KPIs — never uses the heavy list include. */
+const listAnalyticsProfiles = async (userId: string, role: string, scope?: ProfileListScope) => {
+  return prisma.profile.findMany({
+    where: await resolveOwnershipWhere(userId, role, scope),
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      viewCount: true,
+      isDraft: true,
+      status: { select: { name: true } },
+      _count: { select: { services: true, portfolios: true, posts: true } },
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+}
+
+const listOwnedProfileIds = async (userId: string, role: string, scope?: ProfileListScope) => {
+  const rows = await prisma.profile.findMany({
+    where: await resolveOwnershipWhere(userId, role, scope),
+    select: { id: true },
+  })
+  return rows.map((row) => row.id)
+}
+
+const isActiveAnalyticsCard = (statusName?: string | null) => {
+  const status = (statusName || '').trim().toLowerCase()
+  return !status || status === 'active'
 }
 
 const listProfilesPage = async (
@@ -2312,13 +2339,43 @@ const listPosts = async (
 
 const emptyProfileIds = (profileIds: string[]) => profileIds.length === 0
 
+const emptyDashboardStats = (now: Date, chartDays: number, period: DashboardPeriod) => ({
+  cards: 0,
+  activeCards: 0,
+  totalViews: 0,
+  viewsLast30Days: 0,
+  contactsLast30Days: 0,
+  notesLast30Days: 0,
+  guestsLast30Days: 0,
+  uniqueViews: 0,
+  shares: 0,
+  period,
+  visitsChart: { total: 0, trendPercent: 0, points: buildDailyPoints(now, chartDays, new Map()) },
+  socialChannels: [] as Array<{
+    channel: (typeof SOCIAL_CHANNELS)[number]
+    label: string
+    count: number
+    trendPercent: number
+  }>,
+  recentEngagement: [] as Array<{
+    id: string
+    event: string
+    viewer: string
+    time: string
+    platform: string
+    createdAt: string
+  }>,
+  profiles: [],
+})
+
 const getDashboardStats = async (
   userId: string,
   role: string,
   period: DashboardPeriod = 'all',
   scope?: ProfileListScope
 ) => {
-  const profiles = await listForUser(userId, role, scope)
+  // Overview (no scope) is platform-wide for staff. My Cards passes scope=created.
+  const profiles = await listAnalyticsProfiles(userId, role, scope)
   const profileIds = profiles.map((p) => p.id)
   const now = new Date()
   const windowDays = resolveDashboardWindowDays(period)
@@ -2328,28 +2385,7 @@ const getDashboardStats = async (
   const createdAtFilter = since ? { createdAt: { gte: since } } : {}
 
   if (emptyProfileIds(profileIds)) {
-    return {
-      cards: 0,
-      totalViews: 0,
-      viewsLast30Days: 0,
-      contactsLast30Days: 0,
-      notesLast30Days: 0,
-      guestsLast30Days: 0,
-      uniqueViews: 0,
-      shares: 0,
-      period,
-      visitsChart: { total: 0, trendPercent: 0, points: buildDailyPoints(now, chartDays, new Map()) },
-      socialChannels: [],
-      recentEngagement: [] as Array<{
-        id: string
-        event: string
-        viewer: string
-        time: string
-        platform: string
-        createdAt: string
-      }>,
-      profiles: [],
-    }
+    return emptyDashboardStats(now, chartDays, period)
   }
 
   const [contacts, notes, guests, viewEvents, prevViewEvents, socialEvents, prevSocialEvents, recentLogs] =
@@ -2409,9 +2445,39 @@ const getDashboardStats = async (
   })).filter((row) => row.count > 0)
 
   const totalViews = profiles.reduce((sum, p) => sum + p.viewCount, 0)
+  const activeCards = profiles.filter((p) => isActiveAnalyticsCard(p.status?.name)).length
+  const visitsChart = {
+    total: views,
+    trendPercent: since ? trendPercent(views, prevViews) : 0,
+    points: visitsPoints,
+  }
+  const recentEngagement = recentLogs.map((row) => {
+    const payload = row.payload && typeof row.payload === 'object' ? (row.payload as Record<string, unknown>) : null
+    return {
+      id: row.id,
+      event: eventTypeLabel(row.eventType, payload),
+      viewer: viewerFromPayload(row.eventType, payload),
+      time: formatRelativeTime(row.createdAt, now),
+      platform: parsePlatformFromUa(row.userAgent),
+      createdAt: row.createdAt.toISOString(),
+    }
+  })
+  const profileRows =
+    scope === 'created'
+      ? profiles.map((p) => ({
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          viewCount: p.viewCount,
+          services: p._count.services,
+          portfolios: p._count.portfolios,
+          posts: p._count.posts,
+        }))
+      : []
 
   return {
     cards: profiles.length,
+    activeCards,
     totalViews,
     viewsLast30Days: views,
     contactsLast30Days: contacts,
@@ -2420,32 +2486,10 @@ const getDashboardStats = async (
     uniqueViews: views,
     shares,
     period,
-    visitsChart: {
-      total: views,
-      trendPercent: since ? trendPercent(views, prevViews) : 0,
-      points: visitsPoints,
-    },
+    visitsChart,
     socialChannels,
-    recentEngagement: recentLogs.map((row) => {
-      const payload = row.payload && typeof row.payload === 'object' ? (row.payload as Record<string, unknown>) : null
-      return {
-        id: row.id,
-        event: eventTypeLabel(row.eventType, payload),
-        viewer: viewerFromPayload(row.eventType, payload),
-        time: formatRelativeTime(row.createdAt, now),
-        platform: parsePlatformFromUa(row.userAgent),
-        createdAt: row.createdAt.toISOString(),
-      }
-    }),
-    profiles: profiles.map((p) => ({
-      id: p.id,
-      name: p.name,
-      slug: p.slug,
-      viewCount: p.viewCount,
-      services: p._count.services,
-      portfolios: p._count.portfolios,
-      posts: p._count.posts,
-    })),
+    recentEngagement,
+    profiles: profileRows,
   }
 }
 
@@ -2457,7 +2501,7 @@ const getDashboardSummary = async (
 ) => {
   const [stats, contacts, social] = await Promise.all([
     getDashboardStats(userId, role, period, scope),
-    listContacts(userId, role, undefined, 10),
+    listContacts(userId, role, undefined, 10, scope),
     getSocialClicksBundle(userId, role, scope),
   ])
   return {
@@ -2539,11 +2583,11 @@ const listContacts = async (
   userId: string,
   role: string,
   profileId?: string,
-  limit?: number
+  limit?: number,
+  scope?: ProfileListScope
 ): Promise<OwnerContactRow[]> => {
   if (profileId) await getOwnedLite(profileId, userId, role)
-  const profiles = await listForUser(userId, role)
-  const ids = profileId ? [profileId] : profiles.map((p) => p.id)
+  const ids = profileId ? [profileId] : await listOwnedProfileIds(userId, role, scope)
   if (emptyProfileIds(ids)) return []
 
   const profileSelect = { select: { id: true, name: true, slug: true } } as const
@@ -2767,8 +2811,7 @@ const listRecentEngagement = async (userId: string, role: string, query: RecentE
     await getOwnedLite(query.profileId, userId, role)
   }
 
-  const profiles = await listForUser(userId, role)
-  const profileIds = query.profileId ? [query.profileId] : profiles.map((p) => p.id)
+  const profileIds = query.profileId ? [query.profileId] : await listOwnedProfileIds(userId, role)
 
   if (emptyProfileIds(profileIds)) {
     return { items: [], total: 0, skip, limit }
@@ -2864,8 +2907,7 @@ const getSocialClicksBundle = async (
   role: string,
   scope?: ProfileListScope
 ): Promise<{ socialClicks: LiveSocialClickRow[]; socialClicksByCard: SocialClicksByCardRow[] }> => {
-  const profiles = await listForUser(userId, role, scope)
-  const profileIds = profiles.map((p) => p.id)
+  const profileIds = await listOwnedProfileIds(userId, role, scope)
   if (emptyProfileIds(profileIds)) return { socialClicks: [], socialClicksByCard: [] }
 
   const socialEvents = await prisma.eventLog.findMany({
@@ -2884,13 +2926,16 @@ const getSocialClicksBundle = async (
     bucket.push({ payload: row.payload })
   }
 
+  const includePerCard = scope === 'created' || profileIds.length <= 80
   const socialClicksByCard: SocialClicksByCardRow[] = []
-  for (const profileId of profileIds) {
-    const events = byProfile.get(profileId) || []
-    socialClicksByCard.push({
-      profileId,
-      channels: toLiveSocialClickRows(countDistinctGuestsByChannel(events)),
-    })
+  if (includePerCard) {
+    for (const profileId of profileIds) {
+      const events = byProfile.get(profileId) || []
+      socialClicksByCard.push({
+        profileId,
+        channels: toLiveSocialClickRows(countDistinctGuestsByChannel(events)),
+      })
+    }
   }
 
   return {
@@ -2934,7 +2979,11 @@ const notifyLiveSocialClicks = async (profileId: string) => {
 
 /** Rolling last 7 days (ending now): views / social clicks / CTR from EventLog. */
 const getWeeklyEngagement = async (userId: string, role: string, scope?: ProfileListScope, profileId?: string) => {
-  let profiles = await listForUser(userId, role, scope)
+  let profiles = await prisma.profile.findMany({
+    where: await resolveOwnershipWhere(userId, role, scope),
+    select: { id: true, name: true },
+    orderBy: { updatedAt: 'desc' },
+  })
 
   if (profileId) {
     const owned = profiles.find((p) => p.id === profileId)

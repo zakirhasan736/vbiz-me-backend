@@ -9,6 +9,7 @@
  */
 import 'dotenv/config'
 import { UserRole as PrismaUserRole } from '../generated/prisma/enums'
+import { defaultAllowFlagValue } from '../src/constants/packageAccess'
 import {
   CATALOG_PACKAGE_SLUGS,
   inferOwnerModeFromCatalog,
@@ -167,7 +168,7 @@ async function main() {
 
   console.log(`\nallow_* explicit defaults to insert: ${allowFlagCreates.length}`)
   for (const row of allowFlagCreates) {
-    console.log(`  ${row.slug} ${row.featureKey}=1`)
+    console.log(`  ${row.slug} ${row.featureKey}=${defaultAllowFlagValue(row.featureKey)}`)
   }
 
   printGroup('attach missing subscriptions', attachRows)
@@ -182,9 +183,10 @@ async function main() {
   }
 
   for (const row of allowFlagCreates) {
+    const featureValue = defaultAllowFlagValue(row.featureKey)
     await prisma.packageFeature.upsert({
       where: { packageId_featureKey: { packageId: row.packageId, featureKey: row.featureKey } },
-      create: { packageId: row.packageId, featureKey: row.featureKey, featureValue: '1' },
+      create: { packageId: row.packageId, featureKey: row.featureKey, featureValue },
       update: {},
     })
   }

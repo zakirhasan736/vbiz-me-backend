@@ -57,13 +57,14 @@ async function legacyEnabled(profileId: string): Promise<boolean> {
 }
 
 export async function getConfig(profileId: string) {
-  const [stored, legacy] = await Promise.all([
+  const [stored, legacy, profile] = await Promise.all([
     safePrismaQuery(() => prisma.profileAssistantConfig.findUnique({ where: { profileId } }), null),
     legacyEnabled(profileId),
+    prisma.profile.findUnique({ where: { id: profileId }, select: { slug: true } }),
   ])
   return {
     profileId,
-    enabled: isAssistantEnabled(stored?.enabled, legacy),
+    enabled: isAssistantEnabled(stored?.enabled, legacy, profile?.slug),
     businessBrief: stored?.businessBrief || '',
     systemPromptAddendum: stored?.systemPromptAddendum || null,
     createdAt: stored?.createdAt || null,
@@ -225,6 +226,7 @@ export async function getPublicAssistantState(profileId: string) {
     where: { id: profileId, ...publicReadableWhere() },
     select: {
       id: true,
+      slug: true,
       name: true,
       lastName: true,
       prof: true,
@@ -294,7 +296,7 @@ export async function getPublicAssistantState(profileId: string) {
 
   const { assistantConfig, assistantKnowledge } = await loadAssistantExtras(profileId)
   const legacyValue = profile.settings.find((setting) => setting.key === ASSISTANT_SETTING_KEY)?.value
-  const enabled = isAssistantEnabled(assistantConfig?.enabled, legacyValue)
+  const enabled = isAssistantEnabled(assistantConfig?.enabled, legacyValue, profile.slug)
   const knowledgeText = enabled ? boundKnowledgeContext(profileId, assistantKnowledge) : ''
   const { tabKeys, navIds } = enabledPublicTabKeys(profile.settings)
   const visibleTabSet = new Set(tabKeys)
@@ -360,12 +362,13 @@ export async function getPublicAssistantSupplement(profileId: string) {
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: {
+      slug: true,
       settings: { where: { key: ASSISTANT_SETTING_KEY }, select: { value: true } },
     },
   })
   if (!profile) throw new AppError(404, 'Profile not found')
   const { assistantConfig, assistantKnowledge } = await loadAssistantExtras(profileId)
-  const enabled = isAssistantEnabled(assistantConfig?.enabled, profile.settings[0]?.value)
+  const enabled = isAssistantEnabled(assistantConfig?.enabled, profile.settings[0]?.value, profile.slug)
   return enabled
     ? {
         enabled: true,
