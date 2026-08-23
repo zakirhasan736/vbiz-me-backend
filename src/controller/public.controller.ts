@@ -182,10 +182,14 @@ const listNotes = catchAsyncError(async (req, res) => {
 })
 
 const saveContact = catchAsyncError(async (req, res) => {
-  const data = await publicCardService.saveContactCard(param(req.params.id), {
-    ip: req.ip,
-    userAgent: req.get('user-agent') || undefined,
-  })
+  const data = await publicCardService.saveContactCard(
+    param(req.params.id),
+    {
+      ip: req.ip,
+      userAgent: req.get('user-agent') || undefined,
+    },
+    String(req.query.visitor_id || '').trim() || undefined
+  )
   sendPublicResponse(res, { success: true, data })
 })
 

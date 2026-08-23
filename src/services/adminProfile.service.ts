@@ -65,16 +65,60 @@ function buildWhere(filters: AdminProfileFiltersInput): Prisma.ProfileWhereInput
 
   const q = filters.q?.trim()
   if (q) {
-    and.push({
-      OR: [
-        { name: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
-        { companyName: { contains: q, mode: 'insensitive' } },
-        { designation: { contains: q, mode: 'insensitive' } },
-        { slug: { contains: q, mode: 'insensitive' } },
-        { phone: { contains: q, mode: 'insensitive' } },
-      ],
-    })
+    const searchTokens = [
+      ...new Set(
+        q
+          .split(/\s+/)
+          .map((token) => token.trim())
+          .filter(Boolean)
+      ),
+    ].slice(0, 8)
+    and.push(
+      ...searchTokens.map((token) => ({
+        OR: [
+          { name: { contains: token, mode: 'insensitive' as const } },
+          { email: { contains: token, mode: 'insensitive' as const } },
+          { companyName: { contains: token, mode: 'insensitive' as const } },
+          { designation: { contains: token, mode: 'insensitive' as const } },
+          { prof: { contains: token, mode: 'insensitive' as const } },
+          { slug: { contains: token, mode: 'insensitive' as const } },
+          { phone: { contains: token, mode: 'insensitive' as const } },
+          { whatsapp: { contains: token, mode: 'insensitive' as const } },
+          { website: { contains: token, mode: 'insensitive' as const } },
+          { profession: { name: { contains: token, mode: 'insensitive' as const } } },
+          {
+            user: {
+              is: {
+                OR: [
+                  { name: { contains: token, mode: 'insensitive' as const } },
+                  { email: { contains: token, mode: 'insensitive' as const } },
+                ],
+              },
+            },
+          },
+          {
+            companyUser: {
+              is: {
+                OR: [
+                  { name: { contains: token, mode: 'insensitive' as const } },
+                  { email: { contains: token, mode: 'insensitive' as const } },
+                ],
+              },
+            },
+          },
+          {
+            createdBy: {
+              is: {
+                OR: [
+                  { name: { contains: token, mode: 'insensitive' as const } },
+                  { email: { contains: token, mode: 'insensitive' as const } },
+                ],
+              },
+            },
+          },
+        ],
+      }))
+    )
   }
 
   const statusName = filters.status?.trim()

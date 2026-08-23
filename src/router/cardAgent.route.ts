@@ -1,6 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import multer from 'multer'
-import { assertUserPackageAccess } from '../constants/packageAccess'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import { getRequestId } from '../middlewares/requestId'
@@ -8,6 +7,7 @@ import * as cardAgentService from '../services/ai/cardAgent.service'
 import * as cardJobService from '../services/ai/cardJob.service'
 import { filesFromMulter } from '../services/ai/extractDocumentText'
 import { checkAiRateLimit } from '../services/ai/rateLimit'
+import { assertUserPackageAccess } from '../services/entitlement.service'
 import catchAsyncError, { type IUserInfoRequest } from '../utils/catchAsyncError'
 import sendResponse from '../utils/sendResponse'
 
@@ -25,6 +25,11 @@ router.use(authMiddleware.requireVcardMutable)
 async function requireAutoCardBuilder(req: IUserInfoRequest) {
   if (!req.user?.id) throw new AppError(403, 'Unauthorized')
   await assertUserPackageAccess(req.user.id, req.user.role, 'allow_auto_card_builder')
+}
+
+async function requireAiAssistance(req: IUserInfoRequest) {
+  if (!req.user?.id) throw new AppError(403, 'Unauthorized')
+  await assertUserPackageAccess(req.user.id, req.user.role, 'allow_ai_assistance')
 }
 
 function rateLimitOrThrow(req: IUserInfoRequest, action: string, limit: number) {
@@ -99,6 +104,7 @@ router.post(
 router.post(
   '/suggest-tabs',
   catchAsyncError(async (req, res) => {
+    await requireAiAssistance(req)
     rateLimitOrThrow(req, 'suggest', 40)
     const data = await cardAgentService.suggestTabs({
       businessSummary: String(req.body?.businessSummary || ''),
@@ -120,6 +126,7 @@ router.post(
   '/fill-section',
   optionalMultipart,
   catchAsyncError(async (req, res) => {
+    await requireAiAssistance(req)
     rateLimitOrThrow(req, 'fill', 40)
     const files = filesFromMulter(req.files as Express.Multer.File[] | undefined)
     const data = await cardAgentService.fillSection({
@@ -145,6 +152,7 @@ router.post(
   '/regenerate-section',
   optionalMultipart,
   catchAsyncError(async (req, res) => {
+    await requireAiAssistance(req)
     rateLimitOrThrow(req, 'fill', 40)
     const data = await cardAgentService.regenerateSection({
       section: String(req.body?.section || ''),
@@ -218,6 +226,7 @@ router.get(
 router.post(
   '/jobs/:jobId/tabs',
   catchAsyncError(async (req, res) => {
+    await requireAutoCardBuilder(req)
     const selectedNavIds = Array.isArray(req.body?.selectedNavIds) ? req.body.selectedNavIds.map(String) : []
     const data = await cardJobService.setSelectedTabs(String(req.params.jobId), selectedNavIds, req.user?.id)
     sendResponse(res, { success: true, statusCode: 200, message: 'Tabs updated', data })
@@ -227,6 +236,7 @@ router.post(
 router.post(
   '/jobs/:jobId/fields/:fieldId',
   catchAsyncError(async (req, res) => {
+    await requireAutoCardBuilder(req)
     rateLimitOrThrow(req, 'fill', 40)
     const data = await cardJobService.applyFieldAction({
       jobId: String(req.params.jobId),
@@ -243,6 +253,7 @@ router.post(
 router.post(
   '/jobs/:jobId/fast-mode',
   catchAsyncError(async (req, res) => {
+    await requireAutoCardBuilder(req)
     rateLimitOrThrow(req, 'fill', 20)
     const mode = String(req.body?.mode || 'review') as 'ai' | 'found' | 'review'
     const data = await cardJobService.runFastMode(String(req.params.jobId), mode, req.user?.id)
@@ -253,8 +264,10 @@ router.post(
 router.post(
   '/jobs/:jobId/generate-content',
   catchAsyncError(async (req, res) => {
+    await requireAutoCardBuilder(req)
     rateLimitOrThrow(req, 'fill', 20)
-    const kind = String(req.body?.kind || '') === 'blog' ? 'blog' : 'faq'
+    const requestedKind = String(req.body?.kind || '')
+    const kind = requestedKind === 'blog' ? 'blog' : requestedKind === 'skills' ? 'skills' : 'faq'
     const data = await cardJobService.generatePermissionedContent({
       jobId: String(req.params.jobId),
       kind,
@@ -267,6 +280,7 @@ router.post(
 router.post(
   '/jobs/:jobId/assemble',
   catchAsyncError(async (req, res) => {
+    await requireAutoCardBuilder(req)
     const data = await cardJobService.assembleJob(String(req.params.jobId), req.user?.id)
     sendResponse(res, { success: true, statusCode: 200, message: 'Draft assembled', data })
   })
@@ -276,10 +290,15 @@ router.post(
   '/jobs/:jobId/apply',
   catchAsyncError(async (req, res) => {
     if (!req.user?.id) throw new AppError(403, 'Unauthorized')
+    await requireAutoCardBuilder(req)
+    if (req.body?.seo) {
+      await assertUserPackageAccess(req.user.id, req.user.role, 'allow_seo')
+    }
     const data = await cardJobService.applyJob({
       jobId: String(req.params.jobId),
       userId: req.user.id,
       role: String(req.user.role || ''),
+      ownerUserId: typeof req.body?.ownerUserId === 'string' ? req.body.ownerUserId.trim() : undefined,
       publish: req.body?.publish === true,
       seo: req.body?.seo,
     })

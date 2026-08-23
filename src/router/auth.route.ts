@@ -11,6 +11,8 @@ const router = Router()
 
 router.post('/register', validSchema(AuthZodSchema.register), verifyTurnstile, authController.register)
 router.post('/login', validSchema(AuthZodSchema.login), verifyTurnstile, authController.login)
+router.post('/login-otp/verify', validSchema(AuthZodSchema.loginOtp), authController.verifyLoginOtp)
+router.post('/login-otp/resend', validSchema(AuthZodSchema.resendLoginOtp), authController.resendLoginOtp)
 router.post(
   '/send-verification-email',
   validSchema(AuthZodSchema.sendVerificationEmail),

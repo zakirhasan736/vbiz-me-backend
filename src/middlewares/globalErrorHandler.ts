@@ -78,6 +78,9 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     statusCode,
     requestId,
     code,
+    userId: req.user?.id,
+    profileId: req.params?.id || req.params?.profileId || req.body?.profileId,
+    ownerUserId: req.body?.ownerUserId,
   })
 
   return res.status(statusCode).json({

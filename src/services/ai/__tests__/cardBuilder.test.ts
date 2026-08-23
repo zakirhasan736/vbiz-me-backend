@@ -394,7 +394,7 @@ describe('vBiz Me auto card builder', () => {
 
   it('places About on the about tab and does not force generated FAQs empty after fill', async () => {
     const { buildFieldGraph } = await import('../fieldGraph.service')
-    const { applySectionPayloadToFields, capGeneratedList } = await import('../tabBuild.service')
+    const { applySectionPayloadToFields, capGeneratedList, capGeneratedSkills } = await import('../tabBuild.service')
     const fields = buildFieldGraph({
       profile: profile({
         businessDescription:
@@ -415,6 +415,9 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(faqReady?.status, 'READY')
     assert.equal(Array.isArray(faqReady?.currentValue) ? faqReady?.currentValue.length : 0, 5)
     assert.equal((capGeneratedList([1, 2, 3, 4, 5, 6]) as number[]).length, 5)
+    assert.deepEqual(capGeneratedSkills([{ type: 'Core', skills: ['1', '2', '3', '4', '5', '6'] }]), [
+      { type: 'Core', skills: ['1', '2', '3', '4', '5'] },
+    ])
   })
 
   it('does not score Public Cards or My Info in the AI completion plan', async () => {

@@ -8,6 +8,7 @@ import {
 } from '../constants/mediaUpload'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
+import { assertMediaUploadAllowed, assertUploadWithinPackageLimit } from '../services/entitlement.service'
 import profileService from '../services/profile.service'
 import catchAsyncError from '../utils/catchAsyncError'
 import { prisma } from '../utils/prisma'
@@ -57,6 +58,14 @@ router.post(
   catchAsyncError(async (req, res) => {
     if (!req.file) throw new AppError(400, 'file is required')
     validateAttachmentUpload(req.file, req.body.attachmentType as string | undefined)
+    if (req.user?.id) {
+      await assertMediaUploadAllowed(req.user.id, req.user.role, {
+        attachmentType: req.body.attachmentType as string | undefined,
+        mimetype: req.file.mimetype,
+        filename: req.file.originalname,
+      })
+      await assertUploadWithinPackageLimit(req.user.id, req.user.role, req.file.size)
+    }
     const result = await s3Utils.uploadBuffer(req.file.buffer, {
       contentType: req.file.mimetype,
       filename: req.file.originalname,
@@ -118,6 +127,12 @@ router.post(
   catchAsyncError(async (req, res) => {
     const url = req.body.url as string
     if (!url) throw new AppError(400, 'url is required')
+    if (req.user?.id) {
+      await assertMediaUploadAllowed(req.user.id, req.user.role, {
+        attachmentType: req.body.attachmentType as string | undefined,
+        filename: url,
+      })
+    }
     const result = await s3Utils.uploadFromUrl(url)
     sendResponse(res, { success: true, statusCode: 201, message: 'Uploaded from URL', data: result })
   })

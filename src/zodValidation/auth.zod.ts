@@ -55,6 +55,18 @@ const verifyEmail = z.object({
   otp: z.coerce.number().int().min(100000).max(999999),
 })
 
+const loginOtp = z.object({
+  email: z.string().email('Valid email is required'),
+  otp: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'Enter the 6-digit code'),
+})
+
+const resendLoginOtp = z.object({
+  email: z.string().email('Valid email is required'),
+})
+
 const forgotPassword = z.object({
   email: z.string().email('Valid email is required'),
   turnstileToken,
@@ -92,6 +104,8 @@ const AuthZodSchema = {
   update,
   sendVerificationEmail,
   verifyEmail,
+  loginOtp,
+  resendLoginOtp,
   forgotPassword,
   verifyForgotPassword,
   resetPassword,

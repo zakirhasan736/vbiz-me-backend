@@ -1,14 +1,13 @@
-import { UserRole as PrismaUserRole } from '../../generated/prisma/enums'
 import { RETIRED_PACKAGE_SLUGS } from '../constants/packageAccess'
-import subscriptionService from '../services/subscription.service'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 
 const RETIRED_NAMES = ['Corporate Starter', 'Single Starter', 'Single Card']
 
 /**
- * Idempotent startup: retire unused starter packages (Corporate Starter / Single Card)
- * and attach remaining free-plan fallbacks to corporate owners who have no subscription.
+ * Idempotent startup: retire unused starter packages (Corporate Starter / Single Card).
+ * Missing owner subscriptions are handled by the Step 11 backfill script, not on boot,
+ * so Corporate owners are never silently attached to Free.
  */
 const seedPackages = async (): Promise<void> => {
   const retired = await prisma.package.findMany({
@@ -46,25 +45,6 @@ const seedPackages = async (): Promise<void> => {
     logger.info(
       `Retired starter packages: deleted ${deleted}, deactivated ${deactivated} (corporate-starter / single-starter)`
     )
-  }
-
-  const owners = await prisma.user.findMany({
-    where: {
-      role: PrismaUserRole.CORPORATE_OWNER,
-      deletedAt: null,
-      isActive: true,
-    },
-    select: { id: true },
-  })
-
-  let linked = 0
-  for (const owner of owners) {
-    const sub = await subscriptionService.ensureCorporateStarterSubscription(owner.id)
-    if (sub?.packageId) linked += 1
-  }
-
-  if (owners.length) {
-    logger.info(`Owner subscriptions ensured for ${linked}/${owners.length} corporate owners`)
   }
 }
 

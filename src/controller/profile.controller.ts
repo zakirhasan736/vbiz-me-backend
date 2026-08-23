@@ -1,4 +1,5 @@
 import AppError from '../error/AppError'
+import { assertCorporateBackOffice } from '../services/entitlement.service'
 import profileService from '../services/profile.service'
 import { buildOverviewPdf } from '../utils/buildOverviewPdf'
 import catchAsyncError from '../utils/catchAsyncError'
@@ -34,6 +35,7 @@ const create = catchAsyncError(async (req, res) => {
   const body = ProfileZodSchema.createProfileBody.parse(req.body) as {
     name: string
     ownerUserId?: string
+    creationKey?: string
     [key: string]: unknown
   }
   const data = await profileService.create(req.user.id, req.user.role, body)
@@ -371,12 +373,14 @@ const exportContacts = catchAsyncError(async (req, res) => {
 
 const listTeamNotices = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
+  await assertCorporateBackOffice(req.user.id, req.user.role)
   const data = await profileService.listTeamNotices(req.user.id)
   sendResponse(res, { success: true, statusCode: 200, message: 'Team notices fetched', data })
 })
 
 const createTeamNotice = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
+  await assertCorporateBackOffice(req.user.id, req.user.role)
   const body = ProfileZodSchema.createTeamNoticeBody.parse(req.body)
   const data = await profileService.createTeamNotice(req.user.id, req.user.role, body)
   sendResponse(res, { success: true, statusCode: 201, message: 'Team notice created', data })
@@ -384,6 +388,7 @@ const createTeamNotice = catchAsyncError(async (req, res) => {
 
 const deleteTeamNotice = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
+  await assertCorporateBackOffice(req.user.id, req.user.role)
   const data = await profileService.deleteTeamNotice(req.user.id, req.user.role, String(req.params.id))
   sendResponse(res, { success: true, statusCode: 200, message: 'Team notice deleted', data })
 })
@@ -397,6 +402,12 @@ const subscriptions = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const data = await profileService.listSubscriptions(req.user.id, req.user.role)
   sendResponse(res, { success: true, statusCode: 200, message: 'Subscriptions fetched', data })
+})
+
+const entitlements = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const data = await profileService.getEntitlements(req.user.id, req.user.role)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Entitlements fetched', data })
 })
 
 const exportDashboard = catchAsyncError(async (req, res) => {
@@ -422,6 +433,7 @@ const weeklyEngagement = catchAsyncError(async (req, res) => {
 
 const consolidatedEngagement = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
+  await assertCorporateBackOffice(req.user.id, req.user.role)
   const { scope } = ProfileZodSchema.profileScopeQuery.parse(req.query)
   const data = await profileService.getConsolidatedEngagement(req.user.id, req.user.role, scope)
   sendResponse(res, { success: true, statusCode: 200, message: 'Consolidated engagement', data })
@@ -452,6 +464,7 @@ const socialClicks = catchAsyncError(async (req, res) => {
 
 const socialClicksByCard = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
+  await assertCorporateBackOffice(req.user.id, req.user.role)
   const { scope } = ProfileZodSchema.profileScopeQuery.parse(req.query)
   const data = await profileService.getSocialClicksByCard(req.user.id, req.user.role, scope)
   sendResponse(res, { success: true, statusCode: 200, message: 'Social clicks by card', data })
@@ -496,6 +509,7 @@ const profileController = {
   deleteTeamNotice,
   packages,
   subscriptions,
+  entitlements,
 }
 
 export default profileController

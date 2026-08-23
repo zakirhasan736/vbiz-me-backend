@@ -4,6 +4,7 @@ import { isStaffRole, toApiRole } from '../constants/userRole'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
+import { profileOwnerAllowsPackageAccess } from './entitlement.service'
 
 type OwnerCandidate = {
   id: string
@@ -208,12 +209,15 @@ const runDailyBirthdayWishes = async (opts?: { timeZone?: string }): Promise<Bir
     }
 
     try {
-      await sendBirthdayEmail({
-        owner,
-        cardName,
-        cardUrl,
-        wishDate,
-      })
+      const allowEmail = await profileOwnerAllowsPackageAccess(profile.id, 'allow_email_notification')
+      if (allowEmail) {
+        await sendBirthdayEmail({
+          owner,
+          cardName,
+          cardUrl,
+          wishDate,
+        })
+      }
       await createOwnerInboxNotice({
         ownerEmail: owner.email,
         cardName,

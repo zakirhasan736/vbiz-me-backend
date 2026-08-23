@@ -1,7 +1,3 @@
-import AppError from '../error/AppError'
-import { prisma } from '../utils/prisma'
-import { isStaffRole } from './userRole'
-
 export const PACKAGE_ACCESS_FEATURES = [
   { key: 'allow_ai_assistance', label: 'AI assistance' },
   { key: 'allow_canva', label: 'Canva feature' },
@@ -16,7 +12,31 @@ export type PackageAccessKey = (typeof PACKAGE_ACCESS_FEATURES)[number]['key']
 
 export type PackageAccessMap = Record<PackageAccessKey, boolean>
 
+export const CARD_LIMIT_FEATURE_KEY = 'max_cards'
+
+export const CORPORATE_LIMIT_OVERRIDE_KEYS = ['max_social_links', 'max_extra_fields', 'max_file_size_mb'] as const
+
+export type CorporateLimitOverrideKey = (typeof CORPORATE_LIMIT_OVERRIDE_KEYS)[number]
+
 export const RETIRED_PACKAGE_SLUGS = ['corporate-starter', 'single-starter'] as const
+
+export const PACKAGE_MEDIA_FEATURE_KEYS = [
+  'allow_video_upload',
+  'allow_2d_explainer',
+  'allow_background_video_upload',
+  'allow_intro_video_upload',
+  'allow_music_upload',
+  'allow_bg_music_upload',
+  'allow_yt_bg_music_upload',
+] as const
+
+export type PackageMediaFeatureKey = (typeof PACKAGE_MEDIA_FEATURE_KEYS)[number]
+
+/** Missing rows stay allowed when paid; backfill inserts these as explicit `1` without overwriting existing 0s. */
+export const EXPLICIT_ALLOW_FLAG_KEYS = [
+  ...PACKAGE_ACCESS_FEATURES.map((item) => item.key),
+  ...PACKAGE_MEDIA_FEATURE_KEYS,
+] as const
 
 const ACCESS_KEY_SET = new Set<string>(PACKAGE_ACCESS_FEATURES.map((item) => item.key))
 const TRUTHY = new Set(['1', 'true', 'yes', 'on', 'enabled'])
@@ -38,45 +58,25 @@ export function parseAccessFlag(value: string | null | undefined, whenMissing = 
   return whenMissing
 }
 
+export function allPackageAccessDisabled(): PackageAccessMap {
+  return Object.fromEntries(PACKAGE_ACCESS_FEATURES.map((item) => [item.key, false])) as PackageAccessMap
+}
+
 export function entitlementsFromFeatures(
-  features: { featureKey: string; featureValue?: string | null }[] | undefined | null
+  features: { featureKey: string; featureValue?: string | null }[] | undefined | null,
+  whenMissing = true
 ): PackageAccessMap {
-  const map = allPackageAccessEnabled()
+  const map = whenMissing ? allPackageAccessEnabled() : allPackageAccessDisabled()
   if (!features?.length) return map
   for (const item of PACKAGE_ACCESS_FEATURES) {
     const row = features.find((feature) => feature.featureKey.trim().toLowerCase() === item.key)
-    if (row) map[item.key] = parseAccessFlag(row.featureValue, true)
+    if (row) map[item.key] = parseAccessFlag(row.featureValue, whenMissing)
   }
   return map
 }
 
-export async function getUserPackageAccess(userId: string, role?: string | null): Promise<PackageAccessMap> {
-  if (isStaffRole(role)) return allPackageAccessEnabled()
-
-  const now = new Date()
-  const subscription = await prisma.subscription.findFirst({
-    where: {
-      userId,
-      OR: [{ endsAt: null }, { endsAt: { gt: now } }],
-    },
-    include: { package: { include: { features: true } } },
-    orderBy: { createdAt: 'desc' },
-  })
-
-  return entitlementsFromFeatures(subscription?.package?.features)
-}
-
-export async function assertUserPackageAccess(
-  userId: string,
-  role: string | null | undefined,
-  key: PackageAccessKey,
-  message?: string
-): Promise<void> {
-  const access = await getUserPackageAccess(userId, role)
-  if (access[key]) return
-  const label = PACKAGE_ACCESS_FEATURES.find((item) => item.key === key)?.label || key
-  throw new AppError(403, message || `${label} is not included in your package.`, {
-    code: 'PACKAGE_FEATURE_LOCKED',
-    data: { featureKey: key },
-  })
+export function isUnlimitedFeatureValue(value: string | null | undefined): boolean {
+  if (value == null || String(value).trim() === '') return true
+  const raw = String(value).trim().toLowerCase()
+  return raw === 'unlimited' || raw === '-1'
 }

@@ -51,7 +51,8 @@ const createAnnouncement = z
   .superRefine((data, ctx) => {
     const targetType = data.targetType ?? 'all'
     const emails = data.targetEmails ?? []
-    if (targetType === 'specific' && emails.length === 0) {
+    const profileId = data.meta?.profileId?.trim()
+    if (targetType === 'specific' && emails.length === 0 && !profileId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'At least one target email is required when targetType is specific',

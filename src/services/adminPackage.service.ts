@@ -1,3 +1,9 @@
+import {
+  inferOwnerModeFromCatalog,
+  prismaOwnerMode,
+  resolveOwnerMode,
+  type OwnerMode,
+} from '../constants/packageOwnerMode'
 import AppError from '../error/AppError'
 import { writeAuditLog } from '../utils/auditLog'
 import { prisma } from '../utils/prisma'
@@ -45,9 +51,11 @@ const packageListSelect = {
   id: true,
   name: true,
   slug: true,
+  ownerMode: true,
   description: true,
   monthlyPrice: true,
   yearlyPrice: true,
+  signupFeeCents: true,
   isActive: true,
   sortOrder: true,
   createdAt: true,
@@ -63,12 +71,14 @@ export type AdminPackageRow = {
   description: string | null
   monthlyPrice: number
   yearlyPrice: number
+  signupFeeCents: number
   isActive: boolean
   sortOrder: number
   createdAt: Date
   updatedAt: Date
   features: { id: string; featureKey: string; featureValue: string | null }[]
   subscriberCount: number
+  ownerMode: OwnerMode
 }
 
 export type PackageSubscriber = {
@@ -84,9 +94,11 @@ function mapPackage(row: {
   id: string
   name: string
   slug: string | null
+  ownerMode?: string | null
   description: string | null
   monthlyPrice: number
   yearlyPrice: number
+  signupFeeCents: number
   isActive: boolean
   sortOrder: number
   createdAt: Date
@@ -101,12 +113,14 @@ function mapPackage(row: {
     description: row.description,
     monthlyPrice: row.monthlyPrice,
     yearlyPrice: row.yearlyPrice,
+    signupFeeCents: row.signupFeeCents,
     isActive: row.isActive,
     sortOrder: row.sortOrder,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     features: row.features,
     subscriberCount: row._count.subscriptions,
+    ownerMode: resolveOwnerMode(row),
   }
 }
 
@@ -151,14 +165,17 @@ const getById = async (id: string): Promise<AdminPackageRow & { subscribers: Pac
 
 const create = async (body: CreateAdminPackageBody, actor: ActorContext): Promise<AdminPackageRow> => {
   const slug = await ensureUniqueSlug(body.slug?.trim() || body.name)
+  const ownerMode = inferOwnerModeFromCatalog({ slug, name: body.name })
 
   const row = await prisma.package.create({
     data: {
       name: body.name.trim(),
       slug,
+      ownerMode: prismaOwnerMode(ownerMode),
       description: body.description?.trim() || null,
       monthlyPrice: body.monthlyPrice,
       yearlyPrice: body.yearlyPrice,
+      signupFeeCents: body.signupFeeCents ?? 0,
       isActive: body.isActive ?? true,
       sortOrder: body.sortOrder ?? 0,
       features: {
@@ -198,6 +215,10 @@ const update = async (id: string, body: UpdateAdminPackageBody, actor: ActorCont
     slug = await ensureUniqueSlug(body.name, id)
   }
 
+  const nextName = body.name !== undefined ? body.name.trim() : existing.name
+  const nextSlug = slug !== undefined ? slug : existing.slug
+  const ownerMode = prismaOwnerMode(inferOwnerModeFromCatalog({ slug: nextSlug, name: nextName }))
+
   const row = await prisma.$transaction(async (tx) => {
     if (body.features !== undefined) {
       await tx.packageFeature.deleteMany({ where: { packageId: id } })
@@ -217,9 +238,11 @@ const update = async (id: string, body: UpdateAdminPackageBody, actor: ActorCont
       data: {
         ...(body.name !== undefined ? { name: body.name.trim() } : {}),
         ...(slug !== undefined ? { slug } : {}),
+        ownerMode,
         ...(body.description !== undefined ? { description: body.description?.trim() || null } : {}),
         ...(body.monthlyPrice !== undefined ? { monthlyPrice: body.monthlyPrice } : {}),
         ...(body.yearlyPrice !== undefined ? { yearlyPrice: body.yearlyPrice } : {}),
+        ...(body.signupFeeCents !== undefined ? { signupFeeCents: body.signupFeeCents } : {}),
         ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
         ...(body.sortOrder !== undefined ? { sortOrder: body.sortOrder } : {}),
       },
