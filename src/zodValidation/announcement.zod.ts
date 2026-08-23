@@ -87,7 +87,7 @@ const listAnnouncementsQuery = z.object({
   status: announcementStatus.optional(),
   kind: announcementKind.optional(),
   skip: z.coerce.number().int().min(0).default(0),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
 })
 
 const AnnouncementZodSchema = {
