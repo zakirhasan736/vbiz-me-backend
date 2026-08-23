@@ -640,12 +640,37 @@ const resolveCreatedScopeWhere = async (userId: string, role: string): Promise<P
     return { createdById: userId }
   }
 
-  const portfolioUserIds = await resolveAdminPortfolioUserIds(userId, role)
+  const staffIds = new Set<string>(await resolveAdminPortfolioUserIds(userId, role))
+  const allStaff = await prisma.user.findMany({
+    where: {
+      deletedAt: null,
+      role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+    },
+    select: { id: true },
+  })
+  for (const row of allStaff) staffIds.add(row.id)
+
+  const staffIdList = [...staffIds]
+  const invitedOwners = await prisma.user.findMany({
+    where: {
+      deletedAt: null,
+      createdById: { in: staffIdList },
+    },
+    select: { id: true },
+  })
+  const relatedUserIds = [...new Set([...staffIdList, ...invitedOwners.map((row) => row.id)])]
+
   return {
     OR: [
-      { createdById: { in: portfolioUserIds } },
-      { userId: { in: portfolioUserIds } },
-      { companyUserId: { in: portfolioUserIds } },
+      { createdById: { in: relatedUserIds } },
+      { companyUserId: { in: relatedUserIds } },
+      { userId: { in: relatedUserIds } },
+      {
+        user: {
+          deletedAt: null,
+          role: { in: [UserRole.VCARD_OWNER, UserRole.CORPORATE_OWNER] },
+        },
+      },
     ],
   }
 }
