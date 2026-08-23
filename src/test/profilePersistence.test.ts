@@ -50,10 +50,14 @@ describe('profile persistence safeguards', () => {
       deliver: true,
     })
     assert.equal(parsed.deliver, true)
-    assert.match(profileService, /input\.audience === 'savers' \|\| input\.deliver/)
+    assert.match(profileService, /Staff Notice is an admin action/)
+    assert.match(profileService, /input\.audience === 'savers' \|\| shouldDeliver/)
+    assert.doesNotMatch(profileService, /You can only publish public notices on cards you personally own/)
     assert.match(profileService, /pushService\.notifyProfileUpdate\(targetProfileId/)
     assert.match(profileService, /source: 'card_notice', channel: 'inbox'/)
     assert.match(profileService, /\.\.\.new Set\(\[\.\.\.saverEmails, \.\.\.ownerEmails\]\)/)
+    assert.match(profileService, /Include admin-created notices/)
+    assert.doesNotMatch(profileService, /ownerId: \{ in: ownerIds \}/)
   })
 
   it('links contact saves to a stable guest and privately notifies owners after a return cooldown', () => {

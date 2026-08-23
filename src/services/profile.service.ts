@@ -3255,19 +3255,6 @@ const listTeamNotices = async (userId: string): Promise<TeamNoticeRow[]> => {
   return rows.map(serializeTeamNotice)
 }
 
-/** Personal ownership only — never use admin getOwned bypass for public TeamNotices. */
-const assertPersonallyOwnsProfile = async (profileId: string, userId: string) => {
-  const profile = await prisma.profile.findUnique({
-    where: { id: profileId },
-    select: { id: true, userId: true, companyUserId: true },
-  })
-  if (!profile) throw new AppError(404, 'Profile not found')
-  if (profile.userId !== userId && profile.companyUserId !== userId) {
-    throw new AppError(403, 'You can only publish public notices on cards you personally own')
-  }
-  return profile
-}
-
 const isOwnerOrCorporateRole = (role: string) =>
   role === 'vcard-owner' || role === 'corporate-owner' || role === 'VCARD_OWNER' || role === 'CORPORATE_OWNER'
 
@@ -3299,24 +3286,22 @@ const createTeamNotice = async (
   }
 
   if (targetProfileId) {
-    // The explicit admin delivery action may target any card. Normal public
-    // TeamNotice publishing remains limited to cards the actor owns.
+    // Staff Notice is an admin action and may target any card (single or corporate).
+    // Owners and corporate owners may only publish on cards they own.
     if (staff) {
-      if (input.deliver) {
-        const target = await prisma.profile.findUnique({ where: { id: targetProfileId }, select: { id: true } })
-        if (!target) throw new AppError(404, 'Profile not found')
-      } else {
-        await assertPersonallyOwnsProfile(targetProfileId, userId)
-      }
+      const target = await prisma.profile.findUnique({ where: { id: targetProfileId }, select: { id: true } })
+      if (!target) throw new AppError(404, 'Profile not found')
     } else {
       const owned = await getOwnedLite(targetProfileId, userId, role)
       assertOwnerCanMutateCard(owned, role)
     }
   } else if (staff) {
-    throw new AppError(403, 'Staff can only publish public notices on a specific card they own')
+    throw new AppError(400, 'Select a specific card for this admin notice.')
   }
 
-  if (input.audience === 'savers' || input.deliver) {
+  const shouldDeliver = Boolean(input.deliver) || (staff && Boolean(targetProfileId))
+
+  if (input.audience === 'savers' || shouldDeliver) {
     const profiles = await listForUser(userId, role)
     const ids = targetProfileId ? [targetProfileId] : profiles.map((p) => p.id)
     if (!emptyProfileIds(ids)) {
@@ -3347,7 +3332,7 @@ const createTeamNotice = async (
       const saverEmails = [
         ...new Set([...guests, ...contacts].map((r) => (r.email || '').trim().toLowerCase()).filter(Boolean)),
       ]
-      const ownerEmails = input.deliver
+      const ownerEmails = shouldDeliver
         ? [targetProfile?.user?.email, targetProfile?.companyUser?.email, targetProfile?.email]
             .map((email) => (email || '').trim().toLowerCase())
             .filter(Boolean)
@@ -3372,7 +3357,7 @@ const createTeamNotice = async (
         )
       )
 
-      if (input.deliver && targetProfileId) {
+      if (shouldDeliver && targetProfileId) {
         pushService.notifyProfileUpdate(targetProfileId, {
           title: subject,
           body: text,
@@ -3408,7 +3393,6 @@ const createTeamNotice = async (
   if (targetProfileId && input.audience === 'all') {
     await prisma.teamNotice.updateMany({
       where: {
-        ownerId: userId,
         targetProfileId,
         audience: 'all',
         status: 'active',
@@ -3451,9 +3435,8 @@ const deleteTeamNotice = async (userId: string, role: string, noticeId: string) 
       if (profile) assertOwnerCanMutateCard(profile, role)
     }
   } else if (staff) {
-    // Staff may delete only when they personally own the target card.
+    // Staff may clear any card-targeted notice from the admin vCard Notice action.
     if (!existing.targetProfileId) throw new AppError(403, 'Not allowed to delete this notice')
-    await assertPersonallyOwnsProfile(existing.targetProfileId, userId)
   } else if (existing.targetProfileId) {
     const owned = await getOwnedLite(existing.targetProfileId, userId, role)
     assertOwnerCanMutateCard(owned, role)
@@ -3471,28 +3454,19 @@ const deleteTeamNotice = async (userId: string, role: string, noticeId: string) 
 /** Active public-banner notices for a profile — only notices targeted at this card. */
 const listPublicTeamNoticesForProfile = async (
   profileId: string,
-  knownOwnerIds?: string[],
+  _knownOwnerIds?: string[],
   viewer?: PublicViewerIdentity
 ): Promise<TeamNoticeRow[]> => {
-  const ownerIds: string[] =
-    knownOwnerIds ??
-    (await prisma.profile
-      .findUnique({
-        where: { id: profileId },
-        select: { userId: true, companyUserId: true },
-      })
-      .then((profile) =>
-        profile ? [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id)) : []
-      ))
-  if (!ownerIds.length) return []
+  const id = profileId.trim()
+  if (!id) return []
 
   const rows = await prisma.teamNotice.findMany({
     where: {
-      ownerId: { in: ownerIds },
       status: 'active',
       audience: 'all',
+      // Include admin-created notices (ownerId is the admin, not the card owner).
       // Never fan out null-target notices to every card — announcements are per-card.
-      targetProfileId: profileId,
+      targetProfileId: id,
     },
     orderBy: { createdAt: 'desc' },
     take: 10,
