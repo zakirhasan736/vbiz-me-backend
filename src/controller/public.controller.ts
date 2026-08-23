@@ -59,7 +59,11 @@ const dismissProfileAnnouncement = catchAsyncError(async (req, res) => {
 
 const getProfileTeamNotice = catchAsyncError(async (req, res) => {
   const viewer = getPublicViewerIdentity(req, req.query.visitorId)
-  const data = await profileService.getLatestPublicTeamNoticeForProfile(param(req.params.id), viewer)
+  const originRaw = String(req.query.origin || '')
+    .trim()
+    .toLowerCase()
+  const origin = originRaw === 'admin' || originRaw === 'owner' ? originRaw : undefined
+  const data = await profileService.getLatestPublicTeamNoticeForProfile(param(req.params.id), viewer, origin)
   sendPublicResponse(res, { success: true, data })
 })
 
