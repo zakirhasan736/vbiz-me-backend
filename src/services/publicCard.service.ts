@@ -1823,17 +1823,19 @@ const getPublicCards = async (query: {
   search?: string
 }) => {
   const page = Math.max(1, Number(query.page) || 1)
-  const perPage = Math.min(50, Math.max(1, Number(query.per_page) || 12))
+  const perPage = Math.min(100, Math.max(1, Number(query.per_page) || 12))
+  const searchTerm = String(query.search || query.service || '').trim()
   const where = {
     ...publicVisibleWhere(),
     slug: { not: null },
     ...(query.profession_id ? { professionId: query.profession_id } : {}),
-    ...(query.search
+    ...(searchTerm
       ? {
           OR: [
-            { name: { contains: query.search, mode: 'insensitive' as const } },
-            { companyName: { contains: query.search, mode: 'insensitive' as const } },
-            { prof: { contains: query.search, mode: 'insensitive' as const } },
+            { name: { contains: searchTerm, mode: 'insensitive' as const } },
+            { companyName: { contains: searchTerm, mode: 'insensitive' as const } },
+            { prof: { contains: searchTerm, mode: 'insensitive' as const } },
+            { slug: { contains: searchTerm, mode: 'insensitive' as const } },
           ],
         }
       : {}),
@@ -1857,6 +1859,9 @@ const getPublicCards = async (query: {
   ])
 
   const lastPage = Math.max(1, Math.ceil(total / perPage))
+  const from = total === 0 ? null : (page - 1) * perPage + 1
+  const to = total === 0 ? null : Math.min(page * perPage, total)
+  const path = '/public-cards'
   const data = rows.map((p) => {
     const profileAtt = p.attachments.find((a) =>
       matchAttachmentType(a.attachmentType?.name, ATTACHMENT_TYPE_ALIASES.profile)
@@ -1881,13 +1886,42 @@ const getPublicCards = async (query: {
     }
   })
 
+  const links = [
+    {
+      url: page > 1 ? `${path}?page=${page - 1}` : null,
+      label: '&laquo; Previous',
+      active: false,
+    },
+    ...Array.from({ length: lastPage }, (_, i) => {
+      const n = i + 1
+      return {
+        url: `${path}?page=${n}`,
+        label: String(n),
+        active: n === page,
+      }
+    }),
+    {
+      url: page < lastPage ? `${path}?page=${page + 1}` : null,
+      label: 'Next &raquo;',
+      active: false,
+    },
+  ]
+
   return {
     success: true,
     data: {
       current_page: page,
       data,
+      first_page_url: `${path}?page=1`,
+      from,
       last_page: lastPage,
+      last_page_url: `${path}?page=${lastPage}`,
+      links,
+      next_page_url: page < lastPage ? `${path}?page=${page + 1}` : null,
+      path,
       per_page: perPage,
+      prev_page_url: page > 1 ? `${path}?page=${page - 1}` : null,
+      to,
       total,
     },
     dropdowns: {
@@ -1906,8 +1940,8 @@ const getPublicCards = async (query: {
       last_page: lastPage,
       per_page: perPage,
       total,
-      next_page_url: page < lastPage ? `?page=${page + 1}` : null,
-      prev_page_url: page > 1 ? `?page=${page - 1}` : null,
+      next_page_url: page < lastPage ? `${path}?page=${page + 1}` : null,
+      prev_page_url: page > 1 ? `${path}?page=${page - 1}` : null,
     },
   }
 }

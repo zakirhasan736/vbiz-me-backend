@@ -29,6 +29,13 @@ const list = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Meetings fetched', data })
 })
 
+const listOwnerUpcoming = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const limit = Math.min(Number(req.query.limit) || 10, 50)
+  const data = await meetingService.listOwnerUpcoming(req.user.id, limit)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Upcoming meetings fetched', data })
+})
+
 const getOne = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   assertScheduleAccess(req.user)
@@ -64,6 +71,7 @@ const remove = catchAsyncError(async (req, res) => {
 
 const meetingController = {
   list,
+  listOwnerUpcoming,
   getOne,
   create,
   update,

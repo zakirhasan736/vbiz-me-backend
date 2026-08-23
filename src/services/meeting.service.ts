@@ -1,7 +1,9 @@
 import type { Prisma } from '../../generated/prisma/client'
+import config from '../configs/config'
 import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
+import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import type {
@@ -11,7 +13,8 @@ import type {
   UpdateMeetingInput,
 } from '../zodValidation/meeting.zod'
 import announcementService from './announcement.service'
-import googleCalendarService from './googleCalendar/googleCalendar.service'
+import calendarIntegrationService from './calendarIntegration.service'
+import pushService from './push.service'
 
 type Actor = { id: string; email: string; name?: string | null }
 
@@ -56,6 +59,17 @@ export function computeStartsAt(date: string, time: string): Date {
   const { hours, minutes } = parseTimeParts(time)
   const [y, m, d] = date.split('-').map(Number)
   return new Date(y, m - 1, d, hours, minutes, 0, 0)
+}
+
+function escapeHtml(value: string): string {
+  const entities: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  }
+  return value.replace(/[&<>"']/g, (character) => entities[character] || character)
 }
 
 function serializeMeeting(row: MeetingRow) {
@@ -113,27 +127,128 @@ function calendarSummary(type: string, host: string) {
   return `${type} with ${host}`
 }
 
-function calendarDescription(input: { notes?: string | null; host: string; type: string; meetLink?: string | null }) {
+function meetLabelForEvent(_eventId: string | null | undefined): string {
+  return calendarIntegrationService.meetLabel(calendarIntegrationService.resolveProvider())
+}
+
+function calendarDescription(input: {
+  notes?: string | null
+  host: string
+  type: string
+  meetLink?: string | null
+  meetLabel?: string
+}) {
+  const label = input.meetLabel || 'Meeting'
   const parts = [
     `vBiz Me admin schedule: ${input.type}`,
     `Host / card owner: ${input.host}`,
     input.notes?.trim() || null,
-    input.meetLink ? `Google Meet: ${input.meetLink}` : null,
+    input.meetLink ? `${label}: ${input.meetLink}` : null,
   ].filter(Boolean)
   return parts.join('\n\n')
 }
 
-async function notifyOwnerAnnouncement(actor: Actor, meeting: MeetingRow, ownerEmails: string[]) {
+function meetingEmailHtml(input: {
+  recipientName: string
+  type: string
+  host: string
+  date: string
+  time: string
+  notes?: string | null
+  meetLink?: string | null
+  meetLabel?: string
+  isAdminCopy?: boolean
+}) {
+  const label = input.meetLabel || 'Meeting'
+  const meetBlock = input.meetLink
+    ? `<p style="margin:16px 0"><a href="${escapeHtml(input.meetLink)}" style="display:inline-block;padding:12px 20px;background:#0f766e;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Join ${escapeHtml(label)}</a></p><p style="font-size:13px;color:#64748b">${escapeHtml(label)} link: ${escapeHtml(input.meetLink)}</p>`
+    : ''
+
+  const intro = input.isAdminCopy
+    ? `A new session has been booked on the vBiz Me schedule calendar.`
+    : `You have an upcoming session scheduled with the vBiz Me team.`
+
+  return [
+    '<div style="margin:0 auto;max-width:640px;font-family:Arial,sans-serif;color:#172033;line-height:1.6">',
+    `<p>Hello ${escapeHtml(input.recipientName)},</p>`,
+    `<p>${intro}</p>`,
+    '<div style="margin:20px 0;padding:16px 20px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc">',
+    `<p style="margin:0 0 8px"><strong>${escapeHtml(input.type)}</strong></p>`,
+    `<p style="margin:0 0 4px">With: ${escapeHtml(input.host)}</p>`,
+    `<p style="margin:0 0 4px">Date: ${escapeHtml(input.date)}</p>`,
+    `<p style="margin:0">Time: ${escapeHtml(input.time)}</p>`,
+    input.notes?.trim() ? `<p style="margin:12px 0 0;white-space:pre-wrap">${escapeHtml(input.notes.trim())}</p>` : '',
+    '</div>',
+    meetBlock,
+    '<p style="margin-top:24px">Regards,<br><strong>vBiz.me Team</strong></p>',
+    '</div>',
+  ].join('')
+}
+
+async function sendMeetingEmails(input: {
+  meeting: MeetingRow
+  ownerEmails: string[]
+  ownerDisplayName: string | null
+  actor: Actor
+  meetLabel: string
+}) {
+  if (!config.MAIL_ADDRESS || !config.MAIL_PASS) return
+
+  const subject = `Upcoming session: ${input.meeting.type} on ${input.meeting.date}`
+  const adminSubject = `Scheduled: ${input.meeting.type} with ${input.meeting.host}`
+
+  for (const email of input.ownerEmails) {
+    void authUtils
+      .sendEmail({
+        receiverMail: email,
+        subject,
+        html: meetingEmailHtml({
+          recipientName: input.ownerDisplayName || 'vCard owner',
+          type: input.meeting.type,
+          host: input.meeting.host,
+          date: input.meeting.date,
+          time: input.meeting.time,
+          notes: input.meeting.notes,
+          meetLink: input.meeting.meetLink,
+          meetLabel: input.meetLabel,
+        }),
+      })
+      .catch((error) => logger.error('Meeting owner email failed', { error, email }))
+  }
+
+  const adminEmail = input.actor.email?.trim()
+  if (adminEmail) {
+    void authUtils
+      .sendEmail({
+        receiverMail: adminEmail,
+        subject: adminSubject,
+        html: meetingEmailHtml({
+          recipientName: input.actor.name?.trim() || 'Admin',
+          type: input.meeting.type,
+          host: input.meeting.host,
+          date: input.meeting.date,
+          time: input.meeting.time,
+          notes: input.meeting.notes,
+          meetLink: input.meeting.meetLink,
+          meetLabel: input.meetLabel,
+          isAdminCopy: true,
+        }),
+      })
+      .catch((error) => logger.error('Meeting admin email failed', { error, adminEmail }))
+  }
+}
+
+async function notifyOwnerAnnouncement(actor: Actor, meeting: MeetingRow, ownerEmails: string[], meetLabel: string) {
   if (!ownerEmails.length) return
 
-  const meetLine = meeting.meetLink ? `\n\nGoogle Meet: ${meeting.meetLink}` : ''
+  const meetLine = meeting.meetLink ? `\n\n${meetLabel}: ${meeting.meetLink}` : ''
   const notesLine = meeting.notes?.trim() ? `\n\n${meeting.notes.trim()}` : ''
 
   try {
     await announcementService.create(actor, {
       type: 'info',
       kind: 'announcement',
-      title: `Meeting scheduled: ${meeting.type}`,
+      title: `Upcoming session: ${meeting.type}`,
       body: `You have a ${meeting.type} with admin on ${meeting.date} at ${meeting.time}.${notesLine}${meetLine}`,
       status: 'active',
       targetType: 'specific',
@@ -142,11 +257,37 @@ async function notifyOwnerAnnouncement(actor: Actor, meeting: MeetingRow, ownerE
         profileId: meeting.profileId || '',
         meetingId: meeting.id,
         meetLink: meeting.meetLink || '',
+        sendPush: '1',
+        category: 'event',
       },
     })
   } catch (error) {
     logger.error('Failed to create meeting announcement for owner', error)
   }
+}
+
+function notifyOwnerPush(meeting: MeetingRow, _meetLabel: string) {
+  if (!meeting.profileId) return
+
+  const meetSuffix = meeting.meetLink ? ` Join link included.` : ''
+  pushService.notifyProfileUpdate(meeting.profileId, {
+    title: `Upcoming session: ${meeting.type}`,
+    body: `${meeting.type} on ${meeting.date} at ${meeting.time}.${meetSuffix}`,
+    type: 'event_updates',
+    url: meeting.meetLink || undefined,
+  })
+}
+
+async function notifyMeetingCreated(
+  actor: Actor,
+  meeting: MeetingRow,
+  ownerEmails: string[],
+  ownerDisplayName: string | null,
+  meetLabel: string
+) {
+  await notifyOwnerAnnouncement(actor, meeting, ownerEmails, meetLabel)
+  notifyOwnerPush(meeting, meetLabel)
+  void sendMeetingEmails({ meeting, ownerEmails, ownerDisplayName, actor, meetLabel })
 }
 
 const list = async (query: ListMeetingsQuery) => {
@@ -170,7 +311,7 @@ const list = async (query: ListMeetingsQuery) => {
     prisma.meeting.count({ where }),
     prisma.meeting.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { startsAt: 'asc' },
       skip,
       take: limit,
     }),
@@ -181,6 +322,41 @@ const list = async (query: ListMeetingsQuery) => {
     total,
     skip,
     limit,
+  }
+}
+
+const listOwnerUpcoming = async (userId: string, limit = 10) => {
+  const profiles = await prisma.profile.findMany({
+    where: {
+      OR: [{ userId }, { companyUserId: userId }],
+    },
+    select: { id: true },
+  })
+
+  const profileIds = profiles.map((p) => p.id)
+  if (!profileIds.length) {
+    return { items: [], total: 0 }
+  }
+
+  const now = new Date()
+  const where: Prisma.MeetingWhereInput = {
+    profileId: { in: profileIds },
+    status: 'Scheduled',
+    startsAt: { gte: now },
+  }
+
+  const [total, rows] = await Promise.all([
+    prisma.meeting.count({ where }),
+    prisma.meeting.findMany({
+      where,
+      orderBy: { startsAt: 'asc' },
+      take: limit,
+    }),
+  ])
+
+  return {
+    items: rows.map(serializeMeeting),
+    total,
   }
 }
 
@@ -197,7 +373,8 @@ const create = async (actor: Actor, input: CreateMeetingInput) => {
 
   const status = input.status ?? 'Scheduled'
   const startsAt = computeStartsAt(input.date, input.time)
-  const { emails: ownerEmails } = await resolveOwnerEmails(input.profileId)
+  const { emails: ownerEmails, displayName: ownerDisplayName } = await resolveOwnerEmails(input.profileId)
+  const meetLabel = meetLabelForEvent(null)
 
   let row = await prisma.meeting.create({
     data: {
@@ -215,12 +392,13 @@ const create = async (actor: Actor, input: CreateMeetingInput) => {
   })
 
   if (status === 'Scheduled') {
-    const calendar = await googleCalendarService.createMeetingEvent({
+    const calendar = await calendarIntegrationService.createMeetingEvent({
       summary: calendarSummary(input.type, input.host),
       description: calendarDescription({
         notes: input.notes,
         host: input.host,
         type: input.type,
+        meetLabel,
       }),
       date: input.date,
       time: input.time,
@@ -228,6 +406,7 @@ const create = async (actor: Actor, input: CreateMeetingInput) => {
     })
 
     if (calendar) {
+      const resolvedMeetLabel = calendarIntegrationService.meetLabel(calendar.provider)
       row = await prisma.meeting.update({
         where: { id: row.id },
         data: {
@@ -236,9 +415,10 @@ const create = async (actor: Actor, input: CreateMeetingInput) => {
           ...(row.location ? {} : calendar.meetLink ? { location: calendar.meetLink } : {}),
         },
       })
+      await notifyMeetingCreated(actor, row, ownerEmails, ownerDisplayName, resolvedMeetLabel)
+    } else {
+      await notifyMeetingCreated(actor, row, ownerEmails, ownerDisplayName, meetLabel)
     }
-
-    await notifyOwnerAnnouncement(actor, row, ownerEmails)
   }
 
   const actorLabel = actor.name?.trim() || actor.email || 'Admin'
@@ -253,8 +433,9 @@ const create = async (actor: Actor, input: CreateMeetingInput) => {
       meetingId: row.id,
       meetingType: input.type,
       status,
-      googleEventId: row.googleEventId || '',
+      calendarEventId: row.googleEventId || '',
       meetLink: row.meetLink || '',
+      calendarProvider: calendarIntegrationService.resolveProvider(),
     },
   })
 
@@ -288,9 +469,11 @@ const update = async (id: string, actor: Actor, input: UpdateMeetingInput) => {
     },
   })
 
+  const meetLabel = meetLabelForEvent(existing.googleEventId)
+
   if (existing.googleEventId) {
     if (input.status === 'Cancelled' || input.status === 'Completed') {
-      await googleCalendarService.deleteMeetingEvent(existing.googleEventId)
+      await calendarIntegrationService.deleteMeetingEvent(existing.googleEventId)
       if (input.status === 'Cancelled') {
         row = await prisma.meeting.update({
           where: { id },
@@ -304,13 +487,14 @@ const update = async (id: string, actor: Actor, input: UpdateMeetingInput) => {
       input.host !== undefined ||
       input.type !== undefined
     ) {
-      const updatedCal = await googleCalendarService.updateMeetingEvent(existing.googleEventId, {
+      const updatedCal = await calendarIntegrationService.updateMeetingEvent(existing.googleEventId, {
         summary: calendarSummary(row.type, row.host),
         description: calendarDescription({
           notes: row.notes,
           host: row.host,
           type: row.type,
           meetLink: row.meetLink,
+          meetLabel,
         }),
         date: row.date,
         time: row.time,
@@ -318,7 +502,15 @@ const update = async (id: string, actor: Actor, input: UpdateMeetingInput) => {
       if (updatedCal?.meetLink && updatedCal.meetLink !== row.meetLink) {
         row = await prisma.meeting.update({
           where: { id },
-          data: { meetLink: updatedCal.meetLink },
+          data: {
+            meetLink: updatedCal.meetLink,
+            ...(updatedCal.eventId ? { googleEventId: updatedCal.eventId } : {}),
+          },
+        })
+      } else if (updatedCal?.eventId && updatedCal.eventId !== existing.googleEventId) {
+        row = await prisma.meeting.update({
+          where: { id },
+          data: { googleEventId: updatedCal.eventId },
         })
       }
     }
@@ -363,7 +555,7 @@ const remove = async (id: string, actor: Actor) => {
   if (!existing) throw new AppError(404, 'Meeting not found')
 
   if (existing.googleEventId) {
-    await googleCalendarService.deleteMeetingEvent(existing.googleEventId)
+    await calendarIntegrationService.deleteMeetingEvent(existing.googleEventId)
   }
 
   await prisma.meeting.delete({ where: { id } })
@@ -384,6 +576,7 @@ const remove = async (id: string, actor: Actor) => {
 
 const meetingService = {
   list,
+  listOwnerUpcoming,
   getOne,
   create,
   update,

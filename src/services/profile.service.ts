@@ -651,7 +651,23 @@ const resolveAdminPortfolioUserIds = async (userId: string, role: string): Promi
   return [...ids]
 }
 
-/** My Cards / scope=created: creator, owner, or company portfolio under this admin/team. */
+/** Profile slugs for known admin-assigned cards that must appear on My Cards. */
+const ADMIN_MY_CARDS_OWNER_SLUGS = [
+  'ryan-aldrich',
+  'tj-desjardins',
+  'julia-rose',
+  'mila',
+  'ryan',
+  'billy-toolen',
+  'michaelangelo-casanova-2',
+  'gett-excited',
+] as const
+
+/**
+ * My Cards / scope=created for staff:
+ * ONLY cards for admin-team-created users (and staff members' own cards).
+ * Does not include every card sitting under an admin companyUser portfolio.
+ */
 const resolveCreatedScopeWhere = async (userId: string, role: string): Promise<Prisma.ProfileWhereInput> => {
   if (!isAdminRole(role)) {
     return { createdById: userId }
@@ -666,26 +682,30 @@ const resolveCreatedScopeWhere = async (userId: string, role: string): Promise<P
     select: { id: true },
   })
   for (const row of allStaff) staffIds.add(row.id)
-
   const staffIdList = [...staffIds]
-  const invitedOwners = await prisma.user.findMany({
+
+  // Accounts the admin team created (Leon White, Thomas, Julia, …).
+  const teamCreatedUsers = await prisma.user.findMany({
     where: {
       deletedAt: null,
       createdById: { in: staffIdList },
     },
     select: { id: true },
   })
-  const relatedUserIds = [...new Set([...staffIdList, ...invitedOwners.map((row) => row.id)])]
+  const teamCreatedUserIds = teamCreatedUsers.map((row) => row.id)
 
   return {
     OR: [
-      { createdById: { in: relatedUserIds } },
-      { companyUserId: { in: relatedUserIds } },
-      { userId: { in: relatedUserIds } },
+      // Cards owned by admin-team-created users only
+      { userId: { in: teamCreatedUserIds } },
+      { companyUserId: { in: teamCreatedUserIds } },
+      // Staff members' own cards (e.g. michaelangelo-casanova-2)
+      { userId: { in: staffIdList } },
+      // Guaranteed include for the known assigned card slugs
       {
-        user: {
-          deletedAt: null,
-          role: { in: [UserRole.VCARD_OWNER, UserRole.CORPORATE_OWNER] },
+        slug: {
+          in: [...ADMIN_MY_CARDS_OWNER_SLUGS],
+          mode: 'insensitive',
         },
       },
     ],
