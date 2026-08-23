@@ -57,6 +57,8 @@ describe('profile persistence safeguards', () => {
     assert.match(profileService, /source: 'card_notice', channel: 'inbox'/)
     assert.match(profileService, /\.\.\.new Set\(\[\.\.\.saverEmails, \.\.\.ownerEmails\]\)/)
     assert.match(profileService, /Include admin-created notices/)
+    assert.match(profileService, /staffAuthorIds\.has\(row\.ownerId\) \? 'admin' : 'owner'/)
+    assert.match(publicController, /originRaw === 'admin' \|\| originRaw === 'owner'/)
     assert.doesNotMatch(profileService, /ownerId: \{ in: ownerIds \}/)
   })
 

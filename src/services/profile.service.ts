@@ -3151,18 +3151,23 @@ export type TeamNoticeRow = {
   recipientCount?: number
   createdAt: string
   status: string
+  /** admin = staff Notice / banner; owner = card or corporate owner popup. */
+  source?: 'admin' | 'owner'
 }
 
-function serializeTeamNotice(row: {
-  id: string
-  text: string
-  type: string
-  audience: string
-  targetProfileId: string | null
-  recipientCount: number | null
-  createdAt: Date
-  status: string
-}): TeamNoticeRow {
+function serializeTeamNotice(
+  row: {
+    id: string
+    text: string
+    type: string
+    audience: string
+    targetProfileId: string | null
+    recipientCount: number | null
+    createdAt: Date
+    status: string
+  },
+  source?: 'admin' | 'owner'
+): TeamNoticeRow {
   const allowed = new Set(['broadcast', 'system', 'info', 'warning', 'success'])
   const type = allowed.has(row.type) ? (row.type as TeamNoticeRow['type']) : 'broadcast'
   return {
@@ -3174,6 +3179,7 @@ function serializeTeamNotice(row: {
     recipientCount: row.recipientCount ?? undefined,
     createdAt: row.createdAt.toISOString(),
     status: row.status,
+    ...(source ? { source } : {}),
   }
 }
 
@@ -3252,7 +3258,7 @@ const listTeamNotices = async (userId: string): Promise<TeamNoticeRow[]> => {
     where: { ownerId: userId },
     orderBy: { createdAt: 'desc' },
   })
-  return rows.map(serializeTeamNotice)
+  return rows.map((row) => serializeTeamNotice(row))
 }
 
 const isOwnerOrCorporateRole = (role: string) =>
@@ -3455,7 +3461,8 @@ const deleteTeamNotice = async (userId: string, role: string, noticeId: string) 
 const listPublicTeamNoticesForProfile = async (
   profileId: string,
   _knownOwnerIds?: string[],
-  viewer?: PublicViewerIdentity
+  viewer?: PublicViewerIdentity,
+  origin?: 'admin' | 'owner'
 ): Promise<TeamNoticeRow[]> => {
   const id = profileId.trim()
   if (!id) return []
@@ -3471,19 +3478,33 @@ const listPublicTeamNoticesForProfile = async (
     orderBy: { createdAt: 'desc' },
     take: 10,
   })
-  const filtered: typeof rows = []
+  const authorIds = [...new Set(rows.map((row) => row.ownerId).filter(Boolean))]
+  const authors = authorIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: authorIds } },
+        select: { id: true, role: true },
+      })
+    : []
+  const staffAuthorIds = new Set(
+    authors.filter((author) => isAdminRole(toApiRole(author.role))).map((author) => author.id)
+  )
+
+  const filtered: TeamNoticeRow[] = []
   for (const row of rows) {
     if (await isTeamNoticeSuppressed(profileId, row.id, viewer)) continue
-    filtered.push(row)
+    const source: 'admin' | 'owner' = staffAuthorIds.has(row.ownerId) ? 'admin' : 'owner'
+    if (origin && source !== origin) continue
+    filtered.push(serializeTeamNotice(row, source))
   }
-  return filtered.map(serializeTeamNotice)
+  return filtered
 }
 
 const getLatestPublicTeamNoticeForProfile = async (
   profileId: string,
-  viewer?: PublicViewerIdentity
+  viewer?: PublicViewerIdentity,
+  origin?: 'admin' | 'owner'
 ): Promise<TeamNoticeRow | null> => {
-  const notices = await listPublicTeamNoticesForProfile(profileId, undefined, viewer)
+  const notices = await listPublicTeamNoticesForProfile(profileId, undefined, viewer, origin)
   return notices[0] ?? null
 }
 
