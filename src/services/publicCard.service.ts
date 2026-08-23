@@ -11,6 +11,7 @@ import AppError from '../error/AppError'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
+import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
@@ -18,6 +19,9 @@ import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } fro
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
 import { mediaFromProfile } from './push.service'
+
+const RETURNING_SAVED_GUEST_EVENT = 'returning_saved_guest'
+const RETURNING_SAVED_GUEST_DELAY_MS = 3 * 24 * 60 * 60 * 1000
 
 const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
   profile: ['profile picture', 'profile pic', 'profile_pic', 'avatar', 'profile image', 'profile'],
@@ -1946,8 +1950,10 @@ const saveGuestUser = async (
   }
 
   const submittedAt = new Date().toISOString()
+  const guestId = typeof clientMeta.guestId === 'string' ? clientMeta.guestId.trim().slice(0, 128) : ''
   const meta = {
     ...clientMeta,
+    ...(guestId ? { guestId } : {}),
     profileId: profile.id,
     profileSlug: profile.slug || null,
     ownerName: profile.name || null,
@@ -1976,6 +1982,7 @@ const saveGuestUser = async (
       fullName,
       phone,
       email,
+      ...(guestId ? { guestId } : {}),
       profileSlug: profile.slug,
       ownerName: profile.name,
     },
@@ -2087,7 +2094,11 @@ const listNotes = async (profileId: string, visitorId: string) => {
   return notes.filter((note) => publicNoteMeta(note.meta).visitorId === visitorId).map(mapPublicNote)
 }
 
-const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; userAgent?: string }) => {
+const saveContactCard = async (
+  profileId: string,
+  requestMeta?: { ip?: string; userAgent?: string },
+  guestId?: string
+) => {
   const profile = await prisma.profile.findFirst({
     where: { id: profileId, ...publicReadableWhere() },
     include: {
@@ -2110,7 +2121,12 @@ const saveContactCard = async (profileId: string, requestMeta?: { ip?: string; u
   await logEvent(
     profile.id,
     'save_contact_download',
-    { profileId: profile.id, profileSlug: profile.slug, ownerName: profile.name },
+    {
+      profileId: profile.id,
+      profileSlug: profile.slug,
+      ownerName: profile.name,
+      ...(guestId ? { guestId: guestId.slice(0, 128) } : {}),
+    },
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
 
@@ -2160,6 +2176,102 @@ const logEvent = async (
   })
 }
 
+type ReturningGuestProfile = {
+  id: string
+  slug: string | null
+  name: string
+  userId: string | null
+  companyUserId: string | null
+  user: { email: string } | null
+  companyUser: { email: string } | null
+}
+
+/**
+ * Notify the card owner's back-office when a known contact returns after a quiet period.
+ * The same event marker is also the cooldown, so ordinary refreshes never create inbox noise.
+ */
+const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId: string, firstViewAt: Date) => {
+  const cutoff = new Date(Date.now() - RETURNING_SAVED_GUEST_DELAY_MS)
+  if (firstViewAt > cutoff) return
+
+  const [savedGuest, savedContact, recentNotice] = await Promise.all([
+    prisma.guestUserData.findFirst({
+      where: {
+        profileId: profile.id,
+        createdAt: { lte: cutoff },
+        meta: { path: ['guestId'], equals: guestId },
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, fullName: true, email: true, phone: true },
+    }),
+    prisma.eventLog.findFirst({
+      where: {
+        profileId: profile.id,
+        eventType: 'save_contact_download',
+        createdAt: { lte: cutoff },
+        payload: { path: ['guestId'], equals: guestId },
+      },
+      select: { id: true },
+    }),
+    prisma.eventLog.findFirst({
+      where: {
+        profileId: profile.id,
+        eventType: RETURNING_SAVED_GUEST_EVENT,
+        createdAt: { gt: cutoff },
+        payload: { path: ['guestId'], equals: guestId },
+      },
+      select: { id: true },
+    }),
+  ])
+  if (!savedGuest || !savedContact || recentNotice) return
+
+  const ownerEmails = [...new Set([profile.user?.email, profile.companyUser?.email])]
+    .map((email) => (email || '').trim().toLowerCase())
+    .filter(Boolean)
+  if (!ownerEmails.length) return
+
+  const guestName = savedGuest.fullName?.trim() || 'A saved contact'
+  const cardName = profile.name?.trim() || profile.slug || 'your vCard'
+  const body = `Hey! ${guestName} is reviewing your card again. Have a question for them? Open your saved contacts and start a conversation.`
+
+  await prisma.$transaction([
+    prisma.eventLog.create({
+      data: {
+        profileId: profile.id,
+        eventType: RETURNING_SAVED_GUEST_EVENT,
+        payload: {
+          guestId,
+          guestUserId: savedGuest.id,
+          guestName,
+          guestEmail: savedGuest.email,
+          guestPhone: savedGuest.phone,
+          profileSlug: profile.slug,
+        },
+      },
+    }),
+    prisma.announcement.create({
+      data: {
+        kind: 'announcement',
+        type: 'info',
+        title: `Returning contact · ${cardName}`,
+        body,
+        status: 'active',
+        targetType: 'specific',
+        targetEmails: ownerEmails,
+        meta: {
+          channel: 'inbox',
+          source: RETURNING_SAVED_GUEST_EVENT,
+          profileId: profile.id,
+          guestId,
+          guestUserId: savedGuest.id,
+          ...(profile.slug ? { slug: profile.slug } : {}),
+        },
+        createdById: null,
+      },
+    }),
+  ])
+}
+
 const trackEvent = async (
   input: {
     eventType: 'social_click' | 'profile_view'
@@ -2181,7 +2293,15 @@ const trackEvent = async (
     where: profileId
       ? { id: profileId, ...publicReadableWhere() }
       : { slug: slugEquals(String(slug || '')), ...publicReadableWhere() },
-    select: { id: true, slug: true, userId: true, companyUserId: true },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      userId: true,
+      companyUserId: true,
+      user: { select: { email: true } },
+      companyUser: { select: { email: true } },
+    },
   })
   if (!profile) throw new AppError(404, 'Profile not found')
 
@@ -2201,10 +2321,15 @@ const trackEvent = async (
       eventType,
       AND: payloadFilters,
     },
-    select: { id: true },
+    select: { id: true, createdAt: true },
   })
 
   if (existing) {
+    if (eventType === 'profile_view') {
+      void notifyReturningSavedGuest(profile, guestId, existing.createdAt).catch((error) => {
+        logger.error('Returning saved guest notification failed', { profileId: profile.id, guestId, error })
+      })
+    }
     return {
       tracked: false as const,
       reason: 'already_counted' as const,

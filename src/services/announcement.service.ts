@@ -576,6 +576,7 @@ const getActiveForPublicCard = async (profileId: string, viewer?: PublicViewerId
 
   const matchesTarget = (row: AnnouncementRow) => {
     if (row.targetType === 'all') return true
+    if (profileIdFromMeta(row.meta) === id) return true
     if (row.targetType === 'specific' && email) {
       return row.targetEmails.map((e) => e.toLowerCase()).includes(email)
     }
@@ -615,6 +616,24 @@ const dismissPublicAnnouncement = async (opts: {
   return { id: announcementId, dismissed: true }
 }
 
+/** Remove the owner-inbox companion created by an admin card notice. */
+const archiveCardNotices = async (profileId: string) => {
+  const active = await prisma.announcement.findMany({
+    where: { status: 'active', targetType: 'specific' },
+    select: { id: true, meta: true },
+  })
+  const ids = active
+    .filter((row) => {
+      const meta = metaRecord(row.meta)
+      return meta?.source === 'card_notice' && meta.profileId === profileId
+    })
+    .map((row) => row.id)
+  if (ids.length) {
+    await prisma.announcement.updateMany({ where: { id: { in: ids } }, data: { status: 'archived' } })
+  }
+  return { archivedCount: ids.length }
+}
+
 const announcementService = {
   list,
   getOne,
@@ -623,6 +642,7 @@ const announcementService = {
   remove,
   clearLive,
   archiveLockNotices,
+  archiveCardNotices,
   getActiveForUser,
   getActiveForPublicCard,
   dismissPublicAnnouncement,

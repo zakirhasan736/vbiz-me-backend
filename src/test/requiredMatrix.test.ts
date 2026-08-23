@@ -187,7 +187,7 @@ describe('required matrix: PACKAGES', () => {
     assert.equal(result.backOffice, 'single')
     assert.equal(result.limits.maxCards, 1)
     assert.equal(result.access.allow_canva, false)
-    assert.match(profileRoute, /\/me\/entitlements/)
+    assert.match(profileRoute, /\/entitlements/)
   })
 
   it('Professional resolves Professional entitlements', () => {

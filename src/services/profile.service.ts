@@ -3279,6 +3279,7 @@ const createTeamNotice = async (
     type: 'broadcast' | 'system' | 'info' | 'warning' | 'success'
     audience: 'all' | 'savers'
     targetProfileId?: string
+    deliver?: boolean
   }
 ): Promise<TeamNoticeRow> => {
   const staff = isAdminRole(role)
@@ -3298,9 +3299,15 @@ const createTeamNotice = async (
   }
 
   if (targetProfileId) {
-    // Staff: only personally owned cards (My Cards). Owners: normal getOwned.
+    // The explicit admin delivery action may target any card. Normal public
+    // TeamNotice publishing remains limited to cards the actor owns.
     if (staff) {
-      await assertPersonallyOwnsProfile(targetProfileId, userId)
+      if (input.deliver) {
+        const target = await prisma.profile.findUnique({ where: { id: targetProfileId }, select: { id: true } })
+        if (!target) throw new AppError(404, 'Profile not found')
+      } else {
+        await assertPersonallyOwnsProfile(targetProfileId, userId)
+      }
     } else {
       const owned = await getOwnedLite(targetProfileId, userId, role)
       assertOwnerCanMutateCard(owned, role)
@@ -3309,11 +3316,11 @@ const createTeamNotice = async (
     throw new AppError(403, 'Staff can only publish public notices on a specific card they own')
   }
 
-  if (input.audience === 'savers') {
+  if (input.audience === 'savers' || input.deliver) {
     const profiles = await listForUser(userId, role)
     const ids = targetProfileId ? [targetProfileId] : profiles.map((p) => p.id)
     if (!emptyProfileIds(ids)) {
-      const [guests, contacts] = await Promise.all([
+      const [guests, contacts, targetProfile, actor] = await Promise.all([
         prisma.guestUserData.findMany({
           where: { profileId: { in: ids }, email: { not: null } },
           select: { email: true },
@@ -3322,15 +3329,35 @@ const createTeamNotice = async (
           where: { profileId: { in: ids }, email: { not: null } },
           select: { email: true },
         }),
+        targetProfileId
+          ? prisma.profile.findUnique({
+              where: { id: targetProfileId },
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                email: true,
+                user: { select: { email: true } },
+                companyUser: { select: { email: true } },
+              },
+            })
+          : null,
+        prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, name: true } }),
       ])
-      const emails = [
+      const saverEmails = [
         ...new Set([...guests, ...contacts].map((r) => (r.email || '').trim().toLowerCase()).filter(Boolean)),
       ]
+      const ownerEmails = input.deliver
+        ? [targetProfile?.user?.email, targetProfile?.companyUser?.email, targetProfile?.email]
+            .map((email) => (email || '').trim().toLowerCase())
+            .filter(Boolean)
+        : []
+      const emails = [...new Set([...saverEmails, ...ownerEmails])]
       recipientCount = emails.length
       const subject =
         input.type === 'system' || input.type === 'warning'
-          ? 'System notice from your saved contact'
-          : 'Announcement from a contact you saved'
+          ? `Important notice from ${targetProfile?.name || 'vBiz Me'}`
+          : `Update from ${targetProfile?.name || 'vBiz Me'}`
       const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -3344,6 +3371,34 @@ const createTeamNotice = async (
           })
         )
       )
+
+      if (input.deliver && targetProfileId) {
+        pushService.notifyProfileUpdate(targetProfileId, {
+          title: subject,
+          body: text,
+          type: 'announcement_updates',
+          url: targetProfile?.slug ? `/v/${targetProfile.slug}` : undefined,
+        })
+
+        if (actor && ownerEmails.length) {
+          void announcementService
+            .create(actor, {
+              type:
+                input.type === 'warning' || input.type === 'system'
+                  ? 'warning'
+                  : input.type === 'success'
+                    ? 'success'
+                    : 'info',
+              title: `Card notice · ${targetProfile?.name || targetProfile?.slug || 'vCard'}`,
+              body: text,
+              status: 'active',
+              targetType: 'specific',
+              targetEmails: [...new Set(ownerEmails)],
+              meta: { profileId: targetProfileId, source: 'card_notice', channel: 'inbox' },
+            })
+            .catch((error) => logger.error('Card owner backoffice notice failed', { targetProfileId, error }))
+        }
+      }
     } else {
       recipientCount = 0
     }
@@ -3407,6 +3462,9 @@ const deleteTeamNotice = async (userId: string, role: string, noticeId: string) 
   }
 
   await prisma.teamNotice.delete({ where: { id: noticeId } })
+  if (existing.targetProfileId) {
+    await announcementService.archiveCardNotices(existing.targetProfileId)
+  }
   return { id: noticeId, deleted: true }
 }
 

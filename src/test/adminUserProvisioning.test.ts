@@ -44,4 +44,20 @@ describe('admin user provisioning credentials', () => {
 
     assert.equal(result.success, true)
   })
+
+  it('treats a blank password as invite-based provisioning', () => {
+    const result = AdminUserZodSchema.createAdminUser.safeParse({
+      ...validAccount,
+      password: '',
+    })
+    assert.equal(result.success, true)
+    if (result.success) assert.equal(result.data.password, undefined)
+  })
+
+  it('does not reject list queries when role is empty or All', () => {
+    const empty = AdminUserZodSchema.listAdminUsersQuery.safeParse({ skip: '0', limit: '8', role: '', q: '' })
+    const all = AdminUserZodSchema.listAdminUsersQuery.safeParse({ skip: '0', limit: '8', role: 'All' })
+    assert.equal(empty.success, true)
+    assert.equal(all.success, true)
+  })
 })

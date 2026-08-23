@@ -18,10 +18,12 @@ const filterRole = z.enum(['vcard-owner', 'corporate-owner', 'admin', 'super-adm
 
 const accountStatus = z.enum(['ACTIVE', 'PAUSED', 'SUSPENDED'] as const)
 
+const emptyToUndefined = (value: unknown) => (value === '' || value === 'All' || value == null ? undefined : value)
+
 const listAdminUsersQuery = z.object({
-  q: z.string().trim().optional(),
-  role: filterRole.optional(),
-  accountStatus: accountStatus.optional(),
+  q: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+  role: z.preprocess(emptyToUndefined, filterRole.optional()),
+  accountStatus: z.preprocess(emptyToUndefined, accountStatus.optional()),
   skip: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(100).default(8),
 })
@@ -30,12 +32,21 @@ const createAdminUser = z
   .object({
     name: z.string().trim().min(1, 'Name is required'),
     email: z.string().trim().email('Valid email is required'),
-    password: strongPassword.optional(),
+    password: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+      strongPassword.optional()
+    ),
     packageId: z.string().trim().min(1, 'Package is required'),
     companyName: z.string().trim().max(200).optional().nullable(),
-    cardLimit: z.number().int().min(0).max(100000).optional(),
-    negotiatedMonthlyCents: z.number().int().min(0).nullable().optional(),
-    negotiatedSignupFeeCents: z.number().int().min(0).nullable().optional(),
+    cardLimit: z.coerce.number().int().min(0).max(100000).optional(),
+    negotiatedMonthlyCents: z.preprocess(
+      (value) => (value === '' || value === undefined ? undefined : value),
+      z.number().int().min(0).nullable().optional()
+    ),
+    negotiatedSignupFeeCents: z.preprocess(
+      (value) => (value === '' || value === undefined ? undefined : value),
+      z.number().int().min(0).nullable().optional()
+    ),
     featureOverrides: z
       .array(
         z.object({
@@ -57,10 +68,19 @@ const updateAdminUser = z
     email: z.string().trim().email('Valid email is required').optional(),
     role: ownerRole.optional(),
     companyName: z.string().trim().max(200).optional().nullable(),
-    password: strongPassword.optional(),
-    cardLimit: z.number().int().min(0).max(100000).optional(),
-    negotiatedMonthlyCents: z.number().int().min(0).nullable().optional(),
-    negotiatedSignupFeeCents: z.number().int().min(0).nullable().optional(),
+    password: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+      strongPassword.optional()
+    ),
+    cardLimit: z.coerce.number().int().min(0).max(100000).optional(),
+    negotiatedMonthlyCents: z.preprocess(
+      (value) => (value === '' || value === undefined ? undefined : value),
+      z.number().int().min(0).nullable().optional()
+    ),
+    negotiatedSignupFeeCents: z.preprocess(
+      (value) => (value === '' || value === undefined ? undefined : value),
+      z.number().int().min(0).nullable().optional()
+    ),
     featureOverrides: z
       .array(
         z.object({
