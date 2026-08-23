@@ -59,7 +59,11 @@ const dismissProfileAnnouncement = catchAsyncError(async (req, res) => {
 
 const getProfileTeamNotice = catchAsyncError(async (req, res) => {
   const viewer = getPublicViewerIdentity(req, req.query.visitorId)
-  const data = await profileService.getLatestPublicTeamNoticeForProfile(param(req.params.id), viewer)
+  const originRaw = String(req.query.origin || '')
+    .trim()
+    .toLowerCase()
+  const origin = originRaw === 'admin' || originRaw === 'owner' ? originRaw : undefined
+  const data = await profileService.getLatestPublicTeamNoticeForProfile(param(req.params.id), viewer, origin)
   sendPublicResponse(res, { success: true, data })
 })
 
@@ -182,10 +186,14 @@ const listNotes = catchAsyncError(async (req, res) => {
 })
 
 const saveContact = catchAsyncError(async (req, res) => {
-  const data = await publicCardService.saveContactCard(param(req.params.id), {
-    ip: req.ip,
-    userAgent: req.get('user-agent') || undefined,
-  })
+  const data = await publicCardService.saveContactCard(
+    param(req.params.id),
+    {
+      ip: req.ip,
+      userAgent: req.get('user-agent') || undefined,
+    },
+    String(req.query.visitor_id || '').trim() || undefined
+  )
   sendPublicResponse(res, { success: true, data })
 })
 

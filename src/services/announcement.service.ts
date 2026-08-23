@@ -295,7 +295,10 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
   const status = input.status ?? 'active'
   const profileId = profileIdFromMeta(input.meta)
 
-  if (profileId) {
+  // Public per-card banners are an admin action (same as global banners) and
+  // may target any single or corporate card. Outreach-only notices still
+  // require an owner card.
+  if (profileId && !isShowPublic(input.meta)) {
     await assertAdminCanContactProfile(actor.id, profileId)
   }
 
@@ -425,12 +428,12 @@ const update = async (id: string, actor: Actor, input: UpdateAnnouncementInput) 
         : []
   const nextStatus = (input.status ?? existing.status) as AnnouncementStatus
 
-  if (nextTargetType === 'specific' && nextEmails.length === 0) {
+  const profileId = profileIdFromMeta(input.meta ?? existing.meta)
+  if (nextTargetType === 'specific' && nextEmails.length === 0 && !profileId) {
     throw new AppError(400, 'At least one target email is required when targetType is specific')
   }
 
-  const profileId = profileIdFromMeta(input.meta ?? existing.meta)
-  if (profileId) {
+  if (profileId && !isShowPublic(input.meta ?? existing.meta)) {
     await assertAdminCanContactProfile(actor.id, profileId)
   }
 
@@ -555,11 +558,18 @@ const getActiveForPublicCard = async (profileId: string, viewer?: PublicViewerId
 
   const profile = await prisma.profile.findUnique({
     where: { id },
-    select: { id: true, email: true },
+    select: {
+      id: true,
+      email: true,
+      user: { select: { email: true } },
+      companyUser: { select: { email: true } },
+    },
   })
   if (!profile) return null
 
-  const email = (profile.email ?? '').trim().toLowerCase()
+  const emails = [profile.email, profile.user?.email, profile.companyUser?.email]
+    .map((value) => (value ?? '').trim().toLowerCase())
+    .filter(Boolean)
   const now = new Date()
 
   const candidates = await prisma.announcement.findMany({
@@ -574,15 +584,15 @@ const getActiveForPublicCard = async (profileId: string, viewer?: PublicViewerId
     take: 40,
   })
 
-  const matchesTarget = (row: AnnouncementRow) => {
-    if (row.targetType === 'all') return true
-    if (row.targetType === 'specific' && email) {
-      return row.targetEmails.map((e) => e.toLowerCase()).includes(email)
-    }
-    return false
-  }
+  const publicRows = candidates.filter((row) => isShowPublic(row.meta) && !isInboxOnly(row.meta))
+  const matchesOwnerEmails = (row: AnnouncementRow) =>
+    row.targetType === 'specific' &&
+    emails.some((email) => row.targetEmails.map((value) => value.toLowerCase()).includes(email))
 
-  const bannerRow = candidates.find((row) => isShowPublic(row.meta) && !isInboxOnly(row.meta) && matchesTarget(row))
+  const bannerRow =
+    publicRows.find((row) => profileIdFromMeta(row.meta) === id) ??
+    publicRows.find(matchesOwnerEmails) ??
+    publicRows.find((row) => row.targetType === 'all')
   if (!bannerRow) return null
   if (await isAnnouncementSuppressed('global', bannerRow.id, id, viewer)) return null
   return serializeAnnouncement(bannerRow)
@@ -615,6 +625,24 @@ const dismissPublicAnnouncement = async (opts: {
   return { id: announcementId, dismissed: true }
 }
 
+/** Remove the owner-inbox companion created by an admin card notice. */
+const archiveCardNotices = async (profileId: string) => {
+  const active = await prisma.announcement.findMany({
+    where: { status: 'active', targetType: 'specific' },
+    select: { id: true, meta: true },
+  })
+  const ids = active
+    .filter((row) => {
+      const meta = metaRecord(row.meta)
+      return meta?.source === 'card_notice' && meta.profileId === profileId
+    })
+    .map((row) => row.id)
+  if (ids.length) {
+    await prisma.announcement.updateMany({ where: { id: { in: ids } }, data: { status: 'archived' } })
+  }
+  return { archivedCount: ids.length }
+}
+
 const announcementService = {
   list,
   getOne,
@@ -623,6 +651,7 @@ const announcementService = {
   remove,
   clearLive,
   archiveLockNotices,
+  archiveCardNotices,
   getActiveForUser,
   getActiveForPublicCard,
   dismissPublicAnnouncement,

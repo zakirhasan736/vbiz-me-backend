@@ -1,6 +1,6 @@
-import { assertUserPackageAccess } from '../constants/packageAccess'
 import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
+import { assertUserPackageAccess } from '../services/entitlement.service'
 import supportService from '../services/support.service'
 import { assertModule } from '../utils/adminAccess'
 import catchAsyncError from '../utils/catchAsyncError'

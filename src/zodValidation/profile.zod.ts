@@ -53,12 +53,15 @@ const createTeamNoticeBody = z.object({
   type: z.enum(['broadcast', 'system', 'info', 'warning', 'success']).default('broadcast'),
   audience: z.enum(['all', 'savers']).default('all'),
   targetProfileId: z.string().min(1).optional(),
+  /** Admin card action: also deliver to this card's savers, owner inbox, push, and email. */
+  deliver: z.boolean().optional().default(false),
 })
 
 /** Staff may assign ownership on create; other create fields pass through unchanged. */
 const createProfileBody = z
   .object({
     ownerUserId: z.string().trim().min(1).optional(),
+    creationKey: z.string().trim().min(8).max(128).optional(),
   })
   .passthrough()
 

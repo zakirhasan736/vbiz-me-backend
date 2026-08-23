@@ -8,6 +8,8 @@ import './configs/passport'
 import globalErrorHandler from './middlewares/globalErrorHandler'
 import { requestIdMiddleware } from './middlewares/requestId'
 import router from './router/index'
+import stripeService from './services/stripe.service'
+import catchAsyncError from './utils/catchAsyncError'
 import logger from './utils/logger'
 import sendResponse from './utils/sendResponse'
 
@@ -44,6 +46,17 @@ app.use(
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     exposedHeaders: ['x-vbiz-request-id'],
     credentials: true,
+  })
+)
+
+app.post(
+  '/api/v1/billing/webhook',
+  express.raw({ type: 'application/json' }),
+  catchAsyncError(async (req, res) => {
+    const signature = req.headers['stripe-signature']
+    const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ''))
+    const data = await stripeService.handleWebhook(raw, Array.isArray(signature) ? signature[0] : signature)
+    sendResponse(res, { success: true, statusCode: 200, message: 'Webhook received', data })
   })
 )
 

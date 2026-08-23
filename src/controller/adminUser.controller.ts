@@ -78,6 +78,16 @@ const remove = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'User deleted', data: null })
 })
 
+const createPaymentLink = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  assertUsersAccess(req.user)
+  const data = await adminUserService.createPaymentLink(param(req.params.id), {
+    actorId: req.user.id,
+    actorEmail: req.user.email,
+  })
+  sendResponse(res, { success: true, statusCode: 200, message: 'Payment link created', data })
+})
+
 const adminUserController = {
   list,
   stats,
@@ -85,6 +95,7 @@ const adminUserController = {
   update,
   setStatus,
   remove,
+  createPaymentLink,
 }
 
 export default adminUserController

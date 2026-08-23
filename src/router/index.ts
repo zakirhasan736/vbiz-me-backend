@@ -7,6 +7,7 @@ import adminTeamRoute from './adminTeam.route'
 import adminUserRoute from './adminUser.route'
 import { announcementActiveRoute, announcementAdminRoute } from './announcement.route'
 import authRoute from './auth.route'
+import billingRoute from './billing.route'
 import birthdayWishRoute from './birthdayWish.route'
 import canvaRoute from './canva.route'
 import cardAgentRoute from './cardAgent.route'
@@ -23,6 +24,7 @@ const router = Router()
 
 const modulePaths = [
   { path: '/auth', route: authRoute },
+  { path: '/billing', route: billingRoute },
   { path: '/health', route: healthRoute },
   { path: '/fonts', route: fontsRoute },
   { path: '/public', route: publicRoute },

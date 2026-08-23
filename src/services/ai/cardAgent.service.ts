@@ -31,7 +31,7 @@ import { routeAiTier } from './modelRouter.service'
 import { chatJson, getOpenAiApiKey } from './openai.client'
 import { runSolArchitect } from './solArchitect.service'
 import { normalizeSources } from './sourceNormalizer.service'
-import { applySectionPayloadToFields } from './tabBuild.service'
+import { applySectionPayloadToFields, capGeneratedList, capGeneratedSkills } from './tabBuild.service'
 import { decideRecommendedTabs, type RecommendedTab } from './tabDecision.service'
 import { sanitizeBlueprint } from './validation.service'
 
@@ -583,6 +583,11 @@ export async function fillSection(input: {
   try {
     const coerced = sectionId === 'services' ? coerceServiceTypes(raw) : raw
     payload = schema.parse(coerced) as Record<string, unknown>
+    if (sectionId === 'faqs' || sectionId === 'blogs' || sectionId === 'reviews') {
+      payload[sectionId] = capGeneratedList(payload[sectionId])
+    } else if (sectionId === 'skills') {
+      payload.skills = capGeneratedSkills(payload.skills)
+    }
     if (sectionId === 'seo' && payload.seo && typeof payload.seo === 'object') {
       const seo = normalizeSeoMetadata(
         payload.seo as { metaTitle?: string; metaDescription?: string; keywords?: string[] }

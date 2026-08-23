@@ -30,6 +30,9 @@ export type AdminLeadRow = {
   vCardName: string
   ownerId: string
   ownerName: string
+  vCardDesignation: string
+  vCardProfession: string
+  vCardCompany: string
   kind: 'guest_save' | 'guest_message'
   consent: boolean
   metadata: LeadMetadata
@@ -45,6 +48,10 @@ type ProfileSelect = {
   id: string
   name: string
   slug: string | null
+  designation: string | null
+  prof: string | null
+  companyName: string | null
+  profession: { name: string } | null
   userId: string | null
   user: { id: string; name: string | null } | null
 }
@@ -120,6 +127,14 @@ function ownerFromProfile(profile: ProfileSelect) {
   }
 }
 
+function cardIdentityFromProfile(profile: ProfileSelect) {
+  return {
+    vCardDesignation: profile.designation || '',
+    vCardProfession: profile.profession?.name || profile.prof || '',
+    vCardCompany: profile.companyName || '',
+  }
+}
+
 function mapGuestSave(row: {
   id: string
   fullName: string | null
@@ -146,6 +161,7 @@ function mapGuestSave(row: {
     vCardName: row.profile.name || '',
     ownerId: owner.ownerId,
     ownerName: owner.ownerName,
+    ...cardIdentityFromProfile(row.profile),
     kind: 'guest_save',
     consent: true,
     metadata: metadataFromMeta(row.meta),
@@ -178,6 +194,7 @@ function mapGuestNote(row: {
     vCardName: row.profile.name || '',
     ownerId: owner.ownerId,
     ownerName: owner.ownerName,
+    ...cardIdentityFromProfile(row.profile),
     kind: 'guest_message',
     consent: true,
     metadata: Object.keys(meta).length ? metadataFromMeta(row.meta) : { ...EMPTY_METADATA },
@@ -189,15 +206,35 @@ const profileInclude = {
     id: true,
     name: true,
     slug: true,
+    designation: true,
+    prof: true,
+    companyName: true,
+    profession: { select: { name: true } },
     userId: true,
     user: { select: { id: true, name: true } },
   },
 } as const
 
-function buildSearchFilter(q?: string): Prisma.StringFilter | undefined {
-  const term = q?.trim()
-  if (!term) return undefined
-  return { contains: term, mode: 'insensitive' }
+function searchTokens(q?: string): string[] {
+  return q?.trim().split(/\s+/).filter(Boolean) ?? []
+}
+
+function profileIdentitySearch(token: string): Prisma.ProfileWhereInput {
+  const search = { contains: token, mode: 'insensitive' as const }
+  return {
+    OR: [
+      { name: search },
+      { slug: search },
+      { designation: search },
+      { prof: search },
+      { companyName: search },
+      { email: search },
+      { phone: search },
+      { profession: { name: search } },
+      { user: { is: { name: search } } },
+      { user: { is: { email: search } } },
+    ],
+  }
 }
 
 const getStats = async () => {
@@ -216,18 +253,22 @@ const getStats = async () => {
 }
 
 const listSaves = async (query: ListLeadsQuery): Promise<AdminLeadRow[]> => {
-  const search = buildSearchFilter(query.q)
+  const tokens = searchTokens(query.q)
   const where: Prisma.GuestUserDataWhereInput = {
     ...(query.profileId ? { profileId: query.profileId } : {}),
-    ...(search
+    ...(tokens.length
       ? {
-          OR: [
-            { fullName: search },
-            { email: search },
-            { phone: search },
-            { profile: { name: search } },
-            { profile: { slug: search } },
-          ],
+          AND: tokens.map((token) => {
+            const search = { contains: token, mode: 'insensitive' as const }
+            return {
+              OR: [
+                { fullName: search },
+                { email: search },
+                { phone: search },
+                { profile: { is: profileIdentitySearch(token) } },
+              ],
+            }
+          }),
         }
       : {}),
   }
@@ -242,12 +283,17 @@ const listSaves = async (query: ListLeadsQuery): Promise<AdminLeadRow[]> => {
 }
 
 const listNotes = async (query: ListLeadsQuery): Promise<AdminLeadRow[]> => {
-  const search = buildSearchFilter(query.q)
+  const tokens = searchTokens(query.q)
   const where: Prisma.UserNoteWhereInput = {
     ...(query.profileId ? { profileId: query.profileId } : {}),
-    ...(search
+    ...(tokens.length
       ? {
-          OR: [{ content: search }, { profile: { name: search } }, { profile: { slug: search } }],
+          AND: tokens.map((token) => ({
+            OR: [
+              { content: { contains: token, mode: 'insensitive' as const } },
+              { profile: { is: profileIdentitySearch(token) } },
+            ],
+          })),
         }
       : {}),
   }

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 const listQuery = z.object({
-  q: z.string().trim().optional(),
+  q: z.string().trim().min(3, 'Search requires at least 3 characters').max(200).optional(),
   profileId: z.string().trim().min(1).optional(),
 })
 

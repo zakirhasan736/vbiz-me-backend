@@ -1,7 +1,7 @@
 import type { RequestHandler } from 'express'
-import { assertUserPackageAccess } from '../constants/packageAccess'
 import AppError from '../error/AppError'
 import * as canvaService from '../services/canva/canva.service'
+import { assertUserPackageAccess } from '../services/entitlement.service'
 import catchAsyncError from '../utils/catchAsyncError'
 import sendResponse from '../utils/sendResponse'
 

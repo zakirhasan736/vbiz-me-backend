@@ -23,6 +23,15 @@ import {
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
+import { PUBLIC_SIGNUP_DISABLED_CODE } from '../utils/publicSignup'
+import {
+  buildLoginOtpRequiredError,
+  consumeLoginOtp,
+  issueLoginOtp,
+  resendLoginOtp,
+  shouldSendLoginOtpForUser,
+} from './authChallenge.service'
+import { getEffectiveEntitlements } from './entitlement.service'
 import subscriptionService from './subscription.service'
 
 type VerificationCooldown = {
@@ -31,9 +40,18 @@ type VerificationCooldown = {
   remainingSecond: number
 }
 
+const attachOwnerMode = async (profile: IAuthUser): Promise<IAuthUser> => {
+  const entitlements = await getEffectiveEntitlements(profile.id, profile.role)
+  return { ...profile, ownerMode: entitlements.ownerMode }
+}
+
 const normalizeEmail = (email: string) => email.trim().toLowerCase()
 
 const register = async (body: IRegisterBody): Promise<VerificationCooldown> => {
+  if (!config.PUBLIC_SIGNUP_ENABLED) {
+    throw new AppError(403, 'Public registration is not available.', { code: PUBLIC_SIGNUP_DISABLED_CODE })
+  }
+
   const email = normalizeEmail(body.email)
   const existing = await prisma.user.findUnique({
     where: { email },
@@ -110,10 +128,15 @@ const login = async (body: ILoginBody): Promise<ILoginResult> => {
 
   // PAUSED and SUSPENDED users may still log in; API middleware gates their actions.
 
+  if (shouldSendLoginOtpForUser(user)) {
+    const cooldown = await issueLoginOtp(user, { awaitSend: false })
+    throw buildLoginOtpRequiredError(user.email, cooldown)
+  }
+
   const tokens = authUtils.issueTokens(user)
 
   return {
-    profile: authUtils.mapUser({ ...user, password: storedPassword }),
+    profile: await attachOwnerMode(authUtils.mapUser({ ...user, password: storedPassword })),
     ...tokens,
   }
 }
@@ -124,7 +147,8 @@ const getAuthor = async (userId: string): Promise<IAuthUser | null> => {
     select: authUtils.userSelect,
   })
 
-  return user ? authUtils.mapUser(user) : null
+  if (!user) return null
+  return attachOwnerMode(authUtils.mapUser(user))
 }
 
 const TOUR_KEYS = new Set(['dashboard', 'create_card'])
@@ -250,11 +274,15 @@ const updateUser = async (
     name?: string | null
     avatar?: string | null
     passwordChangedAt?: Date
+    isVerified?: boolean
   } = {}
 
   if (body.password) {
     data.password = await authUtils.hashPassword(body.password)
     data.passwordChangedAt = new Date()
+    if (viaSetupToken) {
+      data.isVerified = true
+    }
   }
   if (body.name !== undefined) {
     data.name = body.name
@@ -279,7 +307,8 @@ const updateUser = async (
 
   const mapped = authUtils.mapUser(updated)
 
-  if (viaSetupToken || body.password) {
+  // Password-setup must not mint a session. Owners still complete email OTP at login.
+  if (!viaSetupToken && body.password) {
     const tokens = authUtils.issueTokens(updated)
     return {
       user: mapped,
@@ -357,6 +386,20 @@ const queueOrSendVerificationEmail = async (
   }
 }
 
+const verifyLoginOtp = async (body: { email: string; otp: string }): Promise<ILoginResult> => {
+  const user = await consumeLoginOtp(body.email, body.otp)
+  authUtils.assertCanAuthenticate(user)
+  const tokens = authUtils.issueTokens(user)
+  return {
+    profile: await attachOwnerMode(authUtils.mapUser(user)),
+    ...tokens,
+  }
+}
+
+const resendLoginVerification = async (email: string) => {
+  return resendLoginOtp(email)
+}
+
 const sendVerificationEmail = async (email: string) => {
   return queueOrSendVerificationEmail(email, { awaitSend: true })
 }
@@ -394,24 +437,27 @@ const verifyEmail = async (body: IVerifyEmailBody): Promise<null> => {
 }
 
 const forgotPassword = async (body: IForgotPasswordBody): Promise<null> => {
-  const { email } = body
-
+  const email = normalizeEmail(body.email)
   const user = await prisma.user.findUnique({
     where: { email },
   })
 
-  if (!user) {
-    throw new AppError(404, 'User does not exist. Please try with an existing account or create an account.')
+  // Same public outcome whether or not the email exists.
+  if (!user || user.deletedAt) {
+    return null
   }
 
-  if (!user.isVerified) {
-    throw new AppError(400, 'Account is not verified!')
+  try {
+    authUtils.assertNotSuspended(user)
+  } catch {
+    return null
   }
-
-  authUtils.assertNotSuspended(user)
 
   if (!user.password) {
-    await requirePasswordSetup(user)
+    await sendPasswordSetupEmail(user).catch((error) => {
+      logger.error('Failed to send password setup email from forgot-password', error)
+    })
+    return null
   }
 
   const existingToken = await prisma.forgotPasswordToken.findFirst({
@@ -422,7 +468,7 @@ const forgotPassword = async (body: IForgotPasswordBody): Promise<null> => {
   })
 
   if (existingToken) {
-    throw new AppError(400, 'Request already sent. Please try again after some time.')
+    return null
   }
 
   const token = await prisma.forgotPasswordToken.create({
@@ -439,11 +485,15 @@ const forgotPassword = async (body: IForgotPasswordBody): Promise<null> => {
     year: new Date().getFullYear().toString(),
   })
 
-  await authUtils.sendEmail({
-    receiverMail: user.email,
-    subject: 'Reset your password!',
-    html: template,
-  })
+  await authUtils
+    .sendEmail({
+      receiverMail: user.email,
+      subject: 'Reset your password!',
+      html: template,
+    })
+    .catch((error) => {
+      logger.error('Failed to send forgot-password email', error)
+    })
 
   return null
 }
@@ -620,6 +670,9 @@ const findOrCreateSocialUser = async (input: {
   })
 
   if (!user) {
+    if (!config.PUBLIC_SIGNUP_ENABLED) {
+      throw new AppError(401, 'Invalid login credentials')
+    }
     user = await prisma.user.create({
       data: {
         email: input.email,
@@ -652,8 +705,24 @@ const findOrCreateSocialUser = async (input: {
   const tokens = authUtils.issueTokens(user)
 
   return {
-    user: authUtils.mapUser({ ...user, password: user.password }),
+    user: await attachOwnerMode(authUtils.mapUser({ ...user, password: user.password })),
     ...tokens,
+  }
+}
+
+export const inviteOwnerPasswordSetup = async (user: { id: string; email: string; provider: string }) => {
+  try {
+    await sendPasswordSetupEmail(user)
+  } catch (error) {
+    logger.error('Failed to send password setup invite', error)
+  }
+}
+
+export const inviteOwnerEmailVerification = async (email: string) => {
+  try {
+    await queueOrSendVerificationEmail(email, { awaitSend: false })
+  } catch (error) {
+    logger.error('Failed to send owner email verification invite', error)
   }
 }
 
@@ -755,24 +824,27 @@ const resendPasswordSetupEmail = async (body: IResendPasswordSetupBody): Promise
     where: { email: body.email },
   })
 
-  if (!user || user.password) {
-    // Avoid account enumeration: same success response whether or not setup applies
+  if (!user || user.password || user.deletedAt) {
     return null
   }
 
-  authUtils.assertNotSuspended(user)
-
-  const result = await sendPasswordSetupEmail(user)
-  if (!result.sent) {
-    throw new AppError(400, 'Request already sent. Please try again after some time.')
+  try {
+    authUtils.assertNotSuspended(user)
+  } catch {
+    return null
   }
 
+  await sendPasswordSetupEmail(user).catch((error) => {
+    logger.error('Failed to resend password setup email', error)
+  })
   return null
 }
 
 const authService = {
   register,
   login,
+  verifyLoginOtp,
+  resendLoginVerification,
   getAuthor,
   persistCompletedTours,
   refreshToken,
@@ -787,6 +859,8 @@ const authService = {
   findOrCreateSocialUser,
   verifyPasswordSetup,
   resendPasswordSetupEmail,
+  inviteOwnerPasswordSetup,
+  inviteOwnerEmailVerification,
 }
 
 export default authService

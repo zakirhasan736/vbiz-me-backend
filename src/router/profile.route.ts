@@ -27,6 +27,8 @@ router.post('/team-notices', authMiddleware.requireVcardMutable, profileControll
 router.delete('/team-notices/:id', authMiddleware.requireVcardMutable, profileController.deleteTeamNotice)
 router.get('/packages', profileController.packages)
 router.get('/subscriptions', profileController.subscriptions)
+router.get('/entitlements', profileController.entitlements)
+router.get('/me/entitlements', profileController.entitlements)
 
 router.get('/', profileController.list)
 router.post('/', authMiddleware.requireVcardMutable, profileController.create)

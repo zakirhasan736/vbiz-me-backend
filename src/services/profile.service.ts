@@ -2,6 +2,12 @@ import { randomBytes } from 'node:crypto'
 import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
 import { AccountStatus } from '../../generated/prisma/enums'
+import {
+  CORPORATE_CARD_LIMIT_REACHED,
+  FEATURE_LIMIT_REACHED,
+  featureLimitReachedError,
+} from '../constants/packageErrors'
+import { resolveOwnerMode } from '../constants/packageOwnerMode'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
@@ -48,7 +54,14 @@ import { duplicateContactFields } from '../utils/duplicateCard'
 import { fillMissingGalleryMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
+import { catalogGateForWallpaperChange, catalogGatesForSettingChange } from '../utils/mediaFeatureGates'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
+import {
+  canCreateAnotherCard,
+  countFilledExtraFields,
+  countFilledSocialLinks,
+  remainingCardSlots,
+} from '../utils/packageLimits'
 import { prisma } from '../utils/prisma'
 import {
   isPrismaColumnMismatch,
@@ -59,6 +72,11 @@ import {
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
 import announcementService from './announcement.service'
+import {
+  assertCatalogFeatureGate,
+  assertCountWithinPackageLimit,
+  getEffectiveEntitlements,
+} from './entitlement.service'
 import pushService from './push.service'
 import { normalizeSeoSettings } from './seoMetadata.service'
 import subscriptionService from './subscription.service'
@@ -529,13 +547,12 @@ const listInclude = {
   _count: { select: { services: true, portfolios: true, posts: true } },
 } satisfies Prisma.ProfileInclude
 
-const MAX_CARDS_FEATURE_KEY = 'max_cards'
-
 type ListProfileRow = Prisma.ProfileGetPayload<{ include: typeof listInclude }>
 
 export type CardCapacity = {
-  limit: number
+  limit: number | null
   used: number
+  remaining: number | null
   canCreate: boolean
 }
 
@@ -685,63 +702,51 @@ const resolveOwnershipWhere = async (
   return { OR: [{ userId }, { companyUserId: userId }] }
 }
 
-const defaultCardLimitForRole = (role: string): number => {
-  if (role === 'vcard-owner') return 1
-  if (role === 'corporate-owner') return 0
-  return Number.MAX_SAFE_INTEGER
-}
-
-const resolvePackageCardLimit = async (userId: string, role: string): Promise<number> => {
-  if (isStaff(role)) return Number.MAX_SAFE_INTEGER
+const getCardCapacity = async (userId: string, role: string): Promise<CardCapacity> => {
+  const where = await resolveOwnershipWhere(userId, role)
+  if (isStaff(role) || isAdminRole(role)) {
+    const used = await prisma.profile.count({ where })
+    return { limit: null, used, remaining: null, canCreate: true }
+  }
 
   if (role === 'corporate-owner' || role === 'vcard-owner') {
     await subscriptionService.ensureOwnerStarterSubscription(userId, role)
   }
 
-  const now = new Date()
-  const subscription = await prisma.subscription.findFirst({
-    where: {
-      userId,
-      OR: [{ endsAt: null }, { endsAt: { gt: now } }],
-    },
-    include: { package: { include: { features: true } } },
-    orderBy: { createdAt: 'desc' },
-  })
-
-  if (subscription?.package?.features?.length) {
-    const feature = subscription.package.features.find(
-      (f) => f.featureKey.trim().toLowerCase() === MAX_CARDS_FEATURE_KEY
-    )
-    if (feature?.featureValue != null && String(feature.featureValue).trim() !== '') {
-      const parsed = Number.parseInt(String(feature.featureValue).trim(), 10)
-      if (Number.isFinite(parsed) && parsed >= 0) return parsed
-    }
-  }
-
-  if (subscription?.quantity != null && Number.isFinite(subscription.quantity) && subscription.quantity >= 0) {
-    return subscription.quantity
-  }
-
-  return defaultCardLimitForRole(role)
-}
-
-const getCardCapacity = async (userId: string, role: string): Promise<CardCapacity> => {
-  const where = await resolveOwnershipWhere(userId, role)
-  const [limit, used] = await Promise.all([resolvePackageCardLimit(userId, role), prisma.profile.count({ where })])
+  const [entitlements, used] = await Promise.all([
+    getEffectiveEntitlements(userId, role),
+    prisma.profile.count({ where }),
+  ])
+  const limit = entitlements.limits.maxCards
   return {
     limit,
     used,
-    canCreate: isStaff(role) || isAdminRole(role) || used < limit,
+    remaining: remainingCardSlots(used, limit),
+    canCreate: canCreateAnotherCard(used, limit),
   }
 }
 
 const assertCanCreateCard = async (userId: string, role: string) => {
-  if (isStaff(role)) return
+  if (isStaff(role) || isAdminRole(role)) return
   const capacity = await getCardCapacity(userId, role)
   if (capacity.canCreate) return
-  throw new AppError(
-    403,
-    `Card limit reached (${capacity.used}/${capacity.limit}). Upgrade your package to create more cards.`
+
+  const entitlements = await getEffectiveEntitlements(userId, role)
+  const { used, limit, remaining } = capacity
+  const corporate = entitlements.ownerMode === 'corporate'
+  const noCapacity = limit != null && limit <= 0
+  const message = noCapacity
+    ? 'No active package with card capacity. Upgrade your package to create cards.'
+    : corporate
+      ? `Corporate card limit reached (${used}/${limit}). Existing cards were not removed.`
+      : `Card limit reached (${used}/${limit}). Upgrade your package to create more cards.`
+
+  throw featureLimitReachedError(
+    message,
+    { limit, used, remaining },
+    {
+      code: corporate ? CORPORATE_CARD_LIMIT_REACHED : FEATURE_LIMIT_REACHED,
+    }
   )
 }
 
@@ -1077,6 +1082,7 @@ const create = async (
     youtube?: string
     linkedin?: string
     ownerUserId?: string
+    creationKey?: string
     settings?: Record<string, string>
     profileSettings?: {
       profileTemplate?: string
@@ -1095,6 +1101,7 @@ const create = async (
 
   const {
     ownerUserId: requestedOwnerUserId,
+    creationKey: creationKeyRaw,
     settings,
     profileSettings,
     city: _city,
@@ -1103,7 +1110,20 @@ const create = async (
     skipCreateContactRules: skipCreateContactRulesRaw,
     ...raw
   } = input
+  const creationKey = typeof creationKeyRaw === 'string' ? creationKeyRaw.trim() : ''
   const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
+
+  if (creationKey) {
+    const existing = await prisma.profile.findFirst({
+      where: { creationKey, createdById: userId },
+      select: { id: true },
+    })
+    if (existing) {
+      const detail = await loadProfileDetail({ id: existing.id })
+      if (!detail) throw new AppError(404, 'Profile not found')
+      return detail
+    }
+  }
 
   let profileOwnerId = userId
   let profileOwnerEmail = actor.email
@@ -1141,7 +1161,8 @@ const create = async (
       profileOwnerId = target.id
       profileOwnerEmail = target.email
       createdById = userId
-      companyUserId = targetApiRole === 'corporate-owner' ? target.id : undefined
+      const targetEntitlements = await getEffectiveEntitlements(target.id, targetApiRole)
+      companyUserId = targetEntitlements.ownerMode === 'corporate' ? target.id : undefined
       capacityUserId = target.id
       capacityRole = targetApiRole
     } else {
@@ -1179,47 +1200,62 @@ const create = async (
     })
   }
   const initialStatus = await ensureStatusByName(initialLifecycle.statusName)
-  const profile = await prisma.profile.create({
-    data: {
-      userId: profileOwnerId,
-      createdById,
-      companyUserId,
-      name: String(raw.name),
-      email: resolvedEmail,
-      slug,
-      companyName: raw.companyName as string | undefined,
-      designation: raw.designation as string | undefined,
-      phone: raw.phone as string | undefined,
-      whatsapp: raw.whatsapp as string | undefined,
-      website: raw.website as string | undefined,
-      address: raw.address as string | undefined,
-      about: raw.about as string | undefined,
-      prof: raw.prof as string | undefined,
-      dob: raw.dob ? new Date(String(raw.dob)) : undefined,
-      template: (raw.template as string) || 'default',
-      themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
-      statusId: initialStatus.id,
-      isPublic: initialLifecycle.isPublic,
-      isDraft: initialLifecycle.isDraft,
-      facebook: raw.facebook as string | undefined,
-      instagram: raw.instagram as string | undefined,
-      twitter: raw.twitter as string | undefined,
-      tiktok: raw.tiktok as string | undefined,
-      youtube: raw.youtube as string | undefined,
-      linkedin: raw.linkedin as string | undefined,
-      profileSettings: {
-        create: {
-          profileTemplate:
-            profileSettings?.profileTemplate ||
-            (raw.template === 'dynamic' ? 'v1' : raw.template === 'classic' ? 'v2' : 'v3'),
-          layoutStyle: profileSettings?.layoutStyle,
-          buttonStyle: profileSettings?.buttonStyle,
-          cornerStyle: profileSettings?.cornerStyle,
-          themeConfig: profileSettings?.themeConfig as object | undefined,
+  let profile: { id: string }
+  try {
+    profile = await prisma.profile.create({
+      data: {
+        userId: profileOwnerId,
+        createdById,
+        companyUserId,
+        creationKey: creationKey || undefined,
+        name: String(raw.name),
+        email: resolvedEmail,
+        slug,
+        companyName: raw.companyName as string | undefined,
+        designation: raw.designation as string | undefined,
+        phone: raw.phone as string | undefined,
+        whatsapp: raw.whatsapp as string | undefined,
+        website: raw.website as string | undefined,
+        address: raw.address as string | undefined,
+        about: raw.about as string | undefined,
+        prof: raw.prof as string | undefined,
+        dob: raw.dob ? new Date(String(raw.dob)) : undefined,
+        template: (raw.template as string) || 'default',
+        themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
+        statusId: initialStatus.id,
+        isPublic: initialLifecycle.isPublic,
+        isDraft: initialLifecycle.isDraft,
+        facebook: raw.facebook as string | undefined,
+        instagram: raw.instagram as string | undefined,
+        twitter: raw.twitter as string | undefined,
+        tiktok: raw.tiktok as string | undefined,
+        youtube: raw.youtube as string | undefined,
+        linkedin: raw.linkedin as string | undefined,
+        profileSettings: {
+          create: {
+            profileTemplate:
+              profileSettings?.profileTemplate ||
+              (raw.template === 'dynamic' ? 'v1' : raw.template === 'classic' ? 'v2' : 'v3'),
+            layoutStyle: profileSettings?.layoutStyle,
+            buttonStyle: profileSettings?.buttonStyle,
+            cornerStyle: profileSettings?.cornerStyle,
+            themeConfig: profileSettings?.themeConfig as object | undefined,
+          },
         },
       },
-    },
-  })
+      select: { id: true },
+    })
+  } catch (error) {
+    if (!creationKey || !isPrismaUniqueConstraint(error, 'creationKey')) throw error
+    const existing = await prisma.profile.findFirst({
+      where: { creationKey, createdById: userId },
+      select: { id: true },
+    })
+    if (!existing) throw error
+    const detail = await loadProfileDetail({ id: existing.id })
+    if (!detail) throw new AppError(404, 'Profile not found')
+    return detail
+  }
 
   await upsertPrimaryAddress(profile.id, {
     address: raw.address,
@@ -1484,6 +1520,7 @@ const update = async (
       phone: true,
       isDraft: true,
       isPublic: true,
+      themeConfig: true,
     },
   })
   if (!currentProfile) throw new AppError(404, 'Profile not found')
@@ -1553,6 +1590,42 @@ const update = async (
     }
   }
 
+  // Complete entitlement validation before changing the parent Profile. A denied
+  // setting must not leave scalar fields partially saved behind an error response.
+  let existingSettingsMap: Map<string, string | null> | null = null
+  if (normalizedSettings) {
+    const existingSettings = await safePrismaQuery(
+      () => prisma.setting.findMany({ where: { profileId }, select: { key: true, value: true } }),
+      [] as Array<{ key: string; value: string }>
+    )
+    existingSettingsMap = new Map(existingSettings.map((row) => [row.key, row.value]))
+    if ('extra_fields_json' in normalizedSettings) {
+      const nextCount = countFilledExtraFields(normalizedSettings.extra_fields_json)
+      const currentCount = countFilledExtraFields(existingSettingsMap.get('extra_fields_json'))
+      if (nextCount > currentCount) {
+        await assertCountWithinPackageLimit(userId, role, 'maxExtraFields', nextCount)
+      }
+    }
+    for (const [key, value] of Object.entries(normalizedSettings)) {
+      const gates = catalogGatesForSettingChange(key, value, existingSettingsMap.get(key))
+      for (const gate of gates) {
+        await assertCatalogFeatureGate(userId, role, gate)
+      }
+    }
+  }
+
+  if (profileSettings?.themeConfig !== undefined) {
+    const existingTheme = await safePrismaQuery(
+      () => prisma.profileSetting.findUnique({ where: { profileId }, select: { themeConfig: true } }),
+      null as { themeConfig: unknown } | null
+    )
+    const wallpaperGate = catalogGateForWallpaperChange(
+      profileSettings.themeConfig,
+      existingTheme?.themeConfig ?? currentProfile.themeConfig
+    )
+    if (wallpaperGate) await assertCatalogFeatureGate(userId, role, wallpaperGate)
+  }
+
   try {
     await prisma.profile.update({
       where: { id: profileId },
@@ -1560,10 +1633,9 @@ const update = async (
     })
   } catch (error) {
     if (!isPrismaUniqueConstraint(error, 'email')) throw error
-    const { email: _ignoredEmail, ...withoutEmail } = profileData
-    await prisma.profile.update({
-      where: { id: profileId },
-      data: withoutEmail,
+    throw new AppError(409, 'This email is already used by another card.', {
+      code: 'PROFILE_EMAIL_CONFLICT',
+      data: { field: 'email' },
     })
   }
 
@@ -1574,11 +1646,7 @@ const update = async (
   }
 
   if (normalizedSettings) {
-    const existingSettings = await safePrismaQuery(
-      () => prisma.setting.findMany({ where: { profileId }, select: { key: true, value: true } }),
-      [] as Array<{ key: string; value: string }>
-    )
-    const existingMap = new Map(existingSettings.map((row) => [row.key, row.value]))
+    const existingMap = existingSettingsMap ?? new Map<string, string | null>()
     const changedEntries = Object.entries(normalizedSettings).filter(([key, value]) => existingMap.get(key) !== value)
     if (changedEntries.length) {
       await Promise.all(
@@ -1726,6 +1794,17 @@ const replaceCollection = async <T extends Record<string, unknown>>(
   mapItem: (item: T) => Record<string, unknown>
 ) => {
   await getOwnedForWrite(profileId, userId, role)
+  if (kind === 'socialLinks') {
+    const nextCount = countFilledSocialLinks(items)
+    const existing = await prisma.socialLink.findMany({
+      where: { profileId },
+      select: { name: true, url: true },
+    })
+    const currentCount = countFilledSocialLinks(existing)
+    if (nextCount > currentCount) {
+      await assertCountWithinPackageLimit(userId, role, 'maxSocialLinks', nextCount)
+    }
+  }
   const delegate = COLLECTION_DELEGATE[kind]
   await prisma.$transaction(async (tx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2716,20 +2795,29 @@ const listRecentEngagement = async (userId: string, role: string, query: RecentE
 }
 
 const listPackages = async () => {
-  return prisma.package.findMany({
+  const rows = await prisma.package.findMany({
     where: { isActive: true },
     include: { features: true },
     orderBy: { sortOrder: 'asc' },
   })
+  return rows.map((pkg) => ({ ...pkg, ownerMode: resolveOwnerMode(pkg) }))
 }
 
 const listSubscriptions = async (userId: string, role: string) => {
   const where = isAdminRole(role) ? {} : { userId }
-  return prisma.subscription.findMany({
+  const rows = await prisma.subscription.findMany({
     where,
     include: { package: { include: { features: true } }, items: true, transactions: true },
     orderBy: { createdAt: 'desc' },
   })
+  return rows.map((sub) => ({
+    ...sub,
+    package: sub.package ? { ...sub.package, ownerMode: resolveOwnerMode(sub.package) } : sub.package,
+  }))
+}
+
+const getEntitlements = async (userId: string, role: string) => {
+  return getEffectiveEntitlements(userId, role)
 }
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
@@ -3088,18 +3176,23 @@ export type TeamNoticeRow = {
   recipientCount?: number
   createdAt: string
   status: string
+  /** admin = staff Notice / banner; owner = card or corporate owner popup. */
+  source?: 'admin' | 'owner'
 }
 
-function serializeTeamNotice(row: {
-  id: string
-  text: string
-  type: string
-  audience: string
-  targetProfileId: string | null
-  recipientCount: number | null
-  createdAt: Date
-  status: string
-}): TeamNoticeRow {
+function serializeTeamNotice(
+  row: {
+    id: string
+    text: string
+    type: string
+    audience: string
+    targetProfileId: string | null
+    recipientCount: number | null
+    createdAt: Date
+    status: string
+  },
+  source?: 'admin' | 'owner'
+): TeamNoticeRow {
   const allowed = new Set(['broadcast', 'system', 'info', 'warning', 'success'])
   const type = allowed.has(row.type) ? (row.type as TeamNoticeRow['type']) : 'broadcast'
   return {
@@ -3111,6 +3204,7 @@ function serializeTeamNotice(row: {
     recipientCount: row.recipientCount ?? undefined,
     createdAt: row.createdAt.toISOString(),
     status: row.status,
+    ...(source ? { source } : {}),
   }
 }
 
@@ -3189,20 +3283,7 @@ const listTeamNotices = async (userId: string): Promise<TeamNoticeRow[]> => {
     where: { ownerId: userId },
     orderBy: { createdAt: 'desc' },
   })
-  return rows.map(serializeTeamNotice)
-}
-
-/** Personal ownership only — never use admin getOwned bypass for public TeamNotices. */
-const assertPersonallyOwnsProfile = async (profileId: string, userId: string) => {
-  const profile = await prisma.profile.findUnique({
-    where: { id: profileId },
-    select: { id: true, userId: true, companyUserId: true },
-  })
-  if (!profile) throw new AppError(404, 'Profile not found')
-  if (profile.userId !== userId && profile.companyUserId !== userId) {
-    throw new AppError(403, 'You can only publish public notices on cards you personally own')
-  }
-  return profile
+  return rows.map((row) => serializeTeamNotice(row))
 }
 
 const isOwnerOrCorporateRole = (role: string) =>
@@ -3216,6 +3297,7 @@ const createTeamNotice = async (
     type: 'broadcast' | 'system' | 'info' | 'warning' | 'success'
     audience: 'all' | 'savers'
     targetProfileId?: string
+    deliver?: boolean
   }
 ): Promise<TeamNoticeRow> => {
   const staff = isAdminRole(role)
@@ -3235,22 +3317,26 @@ const createTeamNotice = async (
   }
 
   if (targetProfileId) {
-    // Staff: only personally owned cards (My Cards). Owners: normal getOwned.
+    // Staff Notice is an admin action and may target any card (single or corporate).
+    // Owners and corporate owners may only publish on cards they own.
     if (staff) {
-      await assertPersonallyOwnsProfile(targetProfileId, userId)
+      const target = await prisma.profile.findUnique({ where: { id: targetProfileId }, select: { id: true } })
+      if (!target) throw new AppError(404, 'Profile not found')
     } else {
       const owned = await getOwnedLite(targetProfileId, userId, role)
       assertOwnerCanMutateCard(owned, role)
     }
   } else if (staff) {
-    throw new AppError(403, 'Staff can only publish public notices on a specific card they own')
+    throw new AppError(400, 'Select a specific card for this admin notice.')
   }
 
-  if (input.audience === 'savers') {
+  const shouldDeliver = Boolean(input.deliver) || (staff && Boolean(targetProfileId))
+
+  if (input.audience === 'savers' || shouldDeliver) {
     const profiles = await listForUser(userId, role)
     const ids = targetProfileId ? [targetProfileId] : profiles.map((p) => p.id)
     if (!emptyProfileIds(ids)) {
-      const [guests, contacts] = await Promise.all([
+      const [guests, contacts, targetProfile, actor] = await Promise.all([
         prisma.guestUserData.findMany({
           where: { profileId: { in: ids }, email: { not: null } },
           select: { email: true },
@@ -3259,15 +3345,35 @@ const createTeamNotice = async (
           where: { profileId: { in: ids }, email: { not: null } },
           select: { email: true },
         }),
+        targetProfileId
+          ? prisma.profile.findUnique({
+              where: { id: targetProfileId },
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                email: true,
+                user: { select: { email: true } },
+                companyUser: { select: { email: true } },
+              },
+            })
+          : null,
+        prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, name: true } }),
       ])
-      const emails = [
+      const saverEmails = [
         ...new Set([...guests, ...contacts].map((r) => (r.email || '').trim().toLowerCase()).filter(Boolean)),
       ]
+      const ownerEmails = shouldDeliver
+        ? [targetProfile?.user?.email, targetProfile?.companyUser?.email, targetProfile?.email]
+            .map((email) => (email || '').trim().toLowerCase())
+            .filter(Boolean)
+        : []
+      const emails = [...new Set([...saverEmails, ...ownerEmails])]
       recipientCount = emails.length
       const subject =
         input.type === 'system' || input.type === 'warning'
-          ? 'System notice from your saved contact'
-          : 'Announcement from a contact you saved'
+          ? `Important notice from ${targetProfile?.name || 'vBiz Me'}`
+          : `Update from ${targetProfile?.name || 'vBiz Me'}`
       const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -3281,6 +3387,34 @@ const createTeamNotice = async (
           })
         )
       )
+
+      if (shouldDeliver && targetProfileId) {
+        pushService.notifyProfileUpdate(targetProfileId, {
+          title: subject,
+          body: text,
+          type: 'announcement_updates',
+          url: targetProfile?.slug ? `/v/${targetProfile.slug}` : undefined,
+        })
+
+        if (actor && ownerEmails.length) {
+          void announcementService
+            .create(actor, {
+              type:
+                input.type === 'warning' || input.type === 'system'
+                  ? 'warning'
+                  : input.type === 'success'
+                    ? 'success'
+                    : 'info',
+              title: `Card notice · ${targetProfile?.name || targetProfile?.slug || 'vCard'}`,
+              body: text,
+              status: 'active',
+              targetType: 'specific',
+              targetEmails: [...new Set(ownerEmails)],
+              meta: { profileId: targetProfileId, source: 'card_notice', channel: 'inbox' },
+            })
+            .catch((error) => logger.error('Card owner backoffice notice failed', { targetProfileId, error }))
+        }
+      }
     } else {
       recipientCount = 0
     }
@@ -3290,7 +3424,6 @@ const createTeamNotice = async (
   if (targetProfileId && input.audience === 'all') {
     await prisma.teamNotice.updateMany({
       where: {
-        ownerId: userId,
         targetProfileId,
         audience: 'all',
         status: 'active',
@@ -3333,9 +3466,8 @@ const deleteTeamNotice = async (userId: string, role: string, noticeId: string) 
       if (profile) assertOwnerCanMutateCard(profile, role)
     }
   } else if (staff) {
-    // Staff may delete only when they personally own the target card.
+    // Staff may clear any card-targeted notice from the admin vCard Notice action.
     if (!existing.targetProfileId) throw new AppError(403, 'Not allowed to delete this notice')
-    await assertPersonallyOwnsProfile(existing.targetProfileId, userId)
   } else if (existing.targetProfileId) {
     const owned = await getOwnedLite(existing.targetProfileId, userId, role)
     assertOwnerCanMutateCard(owned, role)
@@ -3344,51 +3476,60 @@ const deleteTeamNotice = async (userId: string, role: string, noticeId: string) 
   }
 
   await prisma.teamNotice.delete({ where: { id: noticeId } })
+  if (existing.targetProfileId) {
+    await announcementService.archiveCardNotices(existing.targetProfileId)
+  }
   return { id: noticeId, deleted: true }
 }
 
 /** Active public-banner notices for a profile — only notices targeted at this card. */
 const listPublicTeamNoticesForProfile = async (
   profileId: string,
-  knownOwnerIds?: string[],
-  viewer?: PublicViewerIdentity
+  _knownOwnerIds?: string[],
+  viewer?: PublicViewerIdentity,
+  origin?: 'admin' | 'owner'
 ): Promise<TeamNoticeRow[]> => {
-  const ownerIds: string[] =
-    knownOwnerIds ??
-    (await prisma.profile
-      .findUnique({
-        where: { id: profileId },
-        select: { userId: true, companyUserId: true },
-      })
-      .then((profile) =>
-        profile ? [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id)) : []
-      ))
-  if (!ownerIds.length) return []
+  const id = profileId.trim()
+  if (!id) return []
 
   const rows = await prisma.teamNotice.findMany({
     where: {
-      ownerId: { in: ownerIds },
       status: 'active',
       audience: 'all',
+      // Include admin-created notices (ownerId is the admin, not the card owner).
       // Never fan out null-target notices to every card — announcements are per-card.
-      targetProfileId: profileId,
+      targetProfileId: id,
     },
     orderBy: { createdAt: 'desc' },
     take: 10,
   })
-  const filtered: typeof rows = []
+  const authorIds = [...new Set(rows.map((row) => row.ownerId).filter(Boolean))]
+  const authors = authorIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: authorIds } },
+        select: { id: true, role: true },
+      })
+    : []
+  const staffAuthorIds = new Set(
+    authors.filter((author) => isAdminRole(toApiRole(author.role))).map((author) => author.id)
+  )
+
+  const filtered: TeamNoticeRow[] = []
   for (const row of rows) {
     if (await isTeamNoticeSuppressed(profileId, row.id, viewer)) continue
-    filtered.push(row)
+    const source: 'admin' | 'owner' = staffAuthorIds.has(row.ownerId) ? 'admin' : 'owner'
+    if (origin && source !== origin) continue
+    filtered.push(serializeTeamNotice(row, source))
   }
-  return filtered.map(serializeTeamNotice)
+  return filtered
 }
 
 const getLatestPublicTeamNoticeForProfile = async (
   profileId: string,
-  viewer?: PublicViewerIdentity
+  viewer?: PublicViewerIdentity,
+  origin?: 'admin' | 'owner'
 ): Promise<TeamNoticeRow | null> => {
-  const notices = await listPublicTeamNoticesForProfile(profileId, undefined, viewer)
+  const notices = await listPublicTeamNoticesForProfile(profileId, undefined, viewer, origin)
   return notices[0] ?? null
 }
 
@@ -3498,6 +3639,7 @@ const profileService = {
   dismissPublicTeamNotice,
   listPackages,
   listSubscriptions,
+  getEntitlements,
   ensureUniqueSlug,
   checkSlugAvailability,
   listPortfolioMembers,

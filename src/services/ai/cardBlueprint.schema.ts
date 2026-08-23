@@ -62,6 +62,8 @@ const fillReviewItemSchema = z.object({
   author: z.string().optional().default(''),
   text: z.string().optional().default(''),
   rating: z.coerce.number().min(1).max(5).optional().default(5),
+  imageUrl: z.string().optional().default(''),
+  url: z.string().optional().default(''),
 })
 
 const fillBlogItemSchema = z.object({
@@ -97,6 +99,8 @@ const fillExperienceItemSchema = z.object({
 const fillFaqItemSchema = z.object({
   question: z.string().optional().default(''),
   answer: z.string().optional().default(''),
+  imageUrl: z.string().optional().default(''),
+  url: z.string().optional().default(''),
 })
 
 const personalFillSchema = z.object({
@@ -140,11 +144,11 @@ export const FILL_SECTION_SCHEMA_HINTS: Record<FillSectionId, string> = {
   services: `{ "services": [{ "type": "Web Development"|"App Design"|"SEO"|"Marketing"|"Other", "title": "", "description": "", "url": "" }] }`,
   blogs: `{ "blogs": [{ "title": "", "description": "", "category": "News", "url": "", "imageUrl": "" }] }`,
   portfolio: `{ "portfolio": [{ "title": "", "description": "", "url": "", "imageUrl": "" }] }`,
-  reviews: `{ "reviews": [{ "author": "", "text": "", "rating": 5 }] }`,
+  reviews: `{ "reviews": [{ "author": "", "text": "", "rating": 5, "imageUrl": "", "url": "" }] }`,
   skills: `{ "skills": [{ "type": "Core", "skills": [""] }] }`,
   education: `{ "education": [{ "institute": "", "degree": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
   experience: `{ "experience": [{ "company": "", "jobTitle": "", "description": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
-  faqs: `{ "faqs": [{ "question": "", "answer": "" }] }`,
+  faqs: `{ "faqs": [{ "question": "", "answer": "", "imageUrl": "", "url": "" }] }`,
   personal: `{ "personal": { "fullName": "", "email": "", "dob": "YYYY-MM-DD", "phone": "", "designation": "", "company": "", "about": "", "website": "", "address": "" }, "socialHandles": {} }`,
   seo: `{ "seo": { "metaTitle": "", "metaDescription": "", "keywords": ["business phrase", "service phrase"] } }`,
 }
