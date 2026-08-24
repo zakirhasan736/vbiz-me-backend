@@ -694,11 +694,15 @@ const resolveCreatedScopeWhere = async (userId: string, role: string): Promise<P
   })
   const teamCreatedUserIds = teamCreatedUsers.map((row) => row.id)
   const or: Prisma.ProfileWhereInput[] = []
+  // Cards owned by listed users the admin team created
   if (teamCreatedUserIds.length) {
     or.push({ userId: { in: teamCreatedUserIds } }, { companyUserId: { in: teamCreatedUserIds } })
   }
   if (staffIdList.length) {
-    or.push({ userId: { in: staffIdList } })
+    // Staff members' own cards
+    or.push({ userId: { in: staffIdList } }, { companyUserId: { in: staffIdList } })
+    // Cards an admin created or assigned, even if the owner account was not staff-created
+    or.push({ createdById: { in: staffIdList } })
   }
   or.push({
     slug: {

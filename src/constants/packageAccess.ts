@@ -6,6 +6,7 @@ export const PACKAGE_ACCESS_FEATURES = [
   { key: 'allow_support_ticket', label: 'Contact support ticket' },
   { key: 'allow_auto_card_builder', label: 'Auto card builder' },
   { key: 'allow_seo', label: 'SEO' },
+  { key: 'allow_crm', label: 'CRM' },
 ] as const
 
 export type PackageAccessKey = (typeof PACKAGE_ACCESS_FEATURES)[number]['key']
@@ -67,13 +68,14 @@ export function entitlementsFromFeatures(
   whenMissing = true
 ): PackageAccessMap {
   const map = whenMissing ? allPackageAccessEnabled() : allPackageAccessDisabled()
-  // Premium add-on: missing allow_ai_assistance stays locked unless explicitly enabled.
+  // Premium add-ons: missing flags stay locked unless explicitly enabled.
   map.allow_ai_assistance = false
+  map.allow_crm = false
   if (!features?.length) return map
   for (const item of PACKAGE_ACCESS_FEATURES) {
     const row = features.find((feature) => feature.featureKey.trim().toLowerCase() === item.key)
     if (!row) continue
-    const defaultWhenMissing = item.key === 'allow_ai_assistance' ? false : whenMissing
+    const defaultWhenMissing = item.key === 'allow_ai_assistance' || item.key === 'allow_crm' ? false : whenMissing
     map[item.key] = parseAccessFlag(row.featureValue, defaultWhenMissing)
   }
   return map
@@ -81,7 +83,9 @@ export function entitlementsFromFeatures(
 
 /** Default explicit allow_* featureValue used when backfilling missing package flags. */
 export function defaultAllowFlagValue(featureKey: string): '0' | '1' {
-  return featureKey.trim().toLowerCase() === 'allow_ai_assistance' ? '0' : '1'
+  const key = featureKey.trim().toLowerCase()
+  if (key === 'allow_ai_assistance' || key === 'allow_crm') return '0'
+  return '1'
 }
 
 export function isUnlimitedFeatureValue(value: string | null | undefined): boolean {

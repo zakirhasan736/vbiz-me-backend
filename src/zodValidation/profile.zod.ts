@@ -29,7 +29,7 @@ const listProfilesQuery = z.object({
   sortBy: z.enum(['createdAt', 'updatedAt', 'name', 'viewCount']).default('updatedAt'),
   sortDir: z.enum(['asc', 'desc']).default('desc'),
   skip: z.coerce.number().int().min(0).default(0),
-  limit: z.coerce.number().int().min(1).max(100).default(24),
+  limit: z.coerce.number().int().min(1).max(500).default(24),
 })
 
 const dashboardPeriodQuery = z.object({

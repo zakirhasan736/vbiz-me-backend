@@ -107,6 +107,7 @@ describe('entitlement error aliases', () => {
             allow_support_ticket: false,
             allow_auto_card_builder: false,
             allow_seo: false,
+            allow_crm: false,
           },
           features: [{ featureKey: 'allow_2d_explainer', featureValue: '1', unlimited: false }],
           subscriptionActive: false,

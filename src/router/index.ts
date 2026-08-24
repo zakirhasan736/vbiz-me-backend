@@ -11,6 +11,7 @@ import billingRoute from './billing.route'
 import birthdayWishRoute from './birthdayWish.route'
 import canvaRoute from './canva.route'
 import cardAgentRoute from './cardAgent.route'
+import crmRoute from './crm.route'
 import fontsRoute from './fonts.route'
 import healthRoute from './health.route'
 import mediaRoute from './media.route'
@@ -33,6 +34,7 @@ const modulePaths = [
   { path: '/meetings', route: meetingRoute },
   { path: '/ai/card-agent', route: cardAgentRoute },
   { path: '/integrations/canva', route: canvaRoute },
+  { path: '/crm', route: crmRoute },
   { path: '/announcements', route: announcementActiveRoute },
   { path: '/templates', route: templateActiveRoute },
   { path: '/admin', route: adminActivityRoute },

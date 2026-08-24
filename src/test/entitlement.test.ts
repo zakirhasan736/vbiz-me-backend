@@ -20,6 +20,7 @@ describe('central entitlement service', () => {
     assert.equal(result.limits.maxCards, 1)
     assert.equal(result.access.allow_canva, false)
     assert.equal(result.access.allow_seo, true)
+    assert.equal(result.access.allow_crm, false)
     assert.equal(result.limits.maxCards, 1)
   })
 
@@ -41,7 +42,7 @@ describe('central entitlement service', () => {
     const result = buildEffectiveEntitlements({
       role: 'vcard-owner',
       pkg: { id: 'pkg-pro', slug: 'professional', name: 'Professional' },
-      features: flags({ max_cards: '3', allow_canva: '1', max_file_size_mb: '15' }),
+      features: flags({ max_cards: '3', allow_canva: '1', allow_crm: '1', max_file_size_mb: '15' }),
       subscription: { id: 'sub-pro', quantity: 3, endsAt: null },
     })
     assert.equal(result.ownerMode, 'single')
@@ -49,13 +50,14 @@ describe('central entitlement service', () => {
     assert.equal(result.limits.maxCards, 3)
     assert.equal(result.limits.maxFileSizeMb, 15)
     assert.equal(result.access.allow_canva, true)
+    assert.equal(result.access.allow_crm, true)
   })
 
   it('resolves Concierge catalog entitlements as Single', () => {
     const result = buildEffectiveEntitlements({
       role: 'vcard-owner',
       pkg: { id: 'pkg-concierge', slug: 'professional-concierge', name: 'Professional Concierge' },
-      features: flags({ max_cards: '5', allow_ai_assistance: '1', allow_auto_card_builder: '1' }),
+      features: flags({ max_cards: '5', allow_ai_assistance: '1', allow_auto_card_builder: '1', allow_crm: '1' }),
       subscription: { id: 'sub-concierge', quantity: 5, endsAt: null },
     })
     assert.equal(result.ownerMode, 'single')
@@ -63,13 +65,14 @@ describe('central entitlement service', () => {
     assert.equal(result.limits.maxCards, 5)
     assert.equal(result.access.allow_ai_assistance, true)
     assert.equal(result.access.allow_auto_card_builder, true)
+    assert.equal(result.access.allow_crm, true)
   })
 
   it('resolves Corporate catalog entitlements and applies overrides on the current package', () => {
     const result = buildEffectiveEntitlements({
       role: 'corporate-owner',
       pkg: { id: 'pkg-corp', slug: 'corporate', name: 'Corporate' },
-      features: flags({ max_cards: '15', allow_seo: '1', allow_canva: '1' }),
+      features: flags({ max_cards: '15', allow_seo: '1', allow_canva: '1', allow_crm: '1' }),
       subscription: { id: 'sub-corp', quantity: 20, endsAt: null },
       overrides: flags({ allow_seo: '0', max_cards: '25' }),
     })

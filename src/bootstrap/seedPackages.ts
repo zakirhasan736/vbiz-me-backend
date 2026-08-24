@@ -86,6 +86,26 @@ const seedPackages = async (): Promise<void> => {
     logger.info(`AI Assistance premium rollout: locked ${rolled.count} package flag(s)`)
   }
 
+  const CRM_FEATURE_KEY = 'allow_crm'
+  const CRM_INCLUDED_SLUGS = new Set(['professional', 'professional-concierge', 'corporate'])
+  let seededCrm = 0
+  for (const pkg of packages) {
+    const existing = await prisma.packageFeature.findUnique({
+      where: { packageId_featureKey: { packageId: pkg.id, featureKey: CRM_FEATURE_KEY } },
+      select: { id: true },
+    })
+    if (existing) continue
+    const slug = (pkg.slug || '').trim().toLowerCase()
+    const featureValue = CRM_INCLUDED_SLUGS.has(slug) ? '1' : '0'
+    await prisma.packageFeature.create({
+      data: { packageId: pkg.id, featureKey: CRM_FEATURE_KEY, featureValue },
+    })
+    seededCrm += 1
+  }
+  if (seededCrm) {
+    logger.info(`Seeded CRM package flag on ${seededCrm} package(s) (allow_crm)`)
+  }
+
   const defaultCard = await prisma.profile.findFirst({
     where: { slug: { equals: DEFAULT_AI_ASSISTANCE_SLUG, mode: 'insensitive' } },
     select: { id: true },
