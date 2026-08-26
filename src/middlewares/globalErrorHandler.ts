@@ -74,14 +74,23 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     (req as Request & { requestId?: string }).requestId ||
     (typeof res.getHeader('x-vbiz-request-id') === 'string' ? String(res.getHeader('x-vbiz-request-id')) : undefined)
 
-  logger.error(`${req.method} ${req.originalUrl} ${message}`, {
+  const logPayload = {
     statusCode,
     requestId,
     code,
     userId: req.user?.id,
     profileId: req.params?.id || req.params?.profileId || req.body?.profileId,
     ownerUserId: req.body?.ownerUserId,
-  })
+  }
+  const logLine = `${req.method} ${req.originalUrl} ${message}`
+  const isAnonymousAuthorCheck =
+    statusCode === 403 && req.method === 'GET' && req.originalUrl.split('?')[0].endsWith('/auth/author')
+
+  if (statusCode >= 500) {
+    logger.error(logLine, logPayload)
+  } else if (!isAnonymousAuthorCheck) {
+    logger.warn(logLine, logPayload)
+  }
 
   return res.status(statusCode).json({
     success: false,
