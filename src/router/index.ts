@@ -1,4 +1,6 @@
 import { Router } from 'express'
+import publicController from '../controller/public.controller'
+import { publicRateLimiter } from '../middlewares/ownership'
 import adminActivityRoute from './adminActivity.route'
 import adminLeadsRoute from './adminLeads.route'
 import adminPackageRoute from './adminPackage.route'
@@ -52,5 +54,8 @@ const modulePaths = [
 modulePaths.forEach(({ path, route }) => {
   router.use(path, route)
 })
+
+/** Older landing builds called `/api/v1/public-cards` (missing `/public`). */
+router.get('/public-cards', publicRateLimiter, publicController.getPublicCards)
 
 export default router

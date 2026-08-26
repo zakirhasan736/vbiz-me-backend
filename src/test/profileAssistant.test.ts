@@ -87,6 +87,13 @@ test('Gemini public response includes only short-lived token metadata', () => {
   assert.equal('GEMINI_API_KEY' in response, false)
 })
 
+test('landing live-token route is registered without exposing GEMINI_API_KEY', async () => {
+  const source = await readFile(new URL('../router/public.route.ts', import.meta.url), 'utf8')
+  assert.match(source, /\/landing\/assistant\/live-token/)
+  const service = await readFile(new URL('../services/geminiLive.service.ts', import.meta.url), 'utf8')
+  assert.match(service, /export async function issueLandingLiveToken/)
+})
+
 test('live-token profile load does not join assistant tables on the main query', async () => {
   const source = await readFile(new URL('../services/profileAssistant.service.ts', import.meta.url), 'utf8')
   assert.match(source, /async function loadAssistantExtras/)

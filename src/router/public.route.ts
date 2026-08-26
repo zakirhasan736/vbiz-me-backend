@@ -17,6 +17,11 @@ router.post(
   publicAssistantRateLimiter,
   publicController.createAssistantLiveToken
 )
+router.post(
+  '/landing/assistant/live-token',
+  publicAssistantRateLimiter,
+  publicController.createLandingAssistantLiveToken
+)
 
 router.use(publicRateLimiter)
 

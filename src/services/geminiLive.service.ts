@@ -9,11 +9,7 @@ export const REQUIRED_GEMINI_LIVE_MODEL = 'gemini-3.1-flash-live-preview'
 
 type TokenSource = { name?: string }
 
-export async function issuePublicLiveToken(profileId: string) {
-  profileId = assertProfileId(profileId)
-  const state = await getPublicAssistantState(profileId)
-  assertPublicAssistantGate(true, state.enabled, false)
-
+async function mintGeminiLiveToken() {
   const apiKey = config.GEMINI.API_KEY
   if (!apiKey) {
     throw new AppError(503, 'Public AI assistant is temporarily unavailable because Gemini is not configured.')
@@ -48,13 +44,33 @@ export async function issuePublicLiveToken(profileId: string) {
     throw new AppError(503, 'Public AI assistant could not start a Gemini session. Please try again shortly.')
   }
 
+  return { token, expiresAt, newSessionExpiresAt }
+}
+
+export async function issuePublicLiveToken(profileId: string) {
+  profileId = assertProfileId(profileId)
+  const state = await getPublicAssistantState(profileId)
+  assertPublicAssistantGate(true, state.enabled, false)
+  const minted = await mintGeminiLiveToken()
+
   return publicLiveTokenShape({
-    token,
+    token: minted.token,
     model: REQUIRED_GEMINI_LIVE_MODEL,
-    expiresAt,
-    newSessionExpiresAt,
+    expiresAt: minted.expiresAt,
+    newSessionExpiresAt: minted.newSessionExpiresAt,
     context: `${state.modelContext}${
       state.systemPromptAddendum ? `\n\nOWNER STYLE GUIDANCE:\n${state.systemPromptAddendum}` : ''
     }`,
+  })
+}
+
+/** Landing-site Live Agent: same Gemini key, ephemeral token only — never the raw API key. */
+export async function issueLandingLiveToken() {
+  const minted = await mintGeminiLiveToken()
+  return publicLiveTokenShape({
+    token: minted.token,
+    model: REQUIRED_GEMINI_LIVE_MODEL,
+    expiresAt: minted.expiresAt,
+    newSessionExpiresAt: minted.newSessionExpiresAt,
   })
 }
