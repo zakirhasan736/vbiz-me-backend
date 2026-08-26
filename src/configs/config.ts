@@ -101,11 +101,15 @@ const allowedCorsOrigins = Array.from(
       ...corsOrigins,
       'https://app.nextcreavo.com',
       'https://app.vbizme.com',
+      'https://www.vbizme.com',
+      'https://vbizme.com',
       'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:5173',
       'http://127.0.0.1:3000',
-    ].filter((origin): origin is string => Boolean(origin))
+    ]
+      .filter((origin): origin is string => Boolean(origin))
+      .map((origin) => origin.replace(/\/$/, ''))
   )
 )
 

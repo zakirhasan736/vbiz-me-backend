@@ -36,7 +36,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || config.ALLOWED_CORS_ORIGINS.includes(origin)) {
+      const normalized = origin?.replace(/\/$/, '') || ''
+      if (!origin || config.ALLOWED_CORS_ORIGINS.includes(normalized)) {
         callback(null, true)
         return
       }
