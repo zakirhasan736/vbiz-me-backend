@@ -1,18 +1,35 @@
 import { NextFunction, Request, Response } from 'express'
-import rateLimit from 'express-rate-limit'
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import config from '../configs/config'
 import { UserRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import catchAsyncError, { IUserInfoRequest } from '../utils/catchAsyncError'
+import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
+import { isTrustedInternalPublicRequest, publicRateLimitKeyType } from './internalPublicRequest'
+import { getRequestId } from './requestId'
 
 export const publicRateLimiter = rateLimit({
   windowMs: config.PUBLIC_RATE_LIMIT.WINDOW_MS,
-  max: config.PUBLIC_RATE_LIMIT.MAX,
+  max: (req) =>
+    isTrustedInternalPublicRequest(req) ? config.PUBLIC_RATE_LIMIT.INTERNAL_MAX : config.PUBLIC_RATE_LIMIT.MAX,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, data: null, error: 'Too many requests' },
   validate: { xForwardedForHeader: false },
+  keyGenerator: (req) => {
+    if (isTrustedInternalPublicRequest(req)) return 'internal-ssr'
+    return ipKeyGenerator(req.ip || req.socket.remoteAddress || '0.0.0.0')
+  },
+  handler: (req, res, _next, options) => {
+    logger.warn('Public rate limited', {
+      keyType: publicRateLimitKeyType(req),
+      path: req.path,
+      method: req.method,
+      requestId: getRequestId(req),
+    })
+    res.status(options.statusCode).send(options.message)
+  },
 })
 
 export const publicAssistantRateLimiter = rateLimit({
