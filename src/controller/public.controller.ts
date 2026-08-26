@@ -136,7 +136,9 @@ const getPublicCards = catchAsyncError(async (req, res) => {
     profession_id: req.query.profession_id ? String(req.query.profession_id) : undefined,
     service: req.query.service ? String(req.query.service) : undefined,
     search: req.query.search ? String(req.query.search) : undefined,
+    dropdowns: req.query.dropdowns === undefined ? undefined : String(req.query.dropdowns),
   })
+  res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120')
   res.status(200).json(payload)
 })
 

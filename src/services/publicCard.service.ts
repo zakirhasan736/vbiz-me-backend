@@ -248,11 +248,6 @@ function scoreAttachmentAlias(label: string, aliases: string[]): number {
   return best
 }
 
-function matchAttachmentType(name: string | null | undefined, aliases: string[]): boolean {
-  if (!name) return false
-  return scoreAttachmentAlias(name.toLowerCase(), aliases) >= 0
-}
-
 function resolveAttachmentUrl(att: AttachmentWithType | undefined, profileLegacyId?: number | null) {
   if (!att) return null
   return ensureAbsoluteMediaUrl(att.url, {
@@ -1813,6 +1808,41 @@ const getPublicBootstrap = async (slug: string): Promise<BootstrapPayload> => {
   return value
 }
 
+const PUBLIC_CARDS_LIST_TTL_MS = 45_000
+const publicCardsListCache = new Map<string, { expiresAt: number; value: unknown }>()
+
+function isPublicCardVideoUrl(url: string, docName?: string | null): boolean {
+  const name = `${url} ${docName || ''}`.toLowerCase()
+  return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) || name.includes('.mp4') || name.includes('video')
+}
+
+function resolvePublicDirectoryMedia(profile: {
+  avatar: string | null
+  legacyId: number | null
+  attachments: AttachmentWithType[]
+}): { image: string; image_type: string | null; is_video: boolean } {
+  const introAtt = pickAttachment(profile.attachments, 'intro')
+  const introUrl = resolveAttachmentUrl(introAtt, profile.legacyId)
+  if (introUrl && isPublicCardVideoUrl(introUrl, introAtt?.docName)) {
+    return { image: introUrl, image_type: 'video', is_video: true }
+  }
+
+  const profileAtt = pickAttachment(profile.attachments, 'profile')
+  const avatar =
+    ensureAbsoluteMediaUrl(profile.avatar, {
+      docName: profile.avatar,
+      attachmentTypeLegacyId: 13,
+      attachmentTypeName: 'Profile Picture',
+      profileLegacyId: profile.legacyId,
+    }) || resolveAttachmentUrl(profileAtt, profile.legacyId)
+
+  if (avatar && isPublicCardVideoUrl(avatar, profileAtt?.docName)) {
+    return { image: avatar, image_type: 'video', is_video: true }
+  }
+
+  return { image: avatar || '', image_type: avatar ? 'image' : null, is_video: false }
+}
+
 const getPublicCards = async (query: {
   page?: number
   per_page?: number
@@ -1821,10 +1851,24 @@ const getPublicCards = async (query: {
   profession_id?: string
   service?: string
   search?: string
+  dropdowns?: string
 }) => {
   const page = Math.max(1, Number(query.page) || 1)
   const perPage = Math.min(100, Math.max(1, Number(query.per_page) || 12))
   const searchTerm = String(query.search || query.service || '').trim()
+  const includeDropdowns = query.dropdowns !== '0' && page === 1 && !searchTerm && !query.profession_id
+  const cacheKey = JSON.stringify({
+    page,
+    perPage,
+    profession_id: query.profession_id || '',
+    searchTerm,
+    dropdowns: includeDropdowns,
+  })
+  const cached = publicCardsListCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value
+  }
+
   const where = {
     ...publicVisibleWhere(),
     slug: { not: null },
@@ -1841,21 +1885,26 @@ const getPublicCards = async (query: {
       : {}),
   }
 
-  const [total, rows, professions, states, cities] = await Promise.all([
+  const [total, rows, professionRows] = await Promise.all([
     prisma.profile.count({ where }),
     prisma.profile.findMany({
       where,
       include: {
         profession: true,
-        attachments: { include: { attachmentType: true }, take: 5 },
+        attachments: { include: { attachmentType: true }, take: 8 },
       },
       skip: (page - 1) * perPage,
       take: perPage,
       orderBy: { updatedAt: 'desc' },
     }),
-    prisma.profession.findMany({ orderBy: { name: 'asc' } }),
-    prisma.state.findMany({ orderBy: { name: 'asc' }, take: 500 }),
-    prisma.city.findMany({ orderBy: { name: 'asc' }, take: 500 }),
+    includeDropdowns
+      ? prisma.profile.findMany({
+          where: { ...publicVisibleWhere(), slug: { not: null }, professionId: { not: null } },
+          distinct: ['professionId'],
+          select: { professionId: true, profession: { select: { id: true, name: true } } },
+          take: 200,
+        })
+      : Promise.resolve([]),
   ])
 
   const lastPage = Math.max(1, Math.ceil(total / perPage))
@@ -1863,51 +1912,32 @@ const getPublicCards = async (query: {
   const to = total === 0 ? null : Math.min(page * perPage, total)
   const path = '/public-cards'
   const data = rows.map((p) => {
-    const profileAtt = p.attachments.find((a) =>
-      matchAttachmentType(a.attachmentType?.name, ATTACHMENT_TYPE_ALIASES.profile)
-    )
-    const avatar =
-      ensureAbsoluteMediaUrl(p.avatar, {
-        docName: p.avatar,
-        attachmentTypeLegacyId: 13,
-        attachmentTypeName: 'Profile Picture',
-        profileLegacyId: p.legacyId,
-      }) || resolveAttachmentUrl(profileAtt, p.legacyId)
+    const media = resolvePublicDirectoryMedia(p)
     return {
       id: p.id,
       name: p.name,
       slug: p.slug,
       profession: p.profession?.name || p.prof,
       profession_id: p.professionId,
-      image: avatar,
-      image_type: avatar ? 'image' : null,
-      is_video: false,
+      image: media.image,
+      image_type: media.image_type,
+      is_video: media.is_video,
       profile_url: p.slug ? `/v/${p.slug}` : null,
     }
   })
 
   const links = [
-    {
-      url: page > 1 ? `${path}?page=${page - 1}` : null,
-      label: '&laquo; Previous',
-      active: false,
-    },
-    ...Array.from({ length: lastPage }, (_, i) => {
-      const n = i + 1
-      return {
-        url: `${path}?page=${n}`,
-        label: String(n),
-        active: n === page,
-      }
-    }),
-    {
-      url: page < lastPage ? `${path}?page=${page + 1}` : null,
-      label: 'Next &raquo;',
-      active: false,
-    },
+    { url: page > 1 ? `${path}?page=${page - 1}` : null, label: '&laquo; Previous', active: false },
+    { url: `${path}?page=${page}`, label: String(page), active: true },
+    { url: page < lastPage ? `${path}?page=${page + 1}` : null, label: 'Next &raquo;', active: false },
   ]
 
-  return {
+  const professions = professionRows
+    .map((row) => row.profession)
+    .filter((item): item is { id: string; name: string } => Boolean(item?.id && item?.name))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const payload = {
     success: true,
     data: {
       current_page: page,
@@ -1924,11 +1954,13 @@ const getPublicCards = async (query: {
       to,
       total,
     },
-    dropdowns: {
-      states: states.map((s) => ({ id: s.id, name: s.name })),
-      cities: cities.map((c) => ({ id: c.id, name: c.name })),
-      professions: professions.map((p) => ({ id: p.id, name: p.name })),
-    },
+    dropdowns: includeDropdowns
+      ? {
+          states: [] as { id: string; name: string }[],
+          cities: [] as { id: string; name: string }[],
+          professions,
+        }
+      : undefined,
     filters_applied: {
       state_id: query.state_id || null,
       city_id: query.city_id || null,
@@ -1944,6 +1976,16 @@ const getPublicCards = async (query: {
       prev_page_url: page > 1 ? `${path}?page=${page - 1}` : null,
     },
   }
+
+  publicCardsListCache.set(cacheKey, { expiresAt: Date.now() + PUBLIC_CARDS_LIST_TTL_MS, value: payload })
+  if (publicCardsListCache.size > 40) {
+    const now = Date.now()
+    for (const [key, entry] of publicCardsListCache) {
+      if (entry.expiresAt <= now) publicCardsListCache.delete(key)
+    }
+  }
+
+  return payload
 }
 
 const saveGuestUser = async (
