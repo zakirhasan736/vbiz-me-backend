@@ -8,7 +8,12 @@ import {
   type CardBlueprint,
   type FillSectionId,
 } from './cardBlueprint.schema'
-import { selectModelForTask, type AiTier } from './modelRouter.service'
+import {
+  LUNA_DOCUMENT_FILL_SECTIONS,
+  selectFillSectionModel,
+  selectModelForTask,
+  type AiTier,
+} from './modelRouter.service'
 import { chatJson } from './openai.client'
 import { compactProfileForPrompt } from './sourceNormalizer.service'
 import { recommendedTabNames, type RecommendedTab } from './tabDecision.service'
@@ -102,10 +107,10 @@ const CONTENT_SYSTEM = `You write professional vBiz Me card copy from a Master B
 Rules:
 - Creative language is allowed. Creative facts are not.
 - Only claim things present in the profile.
-- Do not invent reviews, licenses, years, phone numbers, or awards.
-- FAQs must be answerable from the profile. If a fact is missing, skip that FAQ.
+- Do not invent licenses, years, phone numbers, or awards.
+- FAQs must be answerable from the profile when possible. If none exist, generate up to 5 from business topics.
 - Return JSON matching the vCard blueprint shape.
-- Put ONLY real testimonials already in the profile into reviews. Never copy suggestedTestimonialTemplates into reviews.
+- Prefer real testimonials already in the profile for reviews. If none exist, write realistic example testimonials from business topics (not suggestedTestimonialTemplates copied as verified quotes).
 ${BLUEPRINT_JSON_INSTRUCTION}`
 
 export async function generateCardContent(input: {
@@ -142,21 +147,24 @@ export async function generateSectionFromProfile(input: {
   const schemaHint = FILL_SECTION_SCHEMA_HINTS[input.section]
   const reviewRule =
     input.section === 'reviews'
-      ? 'Only include real testimonials from verifiedReviews/existingTestimonials. Never output suggestedTestimonialTemplates as reviews. If none exist, return { "reviews": [] }.'
-      : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
+      ? 'If verifiedReviews or existingTestimonials have real quotes, include those first. If they are empty, write realistic example testimonials grounded in business topics (services, industry, audience). Fill remaining slots up to 5. Do not invent licenses, prices, awards, or claim unverified named customers as factual quotes. Never copy suggestedTestimonialTemplates as verified reviews.'
+      : input.section === 'faqs'
+        ? 'FAQs must be answerable from the profile when possible. If none exist in the profile, generate up to 5 helpful FAQs from business topics. Do not invent prices, hours, guarantees, or certifications. Fill remaining slots up to 5.'
+        : input.section === 'blogs'
+          ? 'If no articles exist in the profile, draft up to 5 evergreen educational posts from business topics. Do not invent news events, dates, or awards. Fill remaining slots up to 5.'
+          : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
   const seoRule =
     input.section === 'seo'
       ? 'For SEO, write a concise business-specific title and description from verified facts. Return 5-10 high-intent keywords about this business. Do not include vBiz Me platform keywords; those are added automatically. Never invent numeric search-volume claims.'
       : ''
-  const writing = selectModelForTask({
-    task:
-      input.section === 'faqs' || input.section === 'blogs' || input.section === 'personal'
-        ? 'HIGH_QUALITY_WRITING'
-        : 'SIMPLE_VOLUME',
-  })
+  const writing = LUNA_DOCUMENT_FILL_SECTIONS.has(input.section)
+    ? selectFillSectionModel(input.section)
+    : selectModelForTask({
+        task: input.section === 'personal' ? 'HIGH_QUALITY_WRITING' : 'SIMPLE_VOLUME',
+      })
   const result = await chatJson<unknown>({
     tier: input.tier || (writing.tier === 'vision' ? 'luna' : writing.tier),
-    temperature: input.section === 'reviews' ? 0.1 : 0.5,
+    temperature: 0.5,
     system: `Fill one vCard section from the Master Business Profile only. Return ONLY JSON matching: ${schemaHint}. ${reviewRule} For services.type use ONLY: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
     user: `Section: ${input.section}\nUser instruction: ${input.instruction || '(none)'}\nCurrent draft (partial):\n${(input.currentDraft || '').slice(0, 6000)}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}`,
   })

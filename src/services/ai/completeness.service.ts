@@ -98,7 +98,7 @@ export function buildCompletenessReport(input: {
       hint: 'Add business hours.',
     },
     {
-      label: 'FAQ',
+      label: 'FAQs',
       ok: (blueprint?.faqs?.length || 0) > 0,
       weight: 5,
       hint: 'Add a few frequently asked questions.',

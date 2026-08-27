@@ -1,11 +1,6 @@
 import { Router } from 'express'
 import multer from 'multer'
-import {
-  MEDIA_ATTACHMENT_POLICIES,
-  MEDIA_UPLOAD_MAX_BYTES,
-  mediaAttachmentTooLargeMessage,
-  mediaAttachmentTypeMessage,
-} from '../constants/mediaUpload'
+import { MEDIA_ATTACHMENT_POLICIES, MEDIA_UPLOAD_MAX_BYTES, mediaAttachmentTypeMessage } from '../constants/mediaUpload'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import { assertMediaUploadAllowed, assertUploadWithinPackageLimit } from '../services/entitlement.service'
@@ -39,10 +34,6 @@ const validateAttachmentUpload = (file: Express.Multer.File, attachmentType?: st
     ? MEDIA_ATTACHMENT_POLICIES[attachmentType as keyof typeof MEDIA_ATTACHMENT_POLICIES]
     : undefined
   if (!policy) return
-
-  if (file.size > policy.maxBytes) {
-    throw new AppError(413, mediaAttachmentTooLargeMessage(policy))
-  }
 
   if (!policy.allowedKinds.some((kind) => kind === uploadedMediaKind(file))) {
     throw new AppError(415, mediaAttachmentTypeMessage(policy))

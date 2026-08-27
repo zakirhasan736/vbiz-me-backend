@@ -54,6 +54,14 @@ test('tab fill prompt constrains output to one section', () => {
   assert.match(prompt, /Do not return keys.*other section/)
 })
 
+test('tab fill prompt extracts FAQs from source text without inventing extras', () => {
+  const prompt = buildTabFillSystemPrompt('faqs')
+  assert.match(prompt, /exactly one public vCard section: "faqs"/)
+  assert.match(prompt, /"faqs":/)
+  assert.match(prompt, /Extract every distinct Q&A/)
+  assert.match(prompt, /Do not invent FAQs/)
+})
+
 test('OCR-needed files cannot be treated as native extraction success', () => {
   assert.equal(needsServerOcr({ extractionMethod: 'ocr_needed' }), true)
   assert.equal(needsServerOcr({ extractionMethod: 'ocr' }), true)

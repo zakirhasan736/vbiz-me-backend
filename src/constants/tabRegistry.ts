@@ -125,7 +125,7 @@ export const TAB_REGISTRY: Record<string, TabRegistryEntry> = {
     12,
     'insurance_license'
   ),
-  faqs: list('faqs', 'FAQ', 'faqs', 'Faq', 13, 'faq'),
+  faqs: list('faqs', 'FAQs', 'faqs', 'Faq', 13, 'faq'),
   calendar: list('calendar', 'Calendar', 'calendar', 'calender', 14, 'calendar_section'),
   property_listings: list(
     'property_listings',
@@ -263,6 +263,10 @@ export const NAV_ID_TO_TAB_KEY: Record<string, string> = {
   'sales-24h': 'sales_people',
   'who-we-are': 'why_choose_us',
 }
+
+export const TAB_KEY_TO_NAV_ID: Record<string, string> = Object.fromEntries(
+  Object.entries(NAV_ID_TO_TAB_KEY).map(([navId, tabKey]) => [tabKey, navId])
+)
 
 export const NAV_CHECKBOX_TO_TAB_KEY: Record<string, string> = {
   faqNav_checkbox: 'faqs',

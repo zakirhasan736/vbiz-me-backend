@@ -1,4 +1,3 @@
-import { MEDIA_UPLOAD_MAX_BYTES } from '../constants/mediaUpload'
 import { PACKAGE_ACCESS_FEATURES, type PackageAccessKey, type PackageAccessMap } from '../constants/packageAccess'
 import {
   FEATURE_NOT_INCLUDED_MESSAGE,
@@ -156,7 +155,7 @@ export async function assertUploadWithinPackageLimit(
 ): Promise<void> {
   if (isStaffRole(role)) return
   const entitlements = await getEffectiveEntitlements(userId, role)
-  const cap = maxUploadBytes(entitlements.limits.maxFileSizeMb, MEDIA_UPLOAD_MAX_BYTES)
+  const cap = maxUploadBytes(entitlements.limits.maxFileSizeMb)
   if (bytes <= cap) return
   const maxMb = Math.max(1, Math.round(cap / (1024 * 1024)))
   throw featureLimitReachedError(

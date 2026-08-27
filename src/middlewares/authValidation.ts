@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
 import config from '../configs/config'
-import { isStaffRole, toApiRole, UserRole } from '../constants/userRole'
+import { toApiRole, UserRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import authUtils from '../utils/auth.utils'
 import catchAsyncError, { IUserInfoRequest } from '../utils/catchAsyncError'
@@ -78,10 +78,6 @@ const isAuthenticateUser = catchAsyncError(async (req, res, next) => {
     }
 
     authUtils.assertCanAuthenticate(user)
-
-    if (isStaffRole(toApiRole(user.role))) {
-      throw new AppError(401, 'Staff session expired. Please log in again.')
-    }
 
     const tokens = authUtils.issueTokens(user)
     authUtils.setAuthCookies(res, tokens.accessToken, tokens.refreshToken)

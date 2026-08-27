@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import config from '../../configs/config'
 import AppError from '../../error/AppError'
 import { extractWithOcrFallback, needsServerOcr } from '../documentOcr.service'
 import {
@@ -27,11 +26,16 @@ import { buildCompletenessReport } from './completeness.service'
 import { generateCardContent, generateSectionFromProfile, profileToBlueprintFacts } from './contentGenerator.service'
 import { crawlWebsiteDeep, extractTextFromBuffer, type UploadedPart } from './extractDocumentText'
 import { buildFieldGraph, buildTabPlan } from './fieldGraph.service'
-import { routeAiTier } from './modelRouter.service'
+import { LUNA_DOCUMENT_FILL_SECTIONS, routeAiTier, selectFillSectionModel } from './modelRouter.service'
 import { chatJson, getOpenAiApiKey } from './openai.client'
 import { runSolArchitect } from './solArchitect.service'
 import { normalizeSources } from './sourceNormalizer.service'
-import { applySectionPayloadToFields, capGeneratedList, capGeneratedSkills } from './tabBuild.service'
+import {
+  applySectionPayloadToFields,
+  capGeneratedList,
+  capGeneratedSkills,
+  mergeGeneratedList,
+} from './tabBuild.service'
 import { decideRecommendedTabs, type RecommendedTab } from './tabDecision.service'
 import { sanitizeBlueprint } from './validation.service'
 
@@ -441,6 +445,54 @@ Rules:
   return { recommendations }
 }
 
+function listFromCurrentDraft(currentDraft: string | undefined, sectionId: FillSectionId): unknown[] {
+  if (!currentDraft) return []
+  try {
+    const parsed = JSON.parse(currentDraft) as Record<string, unknown>
+    if (!parsed || typeof parsed !== 'object') return []
+    if (sectionId === 'blogs') {
+      if (Array.isArray(parsed.blogs)) return parsed.blogs
+      if (Array.isArray(parsed.generalPosts)) return parsed.generalPosts
+      return []
+    }
+    const value = parsed[sectionId]
+    return Array.isArray(value) ? value : []
+  } catch {
+    return []
+  }
+}
+
+async function ensureGeneratedListSection(input: {
+  sectionId: FillSectionId
+  payload: Record<string, unknown>
+  profile: Parameters<typeof generateSectionFromProfile>[0]['profile'] | null
+  currentDraft?: string
+  instruction?: string
+  userId?: string
+  sessionId?: string
+}): Promise<Record<string, unknown>> {
+  const sectionId = input.sectionId
+  if (sectionId !== 'faqs' && sectionId !== 'blogs' && sectionId !== 'reviews') return input.payload
+  const existing = listFromCurrentDraft(input.currentDraft, sectionId)
+  const incoming = Array.isArray(input.payload[sectionId]) ? (input.payload[sectionId] as unknown[]) : []
+  let merged = mergeGeneratedList(existing, incoming)
+  if (merged.length < 5 && input.profile) {
+    const remaining = 5 - merged.length
+    const generated = (await generateSectionFromProfile({
+      section: sectionId,
+      profile: input.profile,
+      instruction:
+        input.instruction ||
+        `Generate ${remaining} additional ${sectionId} from business topics when sources did not provide enough. Cap total at 5. Do not invent licenses, prices, hours, guarantees, or awards.`,
+      currentDraft: input.currentDraft,
+      userId: input.userId,
+      sessionId: input.sessionId,
+    })) as Record<string, unknown>
+    merged = mergeGeneratedList(merged, generated[sectionId])
+  }
+  return { ...input.payload, [sectionId]: capGeneratedList(merged) }
+}
+
 export async function fillSection(input: {
   section: string
   text?: string
@@ -483,18 +535,27 @@ export async function fillSection(input: {
       userId: input.userId,
       sessionId: input.sessionId,
     })) as Record<string, unknown>
-    if (sectionId === 'seo' && payload.seo && typeof payload.seo === 'object') {
-      payload.seo = normalizeSeoMetadata(
-        payload.seo as { metaTitle?: string; metaDescription?: string; keywords?: string[] }
+    const withLists = await ensureGeneratedListSection({
+      sectionId,
+      payload,
+      profile,
+      currentDraft: input.currentDraft,
+      instruction: text,
+      userId: input.userId,
+      sessionId: input.sessionId,
+    })
+    if (sectionId === 'seo' && withLists.seo && typeof withLists.seo === 'object') {
+      withLists.seo = normalizeSeoMetadata(
+        withLists.seo as { metaTitle?: string; metaDescription?: string; keywords?: string[] }
       )
     }
-    const count = countFillEntries(sectionId, payload)
+    const count = countFillEntries(sectionId, withLists)
     const message =
       count === 0
         ? `No ${section} found in the saved business profile. Add a note or document if you want this section filled.`
         : undefined
-    await persistFillToJob(input.sessionId, sectionId, payload)
-    return { section: sectionId, payload, ...(message ? { message } : {}), count, usedProfile: true }
+    await persistFillToJob(input.sessionId, sectionId, withLists)
+    return { section: sectionId, payload: withLists, ...(message ? { message } : {}), count, usedProfile: true }
   }
 
   if (!text && !websiteUrl && files.length === 0 && !profile) {
@@ -542,13 +603,20 @@ export async function fillSection(input: {
     sectionId === 'seo'
       ? `For SEO, write a concise business-specific title (max ${MAX_SEO_TITLE_LENGTH} chars) and description (max ${MAX_SEO_DESCRIPTION_LENGTH} chars) from verified facts. Return 5-${MAX_OWNER_SEO_KEYWORDS} high-intent keywords about this business. Do not include vBiz Me platform keywords; those are added automatically. Never invent numeric search-volume claims.`
       : ''
-  const fillModel = config.OPENAI_TAB_FILL_MODEL || 'gpt-4o'
+  const extractFromSource = LUNA_DOCUMENT_FILL_SECTIONS.has(sectionId)
+    ? sectionId === 'faqs'
+      ? 'Extract every distinct question-and-answer conceptually present in the ready text (OCR output or pasted copy). Pair each question with its matching answer. Do not invent FAQs that are not implied by the source. Return at most 5 items. If none are present, return an empty faqs array.'
+      : sectionId === 'blogs'
+        ? 'Extract every distinct article or news item conceptually present in the ready text. Use real titles and summaries from the source. Do not invent posts. Return at most 5 items. If none are present, return an empty blogs array.'
+        : 'Extract every distinct testimonial or review conceptually present in the ready text. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual items. Do not invent customer reviews. Return at most 5 items. If none are present, return an empty reviews array.'
+    : 'Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. If reviews, FAQs, or blogs are not in the sources, generate up to 5 realistic items from business topics instead of empty arrays. Example reviews must be grounded in the business and must not invent licenses, prices, or awards. If the requested section is not supported and is not faqs/blogs/reviews, return an empty array/object.'
+  const fillRoute = selectFillSectionModel(sectionId)
 
   let raw: unknown
   try {
     const result = await chatJson<unknown>({
-      model: fillModel,
-      system: `You fill one vCard section from ready text. Return ONLY JSON matching: ${schemaHint}. Fill only the current section/tab. Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. Never invent customer reviews. If reviews are not in the sources, return an empty reviews array. If the requested section is not supported by the sources, return an empty array/object. For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
+      tier: fillRoute.tier,
+      system: `You fill one vCard section from ready text. Return ONLY JSON matching: ${schemaHint}. Fill only the current section/tab. ${extractFromSource} For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
       user: `Fill section “${section}”.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nREADY TEXT:\n${readyText}`,
     })
     await logChatMeta(`fill_${sectionId}`, result.meta, {
@@ -588,6 +656,15 @@ export async function fillSection(input: {
     } else if (sectionId === 'skills') {
       payload.skills = capGeneratedSkills(payload.skills)
     }
+    payload = await ensureGeneratedListSection({
+      sectionId,
+      payload,
+      profile,
+      currentDraft: input.currentDraft,
+      instruction: text,
+      userId: input.userId,
+      sessionId: input.sessionId,
+    })
     if (sectionId === 'seo' && payload.seo && typeof payload.seo === 'object') {
       const seo = normalizeSeoMetadata(
         payload.seo as { metaTitle?: string; metaDescription?: string; keywords?: string[] }

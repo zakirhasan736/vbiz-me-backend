@@ -106,6 +106,37 @@ const seedPackages = async (): Promise<void> => {
     logger.info(`Seeded CRM package flag on ${seededCrm} package(s) (allow_crm)`)
   }
 
+  const FILE_SIZE_BY_SLUG: Record<string, string> = {
+    professional: '50',
+    'professional-concierge': 'unlimited',
+    corporate: 'unlimited',
+  }
+  let seededFileSize = 0
+  for (const pkg of packages) {
+    const slug = (pkg.slug || '').trim().toLowerCase()
+    const featureValue = FILE_SIZE_BY_SLUG[slug]
+    if (!featureValue) continue
+    const existing = await prisma.packageFeature.findUnique({
+      where: { packageId_featureKey: { packageId: pkg.id, featureKey: 'max_file_size_mb' } },
+      select: { id: true, featureValue: true },
+    })
+    if (existing?.featureValue === featureValue) continue
+    if (existing) {
+      await prisma.packageFeature.update({
+        where: { id: existing.id },
+        data: { featureValue },
+      })
+    } else {
+      await prisma.packageFeature.create({
+        data: { packageId: pkg.id, featureKey: 'max_file_size_mb', featureValue },
+      })
+    }
+    seededFileSize += 1
+  }
+  if (seededFileSize) {
+    logger.info(`Synced per-file upload caps on ${seededFileSize} package(s) (max_file_size_mb)`)
+  }
+
   const defaultCard = await prisma.profile.findFirst({
     where: { slug: { equals: DEFAULT_AI_ASSISTANCE_SLUG, mode: 'insensitive' } },
     select: { id: true },

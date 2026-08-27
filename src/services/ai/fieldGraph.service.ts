@@ -179,12 +179,12 @@ const FIELD_DEFS: FieldDef[] = [
     tabId: 'faq',
     sectionId: 'faqs',
     fieldKey: 'faqs',
-    fieldLabel: 'FAQ',
+    fieldLabel: 'FAQs',
     special: 'faq',
     aiGenerationAllowed: true,
-    recommendedTier: 'TERRA',
+    recommendedTier: 'LUNA',
     prompt:
-      'FAQs must be answerable from verified facts. Do not invent policies. If none exist in sources, ask to create up to 5.',
+      'FAQs must be answerable from verified facts. Do not invent policies. If none exist in sources, generate up to 5 helpful FAQs from business topics.',
     getValue: () => [],
   },
   {
@@ -194,7 +194,7 @@ const FIELD_DEFS: FieldDef[] = [
     fieldLabel: 'News / Blog',
     special: 'blog',
     aiGenerationAllowed: true,
-    recommendedTier: 'TERRA',
+    recommendedTier: 'LUNA',
     prompt:
       'Use real articles found on the website. Place titles, excerpts, URLs, and images on News/Blogs. Only ask to draft extra posts if none were found. Do not invent company news events.',
     getValue: (p) => p.blogs,
@@ -205,8 +205,10 @@ const FIELD_DEFS: FieldDef[] = [
     fieldKey: 'reviews',
     fieldLabel: 'Reviews',
     special: 'reviews',
-    aiGenerationAllowed: false,
-    prompt: 'Only real customer reviews from sources. Never invent reviewers.',
+    aiGenerationAllowed: true,
+    recommendedTier: 'LUNA',
+    prompt:
+      'Prefer real customer reviews from sources. If none were scraped, generate up to 5 realistic example testimonials from business topics. Do not invent licenses, prices, or awards.',
     getValue: (p) => [...(p.verifiedReviews || []), ...(p.existingTestimonials || [])],
   },
   {

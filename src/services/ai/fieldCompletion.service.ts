@@ -15,7 +15,6 @@ const FACTUAL_KEYS = new Set([
   'website',
   'address',
   'licenses',
-  'reviews',
   'portfolio',
   'education',
   'experience',
@@ -44,14 +43,11 @@ export async function generateFieldCopy(input: {
   userId?: string
   sessionId?: string
 }): Promise<unknown> {
-  if (FACTUAL_KEYS.has(input.field.fieldKey) && input.field.special !== 'services') {
-    throw new AppError(400, 'This field needs real information from you. AI cannot invent it.')
-  }
-  if (input.field.special === 'reviews') {
-    throw new AppError(400, 'AI cannot create real customer reviews.')
-  }
   if (input.field.special === 'credentials') {
     throw new AppError(400, 'AI cannot invent licenses or certifications.')
+  }
+  if (FACTUAL_KEYS.has(input.field.fieldKey) && input.field.special !== 'services') {
+    throw new AppError(400, 'This field needs real information from you. AI cannot invent it.')
   }
   if (input.field.special === 'portfolio' && !input.instruction && !input.currentText) {
     throw new AppError(400, 'Add a real project first. AI can then write the description.')
@@ -67,7 +63,7 @@ ${input.field.prompt}
 Services: keep real titles; you may write missing descriptions.
 FAQ: only questions answerable from the profile.
 Blog/News: evergreen educational content, never a fake company event.
-Reviews: never output fake reviewers.`,
+Reviews: if none were scraped, write up to 5 realistic example testimonials from business topics. Do not invent licenses, prices, or awards, and do not claim they are verified quotes from named real customers unless present in the profile.`,
     user: `Field: ${input.field.fieldLabel} (${input.field.fieldKey})
 Instruction: ${input.instruction || '(none)'}
 Current text: ${String(input.currentText || input.field.currentValue || '').slice(0, 4000)}

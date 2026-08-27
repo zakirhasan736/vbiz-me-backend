@@ -17,7 +17,6 @@ import {
   cardCreationIssueMessage,
   collectCardActivationIssues,
   collectCardCreationIssues,
-  collectCardDobIssues,
   createContactConflictMessage,
   findCreateContactConflict,
   normalizeCardEmail,
@@ -50,7 +49,12 @@ import {
   type DashboardPeriod,
   type SocialChannel,
 } from '../utils/dashboardAnalytics'
-import { duplicateContactFields } from '../utils/duplicateCard'
+import {
+  blankDuplicatedIdentityFields,
+  cloneRecord,
+  duplicateContactFields,
+  remapDuplicatedCardSettings,
+} from '../utils/duplicateCard'
 import { fillMissingGalleryMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
@@ -1040,12 +1044,6 @@ const assertCardIdentityForCreate = (input: Pick<CardActivationInput, 'email' | 
   throw new AppError(400, cardCreationIssueMessage(issue))
 }
 
-const assertCardDobForCreate = (dob: unknown) => {
-  const issue = collectCardDobIssues({ dob })[0]
-  if (!issue) return
-  throw new AppError(400, cardCreationIssueMessage(issue))
-}
-
 const assertCreateContactsAvailable = async (email: unknown, phone: unknown) => {
   const normalizedEmail = normalizeCardEmail(email)
   const digits = normalizeCardPhone(phone)
@@ -1231,9 +1229,7 @@ const create = async (
     isPublic: raw.isPublic as boolean | undefined,
   })
   const skipCreateContactRules = Boolean(skipCreateContactRulesRaw)
-  if (skipCreateContactRules) {
-    assertCardDobForCreate(raw.dob)
-  } else {
+  if (!skipCreateContactRules) {
     assertCardIdentityForCreate({
       email: resolvedEmail,
       phone: raw.phone,
@@ -1331,134 +1327,290 @@ const create = async (
 }
 
 const clonePrimaryProfileCollections = async (sourceProfileId: string, targetProfileId: string) => {
-  const [education, experiences, services, portfolios, reviews, skillTags, socialLinks, aboutMe] = await Promise.all([
-    prisma.education.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
-    prisma.experience.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
-    prisma.service.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
-    prisma.portfolio.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
-    prisma.review.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
-    prisma.skillTag.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
-    prisma.socialLink.findMany({ where: { profileId: sourceProfileId }, orderBy: { sortOrder: 'asc' } }),
-    prisma.aboutMe.findUnique({ where: { profileId: sourceProfileId } }),
-  ])
+  const listModels = [
+    'education',
+    'experience',
+    'service',
+    'portfolio',
+    'review',
+    'skillTag',
+    'socialLink',
+    'blog',
+    'tabItem',
+    'gallery',
+    'video',
+    'bbbAccreditation',
+    'licensing',
+    'dcp',
+    'certificateLicense',
+    'faq',
+    'calendarSection',
+    'propertyListing',
+    'profileEvent',
+    'mediaPress',
+    'missionStatement',
+    'menuSection',
+    'announcementDirect',
+    'joinMyTeam',
+    'booking',
+    'additionalService',
+    'videoLink',
+    'inventory',
+    'homeSolar',
+    'resiliencyProduct',
+    'breakfast',
+    'lunch',
+    'dinner',
+    'product',
+    'salesPerson',
+    'teamMember',
+    'client',
+    'generalPost',
+    'insuranceLicense',
+    'videoExplainer',
+    'address',
+  ] as const
 
-  await prisma.$transaction(async (tx) => {
-    for (const [index, item] of education.entries()) {
-      await tx.education.create({
-        data: {
-          profileId: targetProfileId,
-          institute: item.institute,
-          degree: item.degree,
-          fromDate: item.fromDate,
-          toDate: item.toDate,
-          tillNow: item.tillNow,
-          description: item.description,
-          sortOrder: index,
-        },
+  type ListDelegate = {
+    findMany: (args: { where: { profileId: string } }) => Promise<Array<Record<string, unknown>>>
+    create: (args: { data: Record<string, unknown> }) => Promise<unknown>
+  }
+
+  await prisma.$transaction(
+    async (tx) => {
+      const client = tx as unknown as Record<string, ListDelegate>
+      const attachableIdMap: Record<string, Map<string, string>> = {
+        Service: new Map(),
+        Portfolio: new Map(),
+        Post: new Map(),
+      }
+
+      await tx.address.deleteMany({ where: { profileId: targetProfileId } })
+
+      for (const model of listModels) {
+        const delegate = client[model]
+        if (!delegate?.findMany || !delegate?.create) continue
+        const rows = await delegate.findMany({ where: { profileId: sourceProfileId } })
+        for (const row of rows) {
+          if (row.deletedAt) continue
+          const created = (await delegate.create({
+            data: { ...cloneRecord(row), profileId: targetProfileId },
+          })) as { id?: string }
+          const sourceId = typeof row.id === 'string' ? row.id : ''
+          if (sourceId && created?.id && model === 'service') attachableIdMap.Service.set(sourceId, created.id)
+          if (sourceId && created?.id && model === 'portfolio') attachableIdMap.Portfolio.set(sourceId, created.id)
+        }
+      }
+
+      const aboutMe = await tx.aboutMe.findUnique({ where: { profileId: sourceProfileId } })
+      if (aboutMe) {
+        await tx.aboutMe.create({
+          data: {
+            profileId: targetProfileId,
+            title: aboutMe.title,
+            description: aboutMe.description,
+            featuredMediaUrl: aboutMe.featuredMediaUrl,
+            status: aboutMe.status,
+          },
+        })
+      }
+
+      const whyChooseUs = await tx.whyChooseUs.findUnique({ where: { profileId: sourceProfileId } }).catch(() => null)
+      if (whyChooseUs) {
+        await tx.whyChooseUs.create({
+          data: { ...cloneRecord(whyChooseUs as unknown as Record<string, unknown>), profileId: targetProfileId },
+        })
+      }
+
+      const sourceTabs = await tx.customTab.findMany({
+        where: { profileId: sourceProfileId },
+        include: { items: { orderBy: { sortOrder: 'asc' } } },
+        orderBy: { sortOrder: 'asc' },
       })
-    }
-    for (const [index, item] of experiences.entries()) {
-      await tx.experience.create({
-        data: {
-          profileId: targetProfileId,
-          company: item.company,
-          jobTitle: item.jobTitle,
-          description: item.description,
-          fromDate: item.fromDate,
-          toDate: item.toDate,
-          tillNow: item.tillNow,
-          sortOrder: index,
-        },
+      const targetTabs = await tx.customTab.findMany({
+        where: { profileId: targetProfileId },
+        orderBy: { sortOrder: 'asc' },
       })
-    }
-    for (const [index, item] of services.entries()) {
-      await tx.service.create({
-        data: {
-          profileId: targetProfileId,
-          title: item.title,
-          description: item.description,
-          status: item.status,
-          reviewUrl: item.reviewUrl,
-          imageUrl: item.imageUrl,
-          sortOrder: index,
-        },
+      const unusedTargets = [...targetTabs]
+
+      const takeTarget = (match: (tab: (typeof targetTabs)[number]) => boolean) => {
+        const index = unusedTargets.findIndex(match)
+        if (index < 0) return null
+        return unusedTargets.splice(index, 1)[0]
+      }
+
+      for (const sourceTab of sourceTabs) {
+        const targetTab =
+          takeTarget((tab) => tab.key === sourceTab.key) ||
+          takeTarget((tab) => tab.label === sourceTab.label) ||
+          unusedTargets.shift() ||
+          (await tx.customTab.create({
+            data: {
+              profileId: targetProfileId,
+              key: sourceTab.key.startsWith('custom-tab-')
+                ? `custom-tab-${randomBytes(6).toString('hex')}`
+                : sourceTab.key,
+              label: sourceTab.label,
+              slug: sourceTab.slug,
+              description: sourceTab.description,
+              icon: sourceTab.icon,
+              sortOrder: sourceTab.sortOrder,
+              isEnabled: sourceTab.isEnabled,
+              isPublic: sourceTab.isPublic,
+              status: sourceTab.status,
+              layoutType: sourceTab.layoutType,
+              settings: sourceTab.settings === null ? undefined : (sourceTab.settings as Prisma.InputJsonValue),
+            },
+          }))
+
+        await tx.customTabItem.deleteMany({ where: { customTabId: targetTab.id } })
+        for (const item of sourceTab.items) {
+          await tx.customTabItem.create({
+            data: {
+              customTabId: targetTab.id,
+              profileId: targetProfileId,
+              title: item.title,
+              description: item.description,
+              url: item.url,
+              featuredImage: item.featuredImage,
+              sortOrder: item.sortOrder,
+              status: item.status,
+              data: item.data === null ? undefined : (item.data as Prisma.InputJsonValue),
+            },
+          })
+        }
+      }
+
+      const sourceMenus = await tx.menu.findMany({
+        where: { profileId: sourceProfileId },
+        include: { items: { orderBy: { sortOrder: 'asc' } } },
       })
-    }
-    for (const [index, item] of portfolios.entries()) {
-      await tx.portfolio.create({
-        data: {
-          profileId: targetProfileId,
-          title: item.title,
-          description: item.description,
-          status: item.status,
-          url: item.url,
-          imageUrl: item.imageUrl,
-          attachmentUrl: item.attachmentUrl,
-          attachmentName: item.attachmentName,
-          sortOrder: index,
-        },
+      for (const menu of sourceMenus) {
+        const createdMenu = await tx.menu.create({
+          data: { profileId: targetProfileId, name: menu.name },
+        })
+        for (const item of menu.items) {
+          await tx.menuItem.create({
+            data: {
+              menuId: createdMenu.id,
+              title: item.title,
+              url: item.url,
+              price: item.price,
+              description: item.description,
+              sortOrder: item.sortOrder,
+            },
+          })
+        }
+      }
+
+      const sourcePosts = await tx.post.findMany({
+        where: { profileId: sourceProfileId, deletedAt: null },
+        include: { metas: true },
       })
-    }
-    for (const [index, item] of reviews.entries()) {
-      await tx.review.create({
-        data: {
-          profileId: targetProfileId,
-          author: item.author,
-          text: item.text,
-          rating: item.rating,
-          status: item.status,
-          imageUrl: item.imageUrl,
-          reviewUrl: item.reviewUrl,
-          sortOrder: index,
-        },
-      })
-    }
-    for (const [index, item] of skillTags.entries()) {
-      await tx.skillTag.create({
-        data: {
-          profileId: targetProfileId,
-          skillTypeId: item.skillTypeId,
-          name: item.name,
-          level: item.level,
-          sortOrder: index,
-        },
-      })
-    }
-    for (const [index, item] of socialLinks.entries()) {
-      await tx.socialLink.create({
-        data: {
-          profileId: targetProfileId,
-          name: item.name,
-          url: item.url,
-          icon: item.icon,
-          sortOrder: index,
-        },
-      })
-    }
-    if (aboutMe) {
-      await tx.aboutMe.create({
-        data: {
-          profileId: targetProfileId,
-          title: aboutMe.title,
-          description: aboutMe.description,
-          featuredMediaUrl: aboutMe.featuredMediaUrl,
-          status: aboutMe.status,
-        },
-      })
-    }
-  })
+      for (const post of sourcePosts) {
+        const createdPost = await tx.post.create({
+          data: {
+            profileId: targetProfileId,
+            postTypeId: post.postTypeId,
+            title: post.title,
+            description: post.description,
+            status: post.status,
+            url: post.url,
+            featuredImage: post.featuredImage,
+            sortOrder: post.sortOrder,
+          },
+        })
+        attachableIdMap.Post.set(post.id, createdPost.id)
+        for (const meta of post.metas) {
+          await tx.postMeta.create({
+            data: { postId: createdPost.id, metaKey: meta.metaKey, metaValue: meta.metaValue },
+          })
+        }
+      }
+
+      const attachments = await tx.attachment.findMany({ where: { profileId: sourceProfileId } })
+      for (const attachment of attachments) {
+        const type = attachment.attachableType
+        let postId = attachment.postId
+        let attachableId: string
+        if (type === 'Profile') {
+          attachableId = targetProfileId
+        } else {
+          const mapped = attachableIdMap[type]?.get(attachment.attachableId)
+          if (!mapped) continue
+          attachableId = mapped
+          if (type === 'Post') postId = mapped
+        }
+        if (postId && type !== 'Post') {
+          postId = attachableIdMap.Post.get(postId) || null
+        }
+        await tx.attachment.create({
+          data: {
+            attachmentTypeId: attachment.attachmentTypeId,
+            attachableType: type,
+            attachableId,
+            profileId: targetProfileId,
+            postId: type === 'Post' ? attachableId : postId,
+            docName: attachment.docName,
+            url: attachment.url,
+            publicId: attachment.publicId,
+            resourceType: attachment.resourceType,
+            format: attachment.format,
+            bytes: attachment.bytes,
+            extension: attachment.extension,
+            mimeType: attachment.mimeType,
+          },
+        })
+      }
+
+      const assistantConfig = await tx.profileAssistantConfig.findUnique({ where: { profileId: sourceProfileId } })
+      if (assistantConfig) {
+        await tx.profileAssistantConfig.upsert({
+          where: { profileId: targetProfileId },
+          create: {
+            profileId: targetProfileId,
+            enabled: assistantConfig.enabled,
+            businessBrief: assistantConfig.businessBrief,
+            systemPromptAddendum: assistantConfig.systemPromptAddendum,
+          },
+          update: {
+            enabled: assistantConfig.enabled,
+            businessBrief: assistantConfig.businessBrief,
+            systemPromptAddendum: assistantConfig.systemPromptAddendum,
+          },
+        })
+      }
+
+      const knowledge = await tx.profileAssistantKnowledge.findMany({ where: { profileId: sourceProfileId } })
+      for (const item of knowledge) {
+        await tx.profileAssistantKnowledge.create({
+          data: {
+            profileId: targetProfileId,
+            sourceType: item.sourceType,
+            tabScope: item.tabScope,
+            label: item.label,
+            sha256: item.sha256,
+            extractedText: item.extractedText,
+            extractionMethod: item.extractionMethod,
+          },
+        })
+      }
+    },
+    { timeout: 60_000, maxWait: 15_000 }
+  )
 }
 
 const duplicate = async (profileId: string, userId: string, role: string) => {
   const source = await getOwned(profileId, userId, role)
-  const settings = Object.fromEntries(
-    source.settings
-      .filter((item) => typeof item.key === 'string' && typeof item.value === 'string')
-      .map((item) => [item.key, item.value as string])
+  const settings = remapDuplicatedCardSettings(
+    Object.fromEntries(
+      source.settings
+        .filter((item) => typeof item.key === 'string' && typeof item.value === 'string')
+        .map((item) => [item.key, item.value as string])
+    )
   )
   const created = await create(userId, role, {
-    name: `${source.name?.trim() || 'Card'} (Copy)`,
-    slug: `${source.slug?.trim() || source.name || 'card'}-copy`,
+    name: '',
     skipCreateContactRules: true,
     ...duplicateContactFields(source),
     companyName: source.companyName || undefined,
@@ -1495,15 +1647,17 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
     await prisma.profile.update({
       where: { id: created.id },
       data: {
+        ...blankDuplicatedIdentityFields(),
+        genderId: null,
+        maritalStatusId: null,
         avatar: source.avatar,
         colorCode: source.colorCode,
-        lastName: source.lastName,
         rumble: source.rumble,
         truth: source.truth,
         pinterest: source.pinterest,
-        ...(source.gender ? { gender: { connect: { id: source.gender.id } } } : {}),
-        ...(source.maritalStatus ? { maritalStatus: { connect: { id: source.maritalStatus.id } } } : {}),
-        ...(source.profession ? { profession: { connect: { id: source.profession.id } } } : {}),
+        countryCode: source.countryCode,
+        isEmploy: source.isEmploy,
+        professionId: source.profession?.id ?? null,
       },
     })
     await clonePrimaryProfileCollections(profileId, created.id)

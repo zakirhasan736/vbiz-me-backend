@@ -1,4 +1,4 @@
-import { MEDIA_UPLOAD_MAX_BYTES } from '../constants/mediaUpload'
+import { MEDIA_UPLOAD_TRANSPORT_MAX_BYTES } from '../constants/mediaUpload'
 
 export function countFilledSocialLinks(items: Array<{ name?: unknown; url?: unknown }> | undefined | null): number {
   return (items || []).filter((item) => {
@@ -25,13 +25,14 @@ export function countFilledExtraFields(raw: string | null | undefined): number {
   }
 }
 
+/** Per-file cap. `null` means unlimited (transport ceiling only). Never sums files on a card. */
 export function maxUploadBytes(
   packageLimitMb: number | null | undefined,
-  globalMaxBytes = MEDIA_UPLOAD_MAX_BYTES
+  transportMaxBytes = MEDIA_UPLOAD_TRANSPORT_MAX_BYTES
 ): number {
-  if (packageLimitMb == null) return globalMaxBytes
+  if (packageLimitMb == null) return transportMaxBytes
   const packageBytes = Math.max(0, Math.round(packageLimitMb)) * 1024 * 1024
-  return Math.min(globalMaxBytes, packageBytes)
+  return Math.min(transportMaxBytes, packageBytes)
 }
 
 /** Reject only writes that raise the filled count above the package cap. Existing over-limit content can be saved unchanged. */

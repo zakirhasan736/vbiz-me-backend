@@ -1,10 +1,12 @@
 import type { Attachment, Prisma, Setting } from '../../generated/prisma/client'
 import config from '../configs/config'
 import { DIRECT_SECTION_LOADERS, isGenericDirectStorage } from '../constants/directSectionStorage'
+import { applyCanonicalPublicNavOrder } from '../constants/publicNavOrder'
 import {
   getTabByPublicSectionName,
   NAV_CHECKBOX_TO_TAB_KEY,
   NAV_ID_TO_TAB_KEY,
+  TAB_KEY_TO_NAV_ID,
   TAB_REGISTRY,
 } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
@@ -111,13 +113,13 @@ function collectEditorNavIds(map: Record<string, string>): string[] {
       const homeIndex = ids.indexOf('home')
       ids.splice(homeIndex >= 0 ? homeIndex + 1 : 1, 0, 'about')
     }
-    for (const id of ['public-cards', 'my-info']) {
+    const pinned = ['public-cards', 'my-info'] as const
+    const pinnedSet = new Set<string>(pinned)
+    for (const id of pinned) {
       if (!ids.includes(id)) ids.push(id)
     }
-    const pinned = new Set(['public-cards', 'my-info'])
-    const middle = ids.filter((id) => id !== 'home' && id !== 'about' && !pinned.has(id))
-    const pinnedOrder = Array.from(new Set([...ids.filter((id) => pinned.has(id)), 'public-cards', 'my-info']))
-    return ['home', 'about', ...middle, ...pinnedOrder]
+    const middle = applyCanonicalPublicNavOrder(ids.filter((id) => !pinnedSet.has(id)))
+    return [...middle, ...pinned]
   } catch {
     return []
   }
@@ -817,7 +819,24 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     if (row) post_types.push(row)
   }
 
-  return { StaticLink, post_types }
+  const navIdForRow = (row: PublicPostType) => TAB_KEY_TO_NAV_ID[row.key] || TAB_KEY_TO_NAV_ID[row.id] || row.id
+  const orderedIds = applyCanonicalPublicNavOrder(post_types.map(navIdForRow))
+  const byNavId = new Map(post_types.map((row) => [navIdForRow(row), row]))
+  const seen = new Set<string>()
+  const ordered: PublicPostType[] = []
+  for (const id of orderedIds) {
+    const row = byNavId.get(id)
+    if (!row || seen.has(row.key)) continue
+    seen.add(row.key)
+    ordered.push(row)
+  }
+  for (const row of post_types) {
+    if (seen.has(row.key)) continue
+    seen.add(row.key)
+    ordered.push(row)
+  }
+
+  return { StaticLink, post_types: ordered }
 }
 
 const getProfileSettings = async (profileId: string) => {

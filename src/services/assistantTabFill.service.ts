@@ -1,9 +1,10 @@
-import config from '../configs/config'
 import AppError from '../error/AppError'
 import { prisma } from '../utils/prisma'
 import { coerceServiceTypes, countFillEntries, fillSectionSchemas } from './ai/cardBlueprint.schema'
 import { extractTextFromBuffer, type UploadedPart } from './ai/extractDocumentText'
+import { getModelForTier, selectFillSectionModel } from './ai/modelRouter.service'
 import { chatJson } from './ai/openai.client'
+import { capGeneratedList } from './ai/tabBuild.service'
 import { buildTabFillSystemPrompt, parseSupportedTabScope } from './assistantPolicy'
 import { extractWithOcrFallback, needsServerOcr } from './documentOcr.service'
 
@@ -63,8 +64,9 @@ export async function fillProfileSection(input: {
     throw new AppError(422, 'Could not read text from this source. Add clearer text or another file.')
   }
 
+  const fillRoute = selectFillSectionModel(scope)
   const result = await chatJson<unknown>({
-    model: config.OPENAI_TAB_FILL_MODEL,
+    tier: fillRoute.tier,
     temperature: 0.2,
     system,
     user: userText,
@@ -73,21 +75,24 @@ export async function fillProfileSection(input: {
 
   try {
     const schema = fillSectionSchemas[scope]
-    const payload = schema.parse(scope === 'services' ? coerceServiceTypes(raw) : raw) as Record<string, unknown>
-    const count = countFillEntries(scope, payload)
+    const parsed = schema.parse(scope === 'services' ? coerceServiceTypes(raw) : raw) as Record<string, unknown>
+    if (scope === 'faqs' || scope === 'blogs' || scope === 'reviews') {
+      parsed[scope] = capGeneratedList(parsed[scope])
+    }
+    const count = countFillEntries(scope, parsed)
     if (count === 0 && files.length > 0 && !pastedText) {
       throw new AppError(422, `No usable data was found for the ${scope} section.`)
     }
     return {
       section: scope,
-      payload,
+      payload: parsed,
       count,
-      model: config.OPENAI_TAB_FILL_MODEL,
+      model: getModelForTier(fillRoute.tier),
       requiresReview: true,
     }
   } catch (error) {
     if (error instanceof AppError) throw error
-    throw new AppError(502, `GPT-4o returned an invalid structure for the ${scope} section.`)
+    throw new AppError(502, `AI returned an invalid structure for the ${scope} section.`)
   }
 }
 

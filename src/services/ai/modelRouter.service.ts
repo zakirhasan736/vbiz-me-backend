@@ -208,3 +208,13 @@ export function selectModelForTask(input: {
     confidence: input.sourceQuality === 'low' ? 0.5 : 0.9,
   })
 }
+
+/** FAQ / Reviews / News-Blogs drop-fill: OCR separately, then Luna reads the text and structures entries. */
+export const LUNA_DOCUMENT_FILL_SECTIONS = new Set(['faqs', 'blogs', 'reviews'])
+
+export function selectFillSectionModel(section: string): { tier: AiTier; reason: string } {
+  if (LUNA_DOCUMENT_FILL_SECTIONS.has(section)) {
+    return { tier: 'luna', reason: 'document_text_section_fill' }
+  }
+  return selectModelForTask({ task: 'STRUCTURED_TRANSFORM' })
+}

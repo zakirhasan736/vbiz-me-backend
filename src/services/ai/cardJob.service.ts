@@ -14,7 +14,7 @@ import { seoMetadataToSettings } from '../seoMetadata.service'
 import { builderError, logBuilderEvent, newRequestId, type BuilderErrorCode, type BuilderStage } from './builderErrors'
 import { summarizeExtraction } from './cardAgent.service'
 import { assembleAiCard } from './cardAssembler.service'
-import { cardBlueprintSchema, TAB_CATALOG } from './cardBlueprint.schema'
+import { TAB_CATALOG } from './cardBlueprint.schema'
 import {
   assertJobOwner,
   loadCardSession,
@@ -24,7 +24,7 @@ import {
   type UserProgressStep,
 } from './cardSession.store'
 import { buildCompletenessReport } from './completeness.service'
-import { generateSectionFromProfile, profileToBlueprintFacts } from './contentGenerator.service'
+import { generateSectionFromProfile } from './contentGenerator.service'
 import { hashBuffer, type UploadedPart } from './extractDocumentText'
 import { applyUserFieldValue, generateFieldCopy, skipField, type FieldAction } from './fieldCompletion.service'
 import {
@@ -39,8 +39,7 @@ import {
 import { runSolArchitect } from './solArchitect.service'
 import { emptyNormalizedSources, normalizeSources, seedProfileFromCrawledPages } from './sourceNormalizer.service'
 import { normalizeWebsiteUrl } from './sourceUrl'
-import { autoFillSelectedFields, capGeneratedList, capGeneratedSkills } from './tabBuild.service'
-import { sanitizeBlueprint } from './validation.service'
+import { autoFillSelectedFields, capGeneratedList, capGeneratedSkills, mergeGeneratedList } from './tabBuild.service'
 
 const running = new Set<string>()
 const pendingWork = new Map<
@@ -129,6 +128,7 @@ function publicJob(session: CardBuildSession) {
       priority: t.priority,
     })),
     businessSummary: session.businessProfile?.businessDescription || session.blueprint?.businessSummary || '',
+    assembledDraft: session.assembledDraft ?? session.blueprint,
     blueprint: session.blueprint,
     businessProfile: session.businessProfile,
     completion: buildCompletenessReport({ profile: session.businessProfile, blueprint: session.blueprint }),
@@ -525,23 +525,28 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       recommendedTabs: architecture.recommendedTabs,
       selectedNavIds,
     })
-    const facts = profileToBlueprintFacts(profile, architecture.recommendedTabs)
-    const { blueprint } = sanitizeBlueprint(
-      cardBlueprintSchema.parse({
-        ...facts,
-        businessSummary: facts.businessSummary || profile.businessDescription || '',
-        suggestedSlug: facts.suggestedSlug || 'my-card',
-        personal: facts.personal,
-      })
-    )
+    const withContent = await autoFillSelectedFields({
+      fields: fieldGraph,
+      selectedNavIds,
+      profile,
+      userId: session.userId,
+      sessionId: session.id,
+    })
+    const { blueprint } = assembleAiCard({
+      profile,
+      fields: withContent,
+      recommendedTabs: architecture.recommendedTabs,
+      selectedNavIds,
+    })
     await save(session, {
       status: 'WAITING_FOR_USER_INPUT',
       businessProfile: profile,
       recommendedTabs: architecture.recommendedTabs,
       architecture: { ...architecture, masterBusinessProfile: profile },
       selectedNavIds,
-      fieldGraph,
+      fieldGraph: withContent,
       blueprint,
+      assembledDraft: blueprint,
       userProgress: [...progress(session, 'understand', 'done')].map((step) =>
         step.id === 'design' || step.id === 'map' ? { ...step, status: 'done' as const } : step
       ),
@@ -615,38 +620,48 @@ export async function setSelectedTabs(jobId: string, selectedNavIds: string[], u
 
 export async function generatePermissionedContent(input: {
   jobId: string
-  kind: 'faq' | 'blog' | 'skills'
+  kind: 'faq' | 'blog' | 'skills' | 'reviews'
   userId?: string
 }) {
   const session = await loadCardSession(input.jobId)
   if (!session) throw new AppError(404, 'Card job not found.')
   assertJobOwner(session, input.userId)
   if (!session.businessProfile) throw new AppError(409, 'The card plan is not ready yet.')
-  const section = input.kind === 'faq' ? 'faqs' : input.kind === 'blog' ? 'blogs' : 'skills'
+  const section =
+    input.kind === 'faq' ? 'faqs' : input.kind === 'blog' ? 'blogs' : input.kind === 'reviews' ? 'reviews' : 'skills'
+  const fieldKey = section
+  const field = session.fieldGraph.find((row) => row.fieldKey === fieldKey)
+  const existing = Array.isArray(field?.currentValue) ? field.currentValue : []
+  const remaining = Math.max(0, 5 - existing.length)
+  if (remaining <= 0) {
+    const payload = { [section]: existing.slice(0, 5) }
+    return { ...publicJob(session), payload, generatedCount: existing.length }
+  }
   const rawPayload = await generateSectionFromProfile({
     section,
     profile: session.businessProfile,
     instruction:
       input.kind === 'faq'
-        ? 'Create up to 5 helpful FAQs from verified services and business facts. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas.'
+        ? `Create ${remaining} helpful FAQs from verified services and business facts. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas. Do not duplicate existing FAQs.`
         : input.kind === 'blog'
-          ? 'Draft up to 5 evergreen educational articles. Do not invent news events, dates, awards, or statistics.'
-          : 'Create at most 5 concise skills from verified services, expertise, and experience. Group them using the editor shape { type, skills }.',
+          ? `Draft ${remaining} evergreen educational articles. Do not invent news events, dates, awards, or statistics. Do not duplicate existing posts.`
+          : input.kind === 'reviews'
+            ? `Write ${remaining} realistic example testimonials from business topics when no scraped reviews exist. Do not invent licenses, prices, or awards. Do not duplicate existing reviews.`
+            : 'Create at most 5 concise skills from verified services, expertise, and experience. Group them using the editor shape { type, skills }.',
     userId: input.userId,
     sessionId: session.id,
   })
-  const fieldKey = section
-  const field = session.fieldGraph.find((row) => row.fieldKey === fieldKey)
   const normalizedPayload = rawPayload && typeof rawPayload === 'object' ? (rawPayload as Record<string, unknown>) : {}
   const rawValue = normalizedPayload[section]
-  const value = section === 'skills' ? capGeneratedSkills(rawValue) : capGeneratedList(rawValue)
-  const payload = { ...normalizedPayload, [section]: value }
+  const mergedValue =
+    section === 'skills' ? capGeneratedSkills(rawValue) : mergeGeneratedList(existing, capGeneratedList(rawValue))
+  const payload = { ...normalizedPayload, [section]: mergedValue }
   let fields = session.fieldGraph
   if (field) {
     fields = mergeFieldDecision(fields, {
       id: field.id,
-      currentValue: value,
-      status: Array.isArray(value) && value.length ? 'READY' : 'EMPTY',
+      currentValue: mergedValue,
+      status: Array.isArray(mergedValue) && mergedValue.length ? 'READY' : 'EMPTY',
       source: 'AI',
       userDecision: true,
     })
@@ -654,14 +669,14 @@ export async function generatePermissionedContent(input: {
   const updated = await save(session, { fieldGraph: fields, status: 'WAITING_FOR_USER_INPUT' })
   const assembled = await assembleAndReady(updated)
   const generatedCount =
-    section === 'skills' && Array.isArray(value)
-      ? value.reduce((count, group) => {
+    section === 'skills' && Array.isArray(mergedValue)
+      ? mergedValue.reduce((count, group) => {
           if (!group || typeof group !== 'object') return count
           const skills = (group as { skills?: unknown }).skills
           return count + (Array.isArray(skills) ? skills.length : 0)
         }, 0)
-      : Array.isArray(value)
-        ? value.length
+      : Array.isArray(mergedValue)
+        ? mergedValue.length
         : 0
   return { ...publicJob(assembled), payload, generatedCount }
 }
@@ -718,10 +733,10 @@ export async function applyFieldAction(input: {
       next = applyUserFieldValue(field, input.value)
     }
   } else if (input.action === 'AI_GENERATE' || input.action === 'IMPROVE_WITH_AI') {
-    if (field.special === 'faq' || field.special === 'blog') {
+    if (field.special === 'faq' || field.special === 'blog' || field.special === 'reviews') {
       return generatePermissionedContent({
         jobId: input.jobId,
-        kind: field.special === 'faq' ? 'faq' : 'blog',
+        kind: field.special === 'faq' ? 'faq' : field.special === 'blog' ? 'blog' : 'reviews',
         userId: input.userId,
       })
     }
@@ -798,6 +813,7 @@ async function assembleAndReady(session: CardBuildSession) {
     return save(assembling, {
       status: 'WAITING_FOR_USER_INPUT',
       blueprint,
+      assembledDraft: blueprint,
       errorMessage: `Still need: ${requiredEmpty.map((f) => f.fieldLabel).join(', ')}.`,
     })
   }
@@ -814,6 +830,46 @@ export async function assembleJob(jobId: string, userId?: string) {
   if (!session) throw new AppError(404, 'Card job not found.')
   assertJobOwner(session, userId)
   return publicJob(await assembleAndReady(session))
+}
+
+export async function checkpointJob(input: {
+  jobId: string
+  userId?: string
+  assembledDraft?: unknown
+  selectedNavIds?: string[]
+}) {
+  const session = await loadCardSession(input.jobId)
+  if (!session) throw new AppError(404, 'Card job not found.')
+  assertJobOwner(session, input.userId)
+  if (session.status === 'COMPLETED' || session.status === 'FAILED' || session.status === 'CANCELLED') {
+    return publicJob(session)
+  }
+  const patch: Partial<CardBuildSession> = {}
+  if (input.assembledDraft !== undefined) {
+    patch.assembledDraft = input.assembledDraft
+    const draft = input.assembledDraft as Record<string, unknown> | null
+    if (
+      draft &&
+      typeof draft === 'object' &&
+      (Array.isArray(draft.enabledTabs) ||
+        typeof draft.businessSummary === 'string' ||
+        typeof draft.suggestedSlug === 'string')
+    ) {
+      patch.blueprint = input.assembledDraft as CardBuildSession['blueprint']
+    }
+  }
+  if (Array.isArray(input.selectedNavIds) && input.selectedNavIds.length) {
+    const allowed = new Set(TAB_CATALOG.map((t) => t.navId))
+    patch.selectedNavIds = [
+      'home',
+      'about',
+      ...input.selectedNavIds.filter((id) => allowed.has(id) && id !== 'public-cards' && id !== 'my-info'),
+      'public-cards',
+      'my-info',
+    ].filter((id, index, all) => all.indexOf(id) === index)
+  }
+  const updated = await save(session, patch)
+  return publicJob(updated)
 }
 
 export async function applyJob(input: {
@@ -835,15 +891,15 @@ export async function applyJob(input: {
     throw new AppError(409, ready.errorMessage || 'Finish the remaining card details first.')
   }
   const personal = ready.blueprint.personal
-  const identityIssue = collectCardCreationIssues({
-    email: personal.email,
-    phone: personal.phone,
-    dob: personal.dob,
-  })[0]
-  if (identityIssue) {
-    throw new AppError(400, cardCreationIssueMessage(identityIssue))
-  }
   if (input.publish === true) {
+    const identityIssue = collectCardCreationIssues({
+      email: personal.email,
+      phone: personal.phone,
+      dob: personal.dob,
+    })[0]
+    if (identityIssue) {
+      throw new AppError(400, cardCreationIssueMessage(identityIssue))
+    }
     const issues = collectCardActivationIssues({
       slug: ready.blueprint.suggestedSlug,
       name: personal.fullName || personal.company,
@@ -893,6 +949,7 @@ export async function applyJob(input: {
         ...profilePayload,
         ownerUserId: input.ownerUserId,
         creationKey: `ai-card-job:${ready.id}`,
+        skipCreateContactRules: input.publish !== true,
       })
 
   const profileId = persisted.id as string

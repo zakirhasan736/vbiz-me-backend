@@ -37,6 +37,7 @@ import {
   isUnavailableModelError,
   modelCandidatesForTier,
   routeAiTier,
+  selectFillSectionModel,
   selectModelForTask,
 } from '../modelRouter.service'
 import { seedProfileFromCrawledPages } from '../sourceNormalizer.service'
@@ -137,7 +138,7 @@ describe('vBiz Me auto card builder', () => {
     const names = tabs.map((t) => t.name)
     assert.ok(names.includes('Education'))
     assert.ok(names.includes('Certifications/Licenses'))
-    assert.ok(names.includes('FAQ'))
+    assert.ok(names.includes('FAQs'))
     assert.ok(!names.includes('Breakfast'))
     assert.ok(
       tabs.every((t) =>
@@ -362,6 +363,14 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(route.tier, 'vision')
   })
 
+  it('FAQ, reviews, and blogs fill-section always use Luna after OCR/text', () => {
+    for (const section of ['faqs', 'reviews', 'blogs'] as const) {
+      const route = selectFillSectionModel(section)
+      assert.equal(route.tier, 'luna')
+    }
+    assert.equal(selectFillSectionModel('services').tier, 'luna')
+  })
+
   it('field graph marks found contacts READY and missing FAQ EMPTY', async () => {
     const { buildFieldGraph, nextActionableField } = await import('../fieldGraph.service')
     const { skipField } = await import('../fieldCompletion.service')
@@ -461,28 +470,34 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(nextActionableField(afterEmail, ['home', 'services'])?.fieldKey, 'phone')
   })
 
-  it('does not allow AI to invent reviews or licenses', async () => {
+  it('does not allow AI to invent licenses', async () => {
     const { generateFieldCopy } = await import('../fieldCompletion.service')
     await assert.rejects(
       () =>
         generateFieldCopy({
           field: {
-            id: 'reviews:reviews',
-            tabId: 'reviews',
-            sectionId: 'reviews',
-            fieldKey: 'reviews',
-            fieldLabel: 'Reviews',
+            id: 'certificates:licenses',
+            tabId: 'certificates',
+            sectionId: 'credentials',
+            fieldKey: 'licenses',
+            fieldLabel: 'Licenses and certifications',
             required: false,
             status: 'EMPTY',
             source: 'NONE',
             aiGenerationAllowed: false,
             prompt: 'no',
-            special: 'reviews',
+            special: 'credentials',
           },
           profile: profile({}),
         }),
-      /cannot create real customer reviews|cannot invent/i
+      /cannot invent licenses or certifications/i
     )
+  })
+
+  it('allows AI to generate example reviews when none were scraped', () => {
+    const completion = readFileSync(resolve(process.cwd(), 'src/services/ai/fieldCompletion.service.ts'), 'utf8')
+    assert.equal(/AI cannot create real customer reviews/.test(completion), false)
+    assert.match(completion, /Reviews: if none were scraped/)
   })
 
   it('21. award objects and zero ratings from the model still parse', () => {

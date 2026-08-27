@@ -267,13 +267,33 @@ router.post(
     await requireAutoCardBuilder(req)
     rateLimitOrThrow(req, 'fill', 20)
     const requestedKind = String(req.body?.kind || '')
-    const kind = requestedKind === 'blog' ? 'blog' : requestedKind === 'skills' ? 'skills' : 'faq'
+    const kind =
+      requestedKind === 'blog' || requestedKind === 'blogs'
+        ? 'blog'
+        : requestedKind === 'skills'
+          ? 'skills'
+          : requestedKind === 'review' || requestedKind === 'reviews'
+            ? 'reviews'
+            : 'faq'
     const data = await cardJobService.generatePermissionedContent({
       jobId: String(req.params.jobId),
       kind,
       userId: req.user?.id,
     })
     sendResponse(res, { success: true, statusCode: 200, message: 'Content generated', data })
+  })
+)
+
+router.post(
+  '/jobs/:jobId/checkpoint',
+  catchAsyncError(async (req, res) => {
+    const data = await cardJobService.checkpointJob({
+      jobId: String(req.params.jobId),
+      userId: req.user?.id,
+      assembledDraft: req.body?.assembledDraft,
+      selectedNavIds: Array.isArray(req.body?.selectedNavIds) ? req.body.selectedNavIds.map(String) : undefined,
+    })
+    sendResponse(res, { success: true, statusCode: 200, message: 'Job checkpoint saved', data })
   })
 )
 

@@ -346,7 +346,7 @@ export const TAB_CATALOG = [
   { name: 'Portfolio', navId: 'gallery', description: 'Projects and case studies (multi-item)' },
   { name: 'Certifications/Licenses', navId: 'certificates', description: 'Licenses and certifications' },
   { name: 'Resume', navId: 'resume', description: 'Downloadable resume / CV' },
-  { name: 'FAQ', navId: 'faq', description: 'Common questions and answers (multi-item)' },
+  { name: 'FAQs', navId: 'faq', description: 'Common questions and answers (multi-item)' },
   {
     name: 'Public Cards',
     navId: 'public-cards',
