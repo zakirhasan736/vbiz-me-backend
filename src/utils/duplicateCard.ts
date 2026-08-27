@@ -1,3 +1,5 @@
+import { assemblePublicNavOrder } from '../constants/publicNavOrder'
+
 const CLONE_OMIT = new Set([
   'id',
   'legacyId',
@@ -109,7 +111,10 @@ function newCustomTabId(): string {
  * Custom tab ids are globally unique. Rewrite them in copied settings so the draft
  * does not collide with the source card, and keep editor nav order in sync.
  */
-export function remapDuplicatedCardSettings(settings: Record<string, string>): Record<string, string> {
+export function remapDuplicatedCardSettings(
+  settings: Record<string, string>,
+  sourceProfileId?: string
+): Record<string, string> {
   const next = { ...settings }
   const idMap = new Map<string, string>()
   const rawTabs = next.custom_tabs_json
@@ -142,20 +147,23 @@ export function remapDuplicatedCardSettings(settings: Record<string, string>): R
   }
 
   const rawDisplay = next.display_settings_json
-  if (rawDisplay?.trim() && idMap.size) {
-    try {
-      const parsed = JSON.parse(rawDisplay) as { editorNavOrder?: unknown }
-      if (Array.isArray(parsed.editorNavOrder)) {
-        parsed.editorNavOrder = parsed.editorNavOrder.map((id) =>
-          typeof id === 'string' && idMap.has(id) ? idMap.get(id) : id
-        )
-        next.display_settings_json = JSON.stringify(parsed)
-      }
-    } catch {
-      // Keep original display settings if they are not parseable.
-    }
+  try {
+    const parsed = rawDisplay?.trim()
+      ? (JSON.parse(rawDisplay) as { editorNavOrder?: unknown; navOrderCustomized?: unknown })
+      : { editorNavOrder: [] as string[] }
+    const order = Array.isArray(parsed.editorNavOrder) ? parsed.editorNavOrder : []
+    parsed.editorNavOrder = assemblePublicNavOrder(
+      order
+        .map((id) => (typeof id === 'string' && idMap.has(id) ? idMap.get(id) : id))
+        .filter((id): id is string => typeof id === 'string')
+    )
+    parsed.navOrderCustomized = false
+    next.display_settings_json = JSON.stringify(parsed)
+  } catch {
+    // Keep original display settings if they are not parseable.
   }
 
+  if (sourceProfileId) next.duplicated_from = sourceProfileId
   stripDuplicatedMyInfoContacts(next)
   return next
 }

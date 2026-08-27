@@ -116,17 +116,25 @@ describe('cloneRecord', () => {
 
 describe('remapDuplicatedCardSettings', () => {
   it('assigns new custom tab ids and rewrites editor nav order', () => {
-    const remapped = remapDuplicatedCardSettings({
-      custom_tabs_json: JSON.stringify([{ id: 'custom-tab-old', label: 'Press' }]),
-      display_settings_json: JSON.stringify({ editorNavOrder: ['home', 'custom-tab-old', 'faq'] }),
-    })
+    const remapped = remapDuplicatedCardSettings(
+      {
+        custom_tabs_json: JSON.stringify([{ id: 'custom-tab-old', label: 'Press' }]),
+        display_settings_json: JSON.stringify({ editorNavOrder: ['home', 'custom-tab-old', 'faq'] }),
+      },
+      'src-profile'
+    )
     const tabs = JSON.parse(remapped.custom_tabs_json) as Array<{ id: string; label: string }>
-    const display = JSON.parse(remapped.display_settings_json) as { editorNavOrder: string[] }
+    const display = JSON.parse(remapped.display_settings_json) as {
+      editorNavOrder: string[]
+      navOrderCustomized?: boolean
+    }
     assert.equal(tabs[0]?.label, 'Press')
     assert.notEqual(tabs[0]?.id, 'custom-tab-old')
     assert.equal(display.editorNavOrder[0], 'home')
-    assert.equal(display.editorNavOrder[1], tabs[0]?.id)
-    assert.equal(display.editorNavOrder[2], 'faq')
+    assert.equal(display.editorNavOrder.includes(tabs[0]?.id || ''), true)
+    assert.deepEqual(display.editorNavOrder.slice(-2), ['public-cards', 'my-info'])
+    assert.equal(display.navOrderCustomized, false)
+    assert.equal(remapped.duplicated_from, 'src-profile')
   })
 
   it('clears personal contact snapshots from copied My Info settings', () => {

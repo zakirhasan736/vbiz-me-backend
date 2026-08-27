@@ -1,4 +1,4 @@
-/** Default public-card tab order. Missing tabs are skipped; remaining keep this relative order. */
+/** Default public-card tab order. Missing tabs are skipped; extras keep their relative order after FAQ. */
 export const CANONICAL_PUBLIC_NAV_IDS = [
   'home',
   'about',
@@ -11,16 +11,62 @@ export const CANONICAL_PUBLIC_NAV_IDS = [
   'faq',
 ] as const
 
+export const PINNED_END_NAV_IDS = ['public-cards', 'my-info'] as const
+
+/** Keep this card's current saved tab order instead of applying the default list. */
+export const PRESERVE_CUSTOM_NAV_SLUGS = new Set(['michaelangelo-casanova-2'])
+
 const CANONICAL_PUBLIC_NAV_SET = new Set<string>(CANONICAL_PUBLIC_NAV_IDS)
+const PINNED_END_NAV_SET = new Set<string>(PINNED_END_NAV_IDS)
+
+function uniqueNavIds(ids: string[]): string[] {
+  return Array.from(new Set(ids.filter((id) => typeof id === 'string' && id.trim())))
+}
+
+function ensureRequiredNavIds(ids: string[]): string[] {
+  const next = uniqueNavIds(ids)
+  if (!next.includes('home')) next.unshift('home')
+  if (!next.includes('about')) {
+    const homeIndex = next.indexOf('home')
+    next.splice(homeIndex >= 0 ? homeIndex + 1 : 1, 0, 'about')
+  }
+  return next
+}
 
 /**
- * Reorders only the canonical public tabs (Home → FAQ) in their default sequence.
- * Other nav items keep their slots. Example: 1,2,3,4,5,6,8,9 when 7 is missing.
+ * Home → FAQ in default sequence, then any other enabled tabs, then Public Cards, then My Info.
+ * Missing canonical tabs are skipped so a card only shows tabs it actually has.
  */
 export function applyCanonicalPublicNavOrder(ids: string[]): string[] {
-  const present = CANONICAL_PUBLIC_NAV_IDS.filter((id) => ids.includes(id))
-  let next = 0
-  return ids.map((id) => (CANONICAL_PUBLIC_NAV_SET.has(id) ? present[next++]! : id))
+  return assemblePublicNavOrder(ids, { preserveCustom: false })
+}
+
+export function assemblePublicNavOrder(ids: string[], options?: { preserveCustom?: boolean }): string[] {
+  const unique = ensureRequiredNavIds(ids)
+  const middle = unique.filter((id) => !PINNED_END_NAV_SET.has(id))
+  if (options?.preserveCustom) {
+    return [...middle, ...PINNED_END_NAV_IDS]
+  }
+  const canonical = CANONICAL_PUBLIC_NAV_IDS.filter((id) => middle.includes(id))
+  const extras = middle.filter((id) => !CANONICAL_PUBLIC_NAV_SET.has(id))
+  return [...canonical, ...extras, ...PINNED_END_NAV_IDS]
+}
+
+/** Merge every enabled tab into the saved order, then apply default or preserved order. */
+export function mergeEnabledNavOrder(
+  savedIds: string[],
+  enabledIds: string[],
+  options?: { preserveCustom?: boolean }
+): string[] {
+  return assemblePublicNavOrder(uniqueNavIds([...savedIds, ...enabledIds]), options)
+}
+
+export function shouldPreserveCustomNavOrder(slug?: string | null, customized?: boolean): boolean {
+  if (customized) return true
+  const key = String(slug || '')
+    .trim()
+    .toLowerCase()
+  return PRESERVE_CUSTOM_NAV_SLUGS.has(key)
 }
 
 export function canonicalPublicNavRank(navId: string): number {

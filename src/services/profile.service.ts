@@ -1652,7 +1652,8 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
       source.settings
         .filter((item) => typeof item.key === 'string' && typeof item.value === 'string')
         .map((item) => [item.key, item.value as string])
-    )
+    ),
+    profileId
   )
   const created = await create(userId, role, {
     name: '',

@@ -1,7 +1,11 @@
 import type { Attachment, Prisma, Setting } from '../../generated/prisma/client'
 import config from '../configs/config'
 import { DIRECT_SECTION_LOADERS, isGenericDirectStorage } from '../constants/directSectionStorage'
-import { applyCanonicalPublicNavOrder } from '../constants/publicNavOrder'
+import {
+  applyCanonicalPublicNavOrder,
+  mergeEnabledNavOrder,
+  shouldPreserveCustomNavOrder,
+} from '../constants/publicNavOrder'
 import {
   getTabByPublicSectionName,
   NAV_CHECKBOX_TO_TAB_KEY,
@@ -100,29 +104,27 @@ function parseMyInfoActions(map: Record<string, string>) {
   }
 }
 
-function collectEditorNavIds(map: Record<string, string>): string[] {
+function parseDisplayNavState(map: Record<string, string>): { ids: string[]; customized: boolean } {
   const rawJson = map.display_settings_json
-  if (!rawJson?.trim()) return []
+  if (!rawJson?.trim()) return { ids: [], customized: false }
   try {
-    const parsed = JSON.parse(rawJson) as { editorNavOrder?: unknown }
+    const parsed = JSON.parse(rawJson) as { editorNavOrder?: unknown; navOrderCustomized?: unknown }
     const order = Array.isArray(parsed.editorNavOrder) ? parsed.editorNavOrder : []
     const ids = Array.from(new Set(order.filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))))
-    if (!ids.length) return []
-    if (!ids.includes('home')) ids.unshift('home')
-    if (!ids.includes('about')) {
-      const homeIndex = ids.indexOf('home')
-      ids.splice(homeIndex >= 0 ? homeIndex + 1 : 1, 0, 'about')
-    }
-    const pinned = ['public-cards', 'my-info'] as const
-    const pinnedSet = new Set<string>(pinned)
-    for (const id of pinned) {
-      if (!ids.includes(id)) ids.push(id)
-    }
-    const middle = applyCanonicalPublicNavOrder(ids.filter((id) => !pinnedSet.has(id)))
-    return [...middle, ...pinned]
+    return { ids, customized: parsed.navOrderCustomized === true }
   } catch {
-    return []
+    return { ids: [], customized: false }
   }
+}
+
+function collectEditorNavIds(
+  map: Record<string, string>,
+  enabledNavIds: string[],
+  options?: { slug?: string | null }
+): string[] {
+  const { ids, customized } = parseDisplayNavState(map)
+  const preserveCustom = shouldPreserveCustomNavOrder(options?.slug, customized)
+  return mergeEnabledNavOrder(ids, enabledNavIds, { preserveCustom })
 }
 
 const EXTRA_NAV_POST_TYPES: Record<string, { name: string; title: string }> = {
@@ -156,6 +158,7 @@ function collectEnabledTabKeys(map: Record<string, string>): Set<string> {
     const order = Array.isArray(parsed.editorNavOrder) ? parsed.editorNavOrder : []
     for (const id of order) {
       if (typeof id !== 'string') continue
+      keys.add(id)
       const tabKey = NAV_ID_TO_TAB_KEY[id] || id
       if (TAB_REGISTRY[tabKey]) keys.add(tabKey)
     }
@@ -649,18 +652,23 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
 }
 
 const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated = false) => {
-  if (!profileAlreadyValidated) {
-    const profile = await prisma.profile.findFirst({
-      where: { id: profileId, ...publicReadableWhere() },
-      select: { id: true },
-    })
-    if (!profile) throw new AppError(404, 'Profile not found')
-  }
+  const profile = await prisma.profile.findFirst({
+    where: profileAlreadyValidated ? { id: profileId } : { id: profileId, ...publicReadableWhere() },
+    select: { id: true, slug: true },
+  })
+  if (!profile) throw new AppError(404, 'Profile not found')
 
   const settings = await prisma.setting.findMany({ where: { profileId } })
   const map = settingsToMap(settings)
   const enabledTabKeys = collectEnabledTabKeys(map)
-  const editorNavIds = collectEditorNavIds(map)
+  const enabledNavIds = [
+    ...Array.from(enabledTabKeys, (key) => TAB_KEY_TO_NAV_ID[key] || key),
+    'home',
+    'about',
+    'public-cards',
+    'my-info',
+  ]
+  const editorNavIds = collectEditorNavIds(map, enabledNavIds, { slug: profile.slug })
 
   const StaticLink = editorNavIds.length
     ? []
@@ -708,6 +716,12 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
       if (!isPrismaSchemaDrift(error)) throw error
       return []
     })
+
+  const navIds = mergeEnabledNavOrder(
+    editorNavIds,
+    customTabs.map((tab) => tab.id),
+    { preserveCustom: shouldPreserveCustomNavOrder(profile.slug, parseDisplayNavState(map).customized) }
+  )
 
   const rowFromNavId = (navId: string): PublicPostType | null => {
     const tabKey = NAV_ID_TO_TAB_KEY[navId]
@@ -765,10 +779,10 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     return null
   }
 
-  if (editorNavIds.length) {
+  if (navIds.length) {
     const seen = new Set<string>()
     const post_types: PublicPostType[] = []
-    for (const navId of editorNavIds) {
+    for (const navId of navIds) {
       const row = rowFromNavId(navId)
       if (!row || seen.has(row.key)) continue
       seen.add(row.key)
