@@ -55,8 +55,8 @@
     "@aws-sdk/client-s3": "^3.1101.0",
     "@aws-sdk/lib-storage": "^3.1101.0",
     "@google/genai": "^2.17.1",
-    "@prisma/adapter-pg": "^7.9.0",
-    "@prisma/client": "^7.9.0",
+    "@prisma/adapter-pg": "7.9.1",
+    "@prisma/client": "7.9.1",
     "argon2": "^0.45.1",
     "bcryptjs": "^3.0.3",
     "compression": "^1.8.1",
@@ -120,11 +120,16 @@
     "lint-staged": "^17.1.1",
     "prettier": "^3.9.6",
     "prettier-plugin-organize-imports": "^4.3.0",
-    "prisma": "^7.9.0",
+    "prisma": "7.9.1",
     "supertest": "^7.2.2",
     "tsx": "^4.21.0",
     "typescript": "5.7.3",
     "typescript-eslint": "^8.65.0"
+  },
+  "resolutions": {
+    "prisma": "7.9.1",
+    "@prisma/client": "7.9.1",
+    "@prisma/adapter-pg": "7.9.1"
   },
   "license": "ISC"
 }
