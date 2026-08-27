@@ -303,7 +303,7 @@ const listCreateData = (tab: TabRegistryEntry, input: TabItemInput) => {
   if (tab.storage === 'faq' || tab.storage === 'mission_statement') {
     return { ...omitMetas(data), legacyPostTypeId: tab.legacyPostTypeId }
   }
-  return data
+  return { ...data, legacyPostTypeId: tab.legacyPostTypeId }
 }
 
 const listUpdateData = (tab: TabRegistryEntry, input: TabItemInput) => {

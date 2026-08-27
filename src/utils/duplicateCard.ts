@@ -2,7 +2,6 @@ const CLONE_OMIT = new Set([
   'id',
   'legacyId',
   'legacyPostId',
-  'legacyPostTypeId',
   'legacyServiceId',
   'createdAt',
   'updatedAt',
@@ -32,7 +31,9 @@ export function cloneRecord(row: Record<string, unknown>, extraOmit: string[] = 
   const data: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(row)) {
     if (skip.has(key)) continue
-    if (value !== null && typeof value === 'object' && !isPlainJson(value) && !(value instanceof Date)) continue
+    // Omit null so Prisma/DB defaults apply (status, sortOrder, updatedAt, NOT NULL live columns).
+    if (value === null) continue
+    if (typeof value === 'object' && !isPlainJson(value) && !(value instanceof Date)) continue
     data[key] = value
   }
   return data

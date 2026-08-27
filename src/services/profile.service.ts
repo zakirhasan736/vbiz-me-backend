@@ -8,6 +8,7 @@ import {
   featureLimitReachedError,
 } from '../constants/packageErrors'
 import { resolveOwnerMode } from '../constants/packageOwnerMode'
+import { getTabByKey } from '../constants/tabRegistry'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
@@ -1371,6 +1372,41 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
     'address',
   ] as const
 
+  const listModelTabKey: Partial<Record<(typeof listModels)[number], string>> = {
+    blog: 'blogs',
+    gallery: 'gallery',
+    video: 'videos',
+    bbbAccreditation: 'bbb_accreditations',
+    licensing: 'licensing',
+    dcp: 'dcp',
+    certificateLicense: 'certificates',
+    faq: 'faqs',
+    calendarSection: 'calendar',
+    propertyListing: 'property_listings',
+    profileEvent: 'events',
+    mediaPress: 'media_press',
+    missionStatement: 'mission_statement',
+    menuSection: 'menu',
+    announcementDirect: 'announcements',
+    joinMyTeam: 'join_my_team',
+    booking: 'bookings',
+    additionalService: 'additional_services',
+    videoLink: 'video_links',
+    inventory: 'inventory',
+    homeSolar: 'home_solar',
+    resiliencyProduct: 'resiliency_products',
+    breakfast: 'breakfast',
+    lunch: 'lunch',
+    dinner: 'dinner',
+    product: 'products',
+    salesPerson: 'sales_people',
+    teamMember: 'meet_our_team',
+    client: 'clients',
+    generalPost: 'general_posts',
+    insuranceLicense: 'insurance_licenses',
+    videoExplainer: 'video_explainers',
+  }
+
   type ListDelegate = {
     findMany: (args: { where: { profileId: string } }) => Promise<Array<Record<string, unknown>>>
     create: (args: { data: Record<string, unknown> }) => Promise<unknown>
@@ -1393,8 +1429,20 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
         const rows = await delegate.findMany({ where: { profileId: sourceProfileId } })
         for (const row of rows) {
           if (row.deletedAt) continue
+          const cloned = cloneRecord(row)
+          if ('status' in row && cloned.status === undefined) {
+            cloned.status = typeof row.status === 'number' ? 1 : '1'
+          }
+          if ('sortOrder' in row && cloned.sortOrder === undefined) {
+            cloned.sortOrder = 0
+          }
+          const tabKey = listModelTabKey[model]
+          const tab = tabKey ? getTabByKey(tabKey) : undefined
+          if (tab && cloned.legacyPostTypeId === undefined) {
+            cloned.legacyPostTypeId = tab.legacyPostTypeId
+          }
           const created = (await delegate.create({
-            data: { ...cloneRecord(row), profileId: targetProfileId },
+            data: { ...cloned, profileId: targetProfileId },
           })) as { id?: string }
           const sourceId = typeof row.id === 'string' ? row.id : ''
           if (sourceId && created?.id && model === 'service') attachableIdMap.Service.set(sourceId, created.id)
@@ -1417,8 +1465,10 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
 
       const whyChooseUs = await tx.whyChooseUs.findUnique({ where: { profileId: sourceProfileId } }).catch(() => null)
       if (whyChooseUs) {
+        const cloned = cloneRecord(whyChooseUs as unknown as Record<string, unknown>)
+        if ('status' in whyChooseUs && cloned.status === undefined) cloned.status = '1'
         await tx.whyChooseUs.create({
-          data: { ...cloneRecord(whyChooseUs as unknown as Record<string, unknown>), profileId: targetProfileId },
+          data: { ...cloned, profileId: targetProfileId },
         })
       }
 

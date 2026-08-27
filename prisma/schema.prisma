@@ -520,9 +520,10 @@ model TabItem {
 }
 
 model Gallery {
-  id             String    @id @default(cuid())
-  legacyPostId   Int?      @unique
-  profileId      String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(4)
+  profileId        String
   profile        Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title          String?
   description    String?
@@ -542,9 +543,10 @@ model Gallery {
 }
 
 model Video {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(5)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -562,9 +564,10 @@ model Video {
 }
 
 model BbbAccreditation {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(8)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -583,9 +586,10 @@ model BbbAccreditation {
 }
 
 model Licensing {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(9)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -603,9 +607,10 @@ model Licensing {
 }
 
 model Dcp {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(10)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -624,9 +629,10 @@ model Dcp {
 }
 
 model CertificateLicense {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(11)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -663,9 +669,10 @@ model Faq {
 }
 
 model CalendarSection {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(14)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -683,9 +690,10 @@ model CalendarSection {
 }
 
 model PropertyListing {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(15)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -703,9 +711,10 @@ model PropertyListing {
 }
 
 model ProfileEvent {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(17)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -724,9 +733,10 @@ model ProfileEvent {
 }
 
 model MediaPress {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(18)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -763,9 +773,10 @@ model MissionStatement {
 }
 
 model MenuSection {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(21)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -798,9 +809,10 @@ model WhyChooseUs {
 }
 
 model AnnouncementDirect {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(23)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -818,9 +830,10 @@ model AnnouncementDirect {
 }
 
 model JoinMyTeam {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(24)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -838,9 +851,10 @@ model JoinMyTeam {
 }
 
 model Booking {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(25)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -858,9 +872,10 @@ model Booking {
 }
 
 model AdditionalService {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(26)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -878,9 +893,10 @@ model AdditionalService {
 }
 
 model VideoLink {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(27)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -898,9 +914,10 @@ model VideoLink {
 }
 
 model Inventory {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(28)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -918,9 +935,10 @@ model Inventory {
 }
 
 model HomeSolar {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(29)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -938,9 +956,10 @@ model HomeSolar {
 }
 
 model ResiliencyProduct {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(30)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -958,9 +977,10 @@ model ResiliencyProduct {
 }
 
 model Breakfast {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(31)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -978,9 +998,10 @@ model Breakfast {
 }
 
 model Lunch {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(32)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -998,9 +1019,10 @@ model Lunch {
 }
 
 model Dinner {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(33)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -1018,9 +1040,10 @@ model Dinner {
 }
 
 model Product {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(34)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -1038,9 +1061,10 @@ model Product {
 }
 
 model SalesPerson {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(35)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -1058,9 +1082,10 @@ model SalesPerson {
 }
 
 model TeamMember {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(36)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -1078,12 +1103,13 @@ model TeamMember {
 }
 
 model Client {
-  id              String    @id @default(cuid())
-  legacyPostId    Int?      @unique
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(2)
   /**
    * Laravel `services.id` when this client row was copied from a Service.
    */
-  legacyServiceId Int?      @unique
+  legacyServiceId  Int?      @unique
   profileId       String
   profile         Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title           String?
@@ -1102,9 +1128,10 @@ model Client {
 }
 
 model GeneralPost {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(7)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -1122,9 +1149,10 @@ model GeneralPost {
 }
 
 model InsuranceLicense {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(12)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?
@@ -1142,9 +1170,10 @@ model InsuranceLicense {
 }
 
 model VideoExplainer {
-  id            String    @id @default(cuid())
-  legacyPostId  Int?      @unique
-  profileId     String
+  id               String    @id @default(cuid())
+  legacyPostId     Int?      @unique
+  legacyPostTypeId Int       @default(20)
+  profileId        String
   profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title         String?
   description   String?

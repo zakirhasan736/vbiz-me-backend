@@ -47,6 +47,47 @@ describe('cloneRecord', () => {
     assert.equal(cloned.description, 'We help owners.')
     assert.deepEqual(cloned.metas, { year: '2024' })
   })
+
+  it('skips nulls so Prisma/DB defaults apply and still copies JSON and dates', () => {
+    const publishedAt = new Date('2024-06-01T00:00:00.000Z')
+    const cloned = cloneRecord({
+      id: 'src',
+      profileId: 'old',
+      createdAt: new Date(),
+      updatedAt: null,
+      deletedAt: null,
+      status: null,
+      sortOrder: null,
+      title: 'BBB',
+      metas: { year: '2024' },
+      tags: ['a'],
+      publishedAt,
+      legacyPostTypeId: 8,
+    })
+    assert.equal('status' in cloned, false)
+    assert.equal('sortOrder' in cloned, false)
+    assert.equal('updatedAt' in cloned, false)
+    assert.equal(cloned.title, 'BBB')
+    assert.deepEqual(cloned.metas, { year: '2024' })
+    assert.deepEqual(cloned.tags, ['a'])
+    assert.equal(cloned.publishedAt, publishedAt)
+    assert.equal(cloned.legacyPostTypeId, 8)
+  })
+
+  it('omits null JSON and still drops relation keys', () => {
+    const cloned = cloneRecord({
+      id: 'src',
+      profile: { id: 'p' },
+      customTabId: 'tab-1',
+      metas: null,
+      title: 'FAQ',
+      legacyPostTypeId: 13,
+    })
+    assert.equal('metas' in cloned, false)
+    assert.equal('profile' in cloned, false)
+    assert.equal('customTabId' in cloned, false)
+    assert.equal(cloned.legacyPostTypeId, 13)
+  })
 })
 
 describe('remapDuplicatedCardSettings', () => {
