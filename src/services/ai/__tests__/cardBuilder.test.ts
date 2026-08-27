@@ -403,7 +403,7 @@ describe('vBiz Me auto card builder', () => {
 
   it('places About on the about tab and does not force generated FAQs empty after fill', async () => {
     const { buildFieldGraph } = await import('../fieldGraph.service')
-    const { applySectionPayloadToFields, capGeneratedList, capGeneratedSkills } = await import('../tabBuild.service')
+    const { applySectionPayloadToFields, capGeneratedSkills } = await import('../tabBuild.service')
     const fields = buildFieldGraph({
       profile: profile({
         businessDescription:
@@ -422,8 +422,11 @@ describe('vBiz Me auto card builder', () => {
     })
     const faqReady = filled.find((f) => f.fieldKey === 'faqs')
     assert.equal(faqReady?.status, 'READY')
-    assert.equal(Array.isArray(faqReady?.currentValue) ? faqReady?.currentValue.length : 0, 5)
-    assert.equal((capGeneratedList([1, 2, 3, 4, 5, 6]) as number[]).length, 5)
+    assert.equal(Array.isArray(faqReady?.currentValue) ? faqReady?.currentValue.length : 0, 7)
+    const { mergeUniqueLists, topUpGeneratedList } = await import('../tabBuild.service')
+    assert.equal(mergeUniqueLists([1, 2, 3, 4, 5, 6, 7], [8]).length, 8)
+    assert.equal(topUpGeneratedList(['a', 'b'], ['c', 'd', 'e', 'f']).length, 5)
+    assert.equal(topUpGeneratedList(['a', 'b', 'c', 'd', 'e', 'f'], ['g']).length, 6)
     assert.deepEqual(capGeneratedSkills([{ type: 'Core', skills: ['1', '2', '3', '4', '5', '6'] }]), [
       { type: 'Core', skills: ['1', '2', '3', '4', '5'] },
     ])
@@ -497,7 +500,7 @@ describe('vBiz Me auto card builder', () => {
   it('allows AI to generate example reviews when none were scraped', () => {
     const completion = readFileSync(resolve(process.cwd(), 'src/services/ai/fieldCompletion.service.ts'), 'utf8')
     assert.equal(/AI cannot create real customer reviews/.test(completion), false)
-    assert.match(completion, /Reviews: if none were scraped/)
+    assert.match(completion, /Reviews: keep every review found in sources/)
   })
 
   it('21. award objects and zero ratings from the model still parse', () => {

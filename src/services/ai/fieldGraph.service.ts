@@ -184,7 +184,7 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'LUNA',
     prompt:
-      'FAQs must be answerable from verified facts. Do not invent policies. If none exist in sources, generate up to 5 helpful FAQs from business topics.',
+      'FAQs must be answerable from verified facts. Do not invent policies. Keep every FAQ found in sources. If none exist, generate up to 5 from business topics. If some exist but fewer than 5, fill only the remaining slots.',
     getValue: () => [],
   },
   {
@@ -208,7 +208,7 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'LUNA',
     prompt:
-      'Prefer real customer reviews from sources. If none were scraped, generate up to 5 realistic example testimonials from business topics. Do not invent licenses, prices, or awards.',
+      'Prefer real customer reviews from sources and keep all of them. If none were scraped, generate up to 5 realistic example testimonials from business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent licenses, prices, or awards.',
     getValue: (p) => [...(p.verifiedReviews || []), ...(p.existingTestimonials || [])],
   },
   {

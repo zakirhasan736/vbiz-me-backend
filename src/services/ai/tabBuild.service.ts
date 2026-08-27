@@ -40,13 +40,13 @@ function itemMergeKey(item: unknown): string {
     .join('|')
 }
 
-export function mergeGeneratedList(existing: unknown, generated: unknown, max = MAX_GENERATED_ITEMS): unknown[] {
+/** Keep every unique sourced item. Do not cap reviews, FAQs, or blogs found on a URL or document. */
+export function mergeUniqueLists(existing: unknown, incoming: unknown): unknown[] {
   const prior = Array.isArray(existing) ? existing : []
-  const next = Array.isArray(generated) ? generated : []
+  const next = Array.isArray(incoming) ? incoming : []
   const seen = new Set<string>()
   const out: unknown[] = []
   for (const item of [...prior, ...next]) {
-    if (out.length >= max) break
     const key = itemMergeKey(item)
     const blank = !key.replace(/\|/g, '')
     if (!blank && seen.has(key)) continue
@@ -54,6 +54,24 @@ export function mergeGeneratedList(existing: unknown, generated: unknown, max = 
     out.push(item)
   }
   return out
+}
+
+/**
+ * Keep all sourced items. If fewer than `minFill`, add generated items until the minimum.
+ * If sourced items already meet or exceed the minimum, generated items are ignored.
+ */
+export function topUpGeneratedList(existing: unknown, generated: unknown, minFill = MAX_GENERATED_ITEMS): unknown[] {
+  const prior = mergeUniqueLists(existing, [])
+  if (prior.length >= minFill) return prior
+  const remaining = minFill - prior.length
+  return mergeUniqueLists(prior, capGeneratedList(generated, remaining))
+}
+
+/** @deprecated Use mergeUniqueLists for sourced content or topUpGeneratedList for AI fill. */
+export function mergeGeneratedList(existing: unknown, generated: unknown, max = MAX_GENERATED_ITEMS): unknown[] {
+  const prior = mergeUniqueLists(existing, [])
+  if (prior.length >= max) return prior
+  return topUpGeneratedList(prior, generated, max)
 }
 
 export function capGeneratedSkills(value: unknown, max = MAX_GENERATED_ITEMS): unknown {
@@ -121,7 +139,7 @@ export function applySectionPayloadToFields(
     if (!matchKeys.includes(field.fieldKey)) continue
     const capped =
       section === 'faqs' || section === 'blogs' || section === 'reviews'
-        ? mergeGeneratedList(field.currentValue, capGeneratedList(value))
+        ? mergeUniqueLists(field.currentValue, value)
         : section === 'skills'
           ? capGeneratedSkills(value)
           : value
@@ -196,7 +214,7 @@ async function generateForField(input: {
     })
     const generated = extractSectionValue(section, payload)
     if (section === 'faqs' || section === 'blogs' || section === 'reviews') {
-      return mergeGeneratedList(input.field.currentValue, generated)
+      return topUpGeneratedList(input.field.currentValue, generated)
     }
     return generated
   }
@@ -229,7 +247,7 @@ export async function autoFillSelectedFields(input: {
       })
       const value =
         field.special === 'faq' || field.special === 'blog' || field.special === 'reviews'
-          ? mergeGeneratedList(field.currentValue, capGeneratedList(generated))
+          ? generated
           : field.fieldKey === 'skills'
             ? capGeneratedSkills(generated)
             : generated

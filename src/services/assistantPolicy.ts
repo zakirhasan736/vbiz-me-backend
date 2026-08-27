@@ -123,11 +123,11 @@ export function boundKnowledgeContext(
 export function buildTabFillSystemPrompt(scope: Exclude<FillSectionId, 'seo'>): string {
   const extractRule =
     scope === 'faqs'
-      ? 'Extract every distinct Q&A conceptually present in the pasted text or OCR output, up to 5. Pair questions with their answers. Do not invent FAQs that are not implied by the source.'
+      ? 'Extract every distinct Q&A conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Pair questions with their answers. Do not invent FAQs that are not implied by the source.'
       : scope === 'blogs'
-        ? 'Extract every distinct post or news item conceptually present in the pasted text or OCR output, up to 5. Keep real titles and summaries. Do not invent articles.'
+        ? 'Extract every distinct post or news item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and summaries. Do not invent articles.'
         : scope === 'reviews'
-          ? 'Extract every distinct testimonial conceptually present in the pasted text or OCR output, up to 5. Capture author, quote, and rating when present. Do not invent reviews.'
+          ? 'Extract every distinct testimonial conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Capture author, quote, and rating when present. Do not invent reviews.'
           : 'Use only facts present in the supplied text/files/current public card.'
   return `You extract and write data for exactly one public vCard section: "${scope}".
 Return ONLY valid JSON matching this exact shape: ${FILL_SECTION_SCHEMA_HINTS[scope]}

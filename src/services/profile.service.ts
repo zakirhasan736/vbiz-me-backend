@@ -8,7 +8,6 @@ import {
   featureLimitReachedError,
 } from '../constants/packageErrors'
 import { resolveOwnerMode } from '../constants/packageOwnerMode'
-import { getTabByKey } from '../constants/tabRegistry'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
@@ -53,8 +52,9 @@ import {
 import {
   blankDuplicatedIdentityFields,
   cloneRecord,
-  duplicateContactFields,
+  omitCloneKeys,
   remapDuplicatedCardSettings,
+  unknownPrismaCreateArgs,
 } from '../utils/duplicateCard'
 import { fillMissingGalleryMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
@@ -1372,44 +1372,19 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
     'address',
   ] as const
 
-  const listModelTabKey: Partial<Record<(typeof listModels)[number], string>> = {
-    blog: 'blogs',
-    gallery: 'gallery',
-    video: 'videos',
-    bbbAccreditation: 'bbb_accreditations',
-    licensing: 'licensing',
-    dcp: 'dcp',
-    certificateLicense: 'certificates',
-    faq: 'faqs',
-    calendarSection: 'calendar',
-    propertyListing: 'property_listings',
-    profileEvent: 'events',
-    mediaPress: 'media_press',
-    missionStatement: 'mission_statement',
-    menuSection: 'menu',
-    announcementDirect: 'announcements',
-    joinMyTeam: 'join_my_team',
-    booking: 'bookings',
-    additionalService: 'additional_services',
-    videoLink: 'video_links',
-    inventory: 'inventory',
-    homeSolar: 'home_solar',
-    resiliencyProduct: 'resiliency_products',
-    breakfast: 'breakfast',
-    lunch: 'lunch',
-    dinner: 'dinner',
-    product: 'products',
-    salesPerson: 'sales_people',
-    teamMember: 'meet_our_team',
-    client: 'clients',
-    generalPost: 'general_posts',
-    insuranceLicense: 'insurance_licenses',
-    videoExplainer: 'video_explainers',
-  }
-
   type ListDelegate = {
     findMany: (args: { where: { profileId: string } }) => Promise<Array<Record<string, unknown>>>
     create: (args: { data: Record<string, unknown> }) => Promise<unknown>
+  }
+
+  const createClonedRow = async (delegate: ListDelegate, data: Record<string, unknown>) => {
+    try {
+      return await delegate.create({ data })
+    } catch (error) {
+      const unknownArgs = unknownPrismaCreateArgs(error)
+      if (!unknownArgs.length) throw error
+      return delegate.create({ data: omitCloneKeys(data, unknownArgs) })
+    }
   }
 
   await prisma.$transaction(
@@ -1426,7 +1401,30 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
       for (const model of listModels) {
         const delegate = client[model]
         if (!delegate?.findMany || !delegate?.create) continue
-        const rows = await delegate.findMany({ where: { profileId: sourceProfileId } })
+        if (model === 'gallery') {
+          const galleries = await listGalleriesForProfile(sourceProfileId, 200)
+          for (const row of galleries) {
+            await createClonedRow(delegate, {
+              title: row.title,
+              description: row.description,
+              url: row.url,
+              featuredImage: row.featuredImage,
+              attachmentUrl: row.attachmentUrl,
+              attachmentName: row.attachmentName,
+              status: row.status || '1',
+              sortOrder: row.sortOrder ?? 0,
+              profileId: targetProfileId,
+            })
+          }
+          continue
+        }
+        let rows: Array<Record<string, unknown>>
+        try {
+          rows = await delegate.findMany({ where: { profileId: sourceProfileId } })
+        } catch (error) {
+          if (isPrismaMissingTable(error) || isPrismaColumnMismatch(error)) continue
+          throw error
+        }
         for (const row of rows) {
           if (row.deletedAt) continue
           const cloned = cloneRecord(row)
@@ -1436,13 +1434,9 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
           if ('sortOrder' in row && cloned.sortOrder === undefined) {
             cloned.sortOrder = 0
           }
-          const tabKey = listModelTabKey[model]
-          const tab = tabKey ? getTabByKey(tabKey) : undefined
-          if (tab && cloned.legacyPostTypeId === undefined) {
-            cloned.legacyPostTypeId = tab.legacyPostTypeId
-          }
-          const created = (await delegate.create({
-            data: { ...cloned, profileId: targetProfileId },
+          const created = (await createClonedRow(delegate, {
+            ...cloned,
+            profileId: targetProfileId,
           })) as { id?: string }
           const sourceId = typeof row.id === 'string' ? row.id : ''
           if (sourceId && created?.id && model === 'service') attachableIdMap.Service.set(sourceId, created.id)
@@ -1467,8 +1461,9 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
       if (whyChooseUs) {
         const cloned = cloneRecord(whyChooseUs as unknown as Record<string, unknown>)
         if ('status' in whyChooseUs && cloned.status === undefined) cloned.status = '1'
-        await tx.whyChooseUs.create({
-          data: { ...cloned, profileId: targetProfileId },
+        await createClonedRow(tx.whyChooseUs as unknown as ListDelegate, {
+          ...cloned,
+          profileId: targetProfileId,
         })
       }
 
@@ -1661,12 +1656,10 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
   )
   const created = await create(userId, role, {
     name: '',
+    email: '',
     skipCreateContactRules: true,
-    ...duplicateContactFields(source),
     companyName: source.companyName || undefined,
     designation: source.designation || undefined,
-    phone: source.phone || undefined,
-    whatsapp: source.whatsapp || undefined,
     website: source.website || undefined,
     address: source.address || undefined,
     about: source.about || undefined,
@@ -1698,14 +1691,11 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
       where: { id: created.id },
       data: {
         ...blankDuplicatedIdentityFields(),
-        genderId: null,
-        maritalStatusId: null,
         avatar: source.avatar,
         colorCode: source.colorCode,
         rumble: source.rumble,
         truth: source.truth,
         pinterest: source.pinterest,
-        countryCode: source.countryCode,
         isEmploy: source.isEmploy,
         professionId: source.profession?.id ?? null,
       },

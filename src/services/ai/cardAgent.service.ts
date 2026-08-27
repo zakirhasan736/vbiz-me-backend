@@ -32,9 +32,9 @@ import { runSolArchitect } from './solArchitect.service'
 import { normalizeSources } from './sourceNormalizer.service'
 import {
   applySectionPayloadToFields,
-  capGeneratedList,
   capGeneratedSkills,
-  mergeGeneratedList,
+  mergeUniqueLists,
+  topUpGeneratedList,
 } from './tabBuild.service'
 import { decideRecommendedTabs, type RecommendedTab } from './tabDecision.service'
 import { sanitizeBlueprint } from './validation.service'
@@ -475,7 +475,7 @@ async function ensureGeneratedListSection(input: {
   if (sectionId !== 'faqs' && sectionId !== 'blogs' && sectionId !== 'reviews') return input.payload
   const existing = listFromCurrentDraft(input.currentDraft, sectionId)
   const incoming = Array.isArray(input.payload[sectionId]) ? (input.payload[sectionId] as unknown[]) : []
-  let merged = mergeGeneratedList(existing, incoming)
+  let merged = mergeUniqueLists(existing, incoming)
   if (merged.length < 5 && input.profile) {
     const remaining = 5 - merged.length
     const generated = (await generateSectionFromProfile({
@@ -483,14 +483,14 @@ async function ensureGeneratedListSection(input: {
       profile: input.profile,
       instruction:
         input.instruction ||
-        `Generate ${remaining} additional ${sectionId} from business topics when sources did not provide enough. Cap total at 5. Do not invent licenses, prices, hours, guarantees, or awards.`,
+        `Generate ${remaining} additional ${sectionId} from business topics because the URL and documents did not provide enough. Do not invent licenses, prices, hours, guarantees, or awards.`,
       currentDraft: input.currentDraft,
       userId: input.userId,
       sessionId: input.sessionId,
     })) as Record<string, unknown>
-    merged = mergeGeneratedList(merged, generated[sectionId])
+    merged = topUpGeneratedList(merged, generated[sectionId])
   }
-  return { ...input.payload, [sectionId]: capGeneratedList(merged) }
+  return { ...input.payload, [sectionId]: merged }
 }
 
 export async function fillSection(input: {
@@ -605,11 +605,11 @@ export async function fillSection(input: {
       : ''
   const extractFromSource = LUNA_DOCUMENT_FILL_SECTIONS.has(sectionId)
     ? sectionId === 'faqs'
-      ? 'Extract every distinct question-and-answer conceptually present in the ready text (OCR output or pasted copy). Pair each question with its matching answer. Do not invent FAQs that are not implied by the source. Return at most 5 items. If none are present, return an empty faqs array.'
+      ? 'Extract every distinct question-and-answer conceptually present in the ready text (OCR output, pasted copy, or crawled pages). Pair each question with its matching answer. Do not invent FAQs that are not implied by the source. Keep all found items with no maximum. If none are present, return an empty faqs array.'
       : sectionId === 'blogs'
-        ? 'Extract every distinct article or news item conceptually present in the ready text. Use real titles and summaries from the source. Do not invent posts. Return at most 5 items. If none are present, return an empty blogs array.'
-        : 'Extract every distinct testimonial or review conceptually present in the ready text. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual items. Do not invent customer reviews. Return at most 5 items. If none are present, return an empty reviews array.'
-    : 'Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. If reviews, FAQs, or blogs are not in the sources, generate up to 5 realistic items from business topics instead of empty arrays. Example reviews must be grounded in the business and must not invent licenses, prices, or awards. If the requested section is not supported and is not faqs/blogs/reviews, return an empty array/object.'
+        ? 'Extract every distinct article or news item conceptually present in the ready text. Use real titles and summaries from the source. Do not invent posts. Keep all found items with no maximum. If none are present, return an empty blogs array.'
+        : 'Extract every distinct testimonial or review conceptually present in the ready text. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual items. Do not invent customer reviews. Keep all found items with no maximum. If none are present, return an empty reviews array.'
+    : 'Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. If reviews, FAQs, or blogs are not in the sources, generate up to 5 realistic items from business topics instead of empty arrays. If some were found but fewer than 5, fill only the remaining slots up to 5. If more than 5 were found, keep all of them. Example reviews must be grounded in the business and must not invent licenses, prices, or awards. If the requested section is not supported and is not faqs/blogs/reviews, return an empty array/object.'
   const fillRoute = selectFillSectionModel(sectionId)
 
   let raw: unknown
@@ -651,9 +651,7 @@ export async function fillSection(input: {
   try {
     const coerced = sectionId === 'services' ? coerceServiceTypes(raw) : raw
     payload = schema.parse(coerced) as Record<string, unknown>
-    if (sectionId === 'faqs' || sectionId === 'blogs' || sectionId === 'reviews') {
-      payload[sectionId] = capGeneratedList(payload[sectionId])
-    } else if (sectionId === 'skills') {
+    if (sectionId === 'skills') {
       payload.skills = capGeneratedSkills(payload.skills)
     }
     payload = await ensureGeneratedListSection({

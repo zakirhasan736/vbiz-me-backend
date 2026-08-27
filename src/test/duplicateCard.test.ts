@@ -3,26 +3,39 @@ import { describe, it } from 'node:test'
 import {
   blankDuplicatedIdentityFields,
   cloneRecord,
-  duplicateContactFields,
+  omitCloneKeys,
   remapDuplicatedCardSettings,
+  unknownPrismaCreateArgs,
 } from '../utils/duplicateCard'
 
-describe('duplicateContactFields', () => {
-  it('copies email and leaves date of birth off the duplicated identity', () => {
-    assert.deepEqual(duplicateContactFields({ email: 'owner@example.com' }), {
-      email: 'owner@example.com',
-    })
-    assert.equal('dob' in duplicateContactFields({ email: 'owner@example.com' }), false)
+describe('blankDuplicatedIdentityFields', () => {
+  it('clears personal identity and contact fields on a duplicated card', () => {
+    const identity = blankDuplicatedIdentityFields()
+    assert.equal(identity.name, '')
+    assert.equal(identity.lastName, null)
+    assert.equal(identity.slug, null)
+    assert.equal(identity.dob, null)
+    assert.equal(identity.email, '')
+    assert.equal(identity.phone, null)
+    assert.equal(identity.whatsapp, null)
+    assert.equal(identity.countryCode, null)
+    assert.equal(identity.genderId, null)
+    assert.equal(identity.maritalStatusId, null)
   })
 
-  it('allows a duplicated card to reuse the same email', () => {
-    const createInput = {
+  it('wins over any copied contact values when applied last', () => {
+    const copiedContact = {
       skipCreateContactRules: true,
-      ...duplicateContactFields({ email: 'owner@example.com' }),
+      email: 'owner@example.com',
+      phone: '+1 202 555 0101',
+    }
+    const createInput = {
+      ...copiedContact,
       ...blankDuplicatedIdentityFields(),
     }
 
-    assert.equal(createInput.email, 'owner@example.com')
+    assert.equal(createInput.email, '')
+    assert.equal(createInput.phone, null)
     assert.equal(createInput.name, '')
     assert.equal(createInput.slug, null)
     assert.equal(createInput.dob, null)
@@ -88,6 +101,17 @@ describe('cloneRecord', () => {
     assert.equal('customTabId' in cloned, false)
     assert.equal(cloned.legacyPostTypeId, 13)
   })
+
+  it('strips unknown Prisma create arguments so duplicate works on older clients', () => {
+    const error = new Error(
+      'Invalid `prisma.gallery.create()` invocation:\nUnknown argument `legacyPostTypeId`. Available options are marked with ?.'
+    )
+    assert.deepEqual(unknownPrismaCreateArgs(error), ['legacyPostTypeId'])
+    assert.deepEqual(
+      omitCloneKeys({ title: 'CBNA RIZZ 1', status: '1', legacyPostTypeId: 4, profileId: 'p1' }, ['legacyPostTypeId']),
+      { title: 'CBNA RIZZ 1', status: '1', profileId: 'p1' }
+    )
+  })
 })
 
 describe('remapDuplicatedCardSettings', () => {
@@ -103,5 +127,21 @@ describe('remapDuplicatedCardSettings', () => {
     assert.equal(display.editorNavOrder[0], 'home')
     assert.equal(display.editorNavOrder[1], tabs[0]?.id)
     assert.equal(display.editorNavOrder[2], 'faq')
+  })
+
+  it('clears personal contact snapshots from copied My Info settings', () => {
+    const remapped = remapDuplicatedCardSettings({
+      my_info_json: JSON.stringify({
+        headline: 'Ready When You Are',
+        showCall: true,
+        phone: '+1 202 555 0101',
+        whatsapp: '+1 202 555 0101',
+        email: 'owner@example.com',
+      }),
+    })
+    const myInfo = JSON.parse(remapped.my_info_json) as { headline: string; phone: string; email: string }
+    assert.equal(myInfo.headline, 'Ready When You Are')
+    assert.equal(myInfo.phone, '')
+    assert.equal(myInfo.email, '')
   })
 })

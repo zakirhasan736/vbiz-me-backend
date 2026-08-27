@@ -42,6 +42,12 @@ export function isPrismaUniqueConstraint(error: unknown, field?: string): boolea
   )
 }
 
+/** True when Prisma Client rejects a create/update field that is not on the generated model. */
+export function isPrismaUnknownArgument(error: unknown): boolean {
+  const message = String((error as { message?: string })?.message || '')
+  return /Unknown argument `/i.test(message)
+}
+
 export function isPrismaSchemaDrift(error: unknown): boolean {
   return isPrismaMissingTable(error) || isPrismaColumnMismatch(error) || isPrismaTypeMismatch(error)
 }

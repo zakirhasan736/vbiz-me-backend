@@ -39,7 +39,7 @@ import {
 import { runSolArchitect } from './solArchitect.service'
 import { emptyNormalizedSources, normalizeSources, seedProfileFromCrawledPages } from './sourceNormalizer.service'
 import { normalizeWebsiteUrl } from './sourceUrl'
-import { autoFillSelectedFields, capGeneratedList, capGeneratedSkills, mergeGeneratedList } from './tabBuild.service'
+import { autoFillSelectedFields, capGeneratedSkills, topUpGeneratedList } from './tabBuild.service'
 
 const running = new Set<string>()
 const pendingWork = new Map<
@@ -634,7 +634,7 @@ export async function generatePermissionedContent(input: {
   const existing = Array.isArray(field?.currentValue) ? field.currentValue : []
   const remaining = Math.max(0, 5 - existing.length)
   if (remaining <= 0) {
-    const payload = { [section]: existing.slice(0, 5) }
+    const payload = { [section]: existing }
     return { ...publicJob(session), payload, generatedCount: existing.length }
   }
   const rawPayload = await generateSectionFromProfile({
@@ -653,8 +653,7 @@ export async function generatePermissionedContent(input: {
   })
   const normalizedPayload = rawPayload && typeof rawPayload === 'object' ? (rawPayload as Record<string, unknown>) : {}
   const rawValue = normalizedPayload[section]
-  const mergedValue =
-    section === 'skills' ? capGeneratedSkills(rawValue) : mergeGeneratedList(existing, capGeneratedList(rawValue))
+  const mergedValue = section === 'skills' ? capGeneratedSkills(rawValue) : topUpGeneratedList(existing, rawValue)
   const payload = { ...normalizedPayload, [section]: mergedValue }
   let fields = session.fieldGraph
   if (field) {

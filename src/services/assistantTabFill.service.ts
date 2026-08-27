@@ -4,7 +4,6 @@ import { coerceServiceTypes, countFillEntries, fillSectionSchemas } from './ai/c
 import { extractTextFromBuffer, type UploadedPart } from './ai/extractDocumentText'
 import { getModelForTier, selectFillSectionModel } from './ai/modelRouter.service'
 import { chatJson } from './ai/openai.client'
-import { capGeneratedList } from './ai/tabBuild.service'
 import { buildTabFillSystemPrompt, parseSupportedTabScope } from './assistantPolicy'
 import { extractWithOcrFallback, needsServerOcr } from './documentOcr.service'
 
@@ -77,7 +76,7 @@ export async function fillProfileSection(input: {
     const schema = fillSectionSchemas[scope]
     const parsed = schema.parse(scope === 'services' ? coerceServiceTypes(raw) : raw) as Record<string, unknown>
     if (scope === 'faqs' || scope === 'blogs' || scope === 'reviews') {
-      parsed[scope] = capGeneratedList(parsed[scope])
+      parsed[scope] = Array.isArray(parsed[scope]) ? parsed[scope] : []
     }
     const count = countFillEntries(scope, parsed)
     if (count === 0 && files.length > 0 && !pastedText) {

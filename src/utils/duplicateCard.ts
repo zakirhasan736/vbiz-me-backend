@@ -39,18 +39,35 @@ export function cloneRecord(row: Record<string, unknown>, extraOmit: string[] = 
   return data
 }
 
-/** Contact fields copied on duplicate; uniqueness is not re-checked. Identity fields stay blank. */
-export function duplicateContactFields(source: { email?: string | null }) {
-  return {
-    email: source.email || '',
-  }
+/** Prisma validation errors name unknown create() fields in backticks. */
+export function unknownPrismaCreateArgs(error: unknown): string[] {
+  const message = String((error as { message?: string })?.message || '')
+  const names = [...message.matchAll(/Unknown argument `([^`]+)`/gi)].map((match) => match[1])
+  return [...new Set(names.filter(Boolean))]
 }
 
+export function omitCloneKeys(data: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  if (!keys.length) return data
+  const skip = new Set(keys)
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (!skip.has(key)) next[key] = value
+  }
+  return next
+}
+
+/** Personal / identity fields that must not copy onto a duplicated card. */
 export type DuplicatedIdentityFields = {
   name: string
   lastName: null
   slug: null
   dob: null
+  email: string
+  phone: null
+  whatsapp: null
+  countryCode: null
+  genderId: null
+  maritalStatusId: null
 }
 
 export function blankDuplicatedIdentityFields(): DuplicatedIdentityFields {
@@ -59,6 +76,28 @@ export function blankDuplicatedIdentityFields(): DuplicatedIdentityFields {
     lastName: null,
     slug: null,
     dob: null,
+    email: '',
+    phone: null,
+    whatsapp: null,
+    countryCode: null,
+    genderId: null,
+    maritalStatusId: null,
+  }
+}
+
+function stripDuplicatedMyInfoContacts(settings: Record<string, string>): void {
+  const raw = settings.my_info_json
+  if (!raw?.trim()) return
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
+    const next = parsed as Record<string, unknown>
+    next.phone = ''
+    next.whatsapp = ''
+    next.email = ''
+    settings.my_info_json = JSON.stringify(next)
+  } catch {
+    // Keep original JSON if it is not parseable.
   }
 }
 
@@ -117,5 +156,6 @@ export function remapDuplicatedCardSettings(settings: Record<string, string>): R
     }
   }
 
+  stripDuplicatedMyInfoContacts(next)
   return next
 }

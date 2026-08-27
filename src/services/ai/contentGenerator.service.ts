@@ -108,7 +108,7 @@ Rules:
 - Creative language is allowed. Creative facts are not.
 - Only claim things present in the profile.
 - Do not invent licenses, years, phone numbers, or awards.
-- FAQs must be answerable from the profile when possible. If none exist, generate up to 5 from business topics.
+- FAQs: keep every FAQ found in sources. If none exist, generate up to 5 from business topics. If some exist but fewer than 5, fill only the remaining slots.
 - Return JSON matching the vCard blueprint shape.
 - Prefer real testimonials already in the profile for reviews. If none exist, write realistic example testimonials from business topics (not suggestedTestimonialTemplates copied as verified quotes).
 ${BLUEPRINT_JSON_INSTRUCTION}`
@@ -147,11 +147,11 @@ export async function generateSectionFromProfile(input: {
   const schemaHint = FILL_SECTION_SCHEMA_HINTS[input.section]
   const reviewRule =
     input.section === 'reviews'
-      ? 'If verifiedReviews or existingTestimonials have real quotes, include those first. If they are empty, write realistic example testimonials grounded in business topics (services, industry, audience). Fill remaining slots up to 5. Do not invent licenses, prices, awards, or claim unverified named customers as factual quotes. Never copy suggestedTestimonialTemplates as verified reviews.'
+      ? 'If verifiedReviews or existingTestimonials have real quotes, include ALL of them with no maximum. If they are empty, write up to 5 realistic example testimonials grounded in business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent licenses, prices, awards, or claim unverified named customers as factual quotes. Never copy suggestedTestimonialTemplates as verified reviews.'
       : input.section === 'faqs'
-        ? 'FAQs must be answerable from the profile when possible. If none exist in the profile, generate up to 5 helpful FAQs from business topics. Do not invent prices, hours, guarantees, or certifications. Fill remaining slots up to 5.'
+        ? 'Keep every FAQ found in the profile or sources. If none exist, generate up to 5 helpful FAQs from business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent prices, hours, guarantees, or certifications.'
         : input.section === 'blogs'
-          ? 'If no articles exist in the profile, draft up to 5 evergreen educational posts from business topics. Do not invent news events, dates, or awards. Fill remaining slots up to 5.'
+          ? 'Keep every article found in the profile or sources. If none exist, draft up to 5 evergreen educational posts from business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent news events, dates, or awards.'
           : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
   const seoRule =
     input.section === 'seo'

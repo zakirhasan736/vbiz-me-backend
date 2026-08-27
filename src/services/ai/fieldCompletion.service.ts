@@ -63,7 +63,7 @@ ${input.field.prompt}
 Services: keep real titles; you may write missing descriptions.
 FAQ: only questions answerable from the profile.
 Blog/News: evergreen educational content, never a fake company event.
-Reviews: if none were scraped, write up to 5 realistic example testimonials from business topics. Do not invent licenses, prices, or awards, and do not claim they are verified quotes from named real customers unless present in the profile.`,
+Reviews: keep every review found in sources. If none were scraped, write up to 5 realistic example testimonials from business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent licenses, prices, or awards, and do not claim they are verified quotes from named real customers unless present in the profile.`,
     user: `Field: ${input.field.fieldLabel} (${input.field.fieldKey})
 Instruction: ${input.instruction || '(none)'}
 Current text: ${String(input.currentText || input.field.currentValue || '').slice(0, 4000)}
