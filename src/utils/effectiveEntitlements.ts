@@ -172,6 +172,8 @@ export function buildEffectiveEntitlements(input: EntitlementCatalogInput): Effe
   const sub = input.subscription || null
   const paid = sub ? isPaidAccess(sub) : false
   const assignedPkg = input.pkg || null
+  /** Admin-selected package is enough to use card seats; Stripe paid/unpaid is checked later. */
+  const hasAssignedPackage = Boolean(assignedPkg)
   const ownerMode: OwnerMode = assignedPkg
     ? resolveOwnerMode(assignedPkg)
     : input.role === 'corporate-owner'
@@ -180,10 +182,15 @@ export function buildEffectiveEntitlements(input: EntitlementCatalogInput): Effe
   const overrides = ownerMode === 'single' || !paid ? [] : input.overrides || []
   const merged = mergeFeatures(paid ? input.features : null, overrides)
   const access = entitlementsFromFeatures(merged, paid)
+  const assignedFeatures = hasAssignedPackage ? input.features || [] : []
 
-  const packageMaxCards = parseNumericLimit(featureValue(paid ? input.features || [] : [], MAX_CARDS_FEATURE_KEY))
+  const packageMaxCards = parseNumericLimit(featureValue(assignedFeatures, MAX_CARDS_FEATURE_KEY))
   const maxCardsFromQuantity =
-    paid && ownerMode === 'corporate' && sub?.quantity != null && Number.isFinite(sub.quantity) && sub.quantity >= 0
+    hasAssignedPackage &&
+    ownerMode === 'corporate' &&
+    sub?.quantity != null &&
+    Number.isFinite(sub.quantity) &&
+    sub.quantity >= 0
       ? sub.quantity
       : null
   const maxCards =
@@ -192,7 +199,7 @@ export function buildEffectiveEntitlements(input: EntitlementCatalogInput): Effe
       : (packageMaxCards ?? defaultMaxCardsForRole(input.role))
 
   return {
-    source: paid && assignedPkg ? 'subscription' : 'none',
+    source: assignedPkg ? 'subscription' : 'none',
     ownerMode,
     backOffice: ownerMode,
     packageId: assignedPkg?.id || null,
@@ -206,9 +213,9 @@ export function buildEffectiveEntitlements(input: EntitlementCatalogInput): Effe
     limits: {
       maxCards,
       packageMaxCards,
-      maxSocialLinks: parseNumericLimit(featureValue(merged, 'max_social_links')),
-      maxExtraFields: parseNumericLimit(featureValue(merged, 'max_extra_fields')),
-      maxFileSizeMb: parseNumericLimit(featureValue(merged, 'max_file_size_mb')),
+      maxSocialLinks: parseNumericLimit(featureValue(paid ? merged : assignedFeatures, 'max_social_links')),
+      maxExtraFields: parseNumericLimit(featureValue(paid ? merged : assignedFeatures, 'max_extra_fields')),
+      maxFileSizeMb: parseNumericLimit(featureValue(paid ? merged : assignedFeatures, 'max_file_size_mb')),
     },
     overrides: overrides.map((row) => ({
       featureKey: row.featureKey,

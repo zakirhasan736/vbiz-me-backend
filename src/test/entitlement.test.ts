@@ -175,7 +175,8 @@ describe('central entitlement service', () => {
     assert.equal(result.packageSlug, 'professional')
     assert.equal(result.backOffice, 'single')
     assert.equal(result.access.allow_canva, false)
-    assert.equal(result.source, 'none')
+    assert.equal(result.source, 'subscription')
+    assert.equal(result.limits.maxCards, 3)
   })
 
   it('exposes catalog media flags and Corporate card capacity', () => {
@@ -214,7 +215,7 @@ describe('central entitlement service', () => {
     assert.deepEqual(result.cardCapacity, { limit: 10, used: 10, remaining: 0 })
   })
 
-  it('does not grant Corporate card seats before Stripe payment', () => {
+  it('grants Corporate card seats from an admin-assigned package before Stripe payment', () => {
     const result = buildEffectiveEntitlements({
       role: 'corporate-owner',
       pkg: { id: 'pkg-corp', slug: 'corporate', name: 'Corporate', ownerMode: 'corporate' },
@@ -231,7 +232,7 @@ describe('central entitlement service', () => {
     assert.equal(result.subscriptionStatus, 'pending_payment')
     assert.equal(result.subscriptionActive, false)
     assert.equal(result.access.allow_canva, false)
-    assert.equal(result.limits.maxCards, 0)
-    assert.deepEqual(result.cardCapacity, { limit: 0, used: 0, remaining: 0 })
+    assert.equal(result.limits.maxCards, 25)
+    assert.deepEqual(result.cardCapacity, { limit: 25, used: 0, remaining: 25 })
   })
 })
