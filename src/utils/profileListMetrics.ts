@@ -29,15 +29,10 @@ export async function loadProfileEngagementMetrics(
   }
   if (!profileIds.length) return metrics
 
-  const [socialEvents, contacts, guests] = await Promise.all([
+  const [socialEvents, guests] = await Promise.all([
     prisma.eventLog.findMany({
       where: { profileId: { in: profileIds }, eventType: 'social_click' },
       select: { profileId: true, payload: true },
-    }),
-    prisma.contact.groupBy({
-      by: ['profileId'],
-      where: { profileId: { in: profileIds } },
-      _count: { _all: true },
     }),
     prisma.guestUserData.groupBy({
       by: ['profileId'],
@@ -76,10 +71,6 @@ export async function loadProfileEngagementMetrics(
     m.socialClicks = socialClicks
   }
 
-  for (const g of contacts) {
-    const m = metrics.get(g.profileId)
-    if (m) m.saveCount += g._count._all
-  }
   for (const g of guests) {
     const m = metrics.get(g.profileId)
     if (m) m.saveCount += g._count._all

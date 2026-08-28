@@ -8,6 +8,7 @@ export type DashboardOverviewForPdf = {
   contactsLast30Days: number
   notesLast30Days: number
   guestsLast30Days: number
+  contactSaves?: number
   visitsChart: {
     total: number
     trendPercent: number
@@ -52,7 +53,7 @@ export async function buildOverviewPdf(
     doc.on('end', () => resolve(Buffer.concat(chunks)))
     doc.on('error', reject)
 
-    const contactsSaved = (stats.contactsLast30Days || 0) + (stats.guestsLast30Days || 0)
+    const contactsSaved = stats.contactSaves ?? stats.guestsLast30Days ?? 0
     const range = periodLabel(period)
 
     doc.fontSize(20).fillColor('#0f172a').text('vBiz Me — Overview Report', { align: 'left' })
