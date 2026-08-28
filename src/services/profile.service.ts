@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
 import { AccountStatus } from '../../generated/prisma/enums'
+import { buildAdminTeamCardsScopeWhere } from '../constants/adminTeamCards'
 import {
   CORPORATE_CARD_LIMIT_REACHED,
   FEATURE_LIMIT_REACHED,
@@ -663,22 +664,9 @@ const resolveAdminPortfolioUserIds = async (userId: string, role: string): Promi
   return [...ids]
 }
 
-/** Profile slugs for known admin-assigned cards that must appear on My Cards. */
-const ADMIN_MY_CARDS_OWNER_SLUGS = [
-  'ryan-aldrich',
-  'tj-desjardins',
-  'julia-rose',
-  'mila',
-  'ryan',
-  'billy-toolen',
-  'michaelangelo-casanova-2',
-  'gett-excited',
-] as const
-
 /**
- * My Cards / scope=created for staff:
- * ONLY cards for admin-team-created users (and staff members' own cards).
- * Does not include every card sitting under an admin companyUser portfolio.
+ * VBizMe Team Cards / scope=created for staff:
+ * Curated portfolio slugs plus cards assigned under an admin portfolio.
  */
 const resolveCreatedScopeWhere = async (userId: string, role: string): Promise<Prisma.ProfileWhereInput> => {
   if (!isAdminRole(role)) {
@@ -694,35 +682,8 @@ const resolveCreatedScopeWhere = async (userId: string, role: string): Promise<P
     select: { id: true },
   })
   for (const row of allStaff) staffIds.add(row.id)
-  const staffIdList = [...staffIds]
 
-  // Accounts the admin team created (Leon White, Thomas, Julia, …).
-  const teamCreatedUsers = await prisma.user.findMany({
-    where: {
-      deletedAt: null,
-      createdById: { in: staffIdList },
-    },
-    select: { id: true },
-  })
-  const teamCreatedUserIds = teamCreatedUsers.map((row) => row.id)
-  const or: Prisma.ProfileWhereInput[] = []
-  // Cards owned by listed users the admin team created
-  if (teamCreatedUserIds.length) {
-    or.push({ userId: { in: teamCreatedUserIds } }, { companyUserId: { in: teamCreatedUserIds } })
-  }
-  if (staffIdList.length) {
-    // Staff members' own cards
-    or.push({ userId: { in: staffIdList } }, { companyUserId: { in: staffIdList } })
-    // Cards an admin created or assigned, even if the owner account was not staff-created
-    or.push({ createdById: { in: staffIdList } })
-  }
-  or.push({
-    slug: {
-      in: [...ADMIN_MY_CARDS_OWNER_SLUGS],
-      mode: 'insensitive',
-    },
-  })
-  return { OR: or }
+  return buildAdminTeamCardsScopeWhere([...staffIds])
 }
 
 const resolveOwnershipWhere = async (
