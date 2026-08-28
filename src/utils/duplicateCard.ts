@@ -66,10 +66,7 @@ export type DuplicatedIdentityFields = {
   dob: null
   email: string
   phone: null
-  whatsapp: null
-  countryCode: null
   genderId: null
-  maritalStatusId: null
 }
 
 export function blankDuplicatedIdentityFields(): DuplicatedIdentityFields {
@@ -80,12 +77,79 @@ export function blankDuplicatedIdentityFields(): DuplicatedIdentityFields {
     dob: null,
     email: '',
     phone: null,
-    whatsapp: null,
-    countryCode: null,
     genderId: null,
-    maritalStatusId: null,
   }
 }
+
+/** Keep the source owner's card on their list — never stamp the duplicating admin as owner. */
+export function duplicatedCardOwnership(
+  source: {
+    userId?: string | null
+    companyUserId?: string | null
+    createdById?: string | null
+  },
+  actorUserId: string
+): {
+  userId: string | null
+  companyUserId: string | null
+  createdById: string | null
+} {
+  const ownerId = source.userId || null
+  const companyId = source.companyUserId || null
+  const createdBy = source.createdById || null
+  const actorOwnsSource = Boolean(actorUserId) && (ownerId === actorUserId || companyId === actorUserId)
+  if (actorOwnsSource) {
+    return {
+      userId: ownerId,
+      companyUserId: companyId,
+      createdById: createdBy || ownerId,
+    }
+  }
+  return {
+    userId: ownerId,
+    companyUserId: companyId === actorUserId ? null : companyId,
+    createdById: createdBy && createdBy !== actorUserId ? createdBy : ownerId,
+  }
+}
+
+/** Copy every setting key, including empty/null values the editor still expects. */
+export function settingsMapFromRows(
+  settings: Array<{ key?: unknown; value?: unknown } | null | undefined>
+): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const item of settings) {
+    if (!item || typeof item.key !== 'string' || !item.key.trim()) continue
+    const value = item.value
+    map[item.key] = typeof value === 'string' ? value : value == null ? '' : String(value)
+  }
+  return map
+}
+
+/** Prisma findMany/select errors name unknown fields in backticks. */
+export function unknownPrismaSelectFields(error: unknown): string[] {
+  const message = String((error as { message?: string })?.message || '')
+  const names = [...message.matchAll(/Unknown (?:field|argument) `([^`]+)`/gi)].map((match) => match[1])
+  const column =
+    message.match(/column [`'](?:[\w.]+\.)?(\w+)[`']/i)?.[1] ||
+    message.match(/The column `([^`]+)` does not exist/i)?.[1]
+  if (column) names.push(column.includes('.') ? column.split('.').pop() || column : column)
+  return [...new Set(names.filter(Boolean))]
+}
+
+export const POST_STYLE_CLONE_SELECT = {
+  id: true,
+  profileId: true,
+  title: true,
+  description: true,
+  url: true,
+  featuredImage: true,
+  status: true,
+  sortOrder: true,
+  attachmentUrl: true,
+  attachmentName: true,
+  metas: true,
+  tabKey: true,
+} as const
 
 function stripDuplicatedMyInfoContacts(settings: Record<string, string>): void {
   const raw = settings.my_info_json
@@ -95,7 +159,6 @@ function stripDuplicatedMyInfoContacts(settings: Record<string, string>): void {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
     const next = parsed as Record<string, unknown>
     next.phone = ''
-    next.whatsapp = ''
     next.email = ''
     settings.my_info_json = JSON.stringify(next)
   } catch {
@@ -113,10 +176,11 @@ function newCustomTabId(): string {
  */
 export function remapDuplicatedCardSettings(
   settings: Record<string, string>,
-  sourceProfileId?: string
+  sourceProfileId?: string,
+  customTabIdMap?: Map<string, string>
 ): Record<string, string> {
   const next = { ...settings }
-  const idMap = new Map<string, string>()
+  const idMap = customTabIdMap || new Map<string, string>()
   const rawTabs = next.custom_tabs_json
   if (rawTabs?.trim()) {
     try {

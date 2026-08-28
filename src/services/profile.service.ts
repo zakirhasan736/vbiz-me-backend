@@ -50,11 +50,15 @@ import {
   type SocialChannel,
 } from '../utils/dashboardAnalytics'
 import {
+  POST_STYLE_CLONE_SELECT,
   blankDuplicatedIdentityFields,
   cloneRecord,
+  duplicatedCardOwnership,
   omitCloneKeys,
   remapDuplicatedCardSettings,
+  settingsMapFromRows,
   unknownPrismaCreateArgs,
+  unknownPrismaSelectFields,
 } from '../utils/duplicateCard'
 import { fillMissingGalleryMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
@@ -71,7 +75,10 @@ import { prisma } from '../utils/prisma'
 import {
   isPrismaColumnMismatch,
   isPrismaMissingTable,
+  isPrismaSchemaDrift,
+  isPrismaTypeMismatch,
   isPrismaUniqueConstraint,
+  isPrismaUnknownArgument,
   safePrismaQuery,
 } from '../utils/prismaErrors'
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
@@ -1327,7 +1334,11 @@ const create = async (
   return created
 }
 
-const clonePrimaryProfileCollections = async (sourceProfileId: string, targetProfileId: string) => {
+const clonePrimaryProfileCollections = async (
+  sourceProfileId: string,
+  targetProfileId: string,
+  customTabIdMap?: Map<string, string>
+) => {
   const listModels = [
     'education',
     'experience',
@@ -1373,74 +1384,157 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
   ] as const
 
   type ListDelegate = {
-    findMany: (args: { where: { profileId: string } }) => Promise<Array<Record<string, unknown>>>
+    findMany: (args: {
+      where: { profileId: string }
+      select?: Record<string, boolean>
+    }) => Promise<Array<Record<string, unknown>>>
     create: (args: { data: Record<string, unknown> }) => Promise<unknown>
   }
 
-  const createClonedRow = async (delegate: ListDelegate, data: Record<string, unknown>) => {
+  const pascalModel = (model: string) => model.charAt(0).toUpperCase() + model.slice(1)
+
+  const rememberAttachable = (
+    map: Record<string, Map<string, string>>,
+    type: string,
+    sourceId: string,
+    createdId: string
+  ) => {
+    if (!map[type]) map[type] = new Map()
+    map[type].set(sourceId, createdId)
+  }
+
+  const findManyCloneRows = async (
+    delegate: ListDelegate,
+    profileId: string
+  ): Promise<Array<Record<string, unknown>>> => {
     try {
-      return await delegate.create({ data })
+      return await delegate.findMany({ where: { profileId } })
     } catch (error) {
-      const unknownArgs = unknownPrismaCreateArgs(error)
-      if (!unknownArgs.length) throw error
-      return delegate.create({ data: omitCloneKeys(data, unknownArgs) })
+      if (isPrismaMissingTable(error)) return []
+      if (!isPrismaSchemaDrift(error) && !isPrismaUnknownArgument(error)) throw error
+    }
+
+    const select: Record<string, boolean> = { ...POST_STYLE_CLONE_SELECT }
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      try {
+        return await delegate.findMany({ where: { profileId }, select })
+      } catch (error) {
+        if (isPrismaMissingTable(error)) return []
+        const unknown = unknownPrismaSelectFields(error)
+        if (!unknown.length) break
+        for (const key of unknown) delete select[key]
+        if (!Object.keys(select).length) return []
+      }
+    }
+
+    try {
+      return await delegate.findMany({
+        where: { profileId },
+        select: {
+          id: true,
+          profileId: true,
+          title: true,
+          description: true,
+          url: true,
+          featuredImage: true,
+          status: true,
+          sortOrder: true,
+        },
+      })
+    } catch {
+      return []
+    }
+  }
+
+  const createClonedRow = async (delegate: ListDelegate, data: Record<string, unknown>) => {
+    let payload = data
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        return await delegate.create({ data: payload })
+      } catch (error) {
+        const unknownArgs = [...unknownPrismaCreateArgs(error), ...unknownPrismaSelectFields(error)]
+        if (unknownArgs.length) {
+          payload = omitCloneKeys(payload, unknownArgs)
+          continue
+        }
+        if (isPrismaTypeMismatch(error) && 'status' in payload) {
+          const status = payload.status
+          const nextStatus = typeof status === 'number' ? String(status) : Number(status)
+          if (nextStatus === status || (typeof nextStatus === 'number' && Number.isNaN(nextStatus))) throw error
+          payload = { ...payload, status: nextStatus }
+          continue
+        }
+        throw error
+      }
+    }
+    return delegate.create({ data: payload })
+  }
+
+  const cloneListRow = async (
+    delegate: ListDelegate,
+    model: string,
+    row: Record<string, unknown>,
+    attachableIdMap: Record<string, Map<string, string>>
+  ) => {
+    if (row.deletedAt) return
+    const cloned = cloneRecord(row)
+    if ('status' in row && cloned.status === undefined) {
+      cloned.status = typeof row.status === 'number' ? 1 : '1'
+    }
+    if ('sortOrder' in row && cloned.sortOrder === undefined) {
+      cloned.sortOrder = 0
+    }
+    try {
+      const created = (await createClonedRow(delegate, {
+        ...cloned,
+        profileId: targetProfileId,
+      })) as { id?: string }
+      const sourceId = typeof row.id === 'string' ? row.id : ''
+      if (sourceId && created?.id) rememberAttachable(attachableIdMap, pascalModel(model), sourceId, created.id)
+    } catch (error) {
+      logger.error(`duplicate clone failed for ${model}`, error)
     }
   }
 
   await prisma.$transaction(
     async (tx) => {
       const client = tx as unknown as Record<string, ListDelegate>
+      const readClient = prisma as unknown as Record<string, ListDelegate>
       const attachableIdMap: Record<string, Map<string, string>> = {
         Service: new Map(),
         Portfolio: new Map(),
         Post: new Map(),
+        Gallery: new Map(),
+        Video: new Map(),
+        VideoLink: new Map(),
+        VideoExplainer: new Map(),
+        Review: new Map(),
+        Client: new Map(),
       }
 
       await tx.address.deleteMany({ where: { profileId: targetProfileId } })
 
       for (const model of listModels) {
-        const delegate = client[model]
-        if (!delegate?.findMany || !delegate?.create) continue
+        const writer = client[model]
+        const reader = readClient[model]
+        if (!writer?.create) continue
         if (model === 'gallery') {
-          const galleries = await listGalleriesForProfile(sourceProfileId, 200)
+          let galleries: Array<Record<string, unknown>> = (await listGalleriesForProfile(
+            sourceProfileId,
+            200
+          )) as unknown as Array<Record<string, unknown>>
+          if (!galleries.length && reader) {
+            galleries = await findManyCloneRows(reader, sourceProfileId)
+          }
           for (const row of galleries) {
-            await createClonedRow(delegate, {
-              title: row.title,
-              description: row.description,
-              url: row.url,
-              featuredImage: row.featuredImage,
-              attachmentUrl: row.attachmentUrl,
-              attachmentName: row.attachmentName,
-              status: row.status || '1',
-              sortOrder: row.sortOrder ?? 0,
-              profileId: targetProfileId,
-            })
+            await cloneListRow(writer, model, row, attachableIdMap)
           }
           continue
         }
-        let rows: Array<Record<string, unknown>>
-        try {
-          rows = await delegate.findMany({ where: { profileId: sourceProfileId } })
-        } catch (error) {
-          if (isPrismaMissingTable(error) || isPrismaColumnMismatch(error)) continue
-          throw error
-        }
+        if (!reader) continue
+        const rows = await findManyCloneRows(reader, sourceProfileId)
         for (const row of rows) {
-          if (row.deletedAt) continue
-          const cloned = cloneRecord(row)
-          if ('status' in row && cloned.status === undefined) {
-            cloned.status = typeof row.status === 'number' ? 1 : '1'
-          }
-          if ('sortOrder' in row && cloned.sortOrder === undefined) {
-            cloned.sortOrder = 0
-          }
-          const created = (await createClonedRow(delegate, {
-            ...cloned,
-            profileId: targetProfileId,
-          })) as { id?: string }
-          const sourceId = typeof row.id === 'string' ? row.id : ''
-          if (sourceId && created?.id && model === 'service') attachableIdMap.Service.set(sourceId, created.id)
-          if (sourceId && created?.id && model === 'portfolio') attachableIdMap.Portfolio.set(sourceId, created.id)
+          await cloneListRow(writer, model, row, attachableIdMap)
         }
       }
 
@@ -1485,7 +1579,9 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
       }
 
       for (const sourceTab of sourceTabs) {
+        const remappedKey = customTabIdMap?.get(sourceTab.key)
         const targetTab =
+          (remappedKey ? takeTarget((tab) => tab.key === remappedKey) : null) ||
           takeTarget((tab) => tab.key === sourceTab.key) ||
           takeTarget((tab) => tab.label === sourceTab.label) ||
           unusedTargets.shift() ||
@@ -1576,36 +1672,43 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
       const attachments = await tx.attachment.findMany({ where: { profileId: sourceProfileId } })
       for (const attachment of attachments) {
         const type = attachment.attachableType
+        const typeKey = type.split(/\\|\//).pop() || type
         let postId = attachment.postId
         let attachableId: string
-        if (type === 'Profile') {
+        if (type === 'Profile' || typeKey === 'Profile') {
           attachableId = targetProfileId
         } else {
-          const mapped = attachableIdMap[type]?.get(attachment.attachableId)
+          const mapped =
+            attachableIdMap[type]?.get(attachment.attachableId) ||
+            attachableIdMap[typeKey]?.get(attachment.attachableId)
           if (!mapped) continue
           attachableId = mapped
-          if (type === 'Post') postId = mapped
+          if (type === 'Post' || typeKey === 'Post') postId = mapped
         }
-        if (postId && type !== 'Post') {
+        if (postId && type !== 'Post' && typeKey !== 'Post') {
           postId = attachableIdMap.Post.get(postId) || null
         }
-        await tx.attachment.create({
-          data: {
-            attachmentTypeId: attachment.attachmentTypeId,
-            attachableType: type,
-            attachableId,
-            profileId: targetProfileId,
-            postId: type === 'Post' ? attachableId : postId,
-            docName: attachment.docName,
-            url: attachment.url,
-            publicId: attachment.publicId,
-            resourceType: attachment.resourceType,
-            format: attachment.format,
-            bytes: attachment.bytes,
-            extension: attachment.extension,
-            mimeType: attachment.mimeType,
-          },
-        })
+        try {
+          await tx.attachment.create({
+            data: {
+              attachmentTypeId: attachment.attachmentTypeId,
+              attachableType: type,
+              attachableId,
+              profileId: targetProfileId,
+              postId: type === 'Post' || typeKey === 'Post' ? attachableId : postId,
+              docName: attachment.docName,
+              url: attachment.url,
+              publicId: attachment.publicId,
+              resourceType: attachment.resourceType,
+              format: attachment.format,
+              bytes: attachment.bytes,
+              extension: attachment.extension,
+              mimeType: attachment.mimeType,
+            },
+          })
+        } catch (error) {
+          logger.error('duplicate clone failed for attachment', error)
+        }
       }
 
       const assistantConfig = await tx.profileAssistantConfig.findUnique({ where: { profileId: sourceProfileId } })
@@ -1647,18 +1750,21 @@ const clonePrimaryProfileCollections = async (sourceProfileId: string, targetPro
 
 const duplicate = async (profileId: string, userId: string, role: string) => {
   const source = await getOwned(profileId, userId, role)
-  const settings = remapDuplicatedCardSettings(
-    Object.fromEntries(
-      source.settings
-        .filter((item) => typeof item.key === 'string' && typeof item.value === 'string')
-        .map((item) => [item.key, item.value as string])
-    ),
-    profileId
+  const customTabIdMap = new Map<string, string>()
+  const settings = remapDuplicatedCardSettings(settingsMapFromRows(source.settings), profileId, customTabIdMap)
+  const ownership = duplicatedCardOwnership(
+    {
+      userId: typeof source.userId === 'string' ? source.userId : null,
+      companyUserId: typeof source.companyUserId === 'string' ? source.companyUserId : null,
+      createdById: typeof source.createdById === 'string' ? source.createdById : null,
+    },
+    userId
   )
   const created = await create(userId, role, {
     name: '',
     email: '',
     skipCreateContactRules: true,
+    ownerUserId: ownership.userId || undefined,
     companyName: source.companyName || undefined,
     designation: source.designation || undefined,
     website: source.website || undefined,
@@ -1692,16 +1798,21 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
       where: { id: created.id },
       data: {
         ...blankDuplicatedIdentityFields(),
+        ...ownership,
         avatar: source.avatar,
         colorCode: source.colorCode,
         rumble: source.rumble,
         truth: source.truth,
         pinterest: source.pinterest,
         isEmploy: source.isEmploy,
-        professionId: source.profession?.id ?? null,
+        professionId: source.profession?.id ?? (typeof source.professionId === 'string' ? source.professionId : null),
+        whatsapp: source.whatsapp,
+        countryCode: source.countryCode,
+        maritalStatusId:
+          source.maritalStatus?.id ?? (typeof source.maritalStatusId === 'string' ? source.maritalStatusId : null),
       },
     })
-    await clonePrimaryProfileCollections(profileId, created.id)
+    await clonePrimaryProfileCollections(profileId, created.id, customTabIdMap)
   } catch (error) {
     await prisma.profile.delete({ where: { id: created.id } }).catch(() => undefined)
     throw error
