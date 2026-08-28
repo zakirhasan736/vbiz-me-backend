@@ -1,11 +1,13 @@
 import type { Prisma } from '../../generated/prisma/client'
 import { AccountStatus, AuthProvider, UserRole as PrismaUserRole } from '../../generated/prisma/enums'
+import config from '../configs/config'
 import { resolveOwnerMode, roleForOwnerMode, type OwnerMode } from '../constants/packageOwnerMode'
 import { toApiRole, toPrismaRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
 import {
+  adminAssignBilling,
   resolveFirstInvoiceCents,
   resolveMonthlyCents,
   resolveRecurringInvoiceCents,
@@ -19,7 +21,13 @@ import {
   type AccountLockSnapshot,
 } from '../utils/cardStatus'
 import { buildEffectiveEntitlements } from '../utils/effectiveEntitlements'
+import { resolveTrialEndsAt } from '../utils/freePeriod'
 import logger from '../utils/logger'
+import {
+  quoteOwnerBilling,
+  sendOwnerPaymentLinkEmail,
+  sendOwnerProvisionWelcomeEmail,
+} from '../utils/ownerProvisionEmail'
 import { resolveSubscriptionAccessStatus, type SubscriptionAccessStatus } from '../utils/paidAccess'
 import { prisma } from '../utils/prisma'
 import type {
@@ -48,6 +56,8 @@ export type AdminUserRow = {
   companyName: string | null
   registeredCards: number
   ownerMode: OwnerMode | null
+  packageId: string | null
+  packageName: string | null
   cardLimit: number | null
   packageCardLimit: number | null
   packageMonthlyCents: number | null
@@ -58,6 +68,7 @@ export type AdminUserRow = {
   firstInvoiceCents: number | null
   recurringInvoiceCents: number | null
   signupFeeChargedAt: Date | null
+  trialEndsAt: Date | null
   subscriptionStatus: SubscriptionAccessStatus
   subscriptionProvider: string | null
   stripeStatus: string | null
@@ -110,6 +121,7 @@ function activeSubscriptionSelect() {
       negotiatedMonthlyCents: true,
       negotiatedSignupFeeCents: true,
       signupFeeChargedAt: true,
+      trialEndsAt: true,
       package: {
         select: {
           id: true,
@@ -183,6 +195,7 @@ function mapRow(user: AdminUserRecord): AdminUserRow {
         ownerMode: entitlements.ownerMode,
         packageMonthlyCents,
         negotiatedMonthlyCents,
+        honorNegotiated: true,
       })
     : null
   const effectiveSignupFeeCents = subscription
@@ -190,6 +203,7 @@ function mapRow(user: AdminUserRecord): AdminUserRow {
         ownerMode: entitlements.ownerMode,
         packageSignupFeeCents: signupFeeCents,
         negotiatedSignupFeeCents,
+        honorNegotiated: true,
       })
     : null
   const firstInvoiceCents =
@@ -210,6 +224,8 @@ function mapRow(user: AdminUserRecord): AdminUserRow {
     companyName: user.companyName,
     registeredCards: user._count.profiles,
     ownerMode: entitlements.ownerMode,
+    packageId: subscription?.package?.id ?? null,
+    packageName: subscription?.package?.name ?? null,
     cardLimit:
       entitlements.ownerMode === 'corporate'
         ? (subscription?.quantity ?? entitlements.limits.maxCards)
@@ -223,10 +239,12 @@ function mapRow(user: AdminUserRecord): AdminUserRow {
     firstInvoiceCents,
     recurringInvoiceCents,
     signupFeeChargedAt: subscription?.signupFeeChargedAt ?? null,
+    trialEndsAt: subscription?.trialEndsAt ?? null,
     subscriptionStatus: resolveSubscriptionAccessStatus(
       subscription
         ? {
             endsAt: subscription.endsAt,
+            trialEndsAt: subscription.trialEndsAt,
             provider: subscription.provider,
             stripeStatus: subscription.stripeStatus,
           }
@@ -506,6 +524,12 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
   }
   const hashedPassword = body.password ? await authUtils.hashPassword(body.password) : null
 
+  const trialEndsAt = resolveTrialEndsAt({
+    amount: body.freePeriodAmount,
+    unit: body.freePeriodUnit,
+    lifetime: body.freePeriodLifetime,
+  })
+
   const user = await prisma.user.create({
     data: {
       name: body.name.trim(),
@@ -524,8 +548,9 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
 
   await subscriptionService.assignPackageSubscription(user.id, pkg.id, {
     cardLimit: body.cardLimit,
-    negotiatedMonthlyCents: ownerMode === 'corporate' ? body.negotiatedMonthlyCents : undefined,
-    negotiatedSignupFeeCents: ownerMode === 'corporate' ? body.negotiatedSignupFeeCents : undefined,
+    negotiatedMonthlyCents: body.negotiatedMonthlyCents,
+    negotiatedSignupFeeCents: body.negotiatedSignupFeeCents,
+    trialEndsAt,
   })
 
   if (ownerMode === 'corporate' && body.featureOverrides) {
@@ -539,15 +564,53 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
   }
 
   let paymentLinkUrl: string | null = null
-  try {
-    const link = await stripeService.createPaymentLinkForUser(user.id)
-    paymentLinkUrl = link.url
-  } catch (error) {
-    logger.warn('Could not generate Stripe payment link for new owner', {
-      userId: user.id,
-      error: error instanceof Error ? error.message : error,
-    })
+  if (body.sendPaymentLinkNow) {
+    try {
+      const link = await stripeService.createPaymentLinkForUser(user.id)
+      paymentLinkUrl = link.url
+      if (link.url) {
+        const billing = quoteOwnerBilling({
+          ownerMode,
+          packageMonthlyCents: pkg.monthlyPrice,
+          packageSignupFeeCents: pkg.signupFeeCents,
+          negotiatedMonthlyCents: body.negotiatedMonthlyCents,
+          negotiatedSignupFeeCents: body.negotiatedSignupFeeCents,
+        })
+        await sendOwnerPaymentLinkEmail({
+          email: user.email,
+          name: user.name || user.email,
+          paymentUrl: link.url,
+          firstInvoiceCents: link.firstInvoiceCents ?? billing.firstInvoiceCents,
+          recurringCents: link.recurringCents ?? billing.monthlyCents,
+        }).catch((error) => logger.warn('Could not email payment link to new owner', error))
+      }
+    } catch (error) {
+      logger.warn('Could not generate Stripe payment link for new owner', {
+        userId: user.id,
+        error: error instanceof Error ? error.message : error,
+      })
+    }
   }
+
+  const billing = quoteOwnerBilling({
+    ownerMode,
+    packageMonthlyCents: pkg.monthlyPrice,
+    packageSignupFeeCents: pkg.signupFeeCents,
+    negotiatedMonthlyCents: body.negotiatedMonthlyCents,
+    negotiatedSignupFeeCents: body.negotiatedSignupFeeCents,
+  })
+  await sendOwnerProvisionWelcomeEmail({
+    email: user.email,
+    name: user.name || user.email,
+    packageName: pkg.name,
+    ownerModeLabel: ownerMode === 'corporate' ? 'Corporate' : 'Single Card Owner',
+    loginUrl: `${String(config.FRONTEND_URL || '').replace(/\/$/, '')}/login`,
+    trialEndsAt,
+    lifetimeFree: Boolean(body.freePeriodLifetime),
+    monthlyCents: billing.monthlyCents,
+    signupFeeCents: billing.signupFeeCents,
+    paymentRequired: billing.monthlyCents > 0 || billing.signupFeeCents > 0,
+  }).catch((error) => logger.warn('Could not send owner welcome email', error))
 
   await writeAuditLog({
     action: 'User Created',
@@ -631,6 +694,72 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
   }
   if (body.featureOverrides !== undefined) {
     await replaceCorporateFeatureOverrides(user.id, toApiRole(user.role), body.featureOverrides)
+  }
+
+  if (body.packageId) {
+    const pkg = await subscriptionService.loadAssignablePackage(body.packageId)
+    const ownerMode = resolveOwnerMode(pkg)
+    const trialEndsAt =
+      body.clearFreePeriod === true
+        ? null
+        : body.freePeriodAmount !== undefined ||
+            body.freePeriodUnit !== undefined ||
+            body.freePeriodLifetime !== undefined
+          ? resolveTrialEndsAt({
+              amount: body.freePeriodAmount,
+              unit: body.freePeriodUnit,
+              lifetime: body.freePeriodLifetime,
+            })
+          : undefined
+    await subscriptionService.changePackageSubscription(user.id, body.packageId, {
+      cardLimit: body.cardLimit,
+      negotiatedMonthlyCents: body.negotiatedMonthlyCents,
+      negotiatedSignupFeeCents: body.negotiatedSignupFeeCents,
+      ...(trialEndsAt !== undefined ? { trialEndsAt } : {}),
+    })
+    await prisma.user.update({
+      where: { id },
+      data: { role: toPrismaRole(roleForOwnerMode(ownerMode)) },
+    })
+  } else if (
+    body.clearFreePeriod ||
+    body.freePeriodAmount !== undefined ||
+    body.freePeriodUnit !== undefined ||
+    body.freePeriodLifetime !== undefined
+  ) {
+    const subscription = await prisma.subscription.findFirst({
+      where: { userId: id, OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] },
+      orderBy: { createdAt: 'desc' },
+      include: { package: true },
+    })
+    if (subscription?.package) {
+      const trialEndsAt = body.clearFreePeriod
+        ? null
+        : resolveTrialEndsAt({
+            amount: body.freePeriodAmount,
+            unit: body.freePeriodUnit,
+            lifetime: body.freePeriodLifetime,
+          })
+      const ownerMode = resolveOwnerMode(subscription.package)
+      const billing = adminAssignBilling(
+        {
+          monthlyPrice: subscription.package.monthlyPrice,
+          signupFeeCents: subscription.package.signupFeeCents,
+          ownerMode,
+          negotiatedMonthlyCents: subscription.negotiatedMonthlyCents,
+          negotiatedSignupFeeCents: subscription.negotiatedSignupFeeCents,
+        },
+        { trialEndsAt }
+      )
+      await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: {
+          trialEndsAt,
+          provider: billing.provider,
+          stripeStatus: billing.stripeStatus,
+        },
+      })
+    }
   }
 
   await writeAuditLog({
@@ -769,6 +898,14 @@ const createPaymentLink = async (id: string, actor: ActorContext): Promise<Admin
   if (!existing) throw new AppError(404, 'User not found')
 
   const link = await stripeService.createPaymentLinkForUser(id)
+  if (!link.url) throw new AppError(502, 'Stripe did not return a payment link.')
+  await sendOwnerPaymentLinkEmail({
+    email: existing.email,
+    name: existing.name || existing.email,
+    paymentUrl: link.url,
+    firstInvoiceCents: link.firstInvoiceCents,
+    recurringCents: link.recurringCents,
+  }).catch((error) => logger.warn('Could not email payment link to owner', error))
   await writeAuditLog({
     action: 'Payment Link Generated',
     details: `Generated Stripe payment link for ${existing.name ?? existing.email}`,

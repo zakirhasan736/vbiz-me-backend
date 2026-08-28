@@ -1,6 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client'
 
-/** Legacy / curated slugs that always belong on Admin → VBizMe Team Cards. */
+/** The only profiles shown on Admin → VBizMe Team Cards (exactly these 8). */
 export const ADMIN_TEAM_CARD_SLUGS = [
   'ryan-aldrich', // Leon White
   'tj-desjardins', // Thomas J Desjardins
@@ -9,26 +9,15 @@ export const ADMIN_TEAM_CARD_SLUGS = [
   'ryan', // Ryan Thomas
   'billy-toolen', // Billy Toolen
   'michaelangelo-casanova-2', // Michaelangelo Casanova (admin)
-  'michaelanglo-casanova', // Michaelangelo Casanova (user portfolio)
+  'michaelanglo-casanova', // Michaelangelo Casanova (user)
 ] as const
 
-/**
- * Team Cards list: curated portfolio slugs plus any card assigned under an admin portfolio
- * (`companyUserId` = admin/staff). User-owned cards without admin assignment stay vCards-only.
- */
-export function buildAdminTeamCardsScopeWhere(staffIdList: string[]): Prisma.ProfileWhereInput {
-  const or: Prisma.ProfileWhereInput[] = [
-    {
-      slug: {
-        in: [...ADMIN_TEAM_CARD_SLUGS],
-        mode: 'insensitive',
-      },
+/** Team Cards list is slug-only — no other admin-portfolio cards. */
+export function buildAdminTeamCardsScopeWhere(): Prisma.ProfileWhereInput {
+  return {
+    slug: {
+      in: [...ADMIN_TEAM_CARD_SLUGS],
+      mode: 'insensitive',
     },
-  ]
-
-  if (staffIdList.length) {
-    or.push({ companyUserId: { in: staffIdList } })
   }
-
-  return { OR: or }
 }

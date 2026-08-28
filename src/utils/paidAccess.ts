@@ -2,6 +2,7 @@ export function isPaidAccess(
   sub:
     | {
         endsAt?: Date | string | null
+        trialEndsAt?: Date | string | null
         provider?: string | null
         stripeStatus?: string | null
       }
@@ -21,6 +22,16 @@ export function isPaidAccess(
   const status = String(sub.stripeStatus || '')
     .trim()
     .toLowerCase()
+
+  const trialEndsAt = sub.trialEndsAt ? new Date(sub.trialEndsAt).getTime() : null
+  const complimentaryActive =
+    trialEndsAt != null && Number.isFinite(trialEndsAt) && trialEndsAt > now && provider === 'admin'
+  if (complimentaryActive && (status === 'trialing' || status === 'active')) {
+    return true
+  }
+  if (trialEndsAt != null && Number.isFinite(trialEndsAt) && trialEndsAt <= now && provider === 'admin') {
+    return false
+  }
 
   if (provider === 'stripe') {
     return status === 'active' || status === 'trialing'
@@ -46,6 +57,7 @@ export function resolveSubscriptionAccessStatus(
   sub:
     | {
         endsAt?: Date | string | null
+        trialEndsAt?: Date | string | null
         provider?: string | null
         stripeStatus?: string | null
       }

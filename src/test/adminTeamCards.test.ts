@@ -3,7 +3,8 @@ import { describe, it } from 'node:test'
 import { ADMIN_TEAM_CARD_SLUGS, buildAdminTeamCardsScopeWhere } from '../constants/adminTeamCards'
 
 describe('adminTeamCards', () => {
-  it('lists the curated VBizMe team portfolio slugs', () => {
+  it('lists exactly eight VBizMe team portfolio slugs', () => {
+    assert.equal(ADMIN_TEAM_CARD_SLUGS.length, 8)
     assert.deepEqual(
       [...ADMIN_TEAM_CARD_SLUGS],
       [
@@ -19,30 +20,12 @@ describe('adminTeamCards', () => {
     )
   })
 
-  it('includes curated slugs and admin-assigned portfolio cards for Team Cards scope', () => {
-    assert.deepEqual(buildAdminTeamCardsScopeWhere(['admin-1']), {
-      OR: [
-        {
-          slug: {
-            in: [...ADMIN_TEAM_CARD_SLUGS],
-            mode: 'insensitive',
-          },
-        },
-        { companyUserId: { in: ['admin-1'] } },
-      ],
-    })
-  })
-
-  it('keeps slug allowlist when no staff ids are available', () => {
-    assert.deepEqual(buildAdminTeamCardsScopeWhere({ length: 0 } as string[]), {
-      OR: [
-        {
-          slug: {
-            in: [...ADMIN_TEAM_CARD_SLUGS],
-            mode: 'insensitive',
-          },
-        },
-      ],
+  it('scopes Team Cards to slug allowlist only', () => {
+    assert.deepEqual(buildAdminTeamCardsScopeWhere(), {
+      slug: {
+        in: [...ADMIN_TEAM_CARD_SLUGS],
+        mode: 'insensitive',
+      },
     })
   })
 })

@@ -666,24 +666,14 @@ const resolveAdminPortfolioUserIds = async (userId: string, role: string): Promi
 
 /**
  * VBizMe Team Cards / scope=created for staff:
- * Curated portfolio slugs plus cards assigned under an admin portfolio.
+ * Exactly the eight curated portfolio slugs — nothing else.
  */
 const resolveCreatedScopeWhere = async (userId: string, role: string): Promise<Prisma.ProfileWhereInput> => {
   if (!isAdminRole(role)) {
     return { createdById: userId }
   }
 
-  const staffIds = new Set<string>(await resolveAdminPortfolioUserIds(userId, role))
-  const allStaff = await prisma.user.findMany({
-    where: {
-      deletedAt: null,
-      role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-    },
-    select: { id: true },
-  })
-  for (const row of allStaff) staffIds.add(row.id)
-
-  return buildAdminTeamCardsScopeWhere([...staffIds])
+  return buildAdminTeamCardsScopeWhere()
 }
 
 const resolveOwnershipWhere = async (

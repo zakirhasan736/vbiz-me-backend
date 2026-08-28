@@ -137,6 +137,29 @@ const seedPackages = async (): Promise<void> => {
     logger.info(`Synced per-file upload caps on ${seededFileSize} package(s) (max_file_size_mb)`)
   }
 
+  const CATALOG_PRICES: Record<string, { monthlyPrice: number; signupFeeCents: number }> = {
+    corporate: { monthlyPrice: 995, signupFeeCents: 15900 },
+    'professional-concierge': { monthlyPrice: 995, signupFeeCents: 15900 },
+    professional: { monthlyPrice: 800, signupFeeCents: 1000 },
+  }
+  let syncedPrices = 0
+  for (const pkg of packages) {
+    const slug = (pkg.slug || '').trim().toLowerCase()
+    const defaults = CATALOG_PRICES[slug]
+    if (!defaults) continue
+    await prisma.package.update({
+      where: { id: pkg.id },
+      data: {
+        monthlyPrice: defaults.monthlyPrice,
+        signupFeeCents: defaults.signupFeeCents,
+      },
+    })
+    syncedPrices += 1
+  }
+  if (syncedPrices) {
+    logger.info(`Synced catalog prices on ${syncedPrices} package(s)`)
+  }
+
   const defaultCard = await prisma.profile.findFirst({
     where: { slug: { equals: DEFAULT_AI_ASSISTANCE_SLUG, mode: 'insensitive' } },
     select: { id: true },

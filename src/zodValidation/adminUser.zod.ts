@@ -28,6 +28,8 @@ const listAdminUsersQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(8),
 })
 
+const freePeriodUnit = z.enum(['days', 'months', 'years'] as const)
+
 const createAdminUser = z
   .object({
     name: z.string().trim().min(1, 'Name is required'),
@@ -47,6 +49,10 @@ const createAdminUser = z
       (value) => (value === '' || value === undefined ? undefined : value),
       z.number().int().min(0).nullable().optional()
     ),
+    freePeriodAmount: z.coerce.number().int().min(0).max(10000).optional(),
+    freePeriodUnit: freePeriodUnit.optional(),
+    freePeriodLifetime: z.boolean().optional(),
+    sendPaymentLinkNow: z.boolean().optional(),
     featureOverrides: z
       .array(
         z.object({
@@ -67,6 +73,7 @@ const updateAdminUser = z
     name: z.string().trim().min(1, 'Name cannot be empty').optional(),
     email: z.string().trim().email('Valid email is required').optional(),
     role: ownerRole.optional(),
+    packageId: z.string().trim().min(1).optional(),
     companyName: z.string().trim().max(200).optional().nullable(),
     password: z.preprocess(
       (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
@@ -81,6 +88,10 @@ const updateAdminUser = z
       (value) => (value === '' || value === undefined ? undefined : value),
       z.number().int().min(0).nullable().optional()
     ),
+    freePeriodAmount: z.coerce.number().int().min(0).max(10000).optional(),
+    freePeriodUnit: freePeriodUnit.optional(),
+    freePeriodLifetime: z.boolean().optional(),
+    clearFreePeriod: z.boolean().optional(),
     featureOverrides: z
       .array(
         z.object({
@@ -96,11 +107,16 @@ const updateAdminUser = z
       data.name !== undefined ||
       data.email !== undefined ||
       data.role !== undefined ||
+      data.packageId !== undefined ||
       data.companyName !== undefined ||
       data.password !== undefined ||
       data.cardLimit !== undefined ||
       data.negotiatedMonthlyCents !== undefined ||
       data.negotiatedSignupFeeCents !== undefined ||
+      data.freePeriodAmount !== undefined ||
+      data.freePeriodUnit !== undefined ||
+      data.freePeriodLifetime !== undefined ||
+      data.clearFreePeriod !== undefined ||
       data.featureOverrides !== undefined,
     {
       message: 'At least one field to update is required',

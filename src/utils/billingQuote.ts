@@ -1,24 +1,28 @@
 import type { OwnerMode } from '../constants/packageOwnerMode'
 
 export function resolveMonthlyCents(input: {
-  ownerMode: OwnerMode | null | undefined
+  ownerMode?: OwnerMode | null | undefined
   packageMonthlyCents?: number | null
   negotiatedMonthlyCents?: number | null
+  honorNegotiated?: boolean
 }): number {
   const catalog = Math.max(0, Math.round(Number(input.packageMonthlyCents) || 0))
-  if (input.ownerMode === 'corporate' && input.negotiatedMonthlyCents != null) {
+  const honor = input.honorNegotiated ?? input.ownerMode === 'corporate'
+  if (honor && input.negotiatedMonthlyCents != null) {
     return Math.max(0, Math.round(Number(input.negotiatedMonthlyCents) || 0))
   }
   return catalog
 }
 
 export function resolveSignupFeeCents(input: {
-  ownerMode: OwnerMode | null | undefined
+  ownerMode?: OwnerMode | null | undefined
   packageSignupFeeCents?: number | null
   negotiatedSignupFeeCents?: number | null
+  honorNegotiated?: boolean
 }): number {
   const catalog = Math.max(0, Math.round(Number(input.packageSignupFeeCents) || 0))
-  if (input.ownerMode === 'corporate' && input.negotiatedSignupFeeCents != null) {
+  const honor = input.honorNegotiated ?? input.ownerMode === 'corporate'
+  if (honor && input.negotiatedSignupFeeCents != null) {
     return Math.max(0, Math.round(Number(input.negotiatedSignupFeeCents) || 0))
   }
   return catalog
@@ -54,25 +58,37 @@ export function packageRequiresStripe(
   )
 }
 
-export function adminAssignBilling(pkg: {
-  monthlyPrice?: number | null
-  signupFeeCents?: number | null
-  ownerMode?: OwnerMode | null
-  negotiatedMonthlyCents?: number | null
-  negotiatedSignupFeeCents?: number | null
-}): {
+export function adminAssignBilling(
+  pkg: {
+    monthlyPrice?: number | null
+    signupFeeCents?: number | null
+    ownerMode?: OwnerMode | null
+    negotiatedMonthlyCents?: number | null
+    negotiatedSignupFeeCents?: number | null
+  },
+  options?: { trialEndsAt?: Date | null }
+): {
   provider: 'stripe' | 'admin'
-  stripeStatus: 'incomplete' | 'active'
+  stripeStatus: 'incomplete' | 'active' | 'trialing'
 } {
+  const trialEndsAt = options?.trialEndsAt
+  const complimentary =
+    trialEndsAt instanceof Date && Number.isFinite(trialEndsAt.getTime()) && trialEndsAt.getTime() > Date.now()
+  if (complimentary) {
+    return { provider: 'admin', stripeStatus: 'trialing' }
+  }
+
   const monthlyCents = resolveMonthlyCents({
     ownerMode: pkg.ownerMode,
     packageMonthlyCents: pkg.monthlyPrice,
     negotiatedMonthlyCents: pkg.negotiatedMonthlyCents,
+    honorNegotiated: true,
   })
   const signupFeeCents = resolveSignupFeeCents({
     ownerMode: pkg.ownerMode,
     packageSignupFeeCents: pkg.signupFeeCents,
     negotiatedSignupFeeCents: pkg.negotiatedSignupFeeCents,
+    honorNegotiated: true,
   })
   if (monthlyCents > 0 || signupFeeCents > 0) {
     return { provider: 'stripe', stripeStatus: 'incomplete' }

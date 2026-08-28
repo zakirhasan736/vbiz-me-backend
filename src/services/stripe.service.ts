@@ -10,6 +10,7 @@ import {
 import { isStaffRole, toApiRole, toPrismaRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { resolveFirstInvoiceCents, resolveMonthlyCents, resolveSignupFeeCents } from '../utils/billingQuote'
+import { isComplimentaryTrialActive } from '../utils/freePeriod'
 import logger from '../utils/logger'
 import { isPaidAccess } from '../utils/paidAccess'
 import { prisma } from '../utils/prisma'
@@ -30,12 +31,14 @@ function quoteAgreement(
   const monthlyCents = resolveMonthlyCents({
     ownerMode,
     packageMonthlyCents: pkg.monthlyPrice,
-    negotiatedMonthlyCents: ownerMode === 'corporate' ? existing?.negotiatedMonthlyCents : null,
+    negotiatedMonthlyCents: existing?.negotiatedMonthlyCents ?? null,
+    honorNegotiated: existing?.negotiatedMonthlyCents != null,
   })
   const signupFeeCents = resolveSignupFeeCents({
     ownerMode,
     packageSignupFeeCents: pkg.signupFeeCents,
-    negotiatedSignupFeeCents: ownerMode === 'corporate' ? existing?.negotiatedSignupFeeCents : null,
+    negotiatedSignupFeeCents: existing?.negotiatedSignupFeeCents ?? null,
+    honorNegotiated: existing?.negotiatedSignupFeeCents != null,
   })
   return { ownerMode, monthlyCents, signupFeeCents }
 }
@@ -154,7 +157,7 @@ const createCheckoutSession = async (
     return { url: null, assigned: true as const, firstInvoiceCents: 0, recurringCents: 0 }
   }
 
-  if (existing && isPaidAccess(existing) && existing.packageId === pkg.id) {
+  if (existing && isPaidAccess(existing) && !isComplimentaryTrialActive(existing) && existing.packageId === pkg.id) {
     throw new AppError(400, 'You already have this package.')
   }
 
@@ -224,7 +227,9 @@ const createPaymentLinkForUser = async (userId: string) => {
 
   const existing = await latestSubscription(userId)
   if (!existing?.packageId) throw new AppError(400, 'Assign a package before generating a payment link.')
-  if (isPaidAccess(existing)) throw new AppError(400, 'This account is already paid.')
+  if (isPaidAccess(existing) && !isComplimentaryTrialActive(existing)) {
+    throw new AppError(400, 'This account is already paid.')
+  }
 
   return createCheckoutSession(userId, role, existing.packageId, { kind: 'admin_payment_link' })
 }

@@ -100,6 +100,7 @@ const assignPackageSubscription = async (
     cardLimit?: number | null
     negotiatedMonthlyCents?: number | null
     negotiatedSignupFeeCents?: number | null
+    trialEndsAt?: Date | null
   }
 ) => {
   const pkg = await loadAssignablePackage(packageId)
@@ -120,21 +121,25 @@ const assignPackageSubscription = async (
   }
 
   const negotiatedMonthlyCents =
-    ownerMode === 'corporate' && options?.negotiatedMonthlyCents != null
+    options?.negotiatedMonthlyCents != null
       ? Math.max(0, Math.round(Number(options.negotiatedMonthlyCents) || 0))
       : null
   const negotiatedSignupFeeCents =
-    ownerMode === 'corporate' && options?.negotiatedSignupFeeCents != null
+    options?.negotiatedSignupFeeCents != null
       ? Math.max(0, Math.round(Number(options.negotiatedSignupFeeCents) || 0))
       : null
+  const trialEndsAt = options?.trialEndsAt ?? null
 
-  const billing = adminAssignBilling({
-    monthlyPrice: pkg.monthlyPrice,
-    signupFeeCents: pkg.signupFeeCents,
-    ownerMode,
-    negotiatedMonthlyCents,
-    negotiatedSignupFeeCents,
-  })
+  const billing = adminAssignBilling(
+    {
+      monthlyPrice: pkg.monthlyPrice,
+      signupFeeCents: pkg.signupFeeCents,
+      ownerMode,
+      negotiatedMonthlyCents,
+      negotiatedSignupFeeCents,
+    },
+    { trialEndsAt }
+  )
 
   return prisma.subscription.create({
     data: {
@@ -144,6 +149,7 @@ const assignPackageSubscription = async (
       provider: billing.provider,
       stripeStatus: billing.stripeStatus,
       endsAt: null,
+      trialEndsAt,
       ...(quantity != null ? { quantity } : {}),
       ...(negotiatedMonthlyCents != null ? { negotiatedMonthlyCents } : {}),
       ...(negotiatedSignupFeeCents != null ? { negotiatedSignupFeeCents } : {}),
@@ -152,11 +158,39 @@ const assignPackageSubscription = async (
   })
 }
 
+const changePackageSubscription = async (
+  userId: string,
+  packageId: string,
+  options?: {
+    cardLimit?: number | null
+    negotiatedMonthlyCents?: number | null
+    negotiatedSignupFeeCents?: number | null
+    trialEndsAt?: Date | null
+  }
+) => {
+  const now = new Date()
+  const existing = await prisma.subscription.findFirst({
+    where: activeSubscriptionWhere(userId, now),
+    orderBy: { createdAt: 'desc' },
+  })
+  if (existing?.packageId === packageId) {
+    return existing
+  }
+  if (existing) {
+    await prisma.subscription.update({
+      where: { id: existing.id },
+      data: { endsAt: now },
+    })
+  }
+  return assignPackageSubscription(userId, packageId, options)
+}
+
 const subscriptionService = {
   ensureCorporateStarterSubscription,
   ensureSingleStarterSubscription,
   ensureOwnerStarterSubscription,
   assignPackageSubscription,
+  changePackageSubscription,
   loadAssignablePackage,
   CORPORATE_STARTER_SLUG,
   SINGLE_STARTER_SLUG,
