@@ -652,6 +652,30 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
     throw new AppError(400, 'Cannot change admin role from this endpoint')
   }
 
+  if (body.packageId && (existing.role === PrismaUserRole.ADMIN || existing.role === PrismaUserRole.SUPER_ADMIN)) {
+    throw new AppError(400, 'Cannot change package for admin accounts')
+  }
+
+  if (
+    body.packageId &&
+    existing.role !== PrismaUserRole.VCARD_OWNER &&
+    existing.role !== PrismaUserRole.CORPORATE_OWNER
+  ) {
+    throw new AppError(400, 'Package changes apply only to card owner accounts')
+  }
+
+  if (body.packageId) {
+    const targetPkg = await subscriptionService.loadAssignablePackage(body.packageId)
+    const targetOwnerMode = resolveOwnerMode(targetPkg)
+    if (targetOwnerMode === 'corporate') {
+      const companyName =
+        body.companyName !== undefined ? body.companyName?.trim() || null : existing.companyName?.trim() || null
+      if (!companyName) {
+        throw new AppError(400, 'Company / organization is required for Corporate accounts')
+      }
+    }
+  }
+
   if (body.email) {
     const email = body.email.trim().toLowerCase()
     if (email !== existing.email) {
@@ -683,22 +707,19 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
     select: adminUserRowSelect(),
   })
 
-  if (body.cardLimit !== undefined) {
-    await setCorporateCardLimit(user.id, toApiRole(user.role), body.cardLimit)
-  }
-  if (body.negotiatedMonthlyCents !== undefined) {
-    await setNegotiatedMonthlyCents(user.id, toApiRole(user.role), body.negotiatedMonthlyCents)
-  }
-  if (body.negotiatedSignupFeeCents !== undefined) {
-    await setNegotiatedSignupFeeCents(user.id, toApiRole(user.role), body.negotiatedSignupFeeCents)
-  }
-  if (body.featureOverrides !== undefined) {
-    await replaceCorporateFeatureOverrides(user.id, toApiRole(user.role), body.featureOverrides)
-  }
+  let packageChanged = false
+  let targetOwnerMode: OwnerMode | null = null
 
   if (body.packageId) {
+    const currentSubscription = await prisma.subscription.findFirst({
+      where: { userId: id, OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] },
+      orderBy: { createdAt: 'desc' },
+      select: { packageId: true },
+    })
+    packageChanged = currentSubscription?.packageId !== body.packageId
+
     const pkg = await subscriptionService.loadAssignablePackage(body.packageId)
-    const ownerMode = resolveOwnerMode(pkg)
+    targetOwnerMode = resolveOwnerMode(pkg)
     const trialEndsAt =
       body.clearFreePeriod === true
         ? null
@@ -711,21 +732,49 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
               lifetime: body.freePeriodLifetime,
             })
           : undefined
-    await subscriptionService.changePackageSubscription(user.id, body.packageId, {
-      cardLimit: body.cardLimit,
-      negotiatedMonthlyCents: body.negotiatedMonthlyCents,
-      negotiatedSignupFeeCents: body.negotiatedSignupFeeCents,
-      ...(trialEndsAt !== undefined ? { trialEndsAt } : {}),
-    })
-    await prisma.user.update({
-      where: { id },
-      data: { role: toPrismaRole(roleForOwnerMode(ownerMode)) },
-    })
-  } else if (
-    body.clearFreePeriod ||
-    body.freePeriodAmount !== undefined ||
-    body.freePeriodUnit !== undefined ||
-    body.freePeriodLifetime !== undefined
+
+    if (packageChanged) {
+      await subscriptionService.changePackageSubscription(user.id, body.packageId, {
+        cardLimit: targetOwnerMode === 'corporate' ? body.cardLimit : undefined,
+        negotiatedMonthlyCents: targetOwnerMode === 'corporate' ? (body.negotiatedMonthlyCents ?? null) : null,
+        negotiatedSignupFeeCents: targetOwnerMode === 'corporate' ? (body.negotiatedSignupFeeCents ?? null) : null,
+        ...(trialEndsAt !== undefined ? { trialEndsAt } : {}),
+      })
+      await prisma.user.update({
+        where: { id },
+        data: { role: toPrismaRole(roleForOwnerMode(targetOwnerMode)) },
+      })
+      if (targetOwnerMode === 'single') {
+        await prisma.corporateFeatureOverride.deleteMany({ where: { userId: id } })
+      } else if (body.featureOverrides !== undefined) {
+        await replaceCorporateFeatureOverrides(user.id, roleForOwnerMode(targetOwnerMode), body.featureOverrides)
+      }
+    }
+  }
+
+  const ownerRole = targetOwnerMode ? roleForOwnerMode(targetOwnerMode) : toApiRole(user.role)
+
+  if (!packageChanged) {
+    if (body.cardLimit !== undefined) {
+      await setCorporateCardLimit(user.id, ownerRole, body.cardLimit)
+    }
+    if (body.negotiatedMonthlyCents !== undefined) {
+      await setNegotiatedMonthlyCents(user.id, ownerRole, body.negotiatedMonthlyCents)
+    }
+    if (body.negotiatedSignupFeeCents !== undefined) {
+      await setNegotiatedSignupFeeCents(user.id, ownerRole, body.negotiatedSignupFeeCents)
+    }
+    if (body.featureOverrides !== undefined) {
+      await replaceCorporateFeatureOverrides(user.id, ownerRole, body.featureOverrides)
+    }
+  }
+
+  if (
+    !body.packageId &&
+    (body.clearFreePeriod ||
+      body.freePeriodAmount !== undefined ||
+      body.freePeriodUnit !== undefined ||
+      body.freePeriodLifetime !== undefined)
   ) {
     const subscription = await prisma.subscription.findFirst({
       where: { userId: id, OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] },
@@ -777,14 +826,21 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
       negotiatedMonthlyCents: body.negotiatedMonthlyCents,
       negotiatedSignupFeeCents: body.negotiatedSignupFeeCents,
       featureOverrideCount: body.featureOverrides?.length,
+      packageId: body.packageId,
+      packageChanged,
     },
   })
 
   if (
+    packageChanged ||
     body.cardLimit !== undefined ||
     body.negotiatedMonthlyCents !== undefined ||
     body.negotiatedSignupFeeCents !== undefined ||
-    body.featureOverrides !== undefined
+    body.featureOverrides !== undefined ||
+    body.clearFreePeriod ||
+    body.freePeriodAmount !== undefined ||
+    body.freePeriodUnit !== undefined ||
+    body.freePeriodLifetime !== undefined
   ) {
     const refreshed = await prisma.user.findFirst({
       where: { id, deletedAt: null },

@@ -121,11 +121,11 @@ const assignPackageSubscription = async (
   }
 
   const negotiatedMonthlyCents =
-    options?.negotiatedMonthlyCents != null
+    ownerMode === 'corporate' && options?.negotiatedMonthlyCents != null
       ? Math.max(0, Math.round(Number(options.negotiatedMonthlyCents) || 0))
       : null
   const negotiatedSignupFeeCents =
-    options?.negotiatedSignupFeeCents != null
+    ownerMode === 'corporate' && options?.negotiatedSignupFeeCents != null
       ? Math.max(0, Math.round(Number(options.negotiatedSignupFeeCents) || 0))
       : null
   const trialEndsAt = options?.trialEndsAt ?? null
