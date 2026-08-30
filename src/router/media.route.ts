@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import multer from 'multer'
-import { MEDIA_ATTACHMENT_POLICIES, MEDIA_UPLOAD_MAX_BYTES, mediaAttachmentTypeMessage } from '../constants/mediaUpload'
+import { MEDIA_UPLOAD_MAX_BYTES } from '../constants/mediaUpload'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import { assertMediaUploadAllowed, assertUploadWithinPackageLimit } from '../services/entitlement.service'
@@ -17,27 +17,30 @@ const upload = multer({
 
 const router = Router()
 
-type UploadedMediaKind = 'image' | 'video' | 'other'
-
-const uploadedMediaKind = (file: Express.Multer.File): UploadedMediaKind => {
-  if (file.mimetype.startsWith('image/') || /\.(avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(file.originalname)) {
-    return 'image'
-  }
-  if (file.mimetype.startsWith('video/') || /\.(m4v|mov|mp4|ogv|ogg|webm)$/i.test(file.originalname)) {
-    return 'video'
-  }
-  return 'other'
+const validateAttachmentUpload = (_file: Express.Multer.File, _attachmentType?: string) => {
+  // Builder media accepts any image/video/audio/document the client sends — no mime gate.
 }
 
-const validateAttachmentUpload = (file: Express.Multer.File, attachmentType?: string) => {
-  const policy = attachmentType
-    ? MEDIA_ATTACHMENT_POLICIES[attachmentType as keyof typeof MEDIA_ATTACHMENT_POLICIES]
-    : undefined
-  if (!policy) return
-
-  if (!policy.allowedKinds.some((kind) => kind === uploadedMediaKind(file))) {
-    throw new AppError(415, mediaAttachmentTypeMessage(policy))
-  }
+const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
+  'Profile Image/Video': [
+    'profile image/video',
+    'profile picture',
+    'profile pic',
+    'profile_pic',
+    'avatar',
+    'profile image',
+    'profile',
+  ],
+  'Background Video/Image': [
+    'background video/image',
+    'background_media',
+    'bg_video',
+    'bg video',
+    'background video',
+    'background',
+  ],
+  'Intro vCard Video': ['intro vcard video', 'intro video', '2d explainer', '2d video', 'profile video', 'intro'],
+  'Background Music': ['background music', 'background audio', 'bg music', 'audio', 'music'],
 }
 
 router.use(authMiddleware.isAuthenticateUser)
@@ -84,6 +87,26 @@ router.post(
             data: { name: attachmentTypeName, slug: attachmentTypeName.toLowerCase().replace(/\s+/g, '-') },
           }))
         attachmentTypeId = type.id
+
+        // Replace prior attachments of the same builder type so clears/hydrates stay consistent.
+        const aliases = ATTACHMENT_TYPE_ALIASES[attachmentTypeName] || [attachmentTypeName.toLowerCase()]
+        const existing = await prisma.attachment.findMany({
+          where: { profileId },
+          include: { attachmentType: true },
+        })
+        for (const att of existing) {
+          const label = `${att.attachmentType?.name || ''} ${att.docName || ''}`.toLowerCase()
+          if (!aliases.some((alias) => label.includes(alias))) continue
+          const key = att.publicId?.trim()
+          if (key) {
+            try {
+              await s3Utils.destroy(key)
+            } catch {
+              /* best-effort */
+            }
+          }
+          await prisma.attachment.delete({ where: { id: att.id } })
+        }
       }
       attachment = await prisma.attachment.create({
         data: {
@@ -109,6 +132,65 @@ router.post(
       statusCode: 201,
       message: 'Uploaded',
       data: { ...result, attachment },
+    })
+  })
+)
+
+router.post(
+  '/clear',
+  catchAsyncError(async (req, res) => {
+    const profileId = String(req.body.profileId || '').trim()
+    const attachmentType = String(req.body.attachmentType || '').trim()
+    const settingKey = String(req.body.settingKey || '').trim() || undefined
+    if (!profileId) throw new AppError(400, 'profileId is required')
+    if (!attachmentType) throw new AppError(400, 'attachmentType is required')
+    if (!req.user) throw new AppError(401, 'Unauthorized')
+
+    await profileService.getOwnedLite(profileId, req.user.id, req.user.role)
+
+    const aliases = ATTACHMENT_TYPE_ALIASES[attachmentType] || [attachmentType.toLowerCase()]
+    const attachments = await prisma.attachment.findMany({
+      where: { profileId },
+      include: { attachmentType: true },
+    })
+
+    const matched = attachments.filter((att) => {
+      const label = `${att.attachmentType?.name || ''} ${att.docName || ''}`.toLowerCase()
+      return aliases.some((alias) => label.includes(alias))
+    })
+
+    for (const att of matched) {
+      const key = att.publicId?.trim()
+      if (key) {
+        try {
+          await s3Utils.destroy(key)
+        } catch {
+          /* best-effort S3 delete */
+        }
+      }
+      await prisma.attachment.delete({ where: { id: att.id } })
+    }
+
+    if (settingKey) {
+      await prisma.setting.upsert({
+        where: { profileId_key: { profileId, key: settingKey } },
+        create: { profileId, key: settingKey, value: '' },
+        update: { value: '' },
+      })
+    }
+
+    if (attachmentType === 'Profile Image/Video') {
+      await prisma.profile.update({
+        where: { id: profileId },
+        data: { avatar: null },
+      })
+    }
+
+    sendResponse(res, {
+      success: true,
+      statusCode: 200,
+      message: 'Media cleared',
+      data: { deleted: matched.length },
     })
   })
 )

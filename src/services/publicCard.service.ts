@@ -372,7 +372,18 @@ function resolveIntroMedia(
 ): MediaBlock {
   const enabled = isSettingEnabled(settings, 'profile_video_checkbox', 'profile_video_link_checkbox')
 
-  // Prefer settings URLs from the editor; fall back to attachments for legacy cards.
+  // Prefer settings URLs from the editor; empty string = intentional clear (no attachment fallback).
+  if (Object.prototype.hasOwnProperty.call(settings, 'intro_video_url')) {
+    const fileUrl = settings.intro_video_url?.trim()
+    if (fileUrl && !isYoutubeUrl(fileUrl)) return toMediaBlockFromUrl(fileUrl, enabled)
+    if (!fileUrl && Object.prototype.hasOwnProperty.call(settings, 'intro_youtube_url')) {
+      const youtubeUrl = settings.intro_youtube_url?.trim()
+      if (youtubeUrl) return toMediaBlockFromUrl(youtubeUrl, enabled)
+      return emptyMediaBlock()
+    }
+    if (!fileUrl) return emptyMediaBlock()
+  }
+
   const fileUrl = settings.intro_video_url?.trim()
   if (fileUrl && !isYoutubeUrl(fileUrl)) {
     return toMediaBlockFromUrl(fileUrl, enabled)
@@ -394,6 +405,12 @@ function resolveBackgroundMedia(
 ): MediaBlock {
   const enabled = isSettingEnabled(settings, 'background_video_checkbox', 'bg_video_checkbox')
 
+  if (Object.prototype.hasOwnProperty.call(settings, 'background_media_url')) {
+    const fileUrl = settings.background_media_url?.trim()
+    if (fileUrl) return toMediaBlockFromUrl(fileUrl, enabled)
+    return emptyMediaBlock()
+  }
+
   const fileUrl = settings.background_media_url?.trim()
   if (fileUrl) return toMediaBlockFromUrl(fileUrl, enabled)
 
@@ -410,6 +427,14 @@ function resolveProfileMedia(
   legacyId?: number | null
 ): MediaBlock {
   const enabled = isSettingEnabled(settings, 'profile_image_checkbox')
+
+  if (Object.prototype.hasOwnProperty.call(settings, 'profile_media_url')) {
+    const fromSettings = settings.profile_media_url?.trim()
+    if (fromSettings && isDurableMediaUrl(fromSettings)) {
+      return toMediaBlockFromUrl(fromSettings, enabled)
+    }
+    return emptyMediaBlock()
+  }
 
   const fromSettings = settings.profile_media_url?.trim()
   if (fromSettings && isDurableMediaUrl(fromSettings)) {

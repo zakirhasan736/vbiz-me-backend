@@ -1,4 +1,3 @@
-import { MEDIA_UPLOAD_TRANSPORT_MAX_BYTES } from '../constants/mediaUpload'
 import { PACKAGE_ACCESS_FEATURES, type PackageAccessKey, type PackageAccessMap } from '../constants/packageAccess'
 import {
   FEATURE_NOT_INCLUDED_MESSAGE,
@@ -18,14 +17,7 @@ import {
   staffEntitlements,
   type EffectiveEntitlements,
 } from '../utils/effectiveEntitlements'
-import {
-  catalogGateSatisfied,
-  firstDeniedFeatureKey,
-  guessUploadedKind,
-  mediaUploadCatalogGate,
-  type MediaCatalogGate,
-} from '../utils/mediaFeatureGates'
-import { maxUploadBytes } from '../utils/packageLimits'
+import { catalogGateSatisfied, firstDeniedFeatureKey, type MediaCatalogGate } from '../utils/mediaFeatureGates'
 import { isPaidAccess } from '../utils/paidAccess'
 import { prisma } from '../utils/prisma'
 
@@ -154,18 +146,10 @@ export async function assertUploadWithinPackageLimit(
   role: string | null | undefined,
   bytes: number
 ): Promise<void> {
-  if (isStaffRole(role)) return
-  // Media uploads are not gated by package max_file_size_mb — only the transport/multer ceiling applies.
+  // Builder media: no package or transport size gate — accept any upload size the reverse proxy allows.
   void userId
   void role
-  const cap = maxUploadBytes(null, MEDIA_UPLOAD_TRANSPORT_MAX_BYTES)
-  if (bytes <= cap) return
-  const maxMb = Math.max(1, Math.round(cap / (1024 * 1024)))
-  throw featureLimitReachedError(
-    `File size exceeds ${maxMb}MB for your package.`,
-    { maxBytes: cap, bytes },
-    { statusCode: 413 }
-  )
+  void bytes
 }
 
 export async function assertCatalogFeatureGate(
@@ -186,12 +170,10 @@ export async function assertMediaUploadAllowed(
   role: string | null | undefined,
   input: { attachmentType?: string | null; mimetype?: string | null; filename?: string | null }
 ): Promise<void> {
-  const gate = mediaUploadCatalogGate({
-    attachmentType: input.attachmentType,
-    kind: guessUploadedKind({ mimetype: input.mimetype, filename: input.filename }),
-  })
-  if (!gate) return
-  await assertCatalogFeatureGate(userId, role, gate)
+  // Card builder media uploads are not gated by package video/image feature flags.
+  void userId
+  void role
+  void input
 }
 
 export async function assertOwnerMode(
