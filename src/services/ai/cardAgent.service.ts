@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { assemblePublicNavOrder } from '../../constants/publicNavOrder'
 import AppError from '../../error/AppError'
 import { extractWithOcrFallback, needsServerOcr } from '../documentOcr.service'
 import {
@@ -341,7 +342,7 @@ export async function analyzeBusinessSources(input: {
   }
 
   const completeness = buildCompletenessReport({ profile, blueprint })
-  const selectedNavIds = ['home', ...tabs.map((t) => t.navId)].filter((id, i, all) => all.indexOf(id) === i)
+  const selectedNavIds = assemblePublicNavOrder(['home', 'about', ...tabs.map((t) => t.navId)])
   const fieldGraph = buildFieldGraph({ profile, recommendedTabs: tabs, selectedNavIds })
   const session = putCardSession({
     id: sessionId,

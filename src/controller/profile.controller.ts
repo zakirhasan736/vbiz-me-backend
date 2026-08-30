@@ -333,21 +333,24 @@ const checkSlug = catchAsyncError(async (req, res) => {
 
 const contacts = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const { skip, limit } = parseListQuery(req.query, { limit: 100, max: 200 })
-  const data = await profileService.listContacts(
-    req.user.id,
-    req.user.role,
-    req.query.profileId ? String(req.query.profileId) : undefined,
-    skip + limit
-  )
-  const page = data.slice(skip, skip + limit)
+  const { skip, limit } = parseListQuery(req.query, { limit: 50, max: 100 })
+  const sourceRaw = String(req.query.source || 'guest_save')
+    .trim()
+    .toLowerCase()
+  const source = sourceRaw === 'note' ? 'note' : sourceRaw === 'all' ? 'all' : 'guest_save'
+  const data = await profileService.listContactsPage(req.user.id, req.user.role, {
+    profileId: req.query.profileId ? String(req.query.profileId) : undefined,
+    skip,
+    limit,
+    source: source === 'all' ? 'guest_save' : source,
+  })
   sendResponse(res, {
     success: true,
     statusCode: 200,
     message: 'Contacts fetched',
-    data: page,
-    totalDoc: data.length,
-    meta: listMeta(skip, limit, data.length),
+    data: data.items,
+    totalDoc: data.total,
+    meta: listMeta(data.skip, data.limit, data.total),
   })
 })
 

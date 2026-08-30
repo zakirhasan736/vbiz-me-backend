@@ -1,4 +1,5 @@
 import { createHash } from 'crypto'
+import { assemblePublicNavOrder } from '../../constants/publicNavOrder'
 import AppError from '../../error/AppError'
 import {
   cardActivationIssueMessage,
@@ -513,13 +514,11 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       architecture: { ...architecture, masterBusinessProfile: profile },
       userProgress: progress({ ...session, userProgress: progress(session, 'understand', 'done') }, 'design', 'done'),
     })
-    const selectedNavIds = [
+    const selectedNavIds = assemblePublicNavOrder([
       'home',
       'about',
       ...architecture.recommendedTabs.map((t) => t.navId).filter((id) => id !== 'public-cards' && id !== 'my-info'),
-      'public-cards',
-      'my-info',
-    ].filter((id, index, all) => all.indexOf(id) === index)
+    ])
     const fieldGraph = buildFieldGraph({
       profile,
       recommendedTabs: architecture.recommendedTabs,
@@ -581,14 +580,11 @@ export async function setSelectedTabs(jobId: string, selectedNavIds: string[], u
   assertJobOwner(session, userId)
   if (!session.businessProfile) throw new AppError(409, 'The card plan is not ready yet.')
   const allowed = new Set(TAB_CATALOG.map((t) => t.navId))
-  const nextIds = [
+  const unique = assemblePublicNavOrder([
     'home',
     'about',
     ...selectedNavIds.filter((id) => allowed.has(id) && id !== 'public-cards' && id !== 'my-info'),
-    'public-cards',
-    'my-info',
-  ]
-  const unique = [...new Set(nextIds)]
+  ])
   let fields = session.fieldGraph.filter((field) => unique.includes(field.tabId))
   for (const navId of unique) {
     if (!fields.some((f) => f.tabId === navId)) {
@@ -859,13 +855,11 @@ export async function checkpointJob(input: {
   }
   if (Array.isArray(input.selectedNavIds) && input.selectedNavIds.length) {
     const allowed = new Set(TAB_CATALOG.map((t) => t.navId))
-    patch.selectedNavIds = [
+    patch.selectedNavIds = assemblePublicNavOrder([
       'home',
       'about',
       ...input.selectedNavIds.filter((id) => allowed.has(id) && id !== 'public-cards' && id !== 'my-info'),
-      'public-cards',
-      'my-info',
-    ].filter((id, index, all) => all.indexOf(id) === index)
+    ])
   }
   const updated = await save(session, patch)
   return publicJob(updated)

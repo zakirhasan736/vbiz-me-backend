@@ -1,8 +1,15 @@
 import { z } from 'zod'
 
+const emptyToUndefined = (value: unknown) => (value === '' || value == null ? undefined : value)
+
 const listQuery = z.object({
-  q: z.string().trim().min(3, 'Search requires at least 3 characters').max(200).optional(),
-  profileId: z.string().trim().min(1).optional(),
+  q: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().min(3, 'Search requires at least 3 characters').max(200).optional()
+  ),
+  profileId: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  skip: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 })
 
 const patchLeadBody = z

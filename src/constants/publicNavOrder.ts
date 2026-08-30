@@ -1,4 +1,7 @@
-/** Default public-card tab order. Missing tabs are skipped; extras keep their relative order after FAQ. */
+/**
+ * Default create-card / builder tab order (ordering template only).
+ * Selected/AI tabs are filtered into this sequence; missing ids are skipped — never “enable all”.
+ */
 export const CANONICAL_PUBLIC_NAV_IDS = [
   'home',
   'about',
@@ -9,6 +12,14 @@ export const CANONICAL_PUBLIC_NAV_IDS = [
   'reviews',
   'bbb',
   'faq',
+  'education',
+  'work',
+  'skills',
+  'blog',
+  'profile',
+  'certificates',
+  'resume',
+  'content-media',
 ] as const
 
 export const PINNED_END_NAV_IDS = ['public-cards', 'my-info'] as const
@@ -34,8 +45,9 @@ function ensureRequiredNavIds(ids: string[]): string[] {
 }
 
 /**
- * Home → FAQ in default sequence, then any other enabled tabs, then Public Cards, then My Info.
- * Missing canonical tabs are skipped so a card only shows tabs it actually has.
+ * Sort enabled tabs by the default catalog order; skip missing catalog tabs.
+ * Unknown / industry extras keep relative input order after catalog tabs.
+ * Always ends with Public Cards, then My Info.
  */
 export function applyCanonicalPublicNavOrder(ids: string[]): string[] {
   return assemblePublicNavOrder(ids, { preserveCustom: false })

@@ -521,6 +521,8 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
       email: profile.email,
       phone: profile.phone,
       address: profile.address,
+      zip_code: profile.zipCode ?? address?.zipCode ?? null,
+      zipCode: profile.zipCode ?? address?.zipCode ?? null,
       country: address?.country ?? null,
       website: profile.website,
       company_name: profile.companyName,
@@ -598,7 +600,14 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
         },
         whatsapp: { enabled: Boolean(profile.whatsapp), value: profile.whatsapp || '' },
         website: { enabled: Boolean(profile.website), value: profile.website || '', url: profile.website || undefined },
-        address: { enabled: Boolean(profile.address), value: profile.address || '' },
+        address: {
+          enabled: Boolean(profile.address || profile.zipCode),
+          value: [profile.address, profile.zipCode].filter((part) => Boolean(part?.trim())).join(', '),
+        },
+        zip_code: {
+          enabled: Boolean(profile.zipCode),
+          value: profile.zipCode || '',
+        },
       },
       actions: parseMyInfoActions(settings),
       additional_fields: profile.socialLinks.map((s) => ({
@@ -913,8 +922,10 @@ const getProfileAiData = async (profileId: string) => {
     whatsapp: profile.whatsapp,
     website: profile.website,
     // Laravel-compatible `location`; keep `address` alias for Node callers
-    location: profile.address,
+    location: [profile.address, profile.zipCode].filter((part) => Boolean(part?.trim())).join(', ') || profile.address,
     address: profile.address,
+    zipCode: profile.zipCode,
+    zip_code: profile.zipCode,
     about: profile.about,
     socials: {
       facebook: profile.facebook,
@@ -2261,7 +2272,7 @@ const saveContactCard = async (
           profileUrl,
           imageUrl,
           note: profile.about || '',
-          address: profile.address || '',
+          address: [profile.address, profile.zipCode].filter((part) => Boolean(part?.trim())).join(', ') || '',
         },
       },
     },

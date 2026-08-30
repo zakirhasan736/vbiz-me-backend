@@ -1036,23 +1036,28 @@ const assertCardCanActivate = (input: CardActivationInput) => {
   if (issues.length) throw new AppError(422, cardActivationIssueMessage(issues))
 }
 
-/** Upsert the primary Address row used for street address (line1). */
+/** Upsert the primary Address row used for street address (line1) + zip. */
 const upsertPrimaryAddress = async (
   profileId: string,
   fields: {
     address?: unknown
+    zipCode?: unknown
   }
 ) => {
-  const line1 = asOptionalString(fields.address)
+  const addressProvided = Object.prototype.hasOwnProperty.call(fields, 'address')
+  const zipProvided = Object.prototype.hasOwnProperty.call(fields, 'zipCode')
+  const line1 = addressProvided ? (asOptionalString(fields.address) ?? null) : undefined
+  const zipCode = zipProvided ? (asOptionalString(fields.zipCode) ?? null) : undefined
 
-  if (!line1) return
+  if (line1 === undefined && zipCode === undefined) return
 
   const existing =
     (await prisma.address.findFirst({ where: { profileId, isPrimary: true } })) ||
     (await prisma.address.findFirst({ where: { profileId }, orderBy: { createdAt: 'asc' } }))
 
   const data = {
-    line1: line1 ?? null,
+    ...(line1 !== undefined ? { line1 } : {}),
+    ...(zipCode !== undefined ? { zipCode } : {}),
     isPrimary: true,
   }
 
@@ -1060,7 +1065,12 @@ const upsertPrimaryAddress = async (
     await prisma.address.update({ where: { id: existing.id }, data })
   } else {
     await prisma.address.create({
-      data: { profileId, ...data },
+      data: {
+        profileId,
+        line1: line1 ?? null,
+        zipCode: zipCode ?? null,
+        isPrimary: true,
+      },
     })
   }
 }
@@ -1114,7 +1124,6 @@ const create = async (
     profileSettings,
     city: _city,
     state: _state,
-    zipCode: _zipCode,
     skipCreateContactRules: skipCreateContactRulesRaw,
     ...raw
   } = input
@@ -1223,6 +1232,7 @@ const create = async (
         whatsapp: raw.whatsapp as string | undefined,
         website: raw.website as string | undefined,
         address: raw.address as string | undefined,
+        zipCode: raw.zipCode as string | undefined,
         about: raw.about as string | undefined,
         prof: raw.prof as string | undefined,
         dob: raw.dob ? new Date(String(raw.dob)) : undefined,
@@ -1265,6 +1275,7 @@ const create = async (
 
   await upsertPrimaryAddress(profile.id, {
     address: raw.address,
+    zipCode: raw.zipCode,
   })
 
   if (normalizedSettings) {
@@ -1720,6 +1731,7 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
     designation: source.designation || undefined,
     website: source.website || undefined,
     address: source.address || undefined,
+    zipCode: source.zipCode || undefined,
     about: source.about || undefined,
     prof: source.prof || undefined,
     template: source.template,
@@ -1800,7 +1812,7 @@ const update = async (
     throw new AppError(403, 'This card is suspended. Contact an administrator to restore access.')
   }
 
-  const { settings, profileSettings, city: _city, state: _state, zipCode: _zipCode, status: rawStatus, ...raw } = data
+  const { settings, profileSettings, city: _city, state: _state, status: rawStatus, ...raw } = data
   const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
   const requestedStatus = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : undefined
@@ -1812,6 +1824,12 @@ const update = async (
   if ('dob' in raw) {
     const dobValue = raw.dob
     profileData.dob = dobValue === null || dobValue === undefined || dobValue === '' ? null : new Date(String(dobValue))
+  }
+
+  if ('zipCode' in raw) {
+    const zipValue = raw.zipCode
+    profileData.zipCode =
+      zipValue === null || zipValue === undefined || String(zipValue).trim() === '' ? null : String(zipValue).trim()
   }
 
   if (typeof profileData.slug === 'string') {
@@ -1947,9 +1965,10 @@ const update = async (
     })
   }
 
-  if ('address' in raw) {
+  if ('address' in raw || 'zipCode' in raw) {
     await upsertPrimaryAddress(profileId, {
-      address: raw.address,
+      ...('address' in raw ? { address: raw.address } : {}),
+      ...('zipCode' in raw ? { zipCode: raw.zipCode } : {}),
     })
   }
 
@@ -2930,6 +2949,91 @@ const listContacts = async (
   return [...fromGuests, ...fromContacts, ...fromNotes].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   )
+}
+
+const listContactsPage = async (
+  userId: string,
+  role: string,
+  options?: {
+    profileId?: string
+    skip?: number
+    limit?: number
+    source?: 'guest_save' | 'note' | 'contact' | 'all'
+    scope?: ProfileListScope
+  }
+): Promise<{ items: OwnerContactRow[]; total: number; skip: number; limit: number }> => {
+  const skip = Math.max(0, options?.skip ?? 0)
+  const limit = Math.min(100, Math.max(1, options?.limit ?? 50))
+  const source = options?.source ?? 'guest_save'
+  const profileId = options?.profileId
+
+  if (profileId) await getOwnedLite(profileId, userId, role)
+  const ids = profileId ? [profileId] : await listOwnedProfileIds(userId, role, options?.scope)
+  if (emptyProfileIds(ids)) {
+    return { items: [], total: 0, skip, limit }
+  }
+
+  const profileSelect = { select: { id: true, name: true, slug: true } } as const
+  const where = { profileId: { in: ids } }
+
+  if (source === 'note') {
+    const [total, rows] = await Promise.all([
+      prisma.userNote.count({ where }),
+      prisma.userNote.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: { profile: profileSelect },
+      }),
+    ])
+    const items: OwnerContactRow[] = rows.map((n) => {
+      const admin = readOwnerContactMeta(n.meta)
+      return {
+        id: n.id,
+        name: metaString(n.meta, 'fullName', 'name') || 'Guest',
+        email: metaString(n.meta, 'email'),
+        phone: metaString(n.meta, 'phone', 'phoneNumber'),
+        message: n.content,
+        createdAt: n.createdAt,
+        profile: n.profile,
+        source: 'note' as const,
+        privateNotes: admin.privateNotes,
+        lastReply: admin.lastReply,
+        lastReplyAt: admin.lastReplyAt,
+      }
+    })
+    return { items, total, skip, limit }
+  }
+
+  // Default / guest_save: platform contact saves (GuestUserData) — matches admin leads totals.
+  const [total, rows] = await Promise.all([
+    prisma.guestUserData.count({ where }),
+    prisma.guestUserData.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      include: { profile: profileSelect },
+    }),
+  ])
+  const items: OwnerContactRow[] = rows.map((g) => {
+    const admin = readOwnerContactMeta(g.meta)
+    return {
+      id: g.id,
+      name: g.fullName,
+      email: g.email,
+      phone: g.phone,
+      message: null,
+      createdAt: g.createdAt,
+      profile: g.profile,
+      source: 'guest_save' as const,
+      privateNotes: admin.privateNotes,
+      lastReply: admin.lastReply,
+      lastReplyAt: admin.lastReplyAt,
+    }
+  })
+  return { items, total, skip, limit }
 }
 
 const patchContact = async (
@@ -3961,6 +4065,7 @@ const profileService = {
   getConsolidatedEngagement,
   listRecentEngagement,
   listContacts,
+  listContactsPage,
   patchContact,
   exportContactsCsv,
   listTeamNotices,

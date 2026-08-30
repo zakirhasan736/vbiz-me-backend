@@ -15,11 +15,35 @@ describe('canonical public nav order', () => {
     )
   })
 
-  it('puts extras after FAQ and pins Public Cards then My Info', () => {
+  it('orders selected tabs by the default catalog and skips missing ones', () => {
     assert.deepEqual(
-      applyCanonicalPublicNavOrder(['home', 'education', 'faq', 'services', 'gallery', 'reviews', 'videos']),
-      ['home', 'about', 'services', 'gallery', 'videos', 'reviews', 'faq', 'education', 'public-cards', 'my-info']
+      applyCanonicalPublicNavOrder(['home', 'education', 'faq', 'services', 'gallery', 'reviews', 'videos', 'blog']),
+      [
+        'home',
+        'about',
+        'services',
+        'gallery',
+        'videos',
+        'reviews',
+        'faq',
+        'education',
+        'blog',
+        'public-cards',
+        'my-info',
+      ]
     )
+  })
+
+  it('puts unknown extras after catalog tabs and pins Public Cards then My Info', () => {
+    assert.deepEqual(applyCanonicalPublicNavOrder(['home', 'contact-us', 'services', 'skills']), [
+      'home',
+      'about',
+      'services',
+      'skills',
+      'contact-us',
+      'public-cards',
+      'my-info',
+    ])
   })
 
   it('preserves a customized middle order while still pinning the last two tabs', () => {

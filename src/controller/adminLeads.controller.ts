@@ -1,10 +1,10 @@
 import AppError from '../error/AppError'
 import adminLeadsService from '../services/adminLeads.service'
+import { assertModule } from '../utils/adminAccess'
 import catchAsyncError from '../utils/catchAsyncError'
+import { listMeta } from '../utils/pagination'
 import sendResponse from '../utils/sendResponse'
 import AdminLeadsZodSchema from '../zodValidation/adminLeads.zod'
-
-import { assertModule } from '../utils/adminAccess'
 
 function assertLeadsAccess(user: Express.User) {
   assertModule(user.role, user.allowedModules, 'leads')
@@ -26,8 +26,9 @@ const listSaves = catchAsyncError(async (req, res) => {
     success: true,
     statusCode: 200,
     message: 'Contact saves fetched',
-    data,
-    totalDoc: data.length,
+    data: data.items,
+    totalDoc: data.total,
+    meta: listMeta(data.skip, data.limit, data.total),
   })
 })
 
@@ -57,8 +58,9 @@ const listNotes = catchAsyncError(async (req, res) => {
     success: true,
     statusCode: 200,
     message: 'Lead notes fetched',
-    data,
-    totalDoc: data.length,
+    data: data.items,
+    totalDoc: data.total,
+    meta: listMeta(data.skip, data.limit, data.total),
   })
 })
 

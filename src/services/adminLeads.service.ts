@@ -252,7 +252,16 @@ const getStats = async () => {
   }
 }
 
-const listSaves = async (query: ListLeadsQuery): Promise<AdminLeadRow[]> => {
+export type AdminLeadsPage = {
+  items: AdminLeadRow[]
+  total: number
+  skip: number
+  limit: number
+}
+
+const listSaves = async (query: ListLeadsQuery): Promise<AdminLeadsPage> => {
+  const skip = Math.max(0, query.skip ?? 0)
+  const limit = Math.min(100, Math.max(1, query.limit ?? 50))
   const tokens = searchTokens(query.q)
   const where: Prisma.GuestUserDataWhereInput = {
     ...(query.profileId ? { profileId: query.profileId } : {}),
@@ -273,16 +282,23 @@ const listSaves = async (query: ListLeadsQuery): Promise<AdminLeadRow[]> => {
       : {}),
   }
 
-  const rows = await prisma.guestUserData.findMany({
-    where,
-    orderBy: { createdAt: 'desc' },
-    include: { profile: profileInclude },
-  })
+  const [total, rows] = await Promise.all([
+    prisma.guestUserData.count({ where }),
+    prisma.guestUserData.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      include: { profile: profileInclude },
+    }),
+  ])
 
-  return rows.map(mapGuestSave)
+  return { items: rows.map(mapGuestSave), total, skip, limit }
 }
 
-const listNotes = async (query: ListLeadsQuery): Promise<AdminLeadRow[]> => {
+const listNotes = async (query: ListLeadsQuery): Promise<AdminLeadsPage> => {
+  const skip = Math.max(0, query.skip ?? 0)
+  const limit = Math.min(100, Math.max(1, query.limit ?? 50))
   const tokens = searchTokens(query.q)
   const where: Prisma.UserNoteWhereInput = {
     ...(query.profileId ? { profileId: query.profileId } : {}),
@@ -298,13 +314,18 @@ const listNotes = async (query: ListLeadsQuery): Promise<AdminLeadRow[]> => {
       : {}),
   }
 
-  const rows = await prisma.userNote.findMany({
-    where,
-    orderBy: { createdAt: 'desc' },
-    include: { profile: profileInclude },
-  })
+  const [total, rows] = await Promise.all([
+    prisma.userNote.count({ where }),
+    prisma.userNote.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      include: { profile: profileInclude },
+    }),
+  ])
 
-  return rows.map(mapGuestNote)
+  return { items: rows.map(mapGuestNote), total, skip, limit }
 }
 
 const patchSave = async (id: string, body: PatchLeadBody): Promise<AdminLeadRow> => {

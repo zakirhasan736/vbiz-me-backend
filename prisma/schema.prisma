@@ -283,6 +283,7 @@ model Profile {
   avatar              String?
   colorCode           String    @default("#212121")
   address             String?
+  zipCode             String?
   about               String?
   isEmploy            Boolean   @default(false)
   designation         String?
@@ -381,6 +382,7 @@ model Address {
   label     String?
   line1     String?
   line2     String?
+  zipCode   String?
   country   String?
   isPrimary Boolean  @default(false)
   createdAt DateTime @default(now())
