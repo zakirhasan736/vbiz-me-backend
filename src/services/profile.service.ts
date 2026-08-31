@@ -560,9 +560,14 @@ const listInclude = {
   status: { select: { id: true, name: true } },
   profession: true,
   profileSettings: true,
-  settings: true,
-  socialLinks: { orderBy: { sortOrder: 'asc' as const } },
-  attachments: { include: { attachmentType: true } },
+  settings: {
+    where: { key: { in: ['profile_media_url', 'background_media_url'] } },
+  },
+  attachments: {
+    include: { attachmentType: true },
+    orderBy: { updatedAt: 'desc' as const },
+    take: 12,
+  },
   _count: { select: { services: true, portfolios: true, posts: true } },
 } satisfies Prisma.ProfileInclude
 
@@ -649,23 +654,26 @@ const isStaff = (role: string) => role === 'admin' || role === 'super-admin'
 
 const resolveAdminPortfolioUserIds = async (userId: string, role: string): Promise<string[]> => {
   const ids = new Set<string>([userId])
+  const isSuperAdmin = role === 'super-admin' || role === 'SUPER_ADMIN'
 
-  const invited = await prisma.user.findMany({
-    where: {
-      createdById: userId,
-      role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-    },
-    select: { id: true },
-  })
-  for (const row of invited) ids.add(row.id)
-
-  if (role === 'super-admin' || role === 'SUPER_ADMIN') {
-    const staff = await prisma.user.findMany({
-      where: { role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] } },
+  const [invited, staff] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        createdById: userId,
+        role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+      },
       select: { id: true },
-    })
-    for (const row of staff) ids.add(row.id)
-  }
+    }),
+    isSuperAdmin
+      ? prisma.user.findMany({
+          where: { role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] } },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+  ])
+
+  for (const row of invited) ids.add(row.id)
+  for (const row of staff) ids.add(row.id)
 
   return [...ids]
 }
@@ -852,19 +860,27 @@ const listProfilesPage = async (
   const sortDir = filters.sortDir ?? 'desc'
   const where = await buildListFiltersWhere(userId, role, filters)
 
-  const [rows, total, capacity] = await Promise.all([
+  const orderBy = { [sortBy]: sortDir } as Prisma.ProfileOrderByWithRelationInput
+  const idRowsQuery = prisma.profile.findMany({
+    where,
+    select: { id: true },
+    orderBy,
+    skip,
+    take: limit,
+  })
+
+  const [rows, total, capacity, metricsByProfile] = await Promise.all([
     prisma.profile.findMany({
       where,
       include: listInclude,
-      orderBy: { [sortBy]: sortDir },
+      orderBy,
       skip,
       take: limit,
     }),
     prisma.profile.count({ where }),
     getCardCapacity(userId, role),
+    idRowsQuery.then((idRows) => loadProfileEngagementMetrics(idRows.map((p) => p.id))),
   ])
-
-  const metricsByProfile = await loadProfileEngagementMetrics(rows.map((p) => p.id))
 
   return {
     items: rows.map((profile) => {
@@ -1057,9 +1073,10 @@ const upsertPrimaryAddress = async (
 
   if (line1 === undefined && zipCode === undefined) return
 
-  const existing =
-    (await prisma.address.findFirst({ where: { profileId, isPrimary: true } })) ||
-    (await prisma.address.findFirst({ where: { profileId }, orderBy: { createdAt: 'asc' } }))
+  const existing = await prisma.address.findFirst({
+    where: { profileId },
+    orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+  })
 
   const data = {
     ...(line1 !== undefined ? { line1 } : {}),
