@@ -16,7 +16,7 @@ import {
 import AppError from '../error/AppError'
 import { readAboutMeFeaturedMediaUrl, readAboutMeMediaFocusY } from '../utils/aboutMeMediaFocus'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
-import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
+import { listGalleriesForProfile } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
@@ -688,21 +688,31 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
       orderBy: { sortOrder: 'asc' },
     })
     .catch(() => [])
-  const hydratedGallery = fillMissingGalleryMedia(gallery, legacyPortfolio)
-  const source = galleryHasMedia(hydratedGallery)
-    ? hydratedGallery
-    : legacyPortfolio.length
-      ? legacyPortfolio
-      : hydratedGallery
-  const portfolio = source.map((item) => ({
-    title: item.title,
-    description: item.description,
-    url: item.url,
-    status: Number(item.status),
-    imageUrl: 'featuredImage' in item ? item.featuredImage : item.imageUrl,
-    attachmentUrl: item.attachmentUrl,
-    attachmentName: item.attachmentName,
-  }))
+  // Gallery is authoritative once this profile has Gallery rows.
+  // Legacy Portfolio is only a fallback when Gallery is truly empty.
+  const source = gallery.length ? gallery : legacyPortfolio
+  const portfolio = source.map((item) => {
+    const featuredImage = 'featuredImage' in item ? item.featuredImage : item.imageUrl
+    const legacyPostId = 'legacyPostId' in item && typeof item.legacyPostId === 'number' ? item.legacyPostId : null
+
+    return {
+      legacyPostId,
+      title: item.title,
+      description: item.description,
+      url: item.url,
+      status: Number(item.status),
+
+      // New Gallery field.
+      featuredImage,
+
+      // Backward-compatible frontend field.
+      imageUrl: featuredImage,
+
+      // True secondary attachment only.
+      attachmentUrl: item.attachmentUrl,
+      attachmentName: item.attachmentName,
+    }
+  })
   return { ...card, portfolio, team_notices }
 }
 
@@ -1017,16 +1027,33 @@ const getProfileAiData = async (profileId: string) => {
       toDate: formatDate(e.toDate),
       tillNow: e.tillNow,
     })),
-    portfolio: (galleries.length ? galleries : profile.portfolios).map((p) => ({
-      title: p.title,
-      description: p.description,
-      url: p.url,
-      status: Number(p.status),
-      imageUrl: 'featuredImage' in p ? p.featuredImage : p.imageUrl,
-      attachmentUrl: p.attachmentUrl,
-      attachmentName: p.attachmentName,
-      attachments: p.attachmentUrl ? { url: p.attachmentUrl, name: p.attachmentName || '' } : null,
-    })),
+    portfolio: (galleries.length ? galleries : profile.portfolios).map((p) => {
+      const featuredImage = 'featuredImage' in p ? p.featuredImage : p.imageUrl
+      const legacyPostId = 'legacyPostId' in p && typeof p.legacyPostId === 'number' ? p.legacyPostId : null
+
+      return {
+        legacyPostId,
+        title: p.title,
+        description: p.description,
+        url: p.url,
+        status: Number(p.status),
+
+        // New Gallery field.
+        featuredImage,
+
+        // Backward-compatible frontend field.
+        imageUrl: featuredImage,
+
+        attachmentUrl: p.attachmentUrl,
+        attachmentName: p.attachmentName,
+        attachments: p.attachmentUrl
+          ? {
+              url: p.attachmentUrl,
+              name: p.attachmentName || '',
+            }
+          : null,
+      }
+    }),
     customSections: [],
     ...(assistant.enabled
       ? {
@@ -1406,18 +1433,15 @@ const getDynamicSection = async (
         status: String(p.status),
         createdAt: p.createdAt,
       }))
-      const hydrated = fillMissingGalleryMedia(galleryRows, legacy)
-      const items: PublicGalleryRow[] = galleryHasMedia(hydrated)
-        ? hydrated
-        : mappedLegacy.length
-          ? mappedLegacy
-          : hydrated
+      // Gallery is authoritative once this profile has Gallery rows.
+      // Legacy Portfolio is only a fallback when Gallery is truly empty.
+      const items: PublicGalleryRow[] = galleryRows.length ? galleryRows : mappedLegacy
       logPublicSectionMedia(
         name,
         profileId,
         { items },
         {
-          source: galleryHasMedia(hydrated) ? 'gallery' : mappedLegacy.length ? 'portfolio' : 'gallery-empty',
+          source: galleryRows.length ? 'gallery' : mappedLegacy.length ? 'portfolio' : 'gallery-empty',
           galleryDb: galleryRows.map((row) => ({
             id: row.id,
             title: row.title,

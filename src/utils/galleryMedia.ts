@@ -81,6 +81,7 @@ const GALLERY_SAFE_SELECT = {
   sortOrder: true,
   createdAt: true,
   updatedAt: true,
+  legacyPostId: true,
 } as const
 
 const withGalleryDefaults = (row: {
@@ -96,16 +97,17 @@ const withGalleryDefaults = (row: {
   sortOrder: number
   createdAt: Date
   updatedAt: Date
+  legacyPostId?: number | null
 }): LiveGalleryRow => ({
   ...row,
   attachmentUrl: row.attachmentUrl ?? null,
   attachmentName: row.attachmentName ?? null,
   deletedAt: null,
-  legacyPostId: null,
+  legacyPostId: row.legacyPostId ?? null,
   metas: null,
 })
 
-/** Load gallery rows without selecting columns the live DB may not have (`legacyPostId`, `deletedAt`, `metas`). */
+/** Load Gallery rows with legacyPostId while keeping schema-drift fallbacks for older optional columns. */
 export async function listGalleriesForProfile(profileId: string, take = 200): Promise<LiveGalleryRow[]> {
   const limit = Math.min(200, Math.max(1, take))
   try {
@@ -134,6 +136,7 @@ export async function listGalleriesForProfile(profileId: string, take = 200): Pr
         sortOrder: number
         createdAt: Date
         updatedAt: Date
+        legacyPostId: number | null
       }>
     >`
       SELECT
@@ -148,7 +151,8 @@ export async function listGalleriesForProfile(profileId: string, take = 200): Pr
         status::text AS status,
         "sortOrder",
         "createdAt",
-        "updatedAt"
+        "updatedAt",
+        "legacyPostId"
       FROM "Gallery"
       WHERE "profileId" = ${profileId}
       ORDER BY "sortOrder" ASC, "createdAt" DESC
