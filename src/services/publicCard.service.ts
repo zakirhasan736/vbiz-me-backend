@@ -36,7 +36,8 @@ const RETURNING_SAVED_GUEST_DELAY_MS = 3 * 24 * 60 * 60 * 1000
 const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
   profile: ['profile picture', 'profile pic', 'profile_pic', 'avatar', 'profile image', 'profile'],
   background: ['background video/image', 'background_media', 'bg_video', 'bg video', 'background video', 'background'],
-  intro: ['intro vcard video', 'intro video', '2d explainer', '2d video', 'profile video', 'intro'],
+  intro: ['intro vcard video', 'intro video', 'profile video', 'intro'],
+  explainer: ['2d video explainer', '2d explainer', '2d video', 'video explainer', 'video_explainer'],
   audio: ['background music', 'background audio', 'bg music', 'audio', 'music'],
 }
 
@@ -1182,75 +1183,36 @@ const getDynamicSection = async (
         })
       }
       if (!rows.length) {
-        const settingRows = await prisma.setting.findMany({
-          where: { profileId, key: { in: ['intro_video_url', 'intro_youtube_url'] } },
-          select: { key: true, value: true },
-        })
-        const settings: Record<string, string> = {}
-        for (const row of settingRows) {
-          if (row.value?.trim()) settings[row.key] = row.value.trim()
-        }
-        const introFile = settings.intro_video_url || ''
-        const introYoutube = settings.intro_youtube_url || ''
-        const { videoUrl, external } = splitExplainerMedia(
-          introFile && !isYoutubeUrl(introFile) ? introFile : '',
-          introYoutube || (isYoutubeUrl(introFile) ? introFile : '')
-        )
-        const resolvedVideo = videoUrl ? abs(videoUrl, null, 7, 'Featured Image') || videoUrl : ''
-        if (resolvedVideo || external) {
-          const asset = mediaAsset('profile-media', '2D Video Explainer', resolvedVideo || null)
-          return {
-            type: '2D Video Explainer',
-            postType: { name: '2D Video Explainer', title: '2D Video Explainer' },
-            profile: { id: profileId },
-            video: resolvedVideo ? { doc_name: 'Explainer', url: resolvedVideo } : { doc_name: '', url: '' },
-            external_url: { url: external, has_external_url: Boolean(external) },
-            items: [
-              {
-                id: 'profile-media',
-                title: '2D Video Explainer',
-                description: null,
-                status: 1,
-                featured_image: asset,
-                general_info_url: external || resolvedVideo || '',
-                attachments: asset ? [asset] : [],
-                created_at: new Date(),
-                video_url: resolvedVideo,
-              },
-            ],
-          }
-        }
+        return null
       }
-      if (rows.length) {
-        const items = rows.map((p) => {
-          const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
-          const urlFromField = abs(p.url, null, 7, 'Featured Image')
-          const { videoUrl, external } = splitExplainerMedia(featuredFromField, urlFromField || p.url)
-          const asset = mediaAsset(p.id, p.title, videoUrl || null)
-          return {
-            id: p.id,
-            title: p.title,
-            description: p.description,
-            status: p.status === '0' ? 0 : 1,
-            featured_image: asset,
-            general_info_url: external || p.url,
-            attachments: asset ? [asset] : [],
-            created_at: p.createdAt,
-            video_url: videoUrl,
-            external_url: external,
-          }
-        })
-        const first = items[0]
-        const videoUrl = first.video_url || ''
-        const external = first.external_url || null
+      const items = rows.map((p) => {
+        const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
+        const urlFromField = abs(p.url, null, 7, 'Featured Image')
+        const { videoUrl, external } = splitExplainerMedia(featuredFromField, urlFromField || p.url)
+        const asset = mediaAsset(p.id, p.title, videoUrl || null)
         return {
-          type: '2D Video Explainer',
-          postType: { name: '2D Video Explainer', title: '2D Video Explainer' },
-          profile: { id: profileId },
-          video: videoUrl ? { doc_name: first.title || 'Explainer', url: videoUrl } : { doc_name: '', url: '' },
-          external_url: { url: external, has_external_url: Boolean(external) },
-          items,
+          id: p.id,
+          title: p.title,
+          description: p.description,
+          status: p.status === '0' ? 0 : 1,
+          featured_image: asset,
+          general_info_url: external || p.url,
+          attachments: asset ? [asset] : [],
+          created_at: p.createdAt,
+          video_url: videoUrl,
+          external_url: external,
         }
+      })
+      const first = items[0]
+      const videoUrl = first.video_url || ''
+      const external = first.external_url || null
+      return {
+        type: '2D Video Explainer',
+        postType: { name: '2D Video Explainer', title: '2D Video Explainer' },
+        profile: { id: profileId },
+        video: videoUrl ? { doc_name: first.title || 'Explainer', url: videoUrl } : { doc_name: '', url: '' },
+        external_url: { url: external, has_external_url: Boolean(external) },
+        items,
       }
     } catch (error) {
       if (!isPrismaSchemaDrift(error)) throw error

@@ -36,7 +36,8 @@ const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
     'background video',
     'background',
   ],
-  'Intro vCard Video': ['intro vcard video', 'intro video', '2d explainer', '2d video', 'profile video', 'intro'],
+  'Intro vCard Video': ['intro vcard video', 'intro video', 'profile video', 'intro'],
+  '2D Video Explainer': ['2d video explainer', '2d explainer', '2d video', 'video explainer', 'video_explainer'],
   'Background Music': ['background music', 'background audio', 'bg music', 'audio', 'music'],
 }
 

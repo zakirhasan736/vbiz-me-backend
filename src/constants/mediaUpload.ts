@@ -18,6 +18,11 @@ export const MEDIA_ATTACHMENT_POLICIES = {
     allowedLabel: 'video',
     allowedKinds: ['video'] as const,
   },
+  '2D Video Explainer': {
+    label: '2D explainer video',
+    allowedLabel: 'video',
+    allowedKinds: ['video'] as const,
+  },
 } as const
 
 export type MediaAttachmentPolicy = (typeof MEDIA_ATTACHMENT_POLICIES)[keyof typeof MEDIA_ATTACHMENT_POLICIES]

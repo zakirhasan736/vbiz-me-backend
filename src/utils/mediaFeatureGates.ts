@@ -45,7 +45,10 @@ export function mediaUploadCatalogGate(input: {
     return input.kind === 'video' ? { all: ['allow_background_video_upload'] } : null
   }
   if (type === 'intro vcard video') {
-    return input.kind === 'video' ? { any: ['allow_intro_video_upload', 'allow_2d_explainer'] } : null
+    return input.kind === 'video' ? { all: ['allow_intro_video_upload'] } : null
+  }
+  if (type === '2d video explainer') {
+    return input.kind === 'video' ? { all: ['allow_2d_explainer'] } : null
   }
   if (type === 'background music') {
     return input.kind === 'audio' || input.kind === 'other'
@@ -56,8 +59,8 @@ export function mediaUploadCatalogGate(input: {
 }
 
 const SETTING_GATES: Record<string, MediaCatalogGate | ((value: string) => MediaCatalogGate | null)> = {
-  intro_youtube_url: { any: ['allow_intro_video_upload', 'allow_2d_explainer'] },
-  intro_video_url: { any: ['allow_intro_video_upload', 'allow_2d_explainer'] },
+  intro_youtube_url: { all: ['allow_intro_video_upload'] },
+  intro_video_url: { all: ['allow_intro_video_upload'] },
   background_music_url: { all: ['allow_yt_bg_music_upload'] },
   background_music_file_url: { all: ['allow_music_upload', 'allow_bg_music_upload'] },
   background_media_url: (value) => (isVideoLikeUrl(value) ? { all: ['allow_background_video_upload'] } : null),

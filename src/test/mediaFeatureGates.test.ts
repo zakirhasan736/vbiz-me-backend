@@ -27,7 +27,10 @@ describe('media catalog gates', () => {
       all: ['allow_background_video_upload'],
     })
     assert.deepEqual(mediaUploadCatalogGate({ attachmentType: 'Intro vCard Video', kind: 'video' }), {
-      any: ['allow_intro_video_upload', 'allow_2d_explainer'],
+      all: ['allow_intro_video_upload'],
+    })
+    assert.deepEqual(mediaUploadCatalogGate({ attachmentType: '2D Video Explainer', kind: 'video' }), {
+      all: ['allow_2d_explainer'],
     })
     assert.deepEqual(mediaUploadCatalogGate({ attachmentType: 'Background Music', kind: 'audio' }), {
       all: ['allow_music_upload', 'allow_bg_music_upload'],
@@ -44,7 +47,7 @@ describe('media catalog gates', () => {
   it('locks newly filled YouTube and music setting URLs without touching existing values', () => {
     const introGates = catalogGatesForSettingChange('intro_youtube_url', 'https://youtu.be/abc', '')
     assert.equal(introGates.length, 1)
-    assert.deepEqual(introGates[0], { any: ['allow_intro_video_upload', 'allow_2d_explainer'] })
+    assert.deepEqual(introGates[0], { all: ['allow_intro_video_upload'] })
     assert.deepEqual(
       catalogGatesForSettingChange('intro_youtube_url', 'https://youtu.be/abc', 'https://youtu.be/abc'),
       []
@@ -58,7 +61,7 @@ describe('media catalog gates', () => {
       fields: { 'Intro vCard Video': { customValue: 'https://cdn.example.com/intro.mp4' } },
     })
     const gates = catalogGatesForSettingChange('display_settings_json', next, previous)
-    assert.deepEqual(gates, [{ any: ['allow_intro_video_upload', 'allow_2d_explainer'] }])
+    assert.deepEqual(gates, [{ all: ['allow_intro_video_upload'] }])
   })
 
   it('locks switching wallpaper style to video', () => {
