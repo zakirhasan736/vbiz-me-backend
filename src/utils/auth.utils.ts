@@ -20,7 +20,7 @@ const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED'
 
 const cookieOptions: CookieOptions = {
   sameSite: config.NODE_ENV === 'production' ? 'none' : 'strict',
-  maxAge: 1000 * 24 * 60 * 60 * 30,
+  maxAge: 1000 * 60 * 60 * 24,
   httpOnly: true,
   secure: config.NODE_ENV === 'production',
 }

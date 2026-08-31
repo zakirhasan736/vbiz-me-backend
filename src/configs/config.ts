@@ -128,11 +128,11 @@ export default {
   },
   REFRESH_TOKEN: {
     SECRET: REFRESH_TOKEN_SECRET,
-    EXPIRY: '7d',
+    EXPIRY: '24h',
   },
   ACCESS_TOKEN: {
     SECRET: ACCESS_TOKEN_SECRET,
-    EXPIRY: '1h',
+    EXPIRY: '24h',
   },
   FRONTEND_URL: frontendUrl,
   CORS_ORIGINS: corsOrigins,
