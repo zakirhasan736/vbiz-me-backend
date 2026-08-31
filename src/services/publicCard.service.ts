@@ -23,6 +23,7 @@ import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
+import { resolveProfileSharePreviewImageUrl, SHARE_PREVIEW_IMAGE_SETTING_KEY } from '../utils/sharePreviewImage'
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
 import { mediaFromProfile } from './push.service'
@@ -663,9 +664,12 @@ const getMyCardBySlug = async (slug: string) => {
 const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>>) => {
   // viewCount is incremented only when a unique guest is tracked via trackEvent(profile_view).
   const card = await buildMyCard(profile)
-  const aboutFeaturedMediaUrl = await readAboutMeFeaturedMediaUrl(prisma, profile.id, card.settings)
-  if (aboutFeaturedMediaUrl) {
-    card.settings = { ...card.settings, about_me_featured_media_url: aboutFeaturedMediaUrl }
+  const aboutFeaturedMediaUrl = await readAboutMeFeaturedMediaUrl(prisma, profile.id, card.settings, profile.legacyId)
+  const sharePreviewImageUrl = await resolveProfileSharePreviewImageUrl(profile.id, profile.legacyId, card)
+  card.settings = {
+    ...card.settings,
+    ...(aboutFeaturedMediaUrl ? { about_me_featured_media_url: aboutFeaturedMediaUrl } : {}),
+    ...(sharePreviewImageUrl ? { [SHARE_PREVIEW_IMAGE_SETTING_KEY]: sharePreviewImageUrl } : {}),
   }
   const [team_notices, gallery] = await Promise.all([
     profileService.listPublicTeamNoticesForProfile(

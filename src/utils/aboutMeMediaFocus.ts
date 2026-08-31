@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client'
+import { ensureAbsoluteMediaUrl } from './mediaUrl'
 import { isPrismaColumnMismatch, isPrismaMissingTable } from './prismaErrors'
 
 export const ABOUT_ME_MEDIA_FOCUS_Y_KEY = 'about_me_featured_media_focus_y'
@@ -50,16 +51,26 @@ export async function upsertAboutMeMediaFocusY(
 export async function readAboutMeFeaturedMediaUrl(
   prisma: PrismaClient,
   profileId: string,
-  settings?: Record<string, string>
+  settings?: Record<string, string>,
+  legacyId?: number | null
 ): Promise<string | null> {
-  const fromSettings = settings?.[ABOUT_ME_MEDIA_URL_KEY]?.trim()
+  const isVideo = (url: string) =>
+    /\.(mp4|webm|mov|m4v|ogv|ogg)(\?|#|$)/i.test(url) || url.includes('/backgroundVideos/')
+
+  const normalize = (raw: string | null | undefined): string | null => {
+    const trimmed = raw?.trim()
+    if (!trimmed || isVideo(trimmed)) return null
+    return ensureAbsoluteMediaUrl(trimmed, { profileLegacyId: legacyId ?? null, docName: trimmed }) || trimmed
+  }
+
+  const fromSettings = normalize(settings?.[ABOUT_ME_MEDIA_URL_KEY])
   if (fromSettings) return fromSettings
 
   const settingRow = await prisma.setting.findUnique({
     where: { profileId_key: { profileId, key: ABOUT_ME_MEDIA_URL_KEY } },
     select: { value: true },
   })
-  const fromSettingRow = settingRow?.value?.trim()
+  const fromSettingRow = normalize(settingRow?.value)
   if (fromSettingRow) return fromSettingRow
 
   try {
@@ -68,7 +79,7 @@ export async function readAboutMeFeaturedMediaUrl(
       select: { featuredMediaUrl: true, status: true },
     })
     if (!about || about.status === '0') return null
-    return about.featuredMediaUrl?.trim() || null
+    return normalize(about.featuredMediaUrl)
   } catch (error) {
     if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
     return null
