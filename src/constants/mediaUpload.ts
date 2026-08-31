@@ -1,19 +1,6 @@
-/** Professional per-file cap for image, video, and document uploads. */
-export const MEDIA_UPLOAD_PROFESSIONAL_MAX_MB = 50
-export const MEDIA_UPLOAD_PROFESSIONAL_MAX_BYTES = MEDIA_UPLOAD_PROFESSIONAL_MAX_MB * 1024 * 1024
-
-/**
- * Multipart / reverse-proxy ceiling for unlimited packages (corporate, concierge).
- * Package rules never sum files on a card — each upload is checked on its own.
- */
-export const MEDIA_UPLOAD_TRANSPORT_MAX_MB = 512
-export const MEDIA_UPLOAD_TRANSPORT_MAX_BYTES = MEDIA_UPLOAD_TRANSPORT_MAX_MB * 1024 * 1024
-
-/** Multer limit: must accept the largest allowed per-file upload. */
-export const MEDIA_UPLOAD_MAX_MB = MEDIA_UPLOAD_TRANSPORT_MAX_MB
-export const MEDIA_UPLOAD_MAX_BYTES = MEDIA_UPLOAD_TRANSPORT_MAX_BYTES
-
-export const MEDIA_UPLOAD_TOO_LARGE_MESSAGE = `File size exceeds ${MEDIA_UPLOAD_PROFESSIONAL_MAX_MB}MB`
+/** Builder media uploads are not size-capped in application code. */
+export const MEDIA_UPLOAD_TOO_LARGE_MESSAGE =
+  'Upload was rejected. The file may be too large for the server or network proxy.'
 
 export const MEDIA_ATTACHMENT_POLICIES = {
   'Profile Image/Video': {

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { MEDIA_UPLOAD_TRANSPORT_MAX_BYTES } from '../constants/mediaUpload'
 import {
   canCreateAnotherCard,
   countFilledExtraFields,
@@ -39,10 +38,10 @@ describe('package limit helpers', () => {
     assert.equal(canCreateAnotherCard(30, 25), false)
   })
 
-  it('applies a per-file package cap and leaves unlimited packages at the transport ceiling', () => {
-    assert.equal(maxUploadBytes(null), MEDIA_UPLOAD_TRANSPORT_MAX_BYTES)
-    assert.equal(maxUploadBytes(10), 10 * 1024 * 1024)
-    assert.equal(maxUploadBytes(50), 50 * 1024 * 1024)
-    assert.equal(maxUploadBytes(999), MEDIA_UPLOAD_TRANSPORT_MAX_BYTES)
+  it('does not cap builder uploads by package file size', () => {
+    assert.equal(maxUploadBytes(null), Number.MAX_SAFE_INTEGER)
+    assert.equal(maxUploadBytes(10), Number.MAX_SAFE_INTEGER)
+    assert.equal(maxUploadBytes(50), Number.MAX_SAFE_INTEGER)
+    assert.equal(maxUploadBytes(999), Number.MAX_SAFE_INTEGER)
   })
 })

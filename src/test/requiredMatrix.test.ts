@@ -378,11 +378,10 @@ describe('required matrix: SECURITY', () => {
     assert.equal(allowsCountWrite(2, 10, 10), true)
   })
 
-  it('File-size limits enforced', () => {
+  it('Builder uploads are not package file-size capped', () => {
     const cap = maxUploadBytes(10)
-    assert.equal(cap, 10 * 1024 * 1024)
-    assert.equal(5 * 1024 * 1024 <= cap, true)
-    assert.equal(11 * 1024 * 1024 <= cap, false)
+    assert.equal(cap, Number.MAX_SAFE_INTEGER)
+    assert.equal(11 * 1024 * 1024 * 1024 <= cap, true)
   })
 
   it('Current subscription/package status checked', () => {
