@@ -70,6 +70,8 @@ const upsertAboutMeBody = z.object({
   description: z.string().max(100_000).optional().nullable(),
   featuredMediaUrl: z.string().max(2000).optional().nullable(),
   featured_image: z.string().max(2000).optional().nullable(),
+  featuredMediaFocusY: z.coerce.number().min(0).max(100).optional().nullable(),
+  featured_media_focus_y: z.coerce.number().min(0).max(100).optional().nullable(),
   status: z.string().max(20).optional().nullable(),
 })
 

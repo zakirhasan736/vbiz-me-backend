@@ -12,6 +12,12 @@ import { resolveOwnerMode } from '../constants/packageOwnerMode'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
+import {
+  ABOUT_ME_MEDIA_FOCUS_Y_KEY,
+  clampAboutMeMediaFocusY,
+  readAboutMeMediaFocusY,
+  upsertAboutMeMediaFocusY,
+} from '../utils/aboutMeMediaFocus'
 import authUtils from '../utils/auth.utils'
 import {
   cardActivationIssueMessage,
@@ -2197,22 +2203,26 @@ const replaceCollection = async <T extends Record<string, unknown>>(
   return owned
 }
 
-const serializeAboutMe = (row: {
-  id: string
-  profileId: string
-  title: string
-  description: string | null
-  featuredMediaUrl: string | null
-  status: string
-  legacyPostId: number | null
-  createdAt: Date
-  updatedAt: Date
-}) => ({
+const serializeAboutMe = (
+  row: {
+    id: string
+    profileId: string
+    title: string
+    description: string | null
+    featuredMediaUrl: string | null
+    status: string
+    legacyPostId: number | null
+    createdAt: Date
+    updatedAt: Date
+  },
+  featuredMediaFocusY: number | null = null
+) => ({
   id: row.id,
   profileId: row.profileId,
   title: row.title?.trim() || '',
   description: row.description,
   featuredMediaUrl: row.featuredMediaUrl,
+  featuredMediaFocusY,
   status: row.status,
   legacyPostId: row.legacyPostId,
   createdAt: row.createdAt,
@@ -2231,7 +2241,9 @@ const serializeAboutMeFromProfile = async (profileId: string) => {
       createdAt: true,
       updatedAt: true,
       settings: {
-        where: { key: { in: [ABOUT_ME_TITLE_KEY, ABOUT_ME_MEDIA_KEY, ABOUT_ME_STATUS_KEY] } },
+        where: {
+          key: { in: [ABOUT_ME_TITLE_KEY, ABOUT_ME_MEDIA_KEY, ABOUT_ME_STATUS_KEY, ABOUT_ME_MEDIA_FOCUS_Y_KEY] },
+        },
         select: { key: true, value: true },
       },
     },
@@ -2241,6 +2253,8 @@ const serializeAboutMeFromProfile = async (profileId: string) => {
   const description = profile.about?.trim() || ''
   const title = map[ABOUT_ME_TITLE_KEY]?.trim() || ''
   const featuredMediaUrl = map[ABOUT_ME_MEDIA_KEY]?.trim() || ''
+  const focusRaw = map[ABOUT_ME_MEDIA_FOCUS_Y_KEY]?.trim()
+  const featuredMediaFocusY = focusRaw && Number.isFinite(Number(focusRaw)) ? clampAboutMeMediaFocusY(focusRaw) : null
   if (!description && !title && !featuredMediaUrl) return null
   return {
     id: profileId,
@@ -2248,6 +2262,7 @@ const serializeAboutMeFromProfile = async (profileId: string) => {
     title: title || 'About Me',
     description: description || null,
     featuredMediaUrl: featuredMediaUrl || null,
+    featuredMediaFocusY,
     status: map[ABOUT_ME_STATUS_KEY] || '1',
     legacyPostId: null,
     createdAt: profile.createdAt,
@@ -2261,6 +2276,7 @@ const upsertAboutMeSettingsFallback = async (
     title?: string | null
     description?: string | null
     featuredMediaUrl?: string | null
+    featuredMediaFocusY?: number | null
     status?: string | null
   }
 ) => {
@@ -2286,14 +2302,18 @@ const upsertAboutMeSettingsFallback = async (
         })
       )
   )
+  await upsertAboutMeMediaFocusY(prisma, profileId, input.featuredMediaFocusY)
   return serializeAboutMeFromProfile(profileId)
 }
 
 const getAboutMe = async (profileId: string, userId: string, role: string) => {
   await getOwnedLite(profileId, userId, role)
+  const focusY = await readAboutMeMediaFocusY(prisma, profileId)
   try {
     const row = await prisma.aboutMe.findUnique({ where: { profileId } })
-    return row ? serializeAboutMe(row) : serializeAboutMeFromProfile(profileId)
+    if (row) return serializeAboutMe(row, focusY)
+    const fallback = await serializeAboutMeFromProfile(profileId)
+    return fallback
   } catch (error) {
     if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
     return serializeAboutMeFromProfile(profileId)
@@ -2308,6 +2328,7 @@ const upsertAboutMe = async (
     title?: string | null
     description?: string | null
     featuredMediaUrl?: string | null
+    featuredMediaFocusY?: number | null
     status?: string | null
   }
 ) => {
@@ -2351,6 +2372,7 @@ const upsertAboutMe = async (
       title,
       description,
       featuredMediaUrl,
+      featuredMediaFocusY: input.featuredMediaFocusY,
       status,
     })
     const profile = await prisma.profile.findUnique({
@@ -2377,7 +2399,9 @@ const upsertAboutMe = async (
     body: `${businessName} updated their About Me section.`,
   })
 
-  return serializeAboutMe(row)
+  await upsertAboutMeMediaFocusY(prisma, profileId, input.featuredMediaFocusY)
+  const focusY = await readAboutMeMediaFocusY(prisma, profileId)
+  return serializeAboutMe(row, focusY)
 }
 
 const deleteAboutMe = async (profileId: string, userId: string, role: string) => {
@@ -2389,7 +2413,10 @@ const deleteAboutMe = async (profileId: string, userId: string, role: string) =>
   }
   await prisma.profile.update({ where: { id: profileId }, data: { about: null } })
   await prisma.setting.deleteMany({
-    where: { profileId, key: { in: [ABOUT_ME_TITLE_KEY, ABOUT_ME_MEDIA_KEY, ABOUT_ME_STATUS_KEY] } },
+    where: {
+      profileId,
+      key: { in: [ABOUT_ME_TITLE_KEY, ABOUT_ME_MEDIA_KEY, ABOUT_ME_STATUS_KEY, ABOUT_ME_MEDIA_FOCUS_Y_KEY] },
+    },
   })
   return { deleted: true as const }
 }

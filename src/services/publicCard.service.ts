@@ -14,6 +14,7 @@ import {
   TAB_REGISTRY,
 } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
+import { readAboutMeFeaturedMediaUrl, readAboutMeMediaFocusY } from '../utils/aboutMeMediaFocus'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
@@ -662,6 +663,10 @@ const getMyCardBySlug = async (slug: string) => {
 const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>>) => {
   // viewCount is incremented only when a unique guest is tracked via trackEvent(profile_view).
   const card = await buildMyCard(profile)
+  const aboutFeaturedMediaUrl = await readAboutMeFeaturedMediaUrl(prisma, profile.id, card.settings)
+  if (aboutFeaturedMediaUrl) {
+    card.settings = { ...card.settings, about_me_featured_media_url: aboutFeaturedMediaUrl }
+  }
   const [team_notices, gallery] = await Promise.all([
     profileService.listPublicTeamNoticesForProfile(
       profile.id,
@@ -1554,6 +1559,7 @@ const getDynamicSection = async (
   if (registryTab?.storage === 'about_me') {
     try {
       const about = await prisma.aboutMe.findUnique({ where: { profileId } })
+      const featuredMediaFocusY = await readAboutMeMediaFocusY(prisma, profileId)
       if (!about || about.status === '0') {
         const fallback = await prisma.profile.findUnique({
           where: { id: profileId },
@@ -1580,6 +1586,7 @@ const getDynamicSection = async (
             description: about.description || '',
             status: about.status || '1',
             featured_image: about.featuredMediaUrl ? abs(about.featuredMediaUrl) : null,
+            featured_media_focus_y: featuredMediaFocusY,
           },
         ],
       }
