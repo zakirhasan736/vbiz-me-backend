@@ -1,0 +1,186 @@
+OBJECTS SCANNED: 9773
+
+================================================================================
+SEARCH: Rango Spader.jpeg
+================================================================================
+NOT FOUND
+
+================================================================================
+SEARCH: Logo-Transparency.png
+================================================================================
+KEY: vbizme/1785874683184-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-04 20:17:59+00:00
+
+KEY: vbizme/1785875132862-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-04 20:25:29+00:00
+
+KEY: vbizme/1785875631352-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-04 20:33:46+00:00
+
+KEY: vbizme/1785878060923-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-04 21:14:16+00:00
+
+KEY: vbizme/1785878060939-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-04 21:14:17+00:00
+
+KEY: vbizme/1785878141949-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-04 21:15:37+00:00
+
+KEY: vbizme/1785878145188-Logo-Transparency.png
+SIZE: 116951
+MODIFIED: 2026-08-04 21:15:40+00:00
+
+KEY: vbizme/1786827489163-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-15 20:58:10+00:00
+
+KEY: vbizme/1786827489251-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-15 20:58:10+00:00
+
+KEY: vbizme/1786827490433-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-15 20:58:11+00:00
+
+KEY: vbizme/1786827490590-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-15 20:58:11+00:00
+
+KEY: vbizme/1786827495391-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-15 20:58:16+00:00
+
+KEY: vbizme/1786827586383-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-15 20:59:47+00:00
+
+KEY: vbizme/1786827589845-Logo-Transparency.png
+SIZE: 116951
+MODIFIED: 2026-08-15 20:59:50+00:00
+
+KEY: vbizme/clients/8da68996d6f44f619aa2391cc79c82a2/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 17:31:34+00:00
+
+KEY: vbizme/portfolio/cmsuupb0m05rpcnkcxejyll7b/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 17:32:38+00:00
+
+KEY: vbizme/portfolio/cmsuupb0w05rqcnkc048d9r1j/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 17:32:45+00:00
+
+KEY: vbizme/portfolio/cmsuupd8y05ymcnkclw08mcvy/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 17:35:51+00:00
+
+KEY: vbizme/portfolios/1786916702420-Logo-Transparency.png
+SIZE: 10033
+MODIFIED: 2026-08-16 21:45:03+00:00
+
+KEY: vbizme/portfolios/1787051665824-Logo-Transparency.png
+SIZE: 10033
+MODIFIED: 2026-08-18 11:14:26+00:00
+
+KEY: vbizme/portfolios/1787054862425-Logo-Transparency.png
+SIZE: 10033
+MODIFIED: 2026-08-18 12:07:43+00:00
+
+KEY: vbizme/posts/1786915830722-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-16 21:30:31+00:00
+
+KEY: vbizme/posts/1786916601592-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-16 21:43:22+00:00
+
+KEY: vbizme/posts/1786916650761-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-16 21:44:11+00:00
+
+KEY: vbizme/posts/1787053943516-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 11:52:24+00:00
+
+KEY: vbizme/posts/1787054744265-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 12:05:45+00:00
+
+KEY: vbizme/posts/1787054806981-Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 12:06:47+00:00
+
+KEY: vbizme/profiles/1786915752570-Logo-Transparency.png
+SIZE: 116951
+MODIFIED: 2026-08-16 21:29:13+00:00
+
+KEY: vbizme/profiles/1787053860563-Logo-Transparency.png
+SIZE: 116951
+MODIFIED: 2026-08-18 11:51:01+00:00
+
+KEY: vbizme/reviews/30e5c86a038d47759be910384b1ab0da/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 18:43:13+00:00
+
+KEY: vbizme/reviews/44cd27ff58cb431c8851d9abf46128fe/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 18:43:30+00:00
+
+KEY: vbizme/reviews/68525c6908794787bffee11c34553020/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 18:44:00+00:00
+
+KEY: vbizme/reviews/6e1bd442e5ea42749e465aa8b6a906f9/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 18:44:03+00:00
+
+KEY: vbizme/reviews/ae2d0270c12949f4bc7dff3de991ca13/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 18:44:56+00:00
+
+KEY: vbizme/reviews/c696992c49384abb8d94b72960418b81/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 18:45:16+00:00
+
+KEY: vbizme/reviews/f84cadb8bd524b368718dfd27ecbaa0c/Logo-Transparency.png
+SIZE: 277032
+MODIFIED: 2026-08-18 18:45:53+00:00
+
+
+================================================================================
+SEARCH: 1787052350_6a84413ea1504
+================================================================================
+KEY: vbizme/portfolios/1787054860858-featured_1787052350_6a84413ea1504.jpg
+SIZE: 99195
+MODIFIED: 2026-08-18 12:07:41+00:00
+
+
+================================================================================
+SEARCH: 1787052578_6a844222cc1e1
+================================================================================
+KEY: vbizme/portfolios/1787054860289-featured_1787052578_6a844222cc1e1.jpg
+SIZE: 125645
+MODIFIED: 2026-08-18 12:07:41+00:00
+
+
+================================================================================
+SEARCH: 1787310810_6a8832da36456
+================================================================================
+NOT FOUND
+
+================================================================================
+SEARCH: 1787310869_6a8833157b513
+================================================================================
+NOT FOUND
+
+================================================================================
+SEARCH: 1787311019_6a8833abac368
+================================================================================
+NOT FOUND
+READ ONLY — NOTHING CHANGED

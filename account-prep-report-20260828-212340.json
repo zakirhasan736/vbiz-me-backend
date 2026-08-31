@@ -1,0 +1,20 @@
+{
+  "mode": "DRY_RUN",
+  "profiles": [261],
+  "summary": {
+    "KEEP_EXISTING": 1,
+    "NO_OLD_SUBSCRIPTION_ITEMS": 1
+  },
+  "events": [
+    {
+      "action": "KEEP_EXISTING",
+      "table": "User",
+      "legacyId": 246,
+      "newId": "cmsuup0s604tdcnkcp4sdikuw"
+    },
+    {
+      "action": "NO_OLD_SUBSCRIPTION_ITEMS",
+      "table": "SubscriptionItem"
+    }
+  ]
+}

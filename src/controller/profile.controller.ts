@@ -145,9 +145,10 @@ const replacePortfolios = catchAsyncError(async (req, res) => {
         (typeof attachments?.name === 'string' && attachments.name) ||
         null
       return {
+        type: typeof item.type === 'string' && item.type.trim() ? item.type.trim() : 'Image',
         title: item.title,
         description: item.description,
-        status: String(item.status ?? '1'),
+        status: String(typeof item.active === 'boolean' ? (item.active ? 1 : 0) : (item.status ?? '1')),
         url: item.url,
         featuredImage: typeof item.featuredImage === 'string' ? item.featuredImage : item.imageUrl,
         attachmentUrl,

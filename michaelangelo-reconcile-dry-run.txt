@@ -1,0 +1,84 @@
+
+==========================================================================================
+1. VERIFY EXISTING PORTFOLIO LINKS
+==========================================================================================
+LINK existing OLD 916 -> NEW cmtgtwr5l001l4ckcpapmqj6s title='14' sortOrder=0
+LINK existing OLD 914 -> NEW cmtgtwr5n001m4ckcqytt7u0g title='12' sortOrder=1
+LINK existing OLD 913 -> NEW cmtgtwr5q001n4ckcwf488ry4 title='vBiz Me Screenshot' sortOrder=2
+LINK existing OLD 783 -> NEW cmtgtwr5w001p4ckc5nz7em4a title='8' sortOrder=4
+LINK existing OLD 433 -> NEW cmtgtwr60001q4ckcjicdoyzx title='8' sortOrder=5
+
+==========================================================================================
+2. LOAD ALREADY-PROVEN PORTFOLIOS
+==========================================================================================
+KEEP OLD 121 -> NEW cmtgtwr6l001v4ckca37q0a0c title='3'
+KEEP OLD 123 -> NEW cmtgtwr6h001u4ckc8op59fdd title='5'
+KEEP OLD 430 -> NEW cmtgtwr6d001t4ckcud7t1wck title='4'
+KEEP OLD 431 -> NEW cmtgtwr6a001s4ckc3t2ytvvw title='6'
+KEEP OLD 432 -> NEW cmtgtwr67001r4ckcr4cb2i80 title='7'
+KEEP OLD 852 -> NEW cmtgtwr5t001o4ckcygarj8md title='9'
+
+==========================================================================================
+3. PLAN GENUINELY MISSING PORTFOLIOS
+==========================================================================================
+CREATE OLD 125 -> NEW c7a1f66d37bf04167ada4fd55 title='Rango Spader'
+CREATE OLD 912 -> NEW cf6bd3ba7669d4e58b101d171 title='Wallet Image'
+CREATE OLD 915 -> NEW c30d483bad2b04dff96a7acdf title='13'
+
+==========================================================================================
+4. PLAN LEGACY-ID LINKS
+==========================================================================================
+SET Portfolio cmtgtwr5l001l4ckcpapmqj6s legacyId=916
+SET Portfolio cmtgtwr5n001m4ckcqytt7u0g legacyId=914
+SET Portfolio cmtgtwr5q001n4ckcwf488ry4 legacyId=913
+SET Portfolio cmtgtwr5w001p4ckc5nz7em4a legacyId=783
+SET Portfolio cmtgtwr60001q4ckcjicdoyzx legacyId=433
+
+==========================================================================================
+5. PLAN ATTACHMENT RELINKS
+==========================================================================================
+RELINK Attachment 858: cmsuupaxz05rfcnkcp7x5pvq4 -> c7a1f66d37bf04167ada4fd55 (Portfolio 125)
+RELINK Attachment 2419: cmsuupcsy05whcnkcetmu49g0 -> cmtgtwr60001q4ckcjicdoyzx (Portfolio 433)
+RELINK Attachment 4599: cmsuupf1m065ocnkc4cfjhyqn -> cmtgtwr5w001p4ckc5nz7em4a (Portfolio 783)
+RELINK Attachment 5198: c3bb86634352443de945a79d2 -> cf6bd3ba7669d4e58b101d171 (Portfolio 912)
+RELINK Attachment 5199: cf0831cb269d24e3b93b5ef4c -> cmtgtwr5q001n4ckcwf488ry4 (Portfolio 913)
+RELINK Attachment 5204: caa817dd098d74c93b33798f2 -> cmtgtwr5n001m4ckcqytt7u0g (Portfolio 914)
+RELINK Attachment 5205: c557feddf5e3b44f2ad462327 -> c30d483bad2b04dff96a7acdf (Portfolio 915)
+RELINK Attachment 5206: c201e9f94c126461eb68db89c -> cmtgtwr5l001l4ckcpapmqj6s (Portfolio 916)
+
+==========================================================================================
+6. PLAN MISSING ATTACHMENT 1013
+==========================================================================================
+CREATE Attachment 1013 -> c1d6e642c8f6b41779207277f
+  parent Portfolio 125 -> c7a1f66d37bf04167ada4fd55
+  docName='Rango Spader.jpeg'
+  MEDIA STATUS: source file/url still unresolved
+
+==========================================================================================
+7. PROVEN S3 PORTFOLIO MEDIA REPAIRS
+==========================================================================================
+MEDIA Portfolio 433: https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg
+MEDIA Portfolio 783: https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg
+
+==========================================================================================
+8. FINAL PLAN
+==========================================================================================
+OLD Portfolio 121 -> NEW cmtgtwr6l001v4ckca37q0a0c
+OLD Portfolio 123 -> NEW cmtgtwr6h001u4ckc8op59fdd
+OLD Portfolio 125 -> NEW c7a1f66d37bf04167ada4fd55
+OLD Portfolio 430 -> NEW cmtgtwr6d001t4ckcud7t1wck
+OLD Portfolio 431 -> NEW cmtgtwr6a001s4ckc3t2ytvvw
+OLD Portfolio 432 -> NEW cmtgtwr67001r4ckcr4cb2i80
+OLD Portfolio 433 -> NEW cmtgtwr60001q4ckcjicdoyzx
+OLD Portfolio 783 -> NEW cmtgtwr5w001p4ckc5nz7em4a
+OLD Portfolio 852 -> NEW cmtgtwr5t001o4ckcygarj8md
+OLD Portfolio 912 -> NEW cf6bd3ba7669d4e58b101d171
+OLD Portfolio 913 -> NEW cmtgtwr5q001n4ckcwf488ry4
+OLD Portfolio 914 -> NEW cmtgtwr5n001m4ckcqytt7u0g
+OLD Portfolio 915 -> NEW c30d483bad2b04dff96a7acdf
+OLD Portfolio 916 -> NEW cmtgtwr5l001l4ckcpapmqj6s
+
+Expected Portfolio identities: 14
+Expected: 14
+
+DRY RUN ONLY — NOTHING CHANGED

@@ -1,0 +1,360 @@
+repairClientPortfolioMedia dryRun=true slug=michaelangelo-casanova-2 batch=40
+[ALREADY_S3] client "Swag Rides" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Pr Construction" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Marty Minnella" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "CES Boxing" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Mike" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Quo Vadis" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Forest Tech" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Litchfield County Liquors" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Carl Guild" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Alpha Male Kennels" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Kedar" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Black Swan" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Elegance" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Ron day" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Elite Christmas" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Yma" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "KIA" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Absolutely Mint" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Gett Excited" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "King Kevin Walsh" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Nancy" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Dana" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Shamrock Detailing" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Cocoboca" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Jevon K Thomas" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Wolf" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Cecilia" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Tommy" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Rain or shine" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Swag detailers" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Emanus" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Pro Source Pest Solutions" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Lp Insurance" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Mat Bey" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Mike Goggin" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Hunza Web X" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Scary Beaver" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "One Travel" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Houzpital" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "Moynahan Law Firm" existing S3 URL reused; metadata and relationship would be repaired
+Client batch complete: 40
+[ALREADY_S3] client "Dreams Vacations" existing S3 URL reused; metadata and relationship would be repaired
+[ALREADY_S3] client "MPM" existing S3 URL reused; metadata and relationship would be repaired
+Client batch complete: 42
+[SKIPPED] portfolio "14" no authoritative Laravel or connected Postgres attachment
+[SKIPPED] portfolio "12" no authoritative Laravel or connected Postgres attachment
+[SKIPPED] portfolio "vBiz Me Screenshot" no authoritative Laravel or connected Postgres attachment
+[SKIPPED] portfolio "9" no authoritative Laravel or connected Postgres attachment
+[SKIPPED] portfolio "8" no authoritative Laravel or connected Postgres attachment
+[SKIPPED] portfolio "8" no authoritative Laravel or connected Postgres attachment
+[SKIPPED] portfolio "7" no authoritative Laravel or connected Postgres attachment
+[SKIPPED] portfolio "6" no authoritative Laravel or connected Postgres attachment
+[SKIPPED] portfolio "4" no authoritative Laravel or connected Postgres attachment
+[SKIPPED] portfolio "5" no authoritative Laravel or connected Postgres attachment
+[SKIPPED] portfolio "3" no authoritative Laravel or connected Postgres attachment
+Portfolio batch complete: 11
+Status counts {
+  SUCCESS: 0,
+  ALREADY_S3: 42,
+  SOURCE_NOT_FOUND: 0,
+  UPLOAD_FAILED: 0,
+  DB_UPDATE_FAILED: 0,
+  AMBIGUOUS_ATTACHMENT: 0,
+  SKIPPED: 11
+}
+Client counts { total: 42, with_image: 42 }
+Portfolio counts { total: 11, with_image: 8, with_attachment: 8 }
+filename-only Client.featuredImage []
+filename-only Portfolio destinations []
+Michaelangelo validation: slug=michaelangelo-casanova-2
+Michaelangelo Client {
+  legacyServiceId: 821,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/ba196ffe010147e6bd39bbbe42a7ed26/Tommy_logo3_1760572596_68f034b4054bf.png',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 822,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/a6e185326a194541a92db03c93a360dd/wolf_logo_2_1760572906_68f035eaa9c35.jpeg',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 823,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/10e88bdb48844437b0d628083c27be8a/1_1760573278_68f0375e4711f.jpg',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 824,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/9a7560e4b70a495cb0e6891639c5c210/7938_png-2_1760573345_68f037a1874d3.png',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 825,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/15e3e9f9ff494c35923e7090527e0023/CES_LOGO_1760573402_68f037dad5694.jpeg',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 826,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/e8fc2def9a4b46f3bfb0357c6c2614ad/charles13_1760573446_68f038063e6b9.jpeg',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 829,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/82238cf27ee44fa2806bad977e8d5145/cropped-gettexcited-logo-300x239_1760573725_68f0391dee105.png',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 832,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/2b0b3644694f4516b04c684e9c85fc52/QV_2_1760573846_68f039961ae3b.png',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 846,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/e78592c2bbcc40ed9c0268b9064a8ea0/houzpital-logo-2_1760614179_68f0d723f12b5.svg',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 952,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/a3622c6273b240afa04d9a781240f46b/Jevon_Logo_2_1763663691_691f5f4bcada2.png',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 1052,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/79c7be2a296c47b7b9d4105d64f3b481/KIA_OF_EAST_HARTFORDsvg_1765632472_693d69d89c8fd.png',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 255,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/e1e8350866f74e2e83d31b35f80d8e84/onetravel-header-logo550x87-2-2.png',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Client {
+  legacyServiceId: 265,
+  destinationUrl: 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/clients/d1aa781a9bbf4708a103cf856b899a68/WhatsApp-Image-2025-02-27-at-15.42.59.jpeg',
+  destinationIsS3: true,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: false,
+  sourceExistsButNoS3Destination: false,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Portfolio {
+  legacyId: 121,
+  destinationUrl: null,
+  destinationIsS3: false,
+  primaryUrl: null,
+  secondaryUrl: null,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: true,
+  sourceExistsButNoS3Destination: true,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Portfolio {
+  legacyId: 123,
+  destinationUrl: null,
+  destinationIsS3: false,
+  primaryUrl: null,
+  secondaryUrl: null,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: true,
+  sourceExistsButNoS3Destination: true,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Portfolio {
+  legacyId: 125,
+  destinationUrl: null,
+  destinationIsS3: false,
+  primaryUrl: null,
+  secondaryUrl: null,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 2,
+  entityMissingDespiteSource: true,
+  sourceExistsButNoS3Destination: true,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Portfolio 125 all attachment records {
+  primaryUrl: null,
+  secondaryUrl: null,
+  laravelSources: [
+    {
+      id: 858,
+      attachmentTypeId: 7,
+      docName: 'Logo-Transparency.png',
+      hasPostgresRecord: true
+    },
+    {
+      id: 1013,
+      attachmentTypeId: 5,
+      docName: 'Rango Spader.jpeg',
+      hasPostgresRecord: false
+    }
+  ],
+  postgresAttachments: [
+    {
+      id: 'cmsuurdwu0kugcnkckvpuk2zd',
+      legacyId: 858,
+      attachableType: 'App\\Models\\Portfolio',
+      attachableId: 'cmsuupaxz05rfcnkcp7x5pvq4',
+      url: 'Logo-Transparency.png',
+      publicId: null,
+      isS3: false
+    }
+  ]
+}
+Michaelangelo Portfolio {
+  legacyId: 430,
+  destinationUrl: null,
+  destinationIsS3: false,
+  primaryUrl: null,
+  secondaryUrl: null,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: true,
+  sourceExistsButNoS3Destination: true,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Portfolio {
+  legacyId: 431,
+  destinationUrl: null,
+  destinationIsS3: false,
+  primaryUrl: null,
+  secondaryUrl: null,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: true,
+  sourceExistsButNoS3Destination: true,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Portfolio {
+  legacyId: 432,
+  destinationUrl: null,
+  destinationIsS3: false,
+  primaryUrl: null,
+  secondaryUrl: null,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: true,
+  sourceExistsButNoS3Destination: true,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Portfolio {
+  legacyId: 433,
+  destinationUrl: null,
+  destinationIsS3: false,
+  primaryUrl: null,
+  secondaryUrl: null,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: true,
+  sourceExistsButNoS3Destination: true,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Portfolio {
+  legacyId: 783,
+  destinationUrl: null,
+  destinationIsS3: false,
+  primaryUrl: null,
+  secondaryUrl: null,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: true,
+  sourceExistsButNoS3Destination: true,
+  sourceExistsButNoS3Attachment: true
+}
+Michaelangelo Portfolio {
+  legacyId: 852,
+  destinationUrl: null,
+  destinationIsS3: false,
+  primaryUrl: null,
+  secondaryUrl: null,
+  connectedAttachmentCount: 0,
+  s3AttachmentCount: 0,
+  laravelSourceCount: 1,
+  entityMissingDespiteSource: true,
+  sourceExistsButNoS3Destination: true,
+  sourceExistsButNoS3Attachment: true
+}

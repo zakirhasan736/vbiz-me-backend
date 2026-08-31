@@ -1,0 +1,306 @@
+{
+  "action": "KEEP_NEW",
+  "table": "Portfolio",
+  "reason": "new_not_older",
+  "legacyId": 121,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Portfolio",
+  "reason": "new_not_older",
+  "legacyId": 123,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_INSERT",
+  "table": "Portfolio",
+  "newId": "cebf727fcc3d9431996ec651b",
+  "legacyId": 125,
+  "profileLegacyId": 91,
+  "postTypeId": 5
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Portfolio",
+  "reason": "new_not_older",
+  "legacyId": 430,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Portfolio",
+  "reason": "new_not_older",
+  "legacyId": 431,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Portfolio",
+  "reason": "new_not_older",
+  "legacyId": 432,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_INSERT",
+  "table": "Portfolio",
+  "newId": "c8b45117c9b954178a35ae62d",
+  "legacyId": 433,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_INSERT",
+  "table": "Portfolio",
+  "newId": "cd32a61a49201424a88a718cf",
+  "legacyId": 783,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Portfolio",
+  "reason": "new_not_older",
+  "legacyId": 852,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_INSERT",
+  "table": "Portfolio",
+  "newId": "cbba92110f0de4d29a83515cf",
+  "legacyId": 912,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_INSERT",
+  "table": "Portfolio",
+  "newId": "cf0788daa5fb64a74aa466b6d",
+  "legacyId": 913,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_INSERT",
+  "table": "Portfolio",
+  "newId": "c0acf21124e6749319f9c6e0d",
+  "legacyId": 914,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_INSERT",
+  "table": "Portfolio",
+  "newId": "c466dbe30dfe24ee28b75a279",
+  "legacyId": 915,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_INSERT",
+  "table": "Portfolio",
+  "newId": "c74586148292345748e412db4",
+  "legacyId": 916,
+  "profileLegacyId": 91,
+  "postTypeId": 4
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Attachment",
+  "reason": "attachment_relationship_already_correct",
+  "legacyId": 854,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 121,
+  "docName": "WhatsApp Image 2025-02-28 at 13.54.28.jpeg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Attachment",
+  "reason": "attachment_relationship_already_correct",
+  "legacyId": 856,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 123,
+  "docName": "WhatsApp Image 2025-02-28 at 13.53.51.jpeg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_UPDATE_FROM_OLD",
+  "table": "Attachment",
+  "rowId": "cmsuurdwu0kugcnkckvpuk2zd",
+  "legacyId": 858,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 125,
+  "docName": "Logo-Transparency.png",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_INSERT",
+  "table": "Attachment",
+  "newId": "c277c565dc96a4bb48956a259",
+  "legacyId": 1013,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 125,
+  "docName": "Rango Spader.jpeg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Attachment",
+  "reason": "attachment_relationship_already_correct",
+  "legacyId": 2416,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 430,
+  "docName": "featured_1754102182_688d79a6e61f8.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Attachment",
+  "reason": "attachment_relationship_already_correct",
+  "legacyId": 2417,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 431,
+  "docName": "featured_1754102213_688d79c5e5f7e.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Attachment",
+  "reason": "attachment_relationship_already_correct",
+  "legacyId": 2418,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 432,
+  "docName": "featured_1754103105_688d7d419a43d.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_UPDATE_FROM_OLD",
+  "table": "Attachment",
+  "rowId": "cmsuurggi0ldccnkcezyjkvma",
+  "legacyId": 2419,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 433,
+  "docName": "featured_1754103159_688d7d770ef84.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_UPDATE_FROM_OLD",
+  "table": "Attachment",
+  "rowId": "cmsuurn8x0mq2cnkcpzelai1d",
+  "legacyId": 4599,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 783,
+  "docName": "featured_1779611406_6a12b70e008e5.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "KEEP_NEW",
+  "table": "Attachment",
+  "reason": "attachment_relationship_already_correct",
+  "legacyId": 4943,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 852,
+  "docName": "featured_1783938007_6a54bbd7578a1.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_UPDATE_FROM_OLD",
+  "table": "Attachment",
+  "rowId": "c575e71f707794386a9e60de0",
+  "legacyId": 5198,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 912,
+  "docName": "featured_1787052350_6a84413ea1504.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_UPDATE_FROM_OLD",
+  "table": "Attachment",
+  "rowId": "ccc9153453df44986bd054a96",
+  "legacyId": 5199,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 913,
+  "docName": "featured_1787052578_6a844222cc1e1.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_UPDATE_FROM_OLD",
+  "table": "Attachment",
+  "rowId": "c821788f7333649e2ae9cf80f",
+  "legacyId": 5204,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 914,
+  "docName": "featured_1787310810_6a8832da36456.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_UPDATE_FROM_OLD",
+  "table": "Attachment",
+  "rowId": "c3e81703d07754dcf99f2871c",
+  "legacyId": 5205,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 915,
+  "docName": "featured_1787310869_6a8833157b513.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------
+{
+  "action": "WOULD_UPDATE_FROM_OLD",
+  "table": "Attachment",
+  "rowId": "c16ff491e342c4d5089a095aa",
+  "legacyId": 5206,
+  "profileLegacyId": 91,
+  "attachableType": "App\\Models\\Portfolio",
+  "attachableLegacyId": 916,
+  "docName": "featured_1787311019_6a8833abac368.jpg",
+  "attachmentRelink": true
+}
+--------------------------------------------------------------------------------

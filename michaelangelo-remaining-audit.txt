@@ -1,0 +1,301 @@
+
+========================================================================
+TARGET PROFILE
+========================================================================
+{'id': 'cmsuup13204ubcnkcdd5m3dgy', 'legacyId': 91, 'name': 'Michaelangelo Casanova', 'slug': 'michaelangelo-casanova-2'}
+
+========================================================================
+CURRENT MICHAELANGELO POSTGRES PORTFOLIOS
+========================================================================
+Current Portfolio rows: 11
+{'id': 'cmtgtwr5l001l4ckcpapmqj6s', 'legacyId': None, 'title': '14', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/1788135842186-MC-Profile-Office.jpeg', 'attachmentUrl': None, 'attachmentName': None}
+{'id': 'cmtgtwr5n001m4ckcqytt7u0g', 'legacyId': None, 'title': '12', 'imageUrl': '', 'attachmentUrl': None, 'attachmentName': None}
+{'id': 'cmtgtwr5q001n4ckcwf488ry4', 'legacyId': None, 'title': 'vBiz Me Screenshot', 'imageUrl': '', 'attachmentUrl': None, 'attachmentName': None}
+{'id': 'cmtgtwr5t001o4ckcygarj8md', 'legacyId': 852, 'title': '9', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupfgo067jcnkcpl395cuo/featured_1783938007_6a54bbd7578a1.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupfgo067jcnkcpl395cuo/featured_1783938007_6a54bbd7578a1.jpg', 'attachmentName': 'featured_1783938007_6a54bbd7578a1.jpg'}
+{'id': 'cmtgtwr5w001p4ckc5nz7em4a', 'legacyId': None, 'title': '8', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}
+{'id': 'cmtgtwr60001q4ckcjicdoyzx', 'legacyId': None, 'title': '8', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}
+{'id': 'cmtgtwr67001r4ckcr4cb2i80', 'legacyId': 432, 'title': '7', 'imageUrl': '', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcss05wgcnkc5ez8bkvn/featured_1754103105_688d7d419a43d.jpg', 'attachmentName': 'featured_1754103105_688d7d419a43d.jpg'}
+{'id': 'cmtgtwr6a001s4ckc3t2ytvvw', 'legacyId': 431, 'title': '6', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsm05wfcnkcns0wjazt/featured_1754102213_688d79c5e5f7e.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsm05wfcnkcns0wjazt/featured_1754102213_688d79c5e5f7e.jpg', 'attachmentName': 'featured_1754102213_688d79c5e5f7e.jpg'}
+{'id': 'cmtgtwr6d001t4ckcud7t1wck', 'legacyId': 430, 'title': '4', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsg05wecnkcel6uu0nh/featured_1754102182_688d79a6e61f8.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsg05wecnkcel6uu0nh/featured_1754102182_688d79a6e61f8.jpg', 'attachmentName': 'featured_1754102182_688d79a6e61f8.jpg'}
+{'id': 'cmtgtwr6h001u4ckc8op59fdd', 'legacyId': 123, 'title': '5', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupaxi05recnkcr4ceriqv/WhatsApp-Image-2025-02-28-at-13.53.51.jpeg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupaxi05recnkcr4ceriqv/WhatsApp-Image-2025-02-28-at-13.53.51.jpeg', 'attachmentName': 'WhatsApp Image 2025-02-28 at 13.53.51.jpeg'}
+{'id': 'cmtgtwr6l001v4ckca37q0a0c', 'legacyId': 121, 'title': '3', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupax905rdcnkc8zwnjjcf/WhatsApp-Image-2025-02-28-at-13.54.28.jpeg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupax905rdcnkc8zwnjjcf/WhatsApp-Image-2025-02-28-at-13.54.28.jpeg', 'attachmentName': 'WhatsApp Image 2025-02-28 at 13.54.28.jpeg'}
+
+========================================================================
+OLD PORTFOLIO 125 | Rango Spader
+========================================================================
+OLD PORTFOLIO:
+{'id': 125, 'profile_id': 91, 'title': 'Rango Spader', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2025, 3, 1, 0, 18, 45), 'updated_at': datetime.datetime(2025, 3, 1, 0, 18, 45)}
+
+OLD ATTACHMENT COUNT: 2
+
+------------------------------------------------------------
+OLD ATTACHMENT: {'id': 858, 'portfolioId': 125, 'typeId': 7, 'docName': 'Logo-Transparency.png', 'createdAt': datetime.datetime(2025, 3, 1, 0, 18, 45)}
+POSTGRES ATTACHMENT: {'id': 'cmsuurdwu0kugcnkckvpuk2zd', 'legacyId': 858, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupaxz05rfcnkcp7x5pvq4', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'Logo-Transparency.png', 'url': 'Logo-Transparency.png', 'publicId': None, 'resourceType': None, 'format': None, 'extension': None, 'mimeType': None, 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000)}
+CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: cmsuupaxz05rfcnkcp7x5pvq4
+ATTACHMENT URL TYPE: FILENAME/EMPTY
+NORMALIZED FILE: logo-transparency.png
+
+------------------------------------------------------------
+OLD ATTACHMENT: {'id': 1013, 'portfolioId': 125, 'typeId': 5, 'docName': 'Rango Spader.jpeg', 'createdAt': datetime.datetime(2025, 3, 5, 14, 19, 8)}
+POSTGRES ATTACHMENT: None
+*** MISSING POSTGRES ATTACHMENT ***
+
+EXISTING LEGACY-ID MATCH:
+NONE
+
+DIRECT ATTACHABLE-ID CANDIDATES:
+NONE
+
+EXACT FULL MEDIA URL CANDIDATES:
+NONE
+
+FILENAME CANDIDATES (WEAK — NOT PROOF):
+NONE
+
+TITLE CANDIDATES (WEAK — NOT PROOF):
+NONE
+
+*** RESULT: UNRESOLVED — DO NOT WRITE ***
+
+========================================================================
+OLD PORTFOLIO 433 | 8
+========================================================================
+OLD PORTFOLIO:
+{'id': 433, 'profile_id': 91, 'title': '8', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2025, 8, 2, 2, 52, 39), 'updated_at': datetime.datetime(2025, 8, 2, 2, 52, 39)}
+
+OLD ATTACHMENT COUNT: 1
+
+------------------------------------------------------------
+OLD ATTACHMENT: {'id': 2419, 'portfolioId': 433, 'typeId': 7, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'createdAt': datetime.datetime(2025, 8, 2, 2, 52, 39)}
+POSTGRES ATTACHMENT: {'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': 261318, 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000)}
+CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: cmsuupcsy05whcnkcetmu49g0
+ATTACHMENT URL TYPE: HTTP/S3
+NORMALIZED FILE: featured_1754103159_688d7d770ef84.jpg
+
+EXISTING LEGACY-ID MATCH:
+NONE
+
+DIRECT ATTACHABLE-ID CANDIDATES:
+NONE
+
+EXACT FULL MEDIA URL CANDIDATES:
+[{'id': 'cmtgtwr5w001p4ckc5nz7em4a', 'legacyId': None, 'title': '8', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}, {'id': 'cmtgtwr60001q4ckcjicdoyzx', 'legacyId': None, 'title': '8', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}]
+
+FILENAME CANDIDATES (WEAK — NOT PROOF):
+[{'id': 'cmtgtwr5w001p4ckc5nz7em4a', 'legacyId': None, 'title': '8', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}, {'id': 'cmtgtwr60001q4ckcjicdoyzx', 'legacyId': None, 'title': '8', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}]
+
+TITLE CANDIDATES (WEAK — NOT PROOF):
+[{'id': 'cmtgtwr5w001p4ckc5nz7em4a', 'legacyId': None, 'title': '8', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}, {'id': 'cmtgtwr60001q4ckcjicdoyzx', 'legacyId': None, 'title': '8', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}]
+
+*** RESULT: UNRESOLVED — DO NOT WRITE ***
+
+========================================================================
+OLD PORTFOLIO 783 | 8
+========================================================================
+OLD PORTFOLIO:
+{'id': 783, 'profile_id': 91, 'title': '8', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 5, 24, 8, 30, 5), 'updated_at': datetime.datetime(2026, 5, 24, 8, 30, 5)}
+
+OLD ATTACHMENT COUNT: 1
+
+------------------------------------------------------------
+OLD ATTACHMENT: {'id': 4599, 'portfolioId': 783, 'typeId': 7, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'createdAt': datetime.datetime(2026, 5, 24, 8, 30, 6)}
+POSTGRES ATTACHMENT: {'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': 235131, 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000)}
+CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: cmsuupf1m065ocnkc4cfjhyqn
+ATTACHMENT URL TYPE: HTTP/S3
+NORMALIZED FILE: featured_1779611406_6a12b70e008e5.jpg
+
+EXISTING LEGACY-ID MATCH:
+NONE
+
+DIRECT ATTACHABLE-ID CANDIDATES:
+NONE
+
+EXACT FULL MEDIA URL CANDIDATES:
+NONE
+
+FILENAME CANDIDATES (WEAK — NOT PROOF):
+NONE
+
+TITLE CANDIDATES (WEAK — NOT PROOF):
+[{'id': 'cmtgtwr5w001p4ckc5nz7em4a', 'legacyId': None, 'title': '8', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}, {'id': 'cmtgtwr60001q4ckcjicdoyzx', 'legacyId': None, 'title': '8', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}]
+
+*** RESULT: UNRESOLVED — DO NOT WRITE ***
+
+========================================================================
+OLD PORTFOLIO 912 | Wallet Image
+========================================================================
+OLD PORTFOLIO:
+{'id': 912, 'profile_id': 91, 'title': 'Wallet Image', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updated_at': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+
+OLD ATTACHMENT COUNT: 1
+
+------------------------------------------------------------
+OLD ATTACHMENT: {'id': 5198, 'portfolioId': 912, 'typeId': 7, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+POSTGRES ATTACHMENT: {'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: c3bb86634352443de945a79d2
+ATTACHMENT URL TYPE: FILENAME/EMPTY
+NORMALIZED FILE: featured_1787052350_6a84413ea1504.jpg
+
+EXISTING LEGACY-ID MATCH:
+NONE
+
+DIRECT ATTACHABLE-ID CANDIDATES:
+NONE
+
+EXACT FULL MEDIA URL CANDIDATES:
+NONE
+
+FILENAME CANDIDATES (WEAK — NOT PROOF):
+NONE
+
+TITLE CANDIDATES (WEAK — NOT PROOF):
+NONE
+
+*** RESULT: UNRESOLVED — DO NOT WRITE ***
+
+========================================================================
+OLD PORTFOLIO 913 | vBiz Me Screenshot
+========================================================================
+OLD PORTFOLIO:
+{'id': 913, 'profile_id': 91, 'title': 'vBiz Me Screenshot', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 18, 11, 29, 38), 'updated_at': datetime.datetime(2026, 8, 18, 11, 29, 38)}
+
+OLD ATTACHMENT COUNT: 1
+
+------------------------------------------------------------
+OLD ATTACHMENT: {'id': 5199, 'portfolioId': 913, 'typeId': 7, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+POSTGRES ATTACHMENT: {'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: cf0831cb269d24e3b93b5ef4c
+ATTACHMENT URL TYPE: FILENAME/EMPTY
+NORMALIZED FILE: featured_1787052578_6a844222cc1e1.jpg
+
+EXISTING LEGACY-ID MATCH:
+NONE
+
+DIRECT ATTACHABLE-ID CANDIDATES:
+NONE
+
+EXACT FULL MEDIA URL CANDIDATES:
+NONE
+
+FILENAME CANDIDATES (WEAK — NOT PROOF):
+NONE
+
+TITLE CANDIDATES (WEAK — NOT PROOF):
+[{'id': 'cmtgtwr5q001n4ckcwf488ry4', 'legacyId': None, 'title': 'vBiz Me Screenshot', 'imageUrl': '', 'attachmentUrl': None, 'attachmentName': None}]
+
+*** RESULT: UNRESOLVED — DO NOT WRITE ***
+
+========================================================================
+OLD PORTFOLIO 914 | 12
+========================================================================
+OLD PORTFOLIO:
+{'id': 914, 'profile_id': 91, 'title': '12', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+
+OLD ATTACHMENT COUNT: 1
+
+------------------------------------------------------------
+OLD ATTACHMENT: {'id': 5204, 'portfolioId': 914, 'typeId': 7, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+POSTGRES ATTACHMENT: {'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: caa817dd098d74c93b33798f2
+ATTACHMENT URL TYPE: FILENAME/EMPTY
+NORMALIZED FILE: featured_1787310810_6a8832da36456.jpg
+
+EXISTING LEGACY-ID MATCH:
+NONE
+
+DIRECT ATTACHABLE-ID CANDIDATES:
+NONE
+
+EXACT FULL MEDIA URL CANDIDATES:
+NONE
+
+FILENAME CANDIDATES (WEAK — NOT PROOF):
+NONE
+
+TITLE CANDIDATES (WEAK — NOT PROOF):
+[{'id': 'cmtgtwr5n001m4ckcqytt7u0g', 'legacyId': None, 'title': '12', 'imageUrl': '', 'attachmentUrl': None, 'attachmentName': None}]
+
+*** RESULT: UNRESOLVED — DO NOT WRITE ***
+
+========================================================================
+OLD PORTFOLIO 915 | 13
+========================================================================
+OLD PORTFOLIO:
+{'id': 915, 'profile_id': 91, 'title': '13', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+
+OLD ATTACHMENT COUNT: 1
+
+------------------------------------------------------------
+OLD ATTACHMENT: {'id': 5205, 'portfolioId': 915, 'typeId': 7, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+POSTGRES ATTACHMENT: {'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: c557feddf5e3b44f2ad462327
+ATTACHMENT URL TYPE: FILENAME/EMPTY
+NORMALIZED FILE: featured_1787310869_6a8833157b513.jpg
+
+EXISTING LEGACY-ID MATCH:
+NONE
+
+DIRECT ATTACHABLE-ID CANDIDATES:
+NONE
+
+EXACT FULL MEDIA URL CANDIDATES:
+NONE
+
+FILENAME CANDIDATES (WEAK — NOT PROOF):
+NONE
+
+TITLE CANDIDATES (WEAK — NOT PROOF):
+NONE
+
+*** RESULT: UNRESOLVED — DO NOT WRITE ***
+
+========================================================================
+OLD PORTFOLIO 916 | 14
+========================================================================
+OLD PORTFOLIO:
+{'id': 916, 'profile_id': 91, 'title': '14', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 16, 59), 'updated_at': datetime.datetime(2026, 8, 21, 11, 16, 59)}
+
+OLD ATTACHMENT COUNT: 1
+
+------------------------------------------------------------
+OLD ATTACHMENT: {'id': 5206, 'portfolioId': 916, 'typeId': 7, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17)}
+POSTGRES ATTACHMENT: {'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 17)}
+CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: c201e9f94c126461eb68db89c
+ATTACHMENT URL TYPE: FILENAME/EMPTY
+NORMALIZED FILE: featured_1787311019_6a8833abac368.jpg
+
+EXISTING LEGACY-ID MATCH:
+NONE
+
+DIRECT ATTACHABLE-ID CANDIDATES:
+NONE
+
+EXACT FULL MEDIA URL CANDIDATES:
+NONE
+
+FILENAME CANDIDATES (WEAK — NOT PROOF):
+NONE
+
+TITLE CANDIDATES (WEAK — NOT PROOF):
+[{'id': 'cmtgtwr5l001l4ckcpapmqj6s', 'legacyId': None, 'title': '14', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/1788135842186-MC-Profile-Office.jpeg', 'attachmentUrl': None, 'attachmentName': None}]
+
+*** RESULT: UNRESOLVED — DO NOT WRITE ***
+
+========================================================================
+FINAL REMAINING MICHAELANGELO AUDIT
+========================================================================
+{'legacyId': 125, 'title': 'Rango Spader', 'status': 'UNRESOLVED', 'newPortfolioId': None, 'reason': None, 'oldAttachments': 2, 'missingAttachments': 1}
+{'legacyId': 433, 'title': '8', 'status': 'UNRESOLVED', 'newPortfolioId': None, 'reason': None, 'oldAttachments': 1, 'missingAttachments': 0}
+{'legacyId': 783, 'title': '8', 'status': 'UNRESOLVED', 'newPortfolioId': None, 'reason': None, 'oldAttachments': 1, 'missingAttachments': 0}
+{'legacyId': 912, 'title': 'Wallet Image', 'status': 'UNRESOLVED', 'newPortfolioId': None, 'reason': None, 'oldAttachments': 1, 'missingAttachments': 0}
+{'legacyId': 913, 'title': 'vBiz Me Screenshot', 'status': 'UNRESOLVED', 'newPortfolioId': None, 'reason': None, 'oldAttachments': 1, 'missingAttachments': 0}
+{'legacyId': 914, 'title': '12', 'status': 'UNRESOLVED', 'newPortfolioId': None, 'reason': None, 'oldAttachments': 1, 'missingAttachments': 0}
+{'legacyId': 915, 'title': '13', 'status': 'UNRESOLVED', 'newPortfolioId': None, 'reason': None, 'oldAttachments': 1, 'missingAttachments': 0}
+{'legacyId': 916, 'title': '14', 'status': 'UNRESOLVED', 'newPortfolioId': None, 'reason': None, 'oldAttachments': 1, 'missingAttachments': 0}
+
+Remaining portfolios checked: 8
+Proven: 0
+Still unresolved: 8
+Missing PostgreSQL attachment records: 1
+
+READ ONLY — NOTHING CHANGED

@@ -1,0 +1,28 @@
+{
+  "mode": "APPLY",
+  "profiles": [255],
+  "summary": {
+    "INSERT": 1,
+    "KEEP_EXISTING": 1,
+    "NO_OLD_SUBSCRIPTION_ITEMS": 1
+  },
+  "events": [
+    {
+      "action": "INSERT",
+      "table": "Profession",
+      "newId": "cb28e550b96124e63b96d02ef",
+      "legacyId": 264,
+      "name": "Personal trainer"
+    },
+    {
+      "action": "KEEP_EXISTING",
+      "table": "User",
+      "legacyId": 240,
+      "newId": "cmsuup0r704tacnkckz88fioc"
+    },
+    {
+      "action": "NO_OLD_SUBSCRIPTION_ITEMS",
+      "table": "SubscriptionItem"
+    }
+  ]
+}

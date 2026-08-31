@@ -1,0 +1,24 @@
+{
+  "mode": "DRY_RUN",
+  "generatedAt": "2026-08-28T19:38:30.440883Z",
+  "selectedProfiles": [257],
+  "excludedProfiles": [],
+  "summary": {
+    "CONSISTENCY_OK": 1,
+    "WOULD_INSERT": 1
+  },
+  "events": [
+    {
+      "action": "WOULD_INSERT",
+      "table": "Profile",
+      "newId": "c4d8b0121e25d4252b272cfa3",
+      "legacyId": 257,
+      "slug": "complianceaudit"
+    },
+    {
+      "action": "CONSISTENCY_OK",
+      "table": "Profile",
+      "check": "all_selected_legacy_parents_resolved"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "mode": "DRY_RUN",
+  "profiles": [268],
+  "summary": {
+    "NO_OLD_SUBSCRIPTION_ITEMS": 1,
+    "WOULD_INSERT": 2
+  },
+  "events": [
+    {
+      "action": "WOULD_INSERT",
+      "table": "User",
+      "newId": "c2a7dac7b7b724232bf8a4403",
+      "legacyId": 253,
+      "email": "smiller@seniorhelpers.com",
+      "name": "Shaneka Miller RN"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Subscription",
+      "newId": "cf5b18f1a25d142728363d39d",
+      "legacyId": 20,
+      "oldUserId": 253,
+      "packageLegacyId": 2,
+      "package": "Professional",
+      "oldCurrentPeriodEndAt": "2027-08-24T07:37:16"
+    },
+    {
+      "action": "NO_OLD_SUBSCRIPTION_ITEMS",
+      "table": "SubscriptionItem",
+      "oldSubscriptionIds": [20]
+    }
+  ]
+}

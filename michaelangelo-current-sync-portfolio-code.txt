@@ -1,0 +1,111 @@
+                        values,
+                        context=common_context,
+                    )
+
+                else:
+                    self.event(
+                        "KEEP_NEW",
+                        table,
+                        reason="new_not_older",
+                        **common_context,
+                    )
+
+            else:
+                self.insert(
+                    table,
+                    values,
+                    context=common_context,
+                )
+
+    def sync_portfolios(self):
+        print("4/8 Syncing Portfolio / Gallery / Video rows...")
+        with self.mysql.cursor() as cur:
+            cur.execute("SELECT * FROM portfolios ORDER BY id")
+            rows = cur.fetchall()
+
+        for old in rows:
+            pid = old.get("profile_id")
+            if pid is None or not self.wanted_profile(int(pid)):
+                continue
+            new_pid = self.profile_map.get(int(pid))
+            if not new_pid:
+                self.event("SKIP_PARENT_PROFILE_MISSING", "portfolios", legacyId=old["id"], profileLegacyId=pid)
+                continue
+
+            legacy_id = int(old["id"])
+            pt = int(old.get("post_type_id") or 0)
+            context = {"legacyId": legacy_id, "profileLegacyId": int(pid), "postTypeId": pt}
+
+            # The original migration keeps a legacy Portfolio representation.
+            p_values = {
+                "legacyId": legacy_id,
+                "profileId": new_pid,
+                "title": old.get("title"),
+                "description": old.get("description"),
+                "status": int(bool(old.get("status"))),
+                "sortOrder": 0,
+                "url": old.get("url"),
+                "createdAt": old.get("created_at") or datetime.utcnow(),
+                "updatedAt": old.get("updated_at") or old.get("created_at") or datetime.utcnow(),
+            }
+            existing = self.find_one("Portfolio", {"legacyId": legacy_id})
+            portfolio_id = None
+
+            if existing and not existing.get("__multiple__"):
+                portfolio_id = existing["id"]
+
+                if old_is_newer(old.get("updated_at"), existing.get("updatedAt")):
+                    self.update("Portfolio", existing["id"], p_values, context=context)
+                else:
+                    self.event("KEEP_NEW", "Portfolio", reason="new_not_older", **context)
+            else:
+                portfolio_id = self.insert(
+                    "Portfolio",
+                    p_values,
+                    context=context
+                )
+
+            if portfolio_id:
+                self.portfolio_map[legacy_id] = portfolio_id
+
+            direct_table = "Gallery" if pt == 4 else "Video" if pt == 5 else None
+            if direct_table:
+                d_values = {
+                    "legacyPortfolioId": legacy_id,
+                    "legacyPostTypeId": pt,
+                    "profileId": new_pid,
+                    "title": old.get("title"),
+                    "description": old.get("description"),
+                    "url": old.get("url"),
+                    "status": self.text_status(direct_table, old.get("status")),
+                    "sortOrder": 0,
+                    "createdAt": old.get("created_at") or datetime.utcnow(),
+                    "updatedAt": old.get("updated_at") or old.get("created_at") or datetime.utcnow(),
+                }
+                existing_d = self.find_one(direct_table, {"legacyPortfolioId": legacy_id})
+                if existing_d and not existing_d.get("__multiple__"):
+                    if old_is_newer(old.get("updated_at"), existing_d.get("updatedAt")):
+                        self.update(direct_table, existing_d["id"], d_values, context=context)
+                    else:
+                        self.event("KEEP_NEW", direct_table, reason="new_not_older", **context)
+                else:
+                    self.insert(direct_table, d_values, context=context)
+
+    def post_meta_for(self, post_id: int) -> Dict[str, Any]:
+        with self.mysql.cursor() as cur:
+            cur.execute(
+                "SELECT `key`, value FROM post_metas WHERE post_id=%s ORDER BY id",
+                (post_id,),
+            )
+            rows = cur.fetchall()
+        out: Dict[str, Any] = {}
+        for r in rows:
+            k = r.get("key") or ""
+            v = r.get("value")
+            if k in out:
+                if not isinstance(out[k], list):
+                    out[k] = [out[k]]
+                out[k].append(v)
+            else:
+                out[k] = v
+        return out

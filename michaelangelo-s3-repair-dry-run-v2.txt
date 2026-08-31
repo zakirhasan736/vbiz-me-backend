@@ -1,0 +1,16 @@
+================================================================================
+Attachment 5198 -> Portfolio 912
+Portfolio: Wallet Image
+File: featured_1787052350_6a84413ea1504.jpg
+S3 key: vbizme/portfolios/1787054860858-featured_1787052350_6a84413ea1504.jpg
+URL: https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolios/1787054860858-featured_1787052350_6a84413ea1504.jpg
+Bytes: 99195
+================================================================================
+Attachment 5199 -> Portfolio 913
+Portfolio: vBiz Me Screenshot
+File: featured_1787052578_6a844222cc1e1.jpg
+S3 key: vbizme/portfolios/1787054860289-featured_1787052578_6a844222cc1e1.jpg
+URL: https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolios/1787054860289-featured_1787052578_6a844222cc1e1.jpg
+Bytes: 125645
+
+DRY RUN ONLY — NOTHING CHANGED

@@ -1,0 +1,24 @@
+{
+  "mode": "DRY_RUN",
+  "generatedAt": "2026-08-28T19:38:33.854657Z",
+  "selectedProfiles": [261],
+  "excludedProfiles": [],
+  "summary": {
+    "CONSISTENCY_OK": 1,
+    "WOULD_INSERT": 1
+  },
+  "events": [
+    {
+      "action": "WOULD_INSERT",
+      "table": "Profile",
+      "newId": "c9b4d439eb7574c7a8b0029b5",
+      "legacyId": 261,
+      "slug": "karim-ali"
+    },
+    {
+      "action": "CONSISTENCY_OK",
+      "table": "Profile",
+      "check": "all_selected_legacy_parents_resolved"
+    }
+  ]
+}

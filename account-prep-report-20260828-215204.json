@@ -1,0 +1,28 @@
+{
+  "mode": "DRY_RUN",
+  "profiles": [255],
+  "summary": {
+    "KEEP_EXISTING": 1,
+    "NO_OLD_SUBSCRIPTION_ITEMS": 1,
+    "WOULD_INSERT": 1
+  },
+  "events": [
+    {
+      "action": "WOULD_INSERT",
+      "table": "Profession",
+      "newId": "c090e3b67e8844266bca29c10",
+      "legacyId": 264,
+      "name": "Personal trainer"
+    },
+    {
+      "action": "KEEP_EXISTING",
+      "table": "User",
+      "legacyId": 240,
+      "newId": "cmsuup0r704tacnkckz88fioc"
+    },
+    {
+      "action": "NO_OLD_SUBSCRIPTION_ITEMS",
+      "table": "SubscriptionItem"
+    }
+  ]
+}

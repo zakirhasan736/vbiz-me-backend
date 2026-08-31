@@ -1,0 +1,36 @@
+{
+  "mode": "DRY_RUN",
+  "generatedAt": "2026-08-28T19:38:26.875908Z",
+  "selectedProfiles": [95],
+  "excludedProfiles": [],
+  "summary": {
+    "CONSISTENCY_OK": 1,
+    "WOULD_INSERT": 1,
+    "WOULD_UPDATE_FROM_OLD": 1
+  },
+  "events": [
+    {
+      "action": "WOULD_INSERT",
+      "table": "Profile",
+      "newId": "c654a28458b6b47eba576ecbd",
+      "legacyId": 95,
+      "slug": "Admin"
+    },
+    {
+      "action": "WOULD_UPDATE_FROM_OLD",
+      "table": "Attachment",
+      "rowId": "cmsuurehb0kz3cnkc6utuions",
+      "legacyId": 1105,
+      "profileLegacyId": 95,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 95,
+      "docName": "8-2.jpg",
+      "attachmentRelink": true
+    },
+    {
+      "action": "CONSISTENCY_OK",
+      "table": "Profile",
+      "check": "all_selected_legacy_parents_resolved"
+    }
+  ]
+}

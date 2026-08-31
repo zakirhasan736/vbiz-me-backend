@@ -1,0 +1,181 @@
+
+============================================================
+A. USER / VCARD IDENTITY
+============================================================
+USERS                              OLD=   175 MAPPED=   175 MISSING=     0
+VCARDS / PROFILES                  OLD=   174 MAPPED=   174 MISSING=     0
+
+OLD USERS WITHOUT OLD CARD: 1
+{'id': 95, 'name': 'William Scott', 'email': 'wscott.vbizme@zohomail.com'}
+
+============================================================
+B. CORE OLD BUSINESS DATA
+============================================================
+addresses                          OLD=   149 MAPPED=     0 MISSING=   149
+   first missing: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+attachment_types                   OLD=    14 MAPPED=    14 MISSING=     0
+cities                             OLD=  5651 MAPPED=  5651 MISSING=     0
+company_employees                  OLD=    23 MAPPED=    23 MISSING=     0
+contacts                           OLD=     2 MAPPED=     2 MISSING=     0
+countries                          OLD=     3 MAPPED=     3 MISSING=     0
+education                          OLD=     7 MAPPED=     7 MISSING=     0
+event_logs                         OLD= 90347 MAPPED= 87033 MISSING=  3314
+   first missing: [87027, 87028, 87029, 87030, 87031, 87032, 87033, 87034, 87035, 87036, 87037, 87038, 87039, 87040, 87041, 87042, 87043, 87044, 87045, 87046, 87047, 87048, 87049, 87050, 87051, 87052, 87053, 87054, 87055, 87056]
+experiences                        OLD=     8 MAPPED=     8 MISSING=     0
+genders                            OLD=     3 MAPPED=     3 MISSING=     0
+guest_user_data                    OLD=    20 MAPPED=    20 MISSING=     0
+marital_statuses                   OLD=    11 MAPPED=    11 MISSING=     0
+packages                           OLD=     4 MAPPED=     4 MISSING=     0
+package_features                   OLD=    40 MAPPED=    40 MISSING=     0
+portfolios                         OLD=   689 MAPPED=   683 MISSING=     6
+   first missing: [823, 912, 913, 914, 915, 916]
+posts                              OLD=  1926 MAPPED=  1865 MISSING=    61
+   first missing: [2416, 2417, 2418, 2419, 2420, 2421, 2422, 2423, 2424, 2425, 2426, 2427, 2428, 2429, 2430, 2431, 2432, 2433, 2434, 2435, 2436, 2437, 2438, 2439, 2440, 2441, 2442, 2443, 2444, 2445]
+post_metas                         OLD=   302 MAPPED=   287 MISSING=    15
+   first missing: [313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327]
+professions                        OLD=   264 MAPPED=   264 MISSING=     0
+profile_settings                   OLD=     5 MAPPED=     4 MISSING=     1
+   first missing: [5]
+settings                           OLD= 18113 MAPPED= 16565 MISSING=  1548
+   first missing: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+states                             OLD=    50 MAPPED=    50 MISSING=     0
+statuses                           OLD=     2 MAPPED=     2 MISSING=     0
+subscriptions                      OLD=    20 MAPPED=    20 MISSING=     0
+transactions                       OLD=    18 MAPPED=    18 MISSING=     0
+user_notes                         OLD=     2 MAPPED=     2 MISSING=     0
+attachments                        OLD=  3296 MAPPED=  3242 MISSING=    54
+   first missing: [257, 258, 259, 5145, 5146, 5147, 5153, 5154, 5155, 5156, 5157, 5158, 5160, 5161, 5162, 5163, 5169, 5170, 5172, 5173, 5174, 5175, 5176, 5177, 5178, 5179, 5186, 5187, 5189, 5190]
+
+============================================================
+C. CARD-SCOPED SETTINGS
+============================================================
+CARD SETTINGS                      OLD= 16980 MAPPED= 16565 MISSING=   415
+   first missing: [20524, 20528, 20531, 20533, 20535, 20538, 20540, 20542, 20546, 20769, 21057, 21058, 21059, 21060, 21061, 21062, 21063, 21064, 21065, 21066, 21067, 21068, 21069, 21070, 21071, 21072, 21073, 21074, 21075, 21076]
+OLD GLOBAL/NULL-PROFILE SETTINGS: 1133
+
+============================================================
+D. SERVICES → SERVICE / CLIENT / REVIEW
+============================================================
+SERVICES                           OLD=  1015 MAPPED=  1005 MISSING=    10
+   first missing: [1360, 1371, 1372, 1373, 1374, 1375, 1385, 1393, 1453, 1454]
+
+============================================================
+E. SAVE CONTACT HISTORY
+============================================================
+OLD Save Contacts: 1782
+OLD Save Contacts mapped: 1782
+Missing OLD Save Contacts: 0
+NEW-only Save Contacts: 12
+ADMIN TOTAL SAVE CONTACTS: 1794
+
+SAVE PROFILE MISMATCHES: 0
+SAVE EVENTS WITH NO JOINED PROFILE: 10
+SAVE EVENTS WITH NO SLUG: 0
+
+NO JOINED PROFILE DETAILS:
+{'eventLegacyId': 3708, 'oldProfileId': 104, 'newProfileId': None}
+{'eventLegacyId': 5969, 'oldProfileId': 112, 'newProfileId': None}
+{'eventLegacyId': 41134, 'oldProfileId': 99, 'newProfileId': None}
+{'eventLegacyId': 41135, 'oldProfileId': 99, 'newProfileId': None}
+{'eventLegacyId': 41136, 'oldProfileId': 99, 'newProfileId': None}
+{'eventLegacyId': 41137, 'oldProfileId': 99, 'newProfileId': None}
+{'eventLegacyId': 41138, 'oldProfileId': 99, 'newProfileId': None}
+{'eventLegacyId': 41139, 'oldProfileId': 99, 'newProfileId': None}
+{'eventLegacyId': 41140, 'oldProfileId': 99, 'newProfileId': None}
+{'eventLegacyId': 41141, 'oldProfileId': 99, 'newProfileId': None}
+
+TOP SAVE CONTACT TOTALS BY CARD
+michaelangelo-casanova-2                 OLD= 408 NEW=  3 TOTAL= 411
+sheldon-singleton                        OLD= 280 NEW=  0 TOTAL= 280
+mila                                     OLD=  61 NEW=  4 TOTAL=  65
+jevon-k-thomas                           OLD=  56 NEW=  0 TOTAL=  56
+gigi-martinez-kennedy                    OLD=  52 NEW=  0 TOTAL=  52
+brian-dennis                             OLD=  47 NEW=  0 TOTAL=  47
+c-alexander-forrest                      OLD=  44 NEW=  0 TOTAL=  44
+hector-torres                            OLD=  39 NEW=  0 TOTAL=  39
+vanessa-joyce-sutton                     OLD=  37 NEW=  0 TOTAL=  37
+lisa-mh-williams                         OLD=  36 NEW=  0 TOTAL=  36
+sabor-ecuatoriano-3                      OLD=  33 NEW=  0 TOTAL=  33
+alisa-st-georges                         OLD=  30 NEW=  0 TOTAL=  30
+barry-dehart                             OLD=  28 NEW=  0 TOTAL=  28
+sara-lliguicota                          OLD=  28 NEW=  0 TOTAL=  28
+dana-mastromarino                        OLD=  25 NEW=  0 TOTAL=  25
+essence-divine                           OLD=  25 NEW=  0 TOTAL=  25
+mayan-botanicals                         OLD=  24 NEW=  0 TOTAL=  24
+ronica-j-keith                           OLD=  24 NEW=  0 TOTAL=  24
+jeremy-morgan                            OLD=  23 NEW=  0 TOTAL=  23
+joseph-downer                            OLD=  22 NEW=  0 TOTAL=  22
+tony-mint                                OLD=  20 NEW=  0 TOTAL=  20
+nina-i-vazquez                           OLD=  20 NEW=  0 TOTAL=  20
+audrey-garrison                          OLD=  20 NEW=  0 TOTAL=  20
+cesar-vertiz                             OLD=  18 NEW=  0 TOTAL=  18
+richard-kincaid                          OLD=  17 NEW=  0 TOTAL=  17
+rango-dango                              OLD=  17 NEW=  0 TOTAL=  17
+monica-caballero                         OLD=  13 NEW=  0 TOTAL=  13
+chago-vargas                             OLD=  12 NEW=  0 TOTAL=  12
+william-athurston                        OLD=  12 NEW=  0 TOTAL=  12
+carlos-nieves                            OLD=  12 NEW=  0 TOTAL=  12
+vanessa-wagam                            OLD=  12 NEW=  0 TOTAL=  12
+christopher-crespo                       OLD=  12 NEW=  0 TOTAL=  12
+cesar-barros                             OLD=  12 NEW=  0 TOTAL=  12
+dr-karen-m-blanchard-gore-phd            OLD=  11 NEW=  0 TOTAL=  11
+uncle-dan                                OLD=  11 NEW=  0 TOTAL=  11
+cecil-austin-jr                          OLD=  11 NEW=  0 TOTAL=  11
+NO-SLUG                                  OLD=  10 NEW=  0 TOTAL=  10
+stephan-brewer                           OLD=  10 NEW=  0 TOTAL=  10
+juliana-rosa                             OLD=  10 NEW=  0 TOTAL=  10
+brenda-davila                            OLD=   9 NEW=  0 TOTAL=   9
+
+============================================================
+F. CORPORATE ACCOUNTS
+============================================================
+OLD CORPORATE SUBSCRIPTIONS: 16
+OLD DISTINCT CORPORATE OWNERS: 16
+CORPORATE OWNER USER IDs: [16, 17, 60, 61, 71, 73, 83, 120, 129, 150, 157, 175, 181, 202, 231, 249]
+Missing corporate subscriptions: []
+Missing corporate owner users: []
+OLD CORPORATE ROLE COUNTS: {'Corporate Admin': 16, 'Corporate User': 22}
+OLD TOTAL CORPORATE-ROLE USERS: 38
+Corporate-role users missing in NEW: []
+NEW ROLE DISTRIBUTION: {'corporate-owner': 35, 'vcard-owner': 3}
+
+============================================================
+G. COMPANY / CORPORATE TEAM CARD RELATIONSHIPS
+============================================================
+OLD company_employee rows: 23
+Mapped company_employee rows: 23
+Missing relationships: []
+Wrong parent/employee mapping: []
+Employee relationships without card: []
+
+============================================================
+H. MEET OUR TEAM
+============================================================
+OLD Meet Our Team: 3
+Mapped TeamMember: 3
+Missing TeamMember IDs: []
+{'id': 1908, 'profile_id': 17, 'title': 'Nadeem Karim'}
+{'id': 2006, 'profile_id': 230, 'title': 'Our Team'}
+{'id': 2395, 'profile_id': 238, 'title': 'Click Here to Meet Our Team'}
+
+============================================================
+I. PUSH / NOTIFICATION / SKILL TABLE COUNTS
+============================================================
+push_notification_preferences      OLD=30 NEW=3
+push_subscriptions                 OLD=32 NEW=3
+skill_types                        OLD=3 NEW=0
+
+============================================================
+J. FINAL HIGH-LEVEL STATUS
+============================================================
+NOT 100% COMPLETE
+FAIL card_settings: 415
+FAIL services: 10
+FAIL posts: 61
+FAIL post_metas: 15
+FAIL portfolios: 6
+FAIL attachments: 54
+FAIL profile_settings: 1
+FAIL addresses: 149
+
+READ ONLY — NOTHING CHANGED

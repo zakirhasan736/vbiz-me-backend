@@ -2184,6 +2184,7 @@ const replaceCollection = async <T extends Record<string, unknown>>(
             sortOrder: index,
             title: typeof mapped.title === 'string' ? mapped.title : null,
             description: typeof mapped.description === 'string' ? mapped.description : null,
+            type: typeof mapped.type === 'string' && mapped.type.trim() ? mapped.type.trim() : 'Image',
             status: Number.isFinite(statusValue) ? statusValue : 1,
             url: typeof mapped.url === 'string' ? mapped.url : null,
             imageUrl:

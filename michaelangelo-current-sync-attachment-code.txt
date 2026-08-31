@@ -1,0 +1,181 @@
+                continue
+            existing = self.find_one("PostMeta", {"legacyId": int(old["id"])})
+            values = {
+                "legacyId": int(old["id"]),
+                "postId": new_post_id,
+                "metaKey": old.get("key") or "",
+                "metaValue": old.get("value"),
+                "createdAt": old.get("created_at") or datetime.utcnow(),
+                "updatedAt": old.get("updated_at") or old.get("created_at") or datetime.utcnow(),
+            }
+            context = {"legacyId": int(old["id"]), "legacyPostId": legacy_post_id}
+            if existing and not existing.get("__multiple__"):
+                if old_is_newer(old.get("updated_at"), existing.get("updatedAt")):
+                    self.update("PostMeta", existing["id"], values, context=context)
+                else:
+                    self.event("KEEP_NEW", "PostMeta", reason="new_not_older", **context)
+            else:
+                self.insert("PostMeta", values, context=context)
+
+    def report_attachment_delta(self):
+        print("7/8 Syncing selected Profile Attachment rows...")
+
+        if not self.table_exists("Attachment"):
+            self.event("SKIP_TABLE_MISSING", "Attachment")
+            return
+
+        with self.mysql.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    a.*,
+
+                    CASE
+                        WHEN a.attachmentable_type LIKE '%Profile'
+                            THEN a.attachmentable_id
+
+                        WHEN a.attachmentable_type LIKE '%Post'
+                            THEN (
+                                SELECT p.profile_id
+                                FROM posts p
+                                WHERE p.id = a.attachmentable_id
+                                LIMIT 1
+                            )
+
+                        WHEN a.attachmentable_type LIKE '%Service'
+                            THEN (
+                                SELECT s.profile_id
+                                FROM services s
+                                WHERE s.id = a.attachmentable_id
+                                LIMIT 1
+                            )
+
+                        WHEN a.attachmentable_type LIKE '%Portfolio'
+                            THEN (
+                                SELECT pf.profile_id
+                                FROM portfolios pf
+                                WHERE pf.id = a.attachmentable_id
+                                LIMIT 1
+                            )
+
+                        ELSE NULL
+                    END AS __profile_legacy_id
+
+                FROM attachments a
+                ORDER BY a.id
+            """)
+
+            rows = cur.fetchall()
+
+        image_exts = {
+            "jpg", "jpeg", "png", "gif",
+            "webp", "svg"
+        }
+
+        video_exts = {
+            "mp4", "mov", "webm"
+        }
+
+        audio_exts = {
+            "mp3", "wav", "ogg"
+        }
+
+        for old in rows:
+
+            profile_legacy_id = old.get(
+                "__profile_legacy_id"
+            )
+
+            if profile_legacy_id is None:
+                continue
+
+            profile_legacy_id = int(
+                profile_legacy_id
+            )
+
+            if not self.wanted_profile(
+                profile_legacy_id
+            ):
+                continue
+
+            new_profile_id = self.profile_map.get(
+                profile_legacy_id
+            )
+
+            if not new_profile_id:
+                self.event(
+                    "SKIP_PARENT_PROFILE_MISSING",
+                    "Attachment",
+                    legacyId=int(old["id"]),
+                    profileLegacyId=profile_legacy_id,
+                )
+                continue
+
+            legacy_attachment_id = int(old["id"])
+
+            existing = self.find_one(
+                "Attachment",
+                {
+                    "legacyId":
+                        legacy_attachment_id
+                }
+            )
+
+            # Existing legacy attachment media must be preserved.
+            # We may still need to relink it to the newly migrated
+            # Profile/Post while keeping its S3 URL/publicId untouched.
+            existing_attachment = None
+
+            if existing and existing.get("__multiple__"):
+                self.event(
+                    "CONFLICT_DUPLICATE",
+                    "Attachment",
+                    reason="multiple_rows_for_legacy_attachment",
+                    legacyId=legacy_attachment_id,
+                    profileLegacyId=profile_legacy_id,
+                )
+                continue
+
+            if existing:
+                existing_attachment = existing
+
+            old_type = (
+                old.get("attachmentable_type")
+                or ""
+            )
+
+            legacy_attachable_id = int(
+                old.get("attachmentable_id")
+                or 0
+            )
+
+            attachable_id = None
+            post_id = None
+
+            if "Profile" in old_type:
+
+                attachable_id = new_profile_id
+
+            elif "Post" in old_type:
+
+                attachable_id = self.post_map.get(
+                    legacy_attachable_id
+                )
+
+                post_id = attachable_id
+
+                if not attachable_id:
+                    post = self.find_one(
+                        "Post",
+                        {
+                            "legacyId":
+                                legacy_attachable_id
+                        }
+                    )
+
+                    if (
+                        post
+                        and not post.get(
+                            "__multiple__"
+                        )
+                    ):
+                        attachable_id = post["id"]

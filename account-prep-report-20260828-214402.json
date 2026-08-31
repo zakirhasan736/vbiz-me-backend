@@ -1,0 +1,22 @@
+{
+  "mode": "APPLY",
+  "profiles": [258],
+  "summary": {
+    "INSERT": 1,
+    "NO_OLD_SUBSCRIPTION_ITEMS": 1
+  },
+  "events": [
+    {
+      "action": "INSERT",
+      "table": "User",
+      "newId": "c7541adf3626f426499ab5bec",
+      "legacyId": 243,
+      "email": "giuliana-adside-employee-257@vbizme.com",
+      "name": "Giuliana Adside Employee 247"
+    },
+    {
+      "action": "NO_OLD_SUBSCRIPTION_ITEMS",
+      "table": "SubscriptionItem"
+    }
+  ]
+}

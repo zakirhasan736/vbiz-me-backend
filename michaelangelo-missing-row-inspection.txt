@@ -1,0 +1,95 @@
+================================================================================
+1. PORTFOLIO TABLE STRUCTURE
+================================================================================
+{'column_name': 'id', 'data_type': 'text', 'is_nullable': 'NO', 'column_default': None}
+{'column_name': 'legacyId', 'data_type': 'integer', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'profileId', 'data_type': 'text', 'is_nullable': 'NO', 'column_default': None}
+{'column_name': 'title', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'description', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'status', 'data_type': 'integer', 'is_nullable': 'NO', 'column_default': '1'}
+{'column_name': 'sortOrder', 'data_type': 'integer', 'is_nullable': 'NO', 'column_default': '0'}
+{'column_name': 'url', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'imageUrl', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'createdAt', 'data_type': 'timestamp without time zone', 'is_nullable': 'NO', 'column_default': 'CURRENT_TIMESTAMP'}
+{'column_name': 'updatedAt', 'data_type': 'timestamp without time zone', 'is_nullable': 'NO', 'column_default': None}
+{'column_name': 'attachmentUrl', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'attachmentName', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+
+================================================================================
+2. ATTACHMENT TABLE STRUCTURE
+================================================================================
+{'column_name': 'id', 'data_type': 'text', 'is_nullable': 'NO', 'column_default': None}
+{'column_name': 'legacyId', 'data_type': 'integer', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'attachmentTypeId', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'attachableType', 'data_type': 'text', 'is_nullable': 'NO', 'column_default': None}
+{'column_name': 'attachableId', 'data_type': 'text', 'is_nullable': 'NO', 'column_default': None}
+{'column_name': 'profileId', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'postId', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'docName', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'url', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'publicId', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'resourceType', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'format', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'bytes', 'data_type': 'integer', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'extension', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'mimeType', 'data_type': 'text', 'is_nullable': 'YES', 'column_default': None}
+{'column_name': 'createdAt', 'data_type': 'timestamp without time zone', 'is_nullable': 'NO', 'column_default': 'CURRENT_TIMESTAMP'}
+{'column_name': 'updatedAt', 'data_type': 'timestamp without time zone', 'is_nullable': 'NO', 'column_default': None}
+
+================================================================================
+3. DO STALE ATTACHABLE IDs EXIST AS PORTFOLIOS?
+================================================================================
+FOUND: 0
+
+================================================================================
+4. SEARCH STALE IDS IN TEXT COLUMNS
+================================================================================
+
+MATCH Attachment.attachableId: 8
+{'value': 'c201e9f94c126461eb68db89c'}
+{'value': 'c3bb86634352443de945a79d2'}
+{'value': 'c557feddf5e3b44f2ad462327'}
+{'value': 'caa817dd098d74c93b33798f2'}
+{'value': 'cf0831cb269d24e3b93b5ef4c'}
+{'value': 'cmsuupaxz05rfcnkcp7x5pvq4'}
+{'value': 'cmsuupcsy05whcnkcetmu49g0'}
+{'value': 'cmsuupf1m065ocnkc4cfjhyqn'}
+
+================================================================================
+5. ALL MICHAELANGELO PORTFOLIOS — FULL ROWS
+================================================================================
+{'id': 'cmtgtwr5l001l4ckcpapmqj6s', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '14', 'description': '', 'status': 1, 'sortOrder': 0, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/1788135842186-MC-Profile-Office.jpeg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 721000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 721000), 'attachmentUrl': None, 'attachmentName': None}
+{'id': 'cmtgtwr5n001m4ckcqytt7u0g', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '12', 'description': '', 'status': 1, 'sortOrder': 1, 'url': '', 'imageUrl': '', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 723000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 723000), 'attachmentUrl': None, 'attachmentName': None}
+{'id': 'cmtgtwr5q001n4ckcwf488ry4', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': 'vBiz Me Screenshot', 'description': '', 'status': 1, 'sortOrder': 2, 'url': '', 'imageUrl': '', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 726000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 726000), 'attachmentUrl': None, 'attachmentName': None}
+{'id': 'cmtgtwr5t001o4ckcygarj8md', 'legacyId': 852, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '9', 'description': '', 'status': 1, 'sortOrder': 3, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupfgo067jcnkcpl395cuo/featured_1783938007_6a54bbd7578a1.jpg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 729000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 729000), 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupfgo067jcnkcpl395cuo/featured_1783938007_6a54bbd7578a1.jpg', 'attachmentName': 'featured_1783938007_6a54bbd7578a1.jpg'}
+{'id': 'cmtgtwr5w001p4ckc5nz7em4a', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '8', 'description': '', 'status': 1, 'sortOrder': 4, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 732000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 732000), 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}
+{'id': 'cmtgtwr60001q4ckcjicdoyzx', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '8', 'description': '', 'status': 1, 'sortOrder': 5, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 736000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 736000), 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}
+{'id': 'cmtgtwr67001r4ckcr4cb2i80', 'legacyId': 432, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '7', 'description': '', 'status': 1, 'sortOrder': 6, 'url': '', 'imageUrl': '', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 743000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 743000), 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcss05wgcnkc5ez8bkvn/featured_1754103105_688d7d419a43d.jpg', 'attachmentName': 'featured_1754103105_688d7d419a43d.jpg'}
+{'id': 'cmtgtwr6a001s4ckc3t2ytvvw', 'legacyId': 431, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '6', 'description': '', 'status': 1, 'sortOrder': 7, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsm05wfcnkcns0wjazt/featured_1754102213_688d79c5e5f7e.jpg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 746000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 746000), 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsm05wfcnkcns0wjazt/featured_1754102213_688d79c5e5f7e.jpg', 'attachmentName': 'featured_1754102213_688d79c5e5f7e.jpg'}
+{'id': 'cmtgtwr6d001t4ckcud7t1wck', 'legacyId': 430, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '4', 'description': '', 'status': 1, 'sortOrder': 8, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsg05wecnkcel6uu0nh/featured_1754102182_688d79a6e61f8.jpg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 749000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 749000), 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsg05wecnkcel6uu0nh/featured_1754102182_688d79a6e61f8.jpg', 'attachmentName': 'featured_1754102182_688d79a6e61f8.jpg'}
+{'id': 'cmtgtwr6h001u4ckc8op59fdd', 'legacyId': 123, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '5', 'description': '', 'status': 1, 'sortOrder': 9, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupaxi05recnkcr4ceriqv/WhatsApp-Image-2025-02-28-at-13.53.51.jpeg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 753000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 753000), 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupaxi05recnkcr4ceriqv/WhatsApp-Image-2025-02-28-at-13.53.51.jpeg', 'attachmentName': 'WhatsApp Image 2025-02-28 at 13.53.51.jpeg'}
+{'id': 'cmtgtwr6l001v4ckca37q0a0c', 'legacyId': 121, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '3', 'description': '', 'status': 1, 'sortOrder': 10, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupax905rdcnkc8zwnjjcf/WhatsApp-Image-2025-02-28-at-13.54.28.jpeg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 757000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 757000), 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupax905rdcnkc8zwnjjcf/WhatsApp-Image-2025-02-28-at-13.54.28.jpeg', 'attachmentName': 'WhatsApp Image 2025-02-28 at 13.54.28.jpeg'}
+
+================================================================================
+6. MICHAELANGELO ATTACHMENTS AROUND TARGET IDS
+================================================================================
+{'id': 'cmsuurdwu0kugcnkckvpuk2zd', 'legacyId': 858, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupaxz05rfcnkcp7x5pvq4', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'Logo-Transparency.png', 'url': 'Logo-Transparency.png', 'publicId': None, 'resourceType': None, 'format': None, 'bytes': None, 'extension': None, 'mimeType': None, 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000), 'updatedAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000)}
+{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+
+================================================================================
+7. PORTFOLIOS WITH NULL LEGACY ID
+================================================================================
+COUNT: 5
+{'id': 'cmtgtwr5l001l4ckcpapmqj6s', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '14', 'description': '', 'status': 1, 'sortOrder': 0, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/1788135842186-MC-Profile-Office.jpeg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 721000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 721000), 'attachmentUrl': None, 'attachmentName': None}
+{'id': 'cmtgtwr5n001m4ckcqytt7u0g', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '12', 'description': '', 'status': 1, 'sortOrder': 1, 'url': '', 'imageUrl': '', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 723000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 723000), 'attachmentUrl': None, 'attachmentName': None}
+{'id': 'cmtgtwr5q001n4ckcwf488ry4', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': 'vBiz Me Screenshot', 'description': '', 'status': 1, 'sortOrder': 2, 'url': '', 'imageUrl': '', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 726000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 726000), 'attachmentUrl': None, 'attachmentName': None}
+{'id': 'cmtgtwr5w001p4ckc5nz7em4a', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '8', 'description': '', 'status': 1, 'sortOrder': 4, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 732000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 732000), 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}
+{'id': 'cmtgtwr60001q4ckcjicdoyzx', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '8', 'description': '', 'status': 1, 'sortOrder': 5, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 736000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 736000), 'attachmentUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'attachmentName': 'featured_1754103159_688d7d770ef84.jpg'}
+
+READ ONLY — NOTHING CHANGED

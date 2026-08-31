@@ -1,0 +1,696 @@
+{
+  "mode": "DRY_RUN",
+  "generatedAt": "2026-08-28T19:23:37.319596Z",
+  "selectedProfiles": [54],
+  "excludedProfiles": [],
+  "summary": {
+    "CONSISTENCY_OK": 1,
+    "KEEP_NEW": 82
+  },
+  "events": [
+    {
+      "action": "KEEP_NEW",
+      "table": "Profile",
+      "reason": "new_not_older",
+      "legacyId": 54,
+      "slug": "mila-balanta"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1575,
+      "profileLegacyId": 54,
+      "key": "profile_video_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1576,
+      "profileLegacyId": 54,
+      "key": "profile_image_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1577,
+      "profileLegacyId": 54,
+      "key": "background_music_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1578,
+      "profileLegacyId": 54,
+      "key": "name_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1579,
+      "profileLegacyId": 54,
+      "key": "profession_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1580,
+      "profileLegacyId": 54,
+      "key": "age_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1581,
+      "profileLegacyId": 54,
+      "key": "address_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1582,
+      "profileLegacyId": 54,
+      "key": "phone_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1583,
+      "profileLegacyId": 54,
+      "key": "zip_code_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1584,
+      "profileLegacyId": 54,
+      "key": "website_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1585,
+      "profileLegacyId": 54,
+      "key": "company_name_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1586,
+      "profileLegacyId": 54,
+      "key": "gender_id_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1587,
+      "profileLegacyId": 54,
+      "key": "marital_status_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1588,
+      "profileLegacyId": 54,
+      "key": "email_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1589,
+      "profileLegacyId": 54,
+      "key": "about_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1590,
+      "profileLegacyId": 54,
+      "key": "save_contact_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1591,
+      "profileLegacyId": 54,
+      "key": "share_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1592,
+      "profileLegacyId": 54,
+      "key": "twitter_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1593,
+      "profileLegacyId": 54,
+      "key": "facebook_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1594,
+      "profileLegacyId": 54,
+      "key": "instagram_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 1595,
+      "profileLegacyId": 54,
+      "key": "background_video_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4074,
+      "profileLegacyId": 54,
+      "key": "company_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4075,
+      "profileLegacyId": 54,
+      "key": "myName_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4076,
+      "profileLegacyId": 54,
+      "key": "myProfession_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4077,
+      "profileLegacyId": 54,
+      "key": "contactNav_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4078,
+      "profileLegacyId": 54,
+      "key": "faqNav_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4079,
+      "profileLegacyId": 54,
+      "key": "2dNav_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4080,
+      "profileLegacyId": 54,
+      "key": "missionStatementNav_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4081,
+      "profileLegacyId": 54,
+      "key": "blogNav_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4082,
+      "profileLegacyId": 54,
+      "key": "serviceNav_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4083,
+      "profileLegacyId": 54,
+      "key": "navHome_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4084,
+      "profileLegacyId": 54,
+      "key": "bgNav_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4085,
+      "profileLegacyId": 54,
+      "key": "bgNav_background_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4086,
+      "profileLegacyId": 54,
+      "key": "myCompany_name_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4087,
+      "profileLegacyId": 54,
+      "key": "post_status_checkbox"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4088,
+      "profileLegacyId": 54,
+      "key": "myName_background_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4089,
+      "profileLegacyId": 54,
+      "key": "myProfession_background_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4090,
+      "profileLegacyId": 54,
+      "key": "profession_background_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4091,
+      "profileLegacyId": 54,
+      "key": "company_background_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4092,
+      "profileLegacyId": 54,
+      "key": "email_text_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4093,
+      "profileLegacyId": 54,
+      "key": "email_background_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4094,
+      "profileLegacyId": 54,
+      "key": "address_text_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4095,
+      "profileLegacyId": 54,
+      "key": "address_background_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4096,
+      "profileLegacyId": 54,
+      "key": "phone_text_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4097,
+      "profileLegacyId": 54,
+      "key": "phone_background_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4098,
+      "profileLegacyId": 54,
+      "key": "website_text_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4099,
+      "profileLegacyId": 54,
+      "key": "website_background_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4100,
+      "profileLegacyId": 54,
+      "key": "marital_status_text_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Setting",
+      "reason": "new_not_older",
+      "legacyId": 4101,
+      "profileLegacyId": 54,
+      "key": "marital_status_background_color"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Post",
+      "reason": "new_not_older",
+      "legacyId": 373,
+      "profileLegacyId": 54,
+      "postTypeId": 19
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "MissionStatement",
+      "reason": "new_not_older",
+      "legacyId": 373,
+      "profileLegacyId": 54,
+      "postTypeId": 19
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "TabItem",
+      "reason": "new_not_older",
+      "legacyId": 373,
+      "profileLegacyId": 54,
+      "postTypeId": 19
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Post",
+      "reason": "new_not_older",
+      "legacyId": 374,
+      "profileLegacyId": 54,
+      "postTypeId": 6
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Blog",
+      "reason": "new_not_older",
+      "legacyId": 374,
+      "profileLegacyId": 54,
+      "postTypeId": 6
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "BlogDirect",
+      "reason": "new_not_older",
+      "legacyId": 374,
+      "profileLegacyId": 54,
+      "postTypeId": 6
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Post",
+      "reason": "new_not_older",
+      "legacyId": 375,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Faq",
+      "reason": "new_not_older",
+      "legacyId": 375,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "TabItem",
+      "reason": "new_not_older",
+      "legacyId": 375,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Post",
+      "reason": "new_not_older",
+      "legacyId": 376,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Faq",
+      "reason": "new_not_older",
+      "legacyId": 376,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "TabItem",
+      "reason": "new_not_older",
+      "legacyId": 376,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Post",
+      "reason": "new_not_older",
+      "legacyId": 377,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Faq",
+      "reason": "new_not_older",
+      "legacyId": 377,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "TabItem",
+      "reason": "new_not_older",
+      "legacyId": 377,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Post",
+      "reason": "new_not_older",
+      "legacyId": 378,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Faq",
+      "reason": "new_not_older",
+      "legacyId": 378,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "TabItem",
+      "reason": "new_not_older",
+      "legacyId": 378,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Post",
+      "reason": "new_not_older",
+      "legacyId": 379,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Faq",
+      "reason": "new_not_older",
+      "legacyId": 379,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "TabItem",
+      "reason": "new_not_older",
+      "legacyId": 379,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Post",
+      "reason": "new_not_older",
+      "legacyId": 870,
+      "profileLegacyId": 54,
+      "postTypeId": 16
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "AboutMe",
+      "reason": "new_not_older",
+      "legacyId": 870,
+      "profileLegacyId": 54,
+      "postTypeId": 16
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "AboutMeDirect",
+      "reason": "new_not_older",
+      "legacyId": 870,
+      "profileLegacyId": 54,
+      "postTypeId": 16
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Attachment",
+      "reason": "attachment_relationship_already_correct",
+      "legacyId": 205,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 54,
+      "docName": "mila.jpg",
+      "attachmentRelink": true
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Attachment",
+      "reason": "attachment_relationship_already_correct",
+      "legacyId": 1152,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 54,
+      "docName": "Mila cocoboca calypso.mp4",
+      "attachmentRelink": true
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Attachment",
+      "reason": "attachment_relationship_already_correct",
+      "legacyId": 1153,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 54,
+      "docName": "Mila cocoboca calypso.mp4",
+      "attachmentRelink": true
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Attachment",
+      "reason": "attachment_relationship_already_correct",
+      "legacyId": 1154,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 54,
+      "docName": "mila.jpg",
+      "attachmentRelink": true
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Attachment",
+      "reason": "attachment_relationship_already_correct",
+      "legacyId": 1155,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 54,
+      "docName": "Cocoboca-1080p-240502-1.mp4",
+      "attachmentRelink": true
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Attachment",
+      "reason": "attachment_relationship_already_correct",
+      "legacyId": 1156,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Post",
+      "attachableLegacyId": 373,
+      "docName": "7938 png-2_1741778418_67d16df24d2ec.png",
+      "attachmentRelink": true
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Attachment",
+      "reason": "attachment_relationship_already_correct",
+      "legacyId": 1157,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Post",
+      "attachableLegacyId": 374,
+      "docName": "7938 png-2_1741778611_67d16eb35909a.png",
+      "attachmentRelink": true
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Attachment",
+      "reason": "attachment_relationship_already_correct",
+      "legacyId": 2267,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Post",
+      "attachableLegacyId": 870,
+      "docName": "mila_1750108651_685089eb10b4d.jpg",
+      "attachmentRelink": true
+    },
+    {
+      "action": "CONSISTENCY_OK",
+      "table": "Profile",
+      "check": "all_selected_legacy_parents_resolved"
+    }
+  ]
+}

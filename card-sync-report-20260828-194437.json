@@ -1,0 +1,49 @@
+{
+  "mode": "DRY_RUN",
+  "generatedAt": "2026-08-28T19:44:37.403511Z",
+  "selectedProfiles": [95, 257, 261],
+  "excludedProfiles": [],
+  "summary": {
+    "CONSISTENCY_OK": 1,
+    "KEEP_NEW": 4
+  },
+  "events": [
+    {
+      "action": "KEEP_NEW",
+      "table": "Profile",
+      "reason": "new_not_older",
+      "legacyId": 95,
+      "slug": "Admin"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Profile",
+      "reason": "new_not_older",
+      "legacyId": 257,
+      "slug": "complianceaudit"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Profile",
+      "reason": "new_not_older",
+      "legacyId": 261,
+      "slug": "karim-ali"
+    },
+    {
+      "action": "KEEP_NEW",
+      "table": "Attachment",
+      "reason": "attachment_relationship_already_correct",
+      "legacyId": 1105,
+      "profileLegacyId": 95,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 95,
+      "docName": "8-2.jpg",
+      "attachmentRelink": true
+    },
+    {
+      "action": "CONSISTENCY_OK",
+      "table": "Profile",
+      "check": "all_selected_legacy_parents_resolved"
+    }
+  ]
+}

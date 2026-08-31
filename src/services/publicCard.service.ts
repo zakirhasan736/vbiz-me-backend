@@ -16,7 +16,7 @@ import {
 import AppError from '../error/AppError'
 import { readAboutMeFeaturedMediaUrl, readAboutMeMediaFocusY } from '../utils/aboutMeMediaFocus'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
-import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
+import { fillMissingGalleryMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
@@ -689,12 +689,9 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
     })
     .catch(() => [])
   const hydratedGallery = fillMissingGalleryMedia(gallery, legacyPortfolio)
-  const source = galleryHasMedia(hydratedGallery)
-    ? hydratedGallery
-    : legacyPortfolio.length
-      ? legacyPortfolio
-      : hydratedGallery
+  const source = legacyPortfolio.length ? legacyPortfolio : hydratedGallery
   const portfolio = source.map((item) => ({
+    type: item.type || 'Image',
     title: item.title,
     description: item.description,
     url: item.url,
@@ -702,6 +699,7 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
     imageUrl: 'featuredImage' in item ? item.featuredImage : item.imageUrl,
     attachmentUrl: item.attachmentUrl,
     attachmentName: item.attachmentName,
+    attachments: item.attachmentUrl ? { url: item.attachmentUrl, name: item.attachmentName || '' } : null,
   }))
   return { ...card, portfolio, team_notices }
 }
@@ -1017,7 +1015,8 @@ const getProfileAiData = async (profileId: string) => {
       toDate: formatDate(e.toDate),
       tillNow: e.tillNow,
     })),
-    portfolio: (galleries.length ? galleries : profile.portfolios).map((p) => ({
+    portfolio: (profile.portfolios.length ? profile.portfolios : galleries).map((p) => ({
+      type: p.type || 'Image',
       title: p.title,
       description: p.description,
       url: p.url,
@@ -1376,6 +1375,7 @@ const getDynamicSection = async (
     try {
       type PublicGalleryRow = {
         id: string
+        type: string
         title: string | null
         description: string | null
         url: string | null
@@ -1397,6 +1397,7 @@ const getDynamicSection = async (
       ])
       const mappedLegacy: PublicGalleryRow[] = legacy.map((p) => ({
         id: p.id,
+        type: p.type || 'Image',
         title: p.title,
         description: p.description,
         url: p.url,
@@ -1407,17 +1408,17 @@ const getDynamicSection = async (
         createdAt: p.createdAt,
       }))
       const hydrated = fillMissingGalleryMedia(galleryRows, legacy)
-      const items: PublicGalleryRow[] = galleryHasMedia(hydrated)
-        ? hydrated
-        : mappedLegacy.length
-          ? mappedLegacy
-          : hydrated
+      const hydratedFallback: PublicGalleryRow[] = hydrated.map((p) => ({
+        ...p,
+        type: p.type || 'Image',
+      }))
+      const items: PublicGalleryRow[] = mappedLegacy.length ? mappedLegacy : hydratedFallback
       logPublicSectionMedia(
         name,
         profileId,
         { items },
         {
-          source: galleryHasMedia(hydrated) ? 'gallery' : mappedLegacy.length ? 'portfolio' : 'gallery-empty',
+          source: mappedLegacy.length ? 'portfolio' : hydratedFallback.length ? 'gallery' : 'gallery-empty',
           galleryDb: galleryRows.map((row) => ({
             id: row.id,
             title: row.title,
@@ -1451,6 +1452,7 @@ const getDynamicSection = async (
             const gallery = [featured, attachment].filter(Boolean)
             return {
               id: p.id,
+              type: p.type || 'Image',
               title: p.title,
               description: p.description,
               status: p.status === '0' ? 0 : 1,

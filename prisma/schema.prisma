@@ -531,6 +531,7 @@ model Gallery {
   profile        Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title          String?
   description    String?
+  type           String    @default("Image")
   url            String?
   featuredImage  String?
   attachmentUrl  String?
@@ -1258,12 +1259,14 @@ model Service {
 }
 
 model Portfolio {
-  id             String   @id @default(cuid())
-  legacyId       Int?     @unique
-  profileId      String
+  id               String   @id @default(cuid())
+  legacyId         Int?     @unique
+  legacyPostTypeId Int      @default(4)
+  profileId        String
   profile        Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title          String?
   description    String?
+  type           String   @default("Image")
   status         Int      @default(1)
   sortOrder      Int      @default(0)
   url            String?

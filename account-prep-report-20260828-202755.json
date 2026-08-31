@@ -1,0 +1,31 @@
+{
+  "mode": "DRY_RUN",
+  "profiles": [268],
+  "summary": {
+    "KEEP_EXISTING": 2,
+    "NO_OLD_SUBSCRIPTION_ITEMS": 1
+  },
+  "events": [
+    {
+      "action": "KEEP_EXISTING",
+      "table": "User",
+      "legacyId": 253,
+      "newId": "c9e9b78e35c624cb08bfd16a8"
+    },
+    {
+      "action": "KEEP_EXISTING",
+      "table": "Subscription",
+      "newId": "cb44f52dd49ee4d29919db08b",
+      "legacyId": 20,
+      "oldUserId": 253,
+      "packageLegacyId": 2,
+      "package": "Professional",
+      "oldCurrentPeriodEndAt": "2027-08-24T07:37:16"
+    },
+    {
+      "action": "NO_OLD_SUBSCRIPTION_ITEMS",
+      "table": "SubscriptionItem",
+      "oldSubscriptionIds": [20]
+    }
+  ]
+}

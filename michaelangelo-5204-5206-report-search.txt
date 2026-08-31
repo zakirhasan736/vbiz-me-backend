@@ -1,0 +1,953 @@
+
+################################################################################
+FILE: featured_1787310810_6a8832da36456.jpg
+################################################################################
+./michaelangelo-after-reconcile-audit.txt-199-OLD PORTFOLIO:
+./michaelangelo-after-reconcile-audit.txt-200-{'id': 914, 'profile_id': 91, 'title': '12', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-after-reconcile-audit.txt-201-
+./michaelangelo-after-reconcile-audit.txt-202-OLD ATTACHMENT COUNT: 1
+./michaelangelo-after-reconcile-audit.txt-203-
+./michaelangelo-after-reconcile-audit.txt-204-------------------------------------------------------------
+./michaelangelo-after-reconcile-audit.txt:205:OLD ATTACHMENT: {'id': 5204, 'portfolioId': 914, 'typeId': 7, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-after-reconcile-audit.txt:206:POSTGRES ATTACHMENT: {'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmtgtwr5n001m4ckcqytt7u0g', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-after-reconcile-audit.txt-207-CURRENT ATTACHABLE-ID POINTS TO REAL PORTFOLIO: cmtgtwr5n001m4ckcqytt7u0g
+./michaelangelo-after-reconcile-audit.txt-208-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-after-reconcile-audit.txt:209:NORMALIZED FILE: featured_1787310810_6a8832da36456.jpg
+./michaelangelo-after-reconcile-audit.txt-210-
+./michaelangelo-after-reconcile-audit.txt-211-EXISTING LEGACY-ID MATCH:
+./michaelangelo-after-reconcile-audit.txt-212-[{'id': 'cmtgtwr5n001m4ckcqytt7u0g', 'legacyId': 914, 'title': '12', 'imageUrl': '', 'attachmentUrl': None, 'attachmentName': None}]
+./michaelangelo-after-reconcile-audit.txt-213-
+./michaelangelo-after-reconcile-audit.txt-214-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-after-reconcile-audit.txt-215-[{'id': 'cmtgtwr5n001m4ckcqytt7u0g', 'legacyId': 914, 'title': '12', 'imageUrl': '', 'attachmentUrl': None, 'attachmentName': None}]
+--
+./michaelangelo-target-events.txt-273-  "table": "Attachment",
+./michaelangelo-target-events.txt-274-  "rowId": "c821788f7333649e2ae9cf80f",
+./michaelangelo-target-events.txt-275-  "legacyId": 5204,
+./michaelangelo-target-events.txt-276-  "profileLegacyId": 91,
+./michaelangelo-target-events.txt-277-  "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-target-events.txt-278-  "attachableLegacyId": 914,
+./michaelangelo-target-events.txt:279:  "docName": "featured_1787310810_6a8832da36456.jpg",
+./michaelangelo-target-events.txt-280-  "attachmentRelink": true
+./michaelangelo-target-events.txt-281-}
+./michaelangelo-target-events.txt-282---------------------------------------------------------------------------------
+./michaelangelo-target-events.txt-283-{
+./michaelangelo-target-events.txt-284-  "action": "WOULD_UPDATE_FROM_OLD",
+./michaelangelo-target-events.txt-285-  "table": "Attachment",
+--
+./michaelangelo-missing-row-inspection.txt-75-================================================================================
+./michaelangelo-missing-row-inspection.txt-76-{'id': 'cmsuurdwu0kugcnkckvpuk2zd', 'legacyId': 858, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupaxz05rfcnkcp7x5pvq4', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'Logo-Transparency.png', 'url': 'Logo-Transparency.png', 'publicId': None, 'resourceType': None, 'format': None, 'bytes': None, 'extension': None, 'mimeType': None, 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000), 'updatedAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000)}
+./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-missing-row-inspection.txt:81:{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-missing-row-inspection.txt-82-{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-missing-row-inspection.txt-87-================================================================================
+--
+./card-sync-report-20260828-211611.json-43801-      "table": "Attachment",
+./card-sync-report-20260828-211611.json-43802-      "newId": "ceda1d072153f419daca174b8",
+./card-sync-report-20260828-211611.json-43803-      "legacyId": 5204,
+./card-sync-report-20260828-211611.json-43804-      "profileLegacyId": 91,
+./card-sync-report-20260828-211611.json-43805-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-211611.json-43806-      "attachableLegacyId": 914,
+./card-sync-report-20260828-211611.json:43807:      "docName": "featured_1787310810_6a8832da36456.jpg",
+./card-sync-report-20260828-211611.json-43808-      "attachmentRelink": true
+./card-sync-report-20260828-211611.json-43809-    },
+./card-sync-report-20260828-211611.json-43810-    {
+./card-sync-report-20260828-211611.json-43811-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-211611.json-43812-      "table": "Attachment",
+./card-sync-report-20260828-211611.json-43813-      "newId": "cf53448018636429098e54ef5",
+--
+./michaelangelo-remaining-audit.txt-191-OLD PORTFOLIO:
+./michaelangelo-remaining-audit.txt-192-{'id': 914, 'profile_id': 91, 'title': '12', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-remaining-audit.txt-193-
+./michaelangelo-remaining-audit.txt-194-OLD ATTACHMENT COUNT: 1
+./michaelangelo-remaining-audit.txt-195-
+./michaelangelo-remaining-audit.txt-196-------------------------------------------------------------
+./michaelangelo-remaining-audit.txt:197:OLD ATTACHMENT: {'id': 5204, 'portfolioId': 914, 'typeId': 7, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-remaining-audit.txt:198:POSTGRES ATTACHMENT: {'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-remaining-audit.txt-199-CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: caa817dd098d74c93b33798f2
+./michaelangelo-remaining-audit.txt-200-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-remaining-audit.txt:201:NORMALIZED FILE: featured_1787310810_6a8832da36456.jpg
+./michaelangelo-remaining-audit.txt-202-
+./michaelangelo-remaining-audit.txt-203-EXISTING LEGACY-ID MATCH:
+./michaelangelo-remaining-audit.txt-204-NONE
+./michaelangelo-remaining-audit.txt-205-
+./michaelangelo-remaining-audit.txt-206-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-remaining-audit.txt-207-NONE
+--
+./card-sync-report-20260828-194748.json-44033-      "table": "Attachment",
+./card-sync-report-20260828-194748.json-44034-      "newId": "ce1151e9f1db74ba4bbacc453",
+./card-sync-report-20260828-194748.json-44035-      "legacyId": 5204,
+./card-sync-report-20260828-194748.json-44036-      "profileLegacyId": 91,
+./card-sync-report-20260828-194748.json-44037-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-194748.json-44038-      "attachableLegacyId": 914,
+./card-sync-report-20260828-194748.json:44039:      "docName": "featured_1787310810_6a8832da36456.jpg",
+./card-sync-report-20260828-194748.json-44040-      "attachmentRelink": true
+./card-sync-report-20260828-194748.json-44041-    },
+./card-sync-report-20260828-194748.json-44042-    {
+./card-sync-report-20260828-194748.json-44043-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-194748.json-44044-      "table": "Attachment",
+./card-sync-report-20260828-194748.json-44045-      "newId": "c1a90a863ee5b4a9f8187f3ad",
+--
+./card-sync-report-20260828-200258.json-43796-      "table": "Attachment",
+./card-sync-report-20260828-200258.json-43797-      "newId": "c5c408c7b46904bb2bfa3635c",
+./card-sync-report-20260828-200258.json-43798-      "legacyId": 5204,
+./card-sync-report-20260828-200258.json-43799-      "profileLegacyId": 91,
+./card-sync-report-20260828-200258.json-43800-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-200258.json-43801-      "attachableLegacyId": 914,
+./card-sync-report-20260828-200258.json:43802:      "docName": "featured_1787310810_6a8832da36456.jpg",
+./card-sync-report-20260828-200258.json-43803-      "attachmentRelink": true
+./card-sync-report-20260828-200258.json-43804-    },
+./card-sync-report-20260828-200258.json-43805-    {
+./card-sync-report-20260828-200258.json-43806-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-200258.json-43807-      "table": "Attachment",
+./card-sync-report-20260828-200258.json-43808-      "newId": "c53da475b15dd4d67a8d2ad5d",
+--
+./michaelangelo-5204-5206-report-search.txt-1-
+./michaelangelo-5204-5206-report-search.txt-2-################################################################################
+./michaelangelo-5204-5206-report-search.txt:3:FILE: featured_1787310810_6a8832da36456.jpg
+./michaelangelo-5204-5206-report-search.txt-4-################################################################################
+./michaelangelo-5204-5206-report-search.txt-5-./michaelangelo-after-reconcile-audit.txt-199-OLD PORTFOLIO:
+./michaelangelo-5204-5206-report-search.txt-6-./michaelangelo-after-reconcile-audit.txt-200-{'id': 914, 'profile_id': 91, 'title': '12', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-7-./michaelangelo-after-reconcile-audit.txt-201-
+./michaelangelo-5204-5206-report-search.txt-8-./michaelangelo-after-reconcile-audit.txt-202-OLD ATTACHMENT COUNT: 1
+./michaelangelo-5204-5206-report-search.txt-9-./michaelangelo-after-reconcile-audit.txt-203-
+./michaelangelo-5204-5206-report-search.txt-10-./michaelangelo-after-reconcile-audit.txt-204-------------------------------------------------------------
+./michaelangelo-5204-5206-report-search.txt:11:./michaelangelo-after-reconcile-audit.txt:205:OLD ATTACHMENT: {'id': 5204, 'portfolioId': 914, 'typeId': 7, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt:12:./michaelangelo-after-reconcile-audit.txt:206:POSTGRES ATTACHMENT: {'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmtgtwr5n001m4ckcqytt7u0g', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-13-./michaelangelo-after-reconcile-audit.txt-207-CURRENT ATTACHABLE-ID POINTS TO REAL PORTFOLIO: cmtgtwr5n001m4ckcqytt7u0g
+./michaelangelo-5204-5206-report-search.txt-14-./michaelangelo-after-reconcile-audit.txt-208-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-5204-5206-report-search.txt:15:./michaelangelo-after-reconcile-audit.txt:209:NORMALIZED FILE: featured_1787310810_6a8832da36456.jpg
+./michaelangelo-5204-5206-report-search.txt-16-./michaelangelo-after-reconcile-audit.txt-210-
+./michaelangelo-5204-5206-report-search.txt-17-./michaelangelo-after-reconcile-audit.txt-211-EXISTING LEGACY-ID MATCH:
+./michaelangelo-5204-5206-report-search.txt-18-./michaelangelo-after-reconcile-audit.txt-212-[{'id': 'cmtgtwr5n001m4ckcqytt7u0g', 'legacyId': 914, 'title': '12', 'imageUrl': '', 'attachmentUrl': None, 'attachmentName': None}]
+./michaelangelo-5204-5206-report-search.txt-19-./michaelangelo-after-reconcile-audit.txt-213-
+./michaelangelo-5204-5206-report-search.txt-20-./michaelangelo-after-reconcile-audit.txt-214-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-5204-5206-report-search.txt-21-./michaelangelo-after-reconcile-audit.txt-215-[{'id': 'cmtgtwr5n001m4ckcqytt7u0g', 'legacyId': 914, 'title': '12', 'imageUrl': '', 'attachmentUrl': None, 'attachmentName': None}]
+--
+./michaelangelo-5204-5206-report-search.txt-23-./michaelangelo-target-events.txt-273-  "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-24-./michaelangelo-target-events.txt-274-  "rowId": "c821788f7333649e2ae9cf80f",
+./michaelangelo-5204-5206-report-search.txt-25-./michaelangelo-target-events.txt-275-  "legacyId": 5204,
+./michaelangelo-5204-5206-report-search.txt-26-./michaelangelo-target-events.txt-276-  "profileLegacyId": 91,
+./michaelangelo-5204-5206-report-search.txt-27-./michaelangelo-target-events.txt-277-  "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-5204-5206-report-search.txt-28-./michaelangelo-target-events.txt-278-  "attachableLegacyId": 914,
+./michaelangelo-5204-5206-report-search.txt:29:./michaelangelo-target-events.txt:279:  "docName": "featured_1787310810_6a8832da36456.jpg",
+./michaelangelo-5204-5206-report-search.txt-30-./michaelangelo-target-events.txt-280-  "attachmentRelink": true
+./michaelangelo-5204-5206-report-search.txt-31-./michaelangelo-target-events.txt-281-}
+./michaelangelo-5204-5206-report-search.txt-32-./michaelangelo-target-events.txt-282---------------------------------------------------------------------------------
+./michaelangelo-5204-5206-report-search.txt-33-./michaelangelo-target-events.txt-283-{
+./michaelangelo-5204-5206-report-search.txt-34-./michaelangelo-target-events.txt-284-  "action": "WOULD_UPDATE_FROM_OLD",
+./michaelangelo-5204-5206-report-search.txt-35-./michaelangelo-target-events.txt-285-  "table": "Attachment",
+--
+./michaelangelo-5204-5206-report-search.txt-37-./michaelangelo-missing-row-inspection.txt-75-================================================================================
+./michaelangelo-5204-5206-report-search.txt-38-./michaelangelo-missing-row-inspection.txt-76-{'id': 'cmsuurdwu0kugcnkckvpuk2zd', 'legacyId': 858, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupaxz05rfcnkcp7x5pvq4', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'Logo-Transparency.png', 'url': 'Logo-Transparency.png', 'publicId': None, 'resourceType': None, 'format': None, 'bytes': None, 'extension': None, 'mimeType': None, 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000), 'updatedAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000)}
+./michaelangelo-5204-5206-report-search.txt-39-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-40-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-41-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-42-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt:43:./michaelangelo-missing-row-inspection.txt:81:{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-44-./michaelangelo-missing-row-inspection.txt-82-{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-45-./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-46-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-47-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-48-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-49-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+--
+./michaelangelo-5204-5206-report-search.txt-51-./card-sync-report-20260828-211611.json-43801-      "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-52-./card-sync-report-20260828-211611.json-43802-      "newId": "ceda1d072153f419daca174b8",
+./michaelangelo-5204-5206-report-search.txt-53-./card-sync-report-20260828-211611.json-43803-      "legacyId": 5204,
+./michaelangelo-5204-5206-report-search.txt-54-./card-sync-report-20260828-211611.json-43804-      "profileLegacyId": 91,
+./michaelangelo-5204-5206-report-search.txt-55-./card-sync-report-20260828-211611.json-43805-      "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-5204-5206-report-search.txt-56-./card-sync-report-20260828-211611.json-43806-      "attachableLegacyId": 914,
+./michaelangelo-5204-5206-report-search.txt:57:./card-sync-report-20260828-211611.json:43807:      "docName": "featured_1787310810_6a8832da36456.jpg",
+./michaelangelo-5204-5206-report-search.txt-58-./card-sync-report-20260828-211611.json-43808-      "attachmentRelink": true
+./michaelangelo-5204-5206-report-search.txt-59-./card-sync-report-20260828-211611.json-43809-    },
+./michaelangelo-5204-5206-report-search.txt-60-./card-sync-report-20260828-211611.json-43810-    {
+./michaelangelo-5204-5206-report-search.txt-61-./card-sync-report-20260828-211611.json-43811-      "action": "WOULD_INSERT",
+./michaelangelo-5204-5206-report-search.txt-62-./card-sync-report-20260828-211611.json-43812-      "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-63-./card-sync-report-20260828-211611.json-43813-      "newId": "cf53448018636429098e54ef5",
+--
+./michaelangelo-5204-5206-report-search.txt-65-./michaelangelo-remaining-audit.txt-191-OLD PORTFOLIO:
+./michaelangelo-5204-5206-report-search.txt-66-./michaelangelo-remaining-audit.txt-192-{'id': 914, 'profile_id': 91, 'title': '12', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-67-./michaelangelo-remaining-audit.txt-193-
+./michaelangelo-5204-5206-report-search.txt-68-./michaelangelo-remaining-audit.txt-194-OLD ATTACHMENT COUNT: 1
+./michaelangelo-5204-5206-report-search.txt-69-./michaelangelo-remaining-audit.txt-195-
+./michaelangelo-5204-5206-report-search.txt-70-./michaelangelo-remaining-audit.txt-196-------------------------------------------------------------
+./michaelangelo-5204-5206-report-search.txt:71:./michaelangelo-remaining-audit.txt:197:OLD ATTACHMENT: {'id': 5204, 'portfolioId': 914, 'typeId': 7, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt:72:./michaelangelo-remaining-audit.txt:198:POSTGRES ATTACHMENT: {'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-73-./michaelangelo-remaining-audit.txt-199-CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: caa817dd098d74c93b33798f2
+./michaelangelo-5204-5206-report-search.txt-74-./michaelangelo-remaining-audit.txt-200-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-5204-5206-report-search.txt:75:./michaelangelo-remaining-audit.txt:201:NORMALIZED FILE: featured_1787310810_6a8832da36456.jpg
+./michaelangelo-5204-5206-report-search.txt-76-./michaelangelo-remaining-audit.txt-202-
+./michaelangelo-5204-5206-report-search.txt-77-./michaelangelo-remaining-audit.txt-203-EXISTING LEGACY-ID MATCH:
+./michaelangelo-5204-5206-report-search.txt-78-./michaelangelo-remaining-audit.txt-204-NONE
+./michaelangelo-5204-5206-report-search.txt-79-./michaelangelo-remaining-audit.txt-205-
+./michaelangelo-5204-5206-report-search.txt-80-./michaelangelo-remaining-audit.txt-206-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-5204-5206-report-search.txt-81-./michaelangelo-remaining-audit.txt-207-NONE
+--
+./michaelangelo-profile91-dry-run.json-3617-      "table": "Attachment",
+./michaelangelo-profile91-dry-run.json-3618-      "rowId": "c821788f7333649e2ae9cf80f",
+./michaelangelo-profile91-dry-run.json-3619-      "legacyId": 5204,
+./michaelangelo-profile91-dry-run.json-3620-      "profileLegacyId": 91,
+./michaelangelo-profile91-dry-run.json-3621-      "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-profile91-dry-run.json-3622-      "attachableLegacyId": 914,
+./michaelangelo-profile91-dry-run.json:3623:      "docName": "featured_1787310810_6a8832da36456.jpg",
+./michaelangelo-profile91-dry-run.json-3624-      "attachmentRelink": true
+./michaelangelo-profile91-dry-run.json-3625-    },
+./michaelangelo-profile91-dry-run.json-3626-    {
+./michaelangelo-profile91-dry-run.json-3627-      "action": "WOULD_UPDATE_FROM_OLD",
+./michaelangelo-profile91-dry-run.json-3628-      "table": "Attachment",
+./michaelangelo-profile91-dry-run.json-3629-      "rowId": "c3e81703d07754dcf99f2871c",
+--
+./card-sync-report-20260828-211808.json-43801-      "table": "Attachment",
+./card-sync-report-20260828-211808.json-43802-      "newId": "c821788f7333649e2ae9cf80f",
+./card-sync-report-20260828-211808.json-43803-      "legacyId": 5204,
+./card-sync-report-20260828-211808.json-43804-      "profileLegacyId": 91,
+./card-sync-report-20260828-211808.json-43805-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-211808.json-43806-      "attachableLegacyId": 914,
+./card-sync-report-20260828-211808.json:43807:      "docName": "featured_1787310810_6a8832da36456.jpg",
+./card-sync-report-20260828-211808.json-43808-      "attachmentRelink": true
+./card-sync-report-20260828-211808.json-43809-    },
+./card-sync-report-20260828-211808.json-43810-    {
+./card-sync-report-20260828-211808.json-43811-      "action": "INSERT",
+./card-sync-report-20260828-211808.json-43812-      "table": "Attachment",
+./card-sync-report-20260828-211808.json-43813-      "newId": "c3e81703d07754dcf99f2871c",
+--
+./card-sync-report-20260828-195823.json-43796-      "table": "Attachment",
+./card-sync-report-20260828-195823.json-43797-      "newId": "c3815844be64e4262984635f5",
+./card-sync-report-20260828-195823.json-43798-      "legacyId": 5204,
+./card-sync-report-20260828-195823.json-43799-      "profileLegacyId": 91,
+./card-sync-report-20260828-195823.json-43800-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-195823.json-43801-      "attachableLegacyId": 914,
+./card-sync-report-20260828-195823.json:43802:      "docName": "featured_1787310810_6a8832da36456.jpg",
+./card-sync-report-20260828-195823.json-43803-      "attachmentRelink": true
+./card-sync-report-20260828-195823.json-43804-    },
+./card-sync-report-20260828-195823.json-43805-    {
+./card-sync-report-20260828-195823.json-43806-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-195823.json-43807-      "table": "Attachment",
+./card-sync-report-20260828-195823.json-43808-      "newId": "c7fdb0dec233c4a32902a33e5",
+--
+./michaelangelo-old-source-inspection.txt-75-{'id': 4599, 'doc_name': 'featured_1779611406_6a12b70e008e5.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 783, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 5, 24, 8, 30, 6), 'updated_at': datetime.datetime(2026, 5, 24, 8, 30, 6)}
+./michaelangelo-old-source-inspection.txt-76-
+./michaelangelo-old-source-inspection.txt-77-{'id': 5198, 'doc_name': 'featured_1787052350_6a84413ea1504.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 912, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updated_at': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-old-source-inspection.txt-78-
+./michaelangelo-old-source-inspection.txt-79-{'id': 5199, 'doc_name': 'featured_1787052578_6a844222cc1e1.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 913, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updated_at': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-old-source-inspection.txt-80-
+./michaelangelo-old-source-inspection.txt:81:{'id': 5204, 'doc_name': 'featured_1787310810_6a8832da36456.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 914, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-old-source-inspection.txt-82-
+./michaelangelo-old-source-inspection.txt-83-{'id': 5205, 'doc_name': 'featured_1787310869_6a8833157b513.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 915, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-old-source-inspection.txt-84-
+./michaelangelo-old-source-inspection.txt-85-{'id': 5206, 'doc_name': 'featured_1787311019_6a8833abac368.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 916, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 17), 'updated_at': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-old-source-inspection.txt-86-
+./michaelangelo-old-source-inspection.txt-87-==========================================================================================
+--
+./card-sync-report-20260828-212054.json-43793-      "table": "Attachment",
+./card-sync-report-20260828-212054.json-43794-      "reason": "attachment_relationship_already_correct",
+./card-sync-report-20260828-212054.json-43795-      "legacyId": 5204,
+./card-sync-report-20260828-212054.json-43796-      "profileLegacyId": 91,
+./card-sync-report-20260828-212054.json-43797-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-212054.json-43798-      "attachableLegacyId": 914,
+./card-sync-report-20260828-212054.json:43799:      "docName": "featured_1787310810_6a8832da36456.jpg",
+./card-sync-report-20260828-212054.json-43800-      "attachmentRelink": true
+./card-sync-report-20260828-212054.json-43801-    },
+./card-sync-report-20260828-212054.json-43802-    {
+./card-sync-report-20260828-212054.json-43803-      "action": "KEEP_NEW",
+./card-sync-report-20260828-212054.json-43804-      "table": "Attachment",
+./card-sync-report-20260828-212054.json-43805-      "reason": "attachment_relationship_already_correct",
+
+################################################################################
+FILE: featured_1787310869_6a8833157b513.jpg
+################################################################################
+./michaelangelo-after-reconcile-audit.txt-232-OLD PORTFOLIO:
+./michaelangelo-after-reconcile-audit.txt-233-{'id': 915, 'profile_id': 91, 'title': '13', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-after-reconcile-audit.txt-234-
+./michaelangelo-after-reconcile-audit.txt-235-OLD ATTACHMENT COUNT: 1
+./michaelangelo-after-reconcile-audit.txt-236-
+./michaelangelo-after-reconcile-audit.txt-237-------------------------------------------------------------
+./michaelangelo-after-reconcile-audit.txt:238:OLD ATTACHMENT: {'id': 5205, 'portfolioId': 915, 'typeId': 7, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-after-reconcile-audit.txt:239:POSTGRES ATTACHMENT: {'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c8a4dbb1b86134053a375e838', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-after-reconcile-audit.txt-240-CURRENT ATTACHABLE-ID POINTS TO REAL PORTFOLIO: c8a4dbb1b86134053a375e838
+./michaelangelo-after-reconcile-audit.txt-241-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-after-reconcile-audit.txt:242:NORMALIZED FILE: featured_1787310869_6a8833157b513.jpg
+./michaelangelo-after-reconcile-audit.txt-243-
+./michaelangelo-after-reconcile-audit.txt-244-EXISTING LEGACY-ID MATCH:
+./michaelangelo-after-reconcile-audit.txt-245-[{'id': 'c8a4dbb1b86134053a375e838', 'legacyId': 915, 'title': '13', 'imageUrl': None, 'attachmentUrl': None, 'attachmentName': None}]
+./michaelangelo-after-reconcile-audit.txt-246-
+./michaelangelo-after-reconcile-audit.txt-247-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-after-reconcile-audit.txt-248-[{'id': 'c8a4dbb1b86134053a375e838', 'legacyId': 915, 'title': '13', 'imageUrl': None, 'attachmentUrl': None, 'attachmentName': None}]
+--
+./michaelangelo-target-events.txt-285-  "table": "Attachment",
+./michaelangelo-target-events.txt-286-  "rowId": "c3e81703d07754dcf99f2871c",
+./michaelangelo-target-events.txt-287-  "legacyId": 5205,
+./michaelangelo-target-events.txt-288-  "profileLegacyId": 91,
+./michaelangelo-target-events.txt-289-  "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-target-events.txt-290-  "attachableLegacyId": 915,
+./michaelangelo-target-events.txt:291:  "docName": "featured_1787310869_6a8833157b513.jpg",
+./michaelangelo-target-events.txt-292-  "attachmentRelink": true
+./michaelangelo-target-events.txt-293-}
+./michaelangelo-target-events.txt-294---------------------------------------------------------------------------------
+./michaelangelo-target-events.txt-295-{
+./michaelangelo-target-events.txt-296-  "action": "WOULD_UPDATE_FROM_OLD",
+./michaelangelo-target-events.txt-297-  "table": "Attachment",
+--
+./michaelangelo-missing-row-inspection.txt-76-{'id': 'cmsuurdwu0kugcnkckvpuk2zd', 'legacyId': 858, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupaxz05rfcnkcp7x5pvq4', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'Logo-Transparency.png', 'url': 'Logo-Transparency.png', 'publicId': None, 'resourceType': None, 'format': None, 'bytes': None, 'extension': None, 'mimeType': None, 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000), 'updatedAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000)}
+./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-missing-row-inspection.txt-81-{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-missing-row-inspection.txt:82:{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-missing-row-inspection.txt-88-COUNT: 5
+--
+./card-sync-report-20260828-211611.json-43812-      "table": "Attachment",
+./card-sync-report-20260828-211611.json-43813-      "newId": "cf53448018636429098e54ef5",
+./card-sync-report-20260828-211611.json-43814-      "legacyId": 5205,
+./card-sync-report-20260828-211611.json-43815-      "profileLegacyId": 91,
+./card-sync-report-20260828-211611.json-43816-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-211611.json-43817-      "attachableLegacyId": 915,
+./card-sync-report-20260828-211611.json:43818:      "docName": "featured_1787310869_6a8833157b513.jpg",
+./card-sync-report-20260828-211611.json-43819-      "attachmentRelink": true
+./card-sync-report-20260828-211611.json-43820-    },
+./card-sync-report-20260828-211611.json-43821-    {
+./card-sync-report-20260828-211611.json-43822-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-211611.json-43823-      "table": "Attachment",
+./card-sync-report-20260828-211611.json-43824-      "newId": "ce64137383e1e41a8abbd528c",
+--
+./michaelangelo-remaining-audit.txt-223-OLD PORTFOLIO:
+./michaelangelo-remaining-audit.txt-224-{'id': 915, 'profile_id': 91, 'title': '13', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-remaining-audit.txt-225-
+./michaelangelo-remaining-audit.txt-226-OLD ATTACHMENT COUNT: 1
+./michaelangelo-remaining-audit.txt-227-
+./michaelangelo-remaining-audit.txt-228-------------------------------------------------------------
+./michaelangelo-remaining-audit.txt:229:OLD ATTACHMENT: {'id': 5205, 'portfolioId': 915, 'typeId': 7, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-remaining-audit.txt:230:POSTGRES ATTACHMENT: {'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-remaining-audit.txt-231-CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: c557feddf5e3b44f2ad462327
+./michaelangelo-remaining-audit.txt-232-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-remaining-audit.txt:233:NORMALIZED FILE: featured_1787310869_6a8833157b513.jpg
+./michaelangelo-remaining-audit.txt-234-
+./michaelangelo-remaining-audit.txt-235-EXISTING LEGACY-ID MATCH:
+./michaelangelo-remaining-audit.txt-236-NONE
+./michaelangelo-remaining-audit.txt-237-
+./michaelangelo-remaining-audit.txt-238-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-remaining-audit.txt-239-NONE
+--
+./card-sync-report-20260828-194748.json-44044-      "table": "Attachment",
+./card-sync-report-20260828-194748.json-44045-      "newId": "c1a90a863ee5b4a9f8187f3ad",
+./card-sync-report-20260828-194748.json-44046-      "legacyId": 5205,
+./card-sync-report-20260828-194748.json-44047-      "profileLegacyId": 91,
+./card-sync-report-20260828-194748.json-44048-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-194748.json-44049-      "attachableLegacyId": 915,
+./card-sync-report-20260828-194748.json:44050:      "docName": "featured_1787310869_6a8833157b513.jpg",
+./card-sync-report-20260828-194748.json-44051-      "attachmentRelink": true
+./card-sync-report-20260828-194748.json-44052-    },
+./card-sync-report-20260828-194748.json-44053-    {
+./card-sync-report-20260828-194748.json-44054-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-194748.json-44055-      "table": "Attachment",
+./card-sync-report-20260828-194748.json-44056-      "newId": "c8e3f374675a54592839418bc",
+--
+./card-sync-report-20260828-200258.json-43807-      "table": "Attachment",
+./card-sync-report-20260828-200258.json-43808-      "newId": "c53da475b15dd4d67a8d2ad5d",
+./card-sync-report-20260828-200258.json-43809-      "legacyId": 5205,
+./card-sync-report-20260828-200258.json-43810-      "profileLegacyId": 91,
+./card-sync-report-20260828-200258.json-43811-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-200258.json-43812-      "attachableLegacyId": 915,
+./card-sync-report-20260828-200258.json:43813:      "docName": "featured_1787310869_6a8833157b513.jpg",
+./card-sync-report-20260828-200258.json-43814-      "attachmentRelink": true
+./card-sync-report-20260828-200258.json-43815-    },
+./card-sync-report-20260828-200258.json-43816-    {
+./card-sync-report-20260828-200258.json-43817-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-200258.json-43818-      "table": "Attachment",
+./card-sync-report-20260828-200258.json-43819-      "newId": "c082acd39f1704bb58e9b8da1",
+--
+./michaelangelo-5204-5206-report-search.txt-38-./michaelangelo-missing-row-inspection.txt-76-{'id': 'cmsuurdwu0kugcnkckvpuk2zd', 'legacyId': 858, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupaxz05rfcnkcp7x5pvq4', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'Logo-Transparency.png', 'url': 'Logo-Transparency.png', 'publicId': None, 'resourceType': None, 'format': None, 'bytes': None, 'extension': None, 'mimeType': None, 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000), 'updatedAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000)}
+./michaelangelo-5204-5206-report-search.txt-39-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-40-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-41-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-42-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-43-./michaelangelo-missing-row-inspection.txt:81:{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt:44:./michaelangelo-missing-row-inspection.txt-82-{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-45-./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-46-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-47-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-48-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-49-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-5204-5206-report-search.txt-50---
+--
+./michaelangelo-5204-5206-report-search.txt-148-./michaelangelo-5204-5206-report-search.txt-38-./michaelangelo-missing-row-inspection.txt-76-{'id': 'cmsuurdwu0kugcnkckvpuk2zd', 'legacyId': 858, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupaxz05rfcnkcp7x5pvq4', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'Logo-Transparency.png', 'url': 'Logo-Transparency.png', 'publicId': None, 'resourceType': None, 'format': None, 'bytes': None, 'extension': None, 'mimeType': None, 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000), 'updatedAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000)}
+./michaelangelo-5204-5206-report-search.txt-149-./michaelangelo-5204-5206-report-search.txt-39-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-150-./michaelangelo-5204-5206-report-search.txt-40-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-151-./michaelangelo-5204-5206-report-search.txt-41-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-152-./michaelangelo-5204-5206-report-search.txt-42-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-153-./michaelangelo-5204-5206-report-search.txt:43:./michaelangelo-missing-row-inspection.txt:81:{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt:154:./michaelangelo-5204-5206-report-search.txt-44-./michaelangelo-missing-row-inspection.txt-82-{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-155-./michaelangelo-5204-5206-report-search.txt-45-./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-156-./michaelangelo-5204-5206-report-search.txt-46-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-157-./michaelangelo-5204-5206-report-search.txt-47-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-158-./michaelangelo-5204-5206-report-search.txt-48-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-159-./michaelangelo-5204-5206-report-search.txt-49-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-5204-5206-report-search.txt-160---
+--
+./michaelangelo-5204-5206-report-search.txt-237-./michaelangelo-old-source-inspection.txt-77-{'id': 5198, 'doc_name': 'featured_1787052350_6a84413ea1504.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 912, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updated_at': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-238-./michaelangelo-old-source-inspection.txt-78-
+./michaelangelo-5204-5206-report-search.txt-239-./michaelangelo-old-source-inspection.txt-79-{'id': 5199, 'doc_name': 'featured_1787052578_6a844222cc1e1.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 913, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updated_at': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-240-./michaelangelo-old-source-inspection.txt-80-
+./michaelangelo-5204-5206-report-search.txt-241-./michaelangelo-old-source-inspection.txt:81:{'id': 5204, 'doc_name': 'featured_1787310810_6a8832da36456.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 914, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-242-./michaelangelo-old-source-inspection.txt-82-
+./michaelangelo-5204-5206-report-search.txt:243:./michaelangelo-old-source-inspection.txt-83-{'id': 5205, 'doc_name': 'featured_1787310869_6a8833157b513.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 915, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-244-./michaelangelo-old-source-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-245-./michaelangelo-old-source-inspection.txt-85-{'id': 5206, 'doc_name': 'featured_1787311019_6a8833abac368.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 916, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 17), 'updated_at': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-246-./michaelangelo-old-source-inspection.txt-86-
+./michaelangelo-5204-5206-report-search.txt-247-./michaelangelo-old-source-inspection.txt-87-==========================================================================================
+./michaelangelo-5204-5206-report-search.txt-248---
+./michaelangelo-5204-5206-report-search.txt-249-./card-sync-report-20260828-212054.json-43793-      "table": "Attachment",
+--
+./michaelangelo-5204-5206-report-search.txt-258-./card-sync-report-20260828-212054.json-43802-    {
+./michaelangelo-5204-5206-report-search.txt-259-./card-sync-report-20260828-212054.json-43803-      "action": "KEEP_NEW",
+./michaelangelo-5204-5206-report-search.txt-260-./card-sync-report-20260828-212054.json-43804-      "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-261-./card-sync-report-20260828-212054.json-43805-      "reason": "attachment_relationship_already_correct",
+./michaelangelo-5204-5206-report-search.txt-262-
+./michaelangelo-5204-5206-report-search.txt-263-################################################################################
+./michaelangelo-5204-5206-report-search.txt:264:FILE: featured_1787310869_6a8833157b513.jpg
+./michaelangelo-5204-5206-report-search.txt-265-################################################################################
+./michaelangelo-5204-5206-report-search.txt-266-./michaelangelo-after-reconcile-audit.txt-232-OLD PORTFOLIO:
+./michaelangelo-5204-5206-report-search.txt-267-./michaelangelo-after-reconcile-audit.txt-233-{'id': 915, 'profile_id': 91, 'title': '13', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-268-./michaelangelo-after-reconcile-audit.txt-234-
+./michaelangelo-5204-5206-report-search.txt-269-./michaelangelo-after-reconcile-audit.txt-235-OLD ATTACHMENT COUNT: 1
+./michaelangelo-5204-5206-report-search.txt-270-./michaelangelo-after-reconcile-audit.txt-236-
+./michaelangelo-5204-5206-report-search.txt-271-./michaelangelo-after-reconcile-audit.txt-237-------------------------------------------------------------
+./michaelangelo-5204-5206-report-search.txt:272:./michaelangelo-after-reconcile-audit.txt:238:OLD ATTACHMENT: {'id': 5205, 'portfolioId': 915, 'typeId': 7, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt:273:./michaelangelo-after-reconcile-audit.txt:239:POSTGRES ATTACHMENT: {'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c8a4dbb1b86134053a375e838', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-274-./michaelangelo-after-reconcile-audit.txt-240-CURRENT ATTACHABLE-ID POINTS TO REAL PORTFOLIO: c8a4dbb1b86134053a375e838
+./michaelangelo-5204-5206-report-search.txt-275-./michaelangelo-after-reconcile-audit.txt-241-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-5204-5206-report-search.txt:276:./michaelangelo-after-reconcile-audit.txt:242:NORMALIZED FILE: featured_1787310869_6a8833157b513.jpg
+./michaelangelo-5204-5206-report-search.txt-277-./michaelangelo-after-reconcile-audit.txt-243-
+./michaelangelo-5204-5206-report-search.txt-278-./michaelangelo-after-reconcile-audit.txt-244-EXISTING LEGACY-ID MATCH:
+./michaelangelo-5204-5206-report-search.txt-279-./michaelangelo-after-reconcile-audit.txt-245-[{'id': 'c8a4dbb1b86134053a375e838', 'legacyId': 915, 'title': '13', 'imageUrl': None, 'attachmentUrl': None, 'attachmentName': None}]
+./michaelangelo-5204-5206-report-search.txt-280-./michaelangelo-after-reconcile-audit.txt-246-
+./michaelangelo-5204-5206-report-search.txt-281-./michaelangelo-after-reconcile-audit.txt-247-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-5204-5206-report-search.txt-282-./michaelangelo-after-reconcile-audit.txt-248-[{'id': 'c8a4dbb1b86134053a375e838', 'legacyId': 915, 'title': '13', 'imageUrl': None, 'attachmentUrl': None, 'attachmentName': None}]
+--
+./michaelangelo-5204-5206-report-search.txt-284-./michaelangelo-target-events.txt-285-  "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-285-./michaelangelo-target-events.txt-286-  "rowId": "c3e81703d07754dcf99f2871c",
+./michaelangelo-5204-5206-report-search.txt-286-./michaelangelo-target-events.txt-287-  "legacyId": 5205,
+./michaelangelo-5204-5206-report-search.txt-287-./michaelangelo-target-events.txt-288-  "profileLegacyId": 91,
+./michaelangelo-5204-5206-report-search.txt-288-./michaelangelo-target-events.txt-289-  "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-5204-5206-report-search.txt-289-./michaelangelo-target-events.txt-290-  "attachableLegacyId": 915,
+./michaelangelo-5204-5206-report-search.txt:290:./michaelangelo-target-events.txt:291:  "docName": "featured_1787310869_6a8833157b513.jpg",
+./michaelangelo-5204-5206-report-search.txt-291-./michaelangelo-target-events.txt-292-  "attachmentRelink": true
+./michaelangelo-5204-5206-report-search.txt-292-./michaelangelo-target-events.txt-293-}
+./michaelangelo-5204-5206-report-search.txt-293-./michaelangelo-target-events.txt-294---------------------------------------------------------------------------------
+./michaelangelo-5204-5206-report-search.txt-294-./michaelangelo-target-events.txt-295-{
+./michaelangelo-5204-5206-report-search.txt-295-./michaelangelo-target-events.txt-296-  "action": "WOULD_UPDATE_FROM_OLD",
+./michaelangelo-5204-5206-report-search.txt-296-./michaelangelo-target-events.txt-297-  "table": "Attachment",
+--
+./michaelangelo-5204-5206-report-search.txt-298-./michaelangelo-missing-row-inspection.txt-76-{'id': 'cmsuurdwu0kugcnkckvpuk2zd', 'legacyId': 858, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupaxz05rfcnkcp7x5pvq4', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'Logo-Transparency.png', 'url': 'Logo-Transparency.png', 'publicId': None, 'resourceType': None, 'format': None, 'bytes': None, 'extension': None, 'mimeType': None, 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000), 'updatedAt': datetime.datetime(2026, 8, 15, 20, 52, 47, 22000)}
+./michaelangelo-5204-5206-report-search.txt-299-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-300-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-301-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-302-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-303-./michaelangelo-missing-row-inspection.txt-81-{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt:304:./michaelangelo-missing-row-inspection.txt:82:{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-305-./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-306-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-307-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-308-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-309-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-5204-5206-report-search.txt-310-./michaelangelo-missing-row-inspection.txt-88-COUNT: 5
+--
+./michaelangelo-5204-5206-report-search.txt-312-./card-sync-report-20260828-211611.json-43812-      "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-313-./card-sync-report-20260828-211611.json-43813-      "newId": "cf53448018636429098e54ef5",
+./michaelangelo-5204-5206-report-search.txt-314-./card-sync-report-20260828-211611.json-43814-      "legacyId": 5205,
+./michaelangelo-5204-5206-report-search.txt-315-./card-sync-report-20260828-211611.json-43815-      "profileLegacyId": 91,
+./michaelangelo-5204-5206-report-search.txt-316-./card-sync-report-20260828-211611.json-43816-      "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-5204-5206-report-search.txt-317-./card-sync-report-20260828-211611.json-43817-      "attachableLegacyId": 915,
+./michaelangelo-5204-5206-report-search.txt:318:./card-sync-report-20260828-211611.json:43818:      "docName": "featured_1787310869_6a8833157b513.jpg",
+./michaelangelo-5204-5206-report-search.txt-319-./card-sync-report-20260828-211611.json-43819-      "attachmentRelink": true
+./michaelangelo-5204-5206-report-search.txt-320-./card-sync-report-20260828-211611.json-43820-    },
+./michaelangelo-5204-5206-report-search.txt-321-./card-sync-report-20260828-211611.json-43821-    {
+./michaelangelo-5204-5206-report-search.txt-322-./card-sync-report-20260828-211611.json-43822-      "action": "WOULD_INSERT",
+./michaelangelo-5204-5206-report-search.txt-323-./card-sync-report-20260828-211611.json-43823-      "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-324-./card-sync-report-20260828-211611.json-43824-      "newId": "ce64137383e1e41a8abbd528c",
+--
+./michaelangelo-5204-5206-report-search.txt-326-./michaelangelo-remaining-audit.txt-223-OLD PORTFOLIO:
+./michaelangelo-5204-5206-report-search.txt-327-./michaelangelo-remaining-audit.txt-224-{'id': 915, 'profile_id': 91, 'title': '13', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-328-./michaelangelo-remaining-audit.txt-225-
+./michaelangelo-5204-5206-report-search.txt-329-./michaelangelo-remaining-audit.txt-226-OLD ATTACHMENT COUNT: 1
+./michaelangelo-5204-5206-report-search.txt-330-./michaelangelo-remaining-audit.txt-227-
+./michaelangelo-5204-5206-report-search.txt-331-./michaelangelo-remaining-audit.txt-228-------------------------------------------------------------
+./michaelangelo-5204-5206-report-search.txt:332:./michaelangelo-remaining-audit.txt:229:OLD ATTACHMENT: {'id': 5205, 'portfolioId': 915, 'typeId': 7, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt:333:./michaelangelo-remaining-audit.txt:230:POSTGRES ATTACHMENT: {'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-334-./michaelangelo-remaining-audit.txt-231-CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: c557feddf5e3b44f2ad462327
+./michaelangelo-5204-5206-report-search.txt-335-./michaelangelo-remaining-audit.txt-232-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-5204-5206-report-search.txt:336:./michaelangelo-remaining-audit.txt:233:NORMALIZED FILE: featured_1787310869_6a8833157b513.jpg
+./michaelangelo-5204-5206-report-search.txt-337-./michaelangelo-remaining-audit.txt-234-
+./michaelangelo-5204-5206-report-search.txt-338-./michaelangelo-remaining-audit.txt-235-EXISTING LEGACY-ID MATCH:
+./michaelangelo-5204-5206-report-search.txt-339-./michaelangelo-remaining-audit.txt-236-NONE
+./michaelangelo-5204-5206-report-search.txt-340-./michaelangelo-remaining-audit.txt-237-
+./michaelangelo-5204-5206-report-search.txt-341-./michaelangelo-remaining-audit.txt-238-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-5204-5206-report-search.txt-342-./michaelangelo-remaining-audit.txt-239-NONE
+--
+./michaelangelo-profile91-dry-run.json-3628-      "table": "Attachment",
+./michaelangelo-profile91-dry-run.json-3629-      "rowId": "c3e81703d07754dcf99f2871c",
+./michaelangelo-profile91-dry-run.json-3630-      "legacyId": 5205,
+./michaelangelo-profile91-dry-run.json-3631-      "profileLegacyId": 91,
+./michaelangelo-profile91-dry-run.json-3632-      "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-profile91-dry-run.json-3633-      "attachableLegacyId": 915,
+./michaelangelo-profile91-dry-run.json:3634:      "docName": "featured_1787310869_6a8833157b513.jpg",
+./michaelangelo-profile91-dry-run.json-3635-      "attachmentRelink": true
+./michaelangelo-profile91-dry-run.json-3636-    },
+./michaelangelo-profile91-dry-run.json-3637-    {
+./michaelangelo-profile91-dry-run.json-3638-      "action": "WOULD_UPDATE_FROM_OLD",
+./michaelangelo-profile91-dry-run.json-3639-      "table": "Attachment",
+./michaelangelo-profile91-dry-run.json-3640-      "rowId": "c16ff491e342c4d5089a095aa",
+--
+./card-sync-report-20260828-211808.json-43812-      "table": "Attachment",
+./card-sync-report-20260828-211808.json-43813-      "newId": "c3e81703d07754dcf99f2871c",
+./card-sync-report-20260828-211808.json-43814-      "legacyId": 5205,
+./card-sync-report-20260828-211808.json-43815-      "profileLegacyId": 91,
+./card-sync-report-20260828-211808.json-43816-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-211808.json-43817-      "attachableLegacyId": 915,
+./card-sync-report-20260828-211808.json:43818:      "docName": "featured_1787310869_6a8833157b513.jpg",
+./card-sync-report-20260828-211808.json-43819-      "attachmentRelink": true
+./card-sync-report-20260828-211808.json-43820-    },
+./card-sync-report-20260828-211808.json-43821-    {
+./card-sync-report-20260828-211808.json-43822-      "action": "INSERT",
+./card-sync-report-20260828-211808.json-43823-      "table": "Attachment",
+./card-sync-report-20260828-211808.json-43824-      "newId": "c16ff491e342c4d5089a095aa",
+--
+./card-sync-report-20260828-195823.json-43807-      "table": "Attachment",
+./card-sync-report-20260828-195823.json-43808-      "newId": "c7fdb0dec233c4a32902a33e5",
+./card-sync-report-20260828-195823.json-43809-      "legacyId": 5205,
+./card-sync-report-20260828-195823.json-43810-      "profileLegacyId": 91,
+./card-sync-report-20260828-195823.json-43811-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-195823.json-43812-      "attachableLegacyId": 915,
+./card-sync-report-20260828-195823.json:43813:      "docName": "featured_1787310869_6a8833157b513.jpg",
+./card-sync-report-20260828-195823.json-43814-      "attachmentRelink": true
+./card-sync-report-20260828-195823.json-43815-    },
+./card-sync-report-20260828-195823.json-43816-    {
+./card-sync-report-20260828-195823.json-43817-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-195823.json-43818-      "table": "Attachment",
+./card-sync-report-20260828-195823.json-43819-      "newId": "c0efa07e671ec4172a9bbd118",
+--
+./michaelangelo-old-source-inspection.txt-77-{'id': 5198, 'doc_name': 'featured_1787052350_6a84413ea1504.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 912, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updated_at': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-old-source-inspection.txt-78-
+./michaelangelo-old-source-inspection.txt-79-{'id': 5199, 'doc_name': 'featured_1787052578_6a844222cc1e1.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 913, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updated_at': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-old-source-inspection.txt-80-
+./michaelangelo-old-source-inspection.txt-81-{'id': 5204, 'doc_name': 'featured_1787310810_6a8832da36456.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 914, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-old-source-inspection.txt-82-
+./michaelangelo-old-source-inspection.txt:83:{'id': 5205, 'doc_name': 'featured_1787310869_6a8833157b513.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 915, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-old-source-inspection.txt-84-
+./michaelangelo-old-source-inspection.txt-85-{'id': 5206, 'doc_name': 'featured_1787311019_6a8833abac368.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 916, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 17), 'updated_at': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-old-source-inspection.txt-86-
+./michaelangelo-old-source-inspection.txt-87-==========================================================================================
+./michaelangelo-old-source-inspection.txt-88-5. ATTACHMENT TYPE TABLES
+./michaelangelo-old-source-inspection.txt-89-==========================================================================================
+--
+./card-sync-report-20260828-212054.json-43804-      "table": "Attachment",
+./card-sync-report-20260828-212054.json-43805-      "reason": "attachment_relationship_already_correct",
+./card-sync-report-20260828-212054.json-43806-      "legacyId": 5205,
+./card-sync-report-20260828-212054.json-43807-      "profileLegacyId": 91,
+./card-sync-report-20260828-212054.json-43808-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-212054.json-43809-      "attachableLegacyId": 915,
+./card-sync-report-20260828-212054.json:43810:      "docName": "featured_1787310869_6a8833157b513.jpg",
+./card-sync-report-20260828-212054.json-43811-      "attachmentRelink": true
+./card-sync-report-20260828-212054.json-43812-    },
+./card-sync-report-20260828-212054.json-43813-    {
+./card-sync-report-20260828-212054.json-43814-      "action": "KEEP_NEW",
+./card-sync-report-20260828-212054.json-43815-      "table": "Attachment",
+./card-sync-report-20260828-212054.json-43816-      "reason": "attachment_relationship_already_correct",
+
+################################################################################
+FILE: featured_1787311019_6a8833abac368.jpg
+################################################################################
+./michaelangelo-after-reconcile-audit.txt-265-OLD PORTFOLIO:
+./michaelangelo-after-reconcile-audit.txt-266-{'id': 916, 'profile_id': 91, 'title': '14', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 16, 59), 'updated_at': datetime.datetime(2026, 8, 21, 11, 16, 59)}
+./michaelangelo-after-reconcile-audit.txt-267-
+./michaelangelo-after-reconcile-audit.txt-268-OLD ATTACHMENT COUNT: 1
+./michaelangelo-after-reconcile-audit.txt-269-
+./michaelangelo-after-reconcile-audit.txt-270-------------------------------------------------------------
+./michaelangelo-after-reconcile-audit.txt:271:OLD ATTACHMENT: {'id': 5206, 'portfolioId': 916, 'typeId': 7, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-after-reconcile-audit.txt:272:POSTGRES ATTACHMENT: {'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmtgtwr5l001l4ckcpapmqj6s', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-after-reconcile-audit.txt-273-CURRENT ATTACHABLE-ID POINTS TO REAL PORTFOLIO: cmtgtwr5l001l4ckcpapmqj6s
+./michaelangelo-after-reconcile-audit.txt-274-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-after-reconcile-audit.txt:275:NORMALIZED FILE: featured_1787311019_6a8833abac368.jpg
+./michaelangelo-after-reconcile-audit.txt-276-
+./michaelangelo-after-reconcile-audit.txt-277-EXISTING LEGACY-ID MATCH:
+./michaelangelo-after-reconcile-audit.txt-278-[{'id': 'cmtgtwr5l001l4ckcpapmqj6s', 'legacyId': 916, 'title': '14', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/1788135842186-MC-Profile-Office.jpeg', 'attachmentUrl': None, 'attachmentName': None}]
+./michaelangelo-after-reconcile-audit.txt-279-
+./michaelangelo-after-reconcile-audit.txt-280-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-after-reconcile-audit.txt-281-[{'id': 'cmtgtwr5l001l4ckcpapmqj6s', 'legacyId': 916, 'title': '14', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/1788135842186-MC-Profile-Office.jpeg', 'attachmentUrl': None, 'attachmentName': None}]
+--
+./michaelangelo-target-events.txt-297-  "table": "Attachment",
+./michaelangelo-target-events.txt-298-  "rowId": "c16ff491e342c4d5089a095aa",
+./michaelangelo-target-events.txt-299-  "legacyId": 5206,
+./michaelangelo-target-events.txt-300-  "profileLegacyId": 91,
+./michaelangelo-target-events.txt-301-  "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-target-events.txt-302-  "attachableLegacyId": 916,
+./michaelangelo-target-events.txt:303:  "docName": "featured_1787311019_6a8833abac368.jpg",
+./michaelangelo-target-events.txt-304-  "attachmentRelink": true
+./michaelangelo-target-events.txt-305-}
+./michaelangelo-target-events.txt-306---------------------------------------------------------------------------------
+--
+./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-missing-row-inspection.txt-81-{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-missing-row-inspection.txt-82-{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-missing-row-inspection.txt:83:{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-missing-row-inspection.txt-88-COUNT: 5
+./michaelangelo-missing-row-inspection.txt-89-{'id': 'cmtgtwr5l001l4ckcpapmqj6s', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '14', 'description': '', 'status': 1, 'sortOrder': 0, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/1788135842186-MC-Profile-Office.jpeg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 721000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 721000), 'attachmentUrl': None, 'attachmentName': None}
+--
+./card-sync-report-20260828-211611.json-43823-      "table": "Attachment",
+./card-sync-report-20260828-211611.json-43824-      "newId": "ce64137383e1e41a8abbd528c",
+./card-sync-report-20260828-211611.json-43825-      "legacyId": 5206,
+./card-sync-report-20260828-211611.json-43826-      "profileLegacyId": 91,
+./card-sync-report-20260828-211611.json-43827-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-211611.json-43828-      "attachableLegacyId": 916,
+./card-sync-report-20260828-211611.json:43829:      "docName": "featured_1787311019_6a8833abac368.jpg",
+./card-sync-report-20260828-211611.json-43830-      "attachmentRelink": true
+./card-sync-report-20260828-211611.json-43831-    },
+./card-sync-report-20260828-211611.json-43832-    {
+./card-sync-report-20260828-211611.json-43833-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-211611.json-43834-      "table": "Attachment",
+./card-sync-report-20260828-211611.json-43835-      "newId": "c2ca6bfd26f6a449dba1ca6a2",
+--
+./michaelangelo-remaining-audit.txt-255-OLD PORTFOLIO:
+./michaelangelo-remaining-audit.txt-256-{'id': 916, 'profile_id': 91, 'title': '14', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 16, 59), 'updated_at': datetime.datetime(2026, 8, 21, 11, 16, 59)}
+./michaelangelo-remaining-audit.txt-257-
+./michaelangelo-remaining-audit.txt-258-OLD ATTACHMENT COUNT: 1
+./michaelangelo-remaining-audit.txt-259-
+./michaelangelo-remaining-audit.txt-260-------------------------------------------------------------
+./michaelangelo-remaining-audit.txt:261:OLD ATTACHMENT: {'id': 5206, 'portfolioId': 916, 'typeId': 7, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-remaining-audit.txt:262:POSTGRES ATTACHMENT: {'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-remaining-audit.txt-263-CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: c201e9f94c126461eb68db89c
+./michaelangelo-remaining-audit.txt-264-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-remaining-audit.txt:265:NORMALIZED FILE: featured_1787311019_6a8833abac368.jpg
+./michaelangelo-remaining-audit.txt-266-
+./michaelangelo-remaining-audit.txt-267-EXISTING LEGACY-ID MATCH:
+./michaelangelo-remaining-audit.txt-268-NONE
+./michaelangelo-remaining-audit.txt-269-
+./michaelangelo-remaining-audit.txt-270-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-remaining-audit.txt-271-NONE
+--
+./card-sync-report-20260828-194748.json-44055-      "table": "Attachment",
+./card-sync-report-20260828-194748.json-44056-      "newId": "c8e3f374675a54592839418bc",
+./card-sync-report-20260828-194748.json-44057-      "legacyId": 5206,
+./card-sync-report-20260828-194748.json-44058-      "profileLegacyId": 91,
+./card-sync-report-20260828-194748.json-44059-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-194748.json-44060-      "attachableLegacyId": 916,
+./card-sync-report-20260828-194748.json:44061:      "docName": "featured_1787311019_6a8833abac368.jpg",
+./card-sync-report-20260828-194748.json-44062-      "attachmentRelink": true
+./card-sync-report-20260828-194748.json-44063-    },
+./card-sync-report-20260828-194748.json-44064-    {
+./card-sync-report-20260828-194748.json-44065-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-194748.json-44066-      "table": "Attachment",
+./card-sync-report-20260828-194748.json-44067-      "newId": "c601c26c4a319444fa543046e",
+--
+./card-sync-report-20260828-200258.json-43818-      "table": "Attachment",
+./card-sync-report-20260828-200258.json-43819-      "newId": "c082acd39f1704bb58e9b8da1",
+./card-sync-report-20260828-200258.json-43820-      "legacyId": 5206,
+./card-sync-report-20260828-200258.json-43821-      "profileLegacyId": 91,
+./card-sync-report-20260828-200258.json-43822-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-200258.json-43823-      "attachableLegacyId": 916,
+./card-sync-report-20260828-200258.json:43824:      "docName": "featured_1787311019_6a8833abac368.jpg",
+./card-sync-report-20260828-200258.json-43825-      "attachmentRelink": true
+./card-sync-report-20260828-200258.json-43826-    },
+./card-sync-report-20260828-200258.json-43827-    {
+./card-sync-report-20260828-200258.json-43828-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-200258.json-43829-      "table": "Attachment",
+./card-sync-report-20260828-200258.json-43830-      "newId": "c9310b2c374a1437182a67459",
+--
+./michaelangelo-5204-5206-report-search.txt-39-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-40-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-41-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-42-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-43-./michaelangelo-missing-row-inspection.txt:81:{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-44-./michaelangelo-missing-row-inspection.txt-82-{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt:45:./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-46-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-47-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-48-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-49-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-5204-5206-report-search.txt-50---
+./michaelangelo-5204-5206-report-search.txt-51-./card-sync-report-20260828-211611.json-43801-      "table": "Attachment",
+--
+./michaelangelo-5204-5206-report-search.txt-149-./michaelangelo-5204-5206-report-search.txt-39-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-150-./michaelangelo-5204-5206-report-search.txt-40-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-151-./michaelangelo-5204-5206-report-search.txt-41-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-152-./michaelangelo-5204-5206-report-search.txt-42-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-153-./michaelangelo-5204-5206-report-search.txt:43:./michaelangelo-missing-row-inspection.txt:81:{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-154-./michaelangelo-5204-5206-report-search.txt-44-./michaelangelo-missing-row-inspection.txt-82-{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt:155:./michaelangelo-5204-5206-report-search.txt-45-./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-156-./michaelangelo-5204-5206-report-search.txt-46-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-157-./michaelangelo-5204-5206-report-search.txt-47-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-158-./michaelangelo-5204-5206-report-search.txt-48-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-159-./michaelangelo-5204-5206-report-search.txt-49-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-5204-5206-report-search.txt-160---
+./michaelangelo-5204-5206-report-search.txt-161-./michaelangelo-5204-5206-report-search.txt-51-./card-sync-report-20260828-211611.json-43801-      "table": "Attachment",
+--
+./michaelangelo-5204-5206-report-search.txt-239-./michaelangelo-old-source-inspection.txt-79-{'id': 5199, 'doc_name': 'featured_1787052578_6a844222cc1e1.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 913, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updated_at': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-240-./michaelangelo-old-source-inspection.txt-80-
+./michaelangelo-5204-5206-report-search.txt-241-./michaelangelo-old-source-inspection.txt:81:{'id': 5204, 'doc_name': 'featured_1787310810_6a8832da36456.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 914, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-242-./michaelangelo-old-source-inspection.txt-82-
+./michaelangelo-5204-5206-report-search.txt-243-./michaelangelo-old-source-inspection.txt-83-{'id': 5205, 'doc_name': 'featured_1787310869_6a8833157b513.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 915, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-244-./michaelangelo-old-source-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt:245:./michaelangelo-old-source-inspection.txt-85-{'id': 5206, 'doc_name': 'featured_1787311019_6a8833abac368.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 916, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 17), 'updated_at': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-246-./michaelangelo-old-source-inspection.txt-86-
+./michaelangelo-5204-5206-report-search.txt-247-./michaelangelo-old-source-inspection.txt-87-==========================================================================================
+./michaelangelo-5204-5206-report-search.txt-248---
+./michaelangelo-5204-5206-report-search.txt-249-./card-sync-report-20260828-212054.json-43793-      "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-250-./card-sync-report-20260828-212054.json-43794-      "reason": "attachment_relationship_already_correct",
+./michaelangelo-5204-5206-report-search.txt-251-./card-sync-report-20260828-212054.json-43795-      "legacyId": 5204,
+--
+./michaelangelo-5204-5206-report-search.txt-299-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-300-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-301-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-302-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-303-./michaelangelo-missing-row-inspection.txt-81-{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-304-./michaelangelo-missing-row-inspection.txt:82:{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt:305:./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-306-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-307-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-308-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-309-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-5204-5206-report-search.txt-310-./michaelangelo-missing-row-inspection.txt-88-COUNT: 5
+./michaelangelo-5204-5206-report-search.txt-311---
+--
+./michaelangelo-5204-5206-report-search.txt-373-./michaelangelo-5204-5206-report-search.txt-39-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-374-./michaelangelo-5204-5206-report-search.txt-40-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-375-./michaelangelo-5204-5206-report-search.txt-41-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-376-./michaelangelo-5204-5206-report-search.txt-42-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-377-./michaelangelo-5204-5206-report-search.txt-43-./michaelangelo-missing-row-inspection.txt:81:{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-378-./michaelangelo-5204-5206-report-search.txt:44:./michaelangelo-missing-row-inspection.txt-82-{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt:379:./michaelangelo-5204-5206-report-search.txt-45-./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-380-./michaelangelo-5204-5206-report-search.txt-46-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-381-./michaelangelo-5204-5206-report-search.txt-47-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-382-./michaelangelo-5204-5206-report-search.txt-48-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-383-./michaelangelo-5204-5206-report-search.txt-49-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-5204-5206-report-search.txt-384-./michaelangelo-5204-5206-report-search.txt-50---
+./michaelangelo-5204-5206-report-search.txt-385---
+--
+./michaelangelo-5204-5206-report-search.txt-387-./michaelangelo-5204-5206-report-search.txt-149-./michaelangelo-5204-5206-report-search.txt-39-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-388-./michaelangelo-5204-5206-report-search.txt-150-./michaelangelo-5204-5206-report-search.txt-40-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-389-./michaelangelo-5204-5206-report-search.txt-151-./michaelangelo-5204-5206-report-search.txt-41-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-390-./michaelangelo-5204-5206-report-search.txt-152-./michaelangelo-5204-5206-report-search.txt-42-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-391-./michaelangelo-5204-5206-report-search.txt-153-./michaelangelo-5204-5206-report-search.txt:43:./michaelangelo-missing-row-inspection.txt:81:{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-392-./michaelangelo-5204-5206-report-search.txt:154:./michaelangelo-5204-5206-report-search.txt-44-./michaelangelo-missing-row-inspection.txt-82-{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt:393:./michaelangelo-5204-5206-report-search.txt-155-./michaelangelo-5204-5206-report-search.txt-45-./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-394-./michaelangelo-5204-5206-report-search.txt-156-./michaelangelo-5204-5206-report-search.txt-46-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-395-./michaelangelo-5204-5206-report-search.txt-157-./michaelangelo-5204-5206-report-search.txt-47-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-396-./michaelangelo-5204-5206-report-search.txt-158-./michaelangelo-5204-5206-report-search.txt-48-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-397-./michaelangelo-5204-5206-report-search.txt-159-./michaelangelo-5204-5206-report-search.txt-49-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-5204-5206-report-search.txt-398-./michaelangelo-5204-5206-report-search.txt-160---
+./michaelangelo-5204-5206-report-search.txt-399---
+--
+./michaelangelo-5204-5206-report-search.txt-402-./michaelangelo-5204-5206-report-search.txt-239-./michaelangelo-old-source-inspection.txt-79-{'id': 5199, 'doc_name': 'featured_1787052578_6a844222cc1e1.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 913, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updated_at': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-403-./michaelangelo-5204-5206-report-search.txt-240-./michaelangelo-old-source-inspection.txt-80-
+./michaelangelo-5204-5206-report-search.txt-404-./michaelangelo-5204-5206-report-search.txt-241-./michaelangelo-old-source-inspection.txt:81:{'id': 5204, 'doc_name': 'featured_1787310810_6a8832da36456.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 914, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-405-./michaelangelo-5204-5206-report-search.txt-242-./michaelangelo-old-source-inspection.txt-82-
+./michaelangelo-5204-5206-report-search.txt-406-./michaelangelo-5204-5206-report-search.txt:243:./michaelangelo-old-source-inspection.txt-83-{'id': 5205, 'doc_name': 'featured_1787310869_6a8833157b513.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 915, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-407-./michaelangelo-5204-5206-report-search.txt-244-./michaelangelo-old-source-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt:408:./michaelangelo-5204-5206-report-search.txt-245-./michaelangelo-old-source-inspection.txt-85-{'id': 5206, 'doc_name': 'featured_1787311019_6a8833abac368.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 916, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 17), 'updated_at': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-409-./michaelangelo-5204-5206-report-search.txt-246-./michaelangelo-old-source-inspection.txt-86-
+./michaelangelo-5204-5206-report-search.txt-410-./michaelangelo-5204-5206-report-search.txt-247-./michaelangelo-old-source-inspection.txt-87-==========================================================================================
+./michaelangelo-5204-5206-report-search.txt-411-./michaelangelo-5204-5206-report-search.txt-248---
+./michaelangelo-5204-5206-report-search.txt-412-./michaelangelo-5204-5206-report-search.txt-249-./card-sync-report-20260828-212054.json-43793-      "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-413---
+./michaelangelo-5204-5206-report-search.txt-414-./michaelangelo-5204-5206-report-search.txt-258-./card-sync-report-20260828-212054.json-43802-    {
+--
+./michaelangelo-5204-5206-report-search.txt-455-./michaelangelo-5204-5206-report-search.txt-299-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-456-./michaelangelo-5204-5206-report-search.txt-300-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-457-./michaelangelo-5204-5206-report-search.txt-301-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-458-./michaelangelo-5204-5206-report-search.txt-302-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-459-./michaelangelo-5204-5206-report-search.txt-303-./michaelangelo-missing-row-inspection.txt-81-{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-460-./michaelangelo-5204-5206-report-search.txt:304:./michaelangelo-missing-row-inspection.txt:82:{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt:461:./michaelangelo-5204-5206-report-search.txt-305-./michaelangelo-missing-row-inspection.txt-83-{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-462-./michaelangelo-5204-5206-report-search.txt-306-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-463-./michaelangelo-5204-5206-report-search.txt-307-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-464-./michaelangelo-5204-5206-report-search.txt-308-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-465-./michaelangelo-5204-5206-report-search.txt-309-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-5204-5206-report-search.txt-466-./michaelangelo-5204-5206-report-search.txt-310-./michaelangelo-missing-row-inspection.txt-88-COUNT: 5
+./michaelangelo-5204-5206-report-search.txt-467---
+--
+./michaelangelo-5204-5206-report-search.txt-544-./michaelangelo-old-source-inspection.txt-79-{'id': 5199, 'doc_name': 'featured_1787052578_6a844222cc1e1.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 913, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updated_at': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-545-./michaelangelo-old-source-inspection.txt-80-
+./michaelangelo-5204-5206-report-search.txt-546-./michaelangelo-old-source-inspection.txt-81-{'id': 5204, 'doc_name': 'featured_1787310810_6a8832da36456.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 914, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-547-./michaelangelo-old-source-inspection.txt-82-
+./michaelangelo-5204-5206-report-search.txt-548-./michaelangelo-old-source-inspection.txt:83:{'id': 5205, 'doc_name': 'featured_1787310869_6a8833157b513.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 915, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt-549-./michaelangelo-old-source-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt:550:./michaelangelo-old-source-inspection.txt-85-{'id': 5206, 'doc_name': 'featured_1787311019_6a8833abac368.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 916, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 17), 'updated_at': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-551-./michaelangelo-old-source-inspection.txt-86-
+./michaelangelo-5204-5206-report-search.txt-552-./michaelangelo-old-source-inspection.txt-87-==========================================================================================
+./michaelangelo-5204-5206-report-search.txt-553-./michaelangelo-old-source-inspection.txt-88-5. ATTACHMENT TYPE TABLES
+./michaelangelo-5204-5206-report-search.txt-554-./michaelangelo-old-source-inspection.txt-89-==========================================================================================
+./michaelangelo-5204-5206-report-search.txt-555---
+./michaelangelo-5204-5206-report-search.txt-556-./card-sync-report-20260828-212054.json-43804-      "table": "Attachment",
+--
+./michaelangelo-5204-5206-report-search.txt-565-./card-sync-report-20260828-212054.json-43813-    {
+./michaelangelo-5204-5206-report-search.txt-566-./card-sync-report-20260828-212054.json-43814-      "action": "KEEP_NEW",
+./michaelangelo-5204-5206-report-search.txt-567-./card-sync-report-20260828-212054.json-43815-      "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-568-./card-sync-report-20260828-212054.json-43816-      "reason": "attachment_relationship_already_correct",
+./michaelangelo-5204-5206-report-search.txt-569-
+./michaelangelo-5204-5206-report-search.txt-570-################################################################################
+./michaelangelo-5204-5206-report-search.txt:571:FILE: featured_1787311019_6a8833abac368.jpg
+./michaelangelo-5204-5206-report-search.txt-572-################################################################################
+./michaelangelo-5204-5206-report-search.txt-573-./michaelangelo-after-reconcile-audit.txt-265-OLD PORTFOLIO:
+./michaelangelo-5204-5206-report-search.txt-574-./michaelangelo-after-reconcile-audit.txt-266-{'id': 916, 'profile_id': 91, 'title': '14', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 16, 59), 'updated_at': datetime.datetime(2026, 8, 21, 11, 16, 59)}
+./michaelangelo-5204-5206-report-search.txt-575-./michaelangelo-after-reconcile-audit.txt-267-
+./michaelangelo-5204-5206-report-search.txt-576-./michaelangelo-after-reconcile-audit.txt-268-OLD ATTACHMENT COUNT: 1
+./michaelangelo-5204-5206-report-search.txt-577-./michaelangelo-after-reconcile-audit.txt-269-
+./michaelangelo-5204-5206-report-search.txt-578-./michaelangelo-after-reconcile-audit.txt-270-------------------------------------------------------------
+./michaelangelo-5204-5206-report-search.txt:579:./michaelangelo-after-reconcile-audit.txt:271:OLD ATTACHMENT: {'id': 5206, 'portfolioId': 916, 'typeId': 7, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt:580:./michaelangelo-after-reconcile-audit.txt:272:POSTGRES ATTACHMENT: {'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmtgtwr5l001l4ckcpapmqj6s', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-581-./michaelangelo-after-reconcile-audit.txt-273-CURRENT ATTACHABLE-ID POINTS TO REAL PORTFOLIO: cmtgtwr5l001l4ckcpapmqj6s
+./michaelangelo-5204-5206-report-search.txt-582-./michaelangelo-after-reconcile-audit.txt-274-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-5204-5206-report-search.txt:583:./michaelangelo-after-reconcile-audit.txt:275:NORMALIZED FILE: featured_1787311019_6a8833abac368.jpg
+./michaelangelo-5204-5206-report-search.txt-584-./michaelangelo-after-reconcile-audit.txt-276-
+./michaelangelo-5204-5206-report-search.txt-585-./michaelangelo-after-reconcile-audit.txt-277-EXISTING LEGACY-ID MATCH:
+./michaelangelo-5204-5206-report-search.txt-586-./michaelangelo-after-reconcile-audit.txt-278-[{'id': 'cmtgtwr5l001l4ckcpapmqj6s', 'legacyId': 916, 'title': '14', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/1788135842186-MC-Profile-Office.jpeg', 'attachmentUrl': None, 'attachmentName': None}]
+./michaelangelo-5204-5206-report-search.txt-587-./michaelangelo-after-reconcile-audit.txt-279-
+./michaelangelo-5204-5206-report-search.txt-588-./michaelangelo-after-reconcile-audit.txt-280-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-5204-5206-report-search.txt-589-./michaelangelo-after-reconcile-audit.txt-281-[{'id': 'cmtgtwr5l001l4ckcpapmqj6s', 'legacyId': 916, 'title': '14', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/1788135842186-MC-Profile-Office.jpeg', 'attachmentUrl': None, 'attachmentName': None}]
+--
+./michaelangelo-5204-5206-report-search.txt-591-./michaelangelo-target-events.txt-297-  "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-592-./michaelangelo-target-events.txt-298-  "rowId": "c16ff491e342c4d5089a095aa",
+./michaelangelo-5204-5206-report-search.txt-593-./michaelangelo-target-events.txt-299-  "legacyId": 5206,
+./michaelangelo-5204-5206-report-search.txt-594-./michaelangelo-target-events.txt-300-  "profileLegacyId": 91,
+./michaelangelo-5204-5206-report-search.txt-595-./michaelangelo-target-events.txt-301-  "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-5204-5206-report-search.txt-596-./michaelangelo-target-events.txt-302-  "attachableLegacyId": 916,
+./michaelangelo-5204-5206-report-search.txt:597:./michaelangelo-target-events.txt:303:  "docName": "featured_1787311019_6a8833abac368.jpg",
+./michaelangelo-5204-5206-report-search.txt-598-./michaelangelo-target-events.txt-304-  "attachmentRelink": true
+./michaelangelo-5204-5206-report-search.txt-599-./michaelangelo-target-events.txt-305-}
+./michaelangelo-5204-5206-report-search.txt-600-./michaelangelo-target-events.txt-306---------------------------------------------------------------------------------
+./michaelangelo-5204-5206-report-search.txt-601---
+./michaelangelo-5204-5206-report-search.txt-602-./michaelangelo-missing-row-inspection.txt-77-{'id': 'cmsuurggi0ldccnkcezyjkvma', 'legacyId': 2419, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupcsy05whcnkcetmu49g0', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1754103159_688d7d770ef84.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'publicId': 'vbizme/portfolio/cmsuupcsy05whcnkcetmu49g0/featured_1754103159_688d7d770ef84.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 261318, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 50, 322000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 35, 27, 229000)}
+./michaelangelo-5204-5206-report-search.txt-603-./michaelangelo-missing-row-inspection.txt-78-{'id': 'cmsuurn8x0mq2cnkcpzelai1d', 'legacyId': 4599, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cmsuupf1m065ocnkc4cfjhyqn', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1779611406_6a12b70e008e5.jpg', 'url': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'publicId': 'vbizme/portfolio/cmsuupf1m065ocnkc4cfjhyqn/featured_1779611406_6a12b70e008e5.jpg', 'resourceType': 'image', 'format': 'jpg', 'bytes': 235131, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 15, 20, 52, 59, 121000), 'updatedAt': datetime.datetime(2026, 8, 18, 17, 37, 9, 973000)}
+./michaelangelo-5204-5206-report-search.txt-604-./michaelangelo-missing-row-inspection.txt-79-{'id': 'c575e71f707794386a9e60de0', 'legacyId': 5198, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c3bb86634352443de945a79d2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052350_6a84413ea1504.jpg', 'url': 'featured_1787052350_6a84413ea1504.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+./michaelangelo-5204-5206-report-search.txt-605-./michaelangelo-missing-row-inspection.txt-80-{'id': 'ccc9153453df44986bd054a96', 'legacyId': 5199, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'cf0831cb269d24e3b93b5ef4c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787052578_6a844222cc1e1.jpg', 'url': 'featured_1787052578_6a844222cc1e1.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updatedAt': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-5204-5206-report-search.txt-606-./michaelangelo-missing-row-inspection.txt-81-{'id': 'c821788f7333649e2ae9cf80f', 'legacyId': 5204, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'caa817dd098d74c93b33798f2', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310810_6a8832da36456.jpg', 'url': 'featured_1787310810_6a8832da36456.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-5204-5206-report-search.txt-607-./michaelangelo-missing-row-inspection.txt-82-{'id': 'c3e81703d07754dcf99f2871c', 'legacyId': 5205, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c557feddf5e3b44f2ad462327', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787310869_6a8833157b513.jpg', 'url': 'featured_1787310869_6a8833157b513.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-5204-5206-report-search.txt:608:./michaelangelo-missing-row-inspection.txt:83:{'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'postId': None, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'bytes': None, 'extension': 'jpg', 'mimeType': 'image/jpeg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17), 'updatedAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-609-./michaelangelo-missing-row-inspection.txt-84-
+./michaelangelo-5204-5206-report-search.txt-610-./michaelangelo-missing-row-inspection.txt-85-================================================================================
+./michaelangelo-5204-5206-report-search.txt-611-./michaelangelo-missing-row-inspection.txt-86-7. PORTFOLIOS WITH NULL LEGACY ID
+./michaelangelo-5204-5206-report-search.txt-612-./michaelangelo-missing-row-inspection.txt-87-================================================================================
+./michaelangelo-5204-5206-report-search.txt-613-./michaelangelo-missing-row-inspection.txt-88-COUNT: 5
+./michaelangelo-5204-5206-report-search.txt-614-./michaelangelo-missing-row-inspection.txt-89-{'id': 'cmtgtwr5l001l4ckcpapmqj6s', 'legacyId': None, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'title': '14', 'description': '', 'status': 1, 'sortOrder': 0, 'url': '', 'imageUrl': 'https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com/vbizme/1788135842186-MC-Profile-Office.jpeg', 'createdAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 721000), 'updatedAt': datetime.datetime(2026, 8, 31, 5, 59, 53, 721000), 'attachmentUrl': None, 'attachmentName': None}
+--
+./michaelangelo-5204-5206-report-search.txt-616-./card-sync-report-20260828-211611.json-43823-      "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-617-./card-sync-report-20260828-211611.json-43824-      "newId": "ce64137383e1e41a8abbd528c",
+./michaelangelo-5204-5206-report-search.txt-618-./card-sync-report-20260828-211611.json-43825-      "legacyId": 5206,
+./michaelangelo-5204-5206-report-search.txt-619-./card-sync-report-20260828-211611.json-43826-      "profileLegacyId": 91,
+./michaelangelo-5204-5206-report-search.txt-620-./card-sync-report-20260828-211611.json-43827-      "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-5204-5206-report-search.txt-621-./card-sync-report-20260828-211611.json-43828-      "attachableLegacyId": 916,
+./michaelangelo-5204-5206-report-search.txt:622:./card-sync-report-20260828-211611.json:43829:      "docName": "featured_1787311019_6a8833abac368.jpg",
+./michaelangelo-5204-5206-report-search.txt-623-./card-sync-report-20260828-211611.json-43830-      "attachmentRelink": true
+./michaelangelo-5204-5206-report-search.txt-624-./card-sync-report-20260828-211611.json-43831-    },
+./michaelangelo-5204-5206-report-search.txt-625-./card-sync-report-20260828-211611.json-43832-    {
+./michaelangelo-5204-5206-report-search.txt-626-./card-sync-report-20260828-211611.json-43833-      "action": "WOULD_INSERT",
+./michaelangelo-5204-5206-report-search.txt-627-./card-sync-report-20260828-211611.json-43834-      "table": "Attachment",
+./michaelangelo-5204-5206-report-search.txt-628-./card-sync-report-20260828-211611.json-43835-      "newId": "c2ca6bfd26f6a449dba1ca6a2",
+--
+./michaelangelo-5204-5206-report-search.txt-630-./michaelangelo-remaining-audit.txt-255-OLD PORTFOLIO:
+./michaelangelo-5204-5206-report-search.txt-631-./michaelangelo-remaining-audit.txt-256-{'id': 916, 'profile_id': 91, 'title': '14', 'description': None, 'url': None, 'status': 1, 'created_at': datetime.datetime(2026, 8, 21, 11, 16, 59), 'updated_at': datetime.datetime(2026, 8, 21, 11, 16, 59)}
+./michaelangelo-5204-5206-report-search.txt-632-./michaelangelo-remaining-audit.txt-257-
+./michaelangelo-5204-5206-report-search.txt-633-./michaelangelo-remaining-audit.txt-258-OLD ATTACHMENT COUNT: 1
+./michaelangelo-5204-5206-report-search.txt-634-./michaelangelo-remaining-audit.txt-259-
+./michaelangelo-5204-5206-report-search.txt-635-./michaelangelo-remaining-audit.txt-260-------------------------------------------------------------
+./michaelangelo-5204-5206-report-search.txt:636:./michaelangelo-remaining-audit.txt:261:OLD ATTACHMENT: {'id': 5206, 'portfolioId': 916, 'typeId': 7, 'docName': 'featured_1787311019_6a8833abac368.jpg', 'createdAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt:637:./michaelangelo-remaining-audit.txt:262:POSTGRES ATTACHMENT: {'id': 'c16ff491e342c4d5089a095aa', 'legacyId': 5206, 'profileId': 'cmsuup13204ubcnkcdd5m3dgy', 'attachableType': 'App\\Models\\Portfolio', 'attachableId': 'c201e9f94c126461eb68db89c', 'attachmentTypeId': 'cmsuuozfs04mdcnkc7820kwb3', 'docName': 'featured_1787311019_6a8833abac368.jpg', 'url': 'featured_1787311019_6a8833abac368.jpg', 'publicId': None, 'resourceType': 'image', 'format': 'jpg', 'extension': 'jpg', 'mimeType': 'image/jpeg', 'bytes': None, 'createdAt': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-5204-5206-report-search.txt-638-./michaelangelo-remaining-audit.txt-263-CURRENT ATTACHABLE-ID IS NOT A CURRENT MICHAELANGELO PORTFOLIO: c201e9f94c126461eb68db89c
+./michaelangelo-5204-5206-report-search.txt-639-./michaelangelo-remaining-audit.txt-264-ATTACHMENT URL TYPE: FILENAME/EMPTY
+./michaelangelo-5204-5206-report-search.txt:640:./michaelangelo-remaining-audit.txt:265:NORMALIZED FILE: featured_1787311019_6a8833abac368.jpg
+./michaelangelo-5204-5206-report-search.txt-641-./michaelangelo-remaining-audit.txt-266-
+./michaelangelo-5204-5206-report-search.txt-642-./michaelangelo-remaining-audit.txt-267-EXISTING LEGACY-ID MATCH:
+./michaelangelo-5204-5206-report-search.txt-643-./michaelangelo-remaining-audit.txt-268-NONE
+./michaelangelo-5204-5206-report-search.txt-644-./michaelangelo-remaining-audit.txt-269-
+./michaelangelo-5204-5206-report-search.txt-645-./michaelangelo-remaining-audit.txt-270-DIRECT ATTACHABLE-ID CANDIDATES:
+./michaelangelo-5204-5206-report-search.txt-646-./michaelangelo-remaining-audit.txt-271-NONE
+--
+./michaelangelo-profile91-dry-run.json-3639-      "table": "Attachment",
+./michaelangelo-profile91-dry-run.json-3640-      "rowId": "c16ff491e342c4d5089a095aa",
+./michaelangelo-profile91-dry-run.json-3641-      "legacyId": 5206,
+./michaelangelo-profile91-dry-run.json-3642-      "profileLegacyId": 91,
+./michaelangelo-profile91-dry-run.json-3643-      "attachableType": "App\\Models\\Portfolio",
+./michaelangelo-profile91-dry-run.json-3644-      "attachableLegacyId": 916,
+./michaelangelo-profile91-dry-run.json:3645:      "docName": "featured_1787311019_6a8833abac368.jpg",
+./michaelangelo-profile91-dry-run.json-3646-      "attachmentRelink": true
+./michaelangelo-profile91-dry-run.json-3647-    },
+./michaelangelo-profile91-dry-run.json-3648-    {
+./michaelangelo-profile91-dry-run.json-3649-      "action": "KEEP_NEW",
+./michaelangelo-profile91-dry-run.json-3650-      "table": "Attachment",
+./michaelangelo-profile91-dry-run.json-3651-      "reason": "attachment_relationship_already_correct",
+--
+./card-sync-report-20260828-211808.json-43823-      "table": "Attachment",
+./card-sync-report-20260828-211808.json-43824-      "newId": "c16ff491e342c4d5089a095aa",
+./card-sync-report-20260828-211808.json-43825-      "legacyId": 5206,
+./card-sync-report-20260828-211808.json-43826-      "profileLegacyId": 91,
+./card-sync-report-20260828-211808.json-43827-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-211808.json-43828-      "attachableLegacyId": 916,
+./card-sync-report-20260828-211808.json:43829:      "docName": "featured_1787311019_6a8833abac368.jpg",
+./card-sync-report-20260828-211808.json-43830-      "attachmentRelink": true
+./card-sync-report-20260828-211808.json-43831-    },
+./card-sync-report-20260828-211808.json-43832-    {
+./card-sync-report-20260828-211808.json-43833-      "action": "INSERT",
+./card-sync-report-20260828-211808.json-43834-      "table": "Attachment",
+./card-sync-report-20260828-211808.json-43835-      "newId": "c8a144fda538a4306bae24a78",
+--
+./card-sync-report-20260828-195823.json-43818-      "table": "Attachment",
+./card-sync-report-20260828-195823.json-43819-      "newId": "c0efa07e671ec4172a9bbd118",
+./card-sync-report-20260828-195823.json-43820-      "legacyId": 5206,
+./card-sync-report-20260828-195823.json-43821-      "profileLegacyId": 91,
+./card-sync-report-20260828-195823.json-43822-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-195823.json-43823-      "attachableLegacyId": 916,
+./card-sync-report-20260828-195823.json:43824:      "docName": "featured_1787311019_6a8833abac368.jpg",
+./card-sync-report-20260828-195823.json-43825-      "attachmentRelink": true
+./card-sync-report-20260828-195823.json-43826-    },
+./card-sync-report-20260828-195823.json-43827-    {
+./card-sync-report-20260828-195823.json-43828-      "action": "WOULD_INSERT",
+./card-sync-report-20260828-195823.json-43829-      "table": "Attachment",
+./card-sync-report-20260828-195823.json-43830-      "newId": "c262a4b76b3c844cebc16bf79",
+--
+./michaelangelo-old-source-inspection.txt-79-{'id': 5199, 'doc_name': 'featured_1787052578_6a844222cc1e1.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 913, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updated_at': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+./michaelangelo-old-source-inspection.txt-80-
+./michaelangelo-old-source-inspection.txt-81-{'id': 5204, 'doc_name': 'featured_1787310810_6a8832da36456.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 914, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+./michaelangelo-old-source-inspection.txt-82-
+./michaelangelo-old-source-inspection.txt-83-{'id': 5205, 'doc_name': 'featured_1787310869_6a8833157b513.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 915, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+./michaelangelo-old-source-inspection.txt-84-
+./michaelangelo-old-source-inspection.txt:85:{'id': 5206, 'doc_name': 'featured_1787311019_6a8833abac368.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 916, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 17), 'updated_at': datetime.datetime(2026, 8, 21, 11, 17)}
+./michaelangelo-old-source-inspection.txt-86-
+./michaelangelo-old-source-inspection.txt-87-==========================================================================================
+./michaelangelo-old-source-inspection.txt-88-5. ATTACHMENT TYPE TABLES
+./michaelangelo-old-source-inspection.txt-89-==========================================================================================
+./michaelangelo-old-source-inspection.txt-90-Attachment-related tables:
+./michaelangelo-old-source-inspection.txt-91-['attachments', 'attachment_types']
+--
+./card-sync-report-20260828-212054.json-43815-      "table": "Attachment",
+./card-sync-report-20260828-212054.json-43816-      "reason": "attachment_relationship_already_correct",
+./card-sync-report-20260828-212054.json-43817-      "legacyId": 5206,
+./card-sync-report-20260828-212054.json-43818-      "profileLegacyId": 91,
+./card-sync-report-20260828-212054.json-43819-      "attachableType": "App\\Models\\Portfolio",
+./card-sync-report-20260828-212054.json-43820-      "attachableLegacyId": 916,
+./card-sync-report-20260828-212054.json:43821:      "docName": "featured_1787311019_6a8833abac368.jpg",
+./card-sync-report-20260828-212054.json-43822-      "attachmentRelink": true
+./card-sync-report-20260828-212054.json-43823-    },
+./card-sync-report-20260828-212054.json-43824-    {
+./card-sync-report-20260828-212054.json-43825-      "action": "KEEP_NEW",
+./card-sync-report-20260828-212054.json-43826-      "table": "Attachment",
+./card-sync-report-20260828-212054.json-43827-      "reason": "attachment_relationship_already_correct",

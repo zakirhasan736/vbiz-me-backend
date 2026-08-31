@@ -1,0 +1,22 @@
+{
+  "mode": "APPLY",
+  "profiles": [260],
+  "summary": {
+    "INSERT": 1,
+    "NO_OLD_SUBSCRIPTION_ITEMS": 1
+  },
+  "events": [
+    {
+      "action": "INSERT",
+      "table": "User",
+      "newId": "c9de1366850bf4e329783dfe9",
+      "legacyId": 245,
+      "email": "sean-herman-employee-259@vbizme.com",
+      "name": "Sean Herman Employee 218"
+    },
+    {
+      "action": "NO_OLD_SUBSCRIPTION_ITEMS",
+      "table": "SubscriptionItem"
+    }
+  ]
+}

@@ -1,0 +1,532 @@
+./dist/generated/prisma/models/Attachment.js
+./dist/generated/prisma/models/AttachmentType.js
+./dist/generated/prisma/models/Portfolio.js
+./dist/scripts/backfill-legacy-media-urls.js
+./dist/scripts/migrate-from-laravel.js
+./dist/scripts/migrate-media-by-profile.js
+./dist/scripts/migrate-media-to-s3.js
+./dist/scripts/repairClientPortfolioMedia.helpers.js
+./dist/scripts/repairClientPortfolioMedia.js
+./dist/scripts/repairClientPortfolioMedia.test.js
+./generated/prisma/models/Attachment.ts
+./generated/prisma/models/AttachmentType.ts
+./generated/prisma/models/Portfolio.ts
+./migrate_blog_faq_mission_content.py
+./migrate_clients_reviews.py
+./migrate_gallery_video.py
+./migrate_video_link_urls.py
+./scripts/backfill-legacy-media-urls.ts
+./scripts/inspect_portfolio_migration_source.py
+./scripts/link_proven_michaelangelo_portfolios.py
+./scripts/migrate-from-laravel.ts
+./scripts/migrate-media-by-profile.ts
+./scripts/migrate-media-to-s3.ts
+./scripts/prepare_missing_legacy_accounts.py
+./scripts/prepare_missing_legacy_accounts.wrapper-backup.py
+./scripts/repairClientPortfolioMedia.helpers.ts
+./scripts/repairClientPortfolioMedia.test.ts
+./scripts/repairClientPortfolioMedia.ts
+./scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py
+./scripts/vbizme_safe_card_sync.before-attachments.py
+
+=== REFERENCES ===
+scripts/vbizme_safe_card_sync.before-attachments.py:14:- Matching uses legacyId / legacyServiceId / legacyPortfolioId / legacyPostId.
+scripts/vbizme_safe_card_sync.before-attachments.py:338:            "id", "profileId", "legacyId", "legacyServiceId",
+scripts/vbizme_safe_card_sync.before-attachments.py:339:            "legacyPortfolioId", "legacyPostId", "legacyPostTypeId",
+scripts/vbizme_safe_card_sync.before-attachments.py:419:        row = self.find_one("User", {"legacyId": legacy_user_id})
+scripts/vbizme_safe_card_sync.before-attachments.py:440:        row = self.find_one(table, {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.before-attachments.py:444:            self.event("REFERENCE_MISSING", table, legacyId=legacy_id)
+scripts/vbizme_safe_card_sync.before-attachments.py:482:            existing = self.find_one("Profile", {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.before-attachments.py:493:                "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachments.py:531:                "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachments.py:554:                if r.get("legacyId") != legacy_id
+scripts/vbizme_safe_card_sync.before-attachments.py:584:            cur.execute('SELECT id, "legacyId" FROM "Profile" WHERE "legacyId" IS NOT NULL')
+scripts/vbizme_safe_card_sync.before-attachments.py:586:                self.profile_map.setdefault(int(r["legacyId"]), r["id"])
+scripts/vbizme_safe_card_sync.before-attachments.py:601:                self.event("SKIP_PARENT_PROFILE_MISSING", "Setting", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachments.py:604:            existing = self.find_one("Setting", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.before-attachments.py:606:                "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachments.py:613:            context = {"legacyId": int(old["id"]), "profileLegacyId": int(pid), "key": old.get("key")}
+scripts/vbizme_safe_card_sync.before-attachments.py:622:            # Same profile/key without legacyId: treat as the same semantic setting
+scripts/vbizme_safe_card_sync.before-attachments.py:626:                if same_key.get("legacyId") in (None, int(old["id"])):
+scripts/vbizme_safe_card_sync.before-attachments.py:627:                    if self.apply and same_key.get("legacyId") is None:
+scripts/vbizme_safe_card_sync.before-attachments.py:630:                                'UPDATE "Setting" SET "legacyId"=%s WHERE id=%s',
+scripts/vbizme_safe_card_sync.before-attachments.py:659:                    self.event("SKIP_PARENT_PROFILE_MISSING", "ProfileSetting", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachments.py:661:                existing = self.find_one("ProfileSetting", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.before-attachments.py:663:                    "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachments.py:673:                context = {"legacyId": int(old["id"]), "profileLegacyId": int(pid)}
+scripts/vbizme_safe_card_sync.before-attachments.py:697:                existing = self.find_one("Contact", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.before-attachments.py:699:                    "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachments.py:709:                context = {"legacyId": int(old["id"]), "profileLegacyId": int(pid)}
+scripts/vbizme_safe_card_sync.before-attachments.py:732:                self.event("SKIP_PARENT_PROFILE_MISSING", "services", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachments.py:737:            common_context = {"legacyId": legacy_id, "profileLegacyId": int(pid), "postTypeId": pt}
+scripts/vbizme_safe_card_sync.before-attachments.py:740:                table, legacy_col = "Service", "legacyId"
+scripts/vbizme_safe_card_sync.before-attachments.py:790:    def sync_portfolios(self):
+scripts/vbizme_safe_card_sync.before-attachments.py:791:        print("4/8 Syncing Portfolio / Gallery / Video rows...")
+scripts/vbizme_safe_card_sync.before-attachments.py:793:            cur.execute("SELECT * FROM portfolios ORDER BY id")
+scripts/vbizme_safe_card_sync.before-attachments.py:802:                self.event("SKIP_PARENT_PROFILE_MISSING", "portfolios", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachments.py:807:            context = {"legacyId": legacy_id, "profileLegacyId": int(pid), "postTypeId": pt}
+scripts/vbizme_safe_card_sync.before-attachments.py:809:            # The original migration keeps a legacy Portfolio representation.
+scripts/vbizme_safe_card_sync.before-attachments.py:811:                "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachments.py:821:            existing = self.find_one("Portfolio", {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.before-attachments.py:824:                    self.update("Portfolio", existing["id"], p_values, context=context)
+scripts/vbizme_safe_card_sync.before-attachments.py:826:                    self.event("KEEP_NEW", "Portfolio", reason="new_not_older", **context)
+scripts/vbizme_safe_card_sync.before-attachments.py:828:                self.insert("Portfolio", p_values, context=context)
+scripts/vbizme_safe_card_sync.before-attachments.py:833:                    "legacyPortfolioId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachments.py:844:                existing_d = self.find_one(direct_table, {"legacyPortfolioId": legacy_id})
+scripts/vbizme_safe_card_sync.before-attachments.py:898:            "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachments.py:924:            "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachments.py:925:            "profileLegacyId": int(old["profile_id"]),
+scripts/vbizme_safe_card_sync.before-attachments.py:929:        existing = self.find_one("Post", {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.before-attachments.py:961:            "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachments.py:962:            "profileLegacyId": int(old["profile_id"]),
+scripts/vbizme_safe_card_sync.before-attachments.py:1004:        context = {"legacyId": legacy_id, "profileLegacyId": int(old["profile_id"]), "postTypeId": pt}
+scripts/vbizme_safe_card_sync.before-attachments.py:1045:                self.event("SKIP_PARENT_PROFILE_MISSING", "posts", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachments.py:1059:                        legacyId=int(old["id"]), profileLegacyId=int(pid), postTypeId=pt
+scripts/vbizme_safe_card_sync.before-attachments.py:1065:                    legacyId=int(old["id"]), profileLegacyId=int(pid), postTypeId=pt
+scripts/vbizme_safe_card_sync.before-attachments.py:1089:                cur.execute('SELECT id, "legacyId" FROM "Post" WHERE "legacyId" IS NOT NULL')
+scripts/vbizme_safe_card_sync.before-attachments.py:1091:                    self.post_map.setdefault(int(r["legacyId"]), r["id"])
+scripts/vbizme_safe_card_sync.before-attachments.py:1106:            existing = self.find_one("PostMeta", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.before-attachments.py:1108:                "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachments.py:1115:            context = {"legacyId": int(old["id"]), "legacyPostId": legacy_post_id}
+scripts/vbizme_safe_card_sync.before-attachments.py:1126:        if not self.table_exists("Attachment") or "legacyId" not in self.columns("Attachment"):
+scripts/vbizme_safe_card_sync.before-attachments.py:1129:            cur.execute("SELECT id, attachmentable_type, attachmentable_id FROM attachments ORDER BY id")
+scripts/vbizme_safe_card_sync.before-attachments.py:1132:            cur.execute('SELECT "legacyId" FROM "Attachment" WHERE "legacyId" IS NOT NULL')
+scripts/vbizme_safe_card_sync.before-attachments.py:1140:                    legacyId=int(r["id"]),
+scripts/vbizme_safe_card_sync.before-attachments.py:1142:                    attachmentableLegacyId=r.get("attachmentable_id"),
+scripts/vbizme_safe_card_sync.before-attachments.py:1152:            for table in ("settings", "services", "portfolios", "posts"):
+scripts/vbizme_safe_card_sync.before-attachments.py:1158:                        self.event("UNRESOLVED_PROFILE_PARENT", table, profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachments.py:1192:            self.sync_portfolios()
+scripts/repairReviewMedia.ts:5: * Review.legacyServiceId -> Laravel services.id / Service attachmentable_id.
+scripts/repairReviewMedia.ts:42:  profile: { slug: string | null; legacyId: number | null }
+scripts/repairReviewMedia.ts:137:  if (!config.LARAVEL_MYSQL_URL) {
+scripts/repairReviewMedia.ts:138:    console.warn('LARAVEL_MYSQL_URL is not set; Laravel Service rows and attachments are unavailable')
+scripts/repairReviewMedia.ts:141:  return mysql.createConnection(config.LARAVEL_MYSQL_URL)
+scripts/repairReviewMedia.ts:151:      `SELECT id, doc_name, attachmentable_id, attachmentable_type, attachment_type_id, created_at
+scripts/repairReviewMedia.ts:153:       WHERE attachmentable_id IN (${placeholders})
+scripts/repairReviewMedia.ts:154:       ORDER BY attachmentable_id ASC, id ASC, created_at ASC`,
+scripts/repairReviewMedia.ts:161:        attachmentable_id: Number(row.attachmentable_id),
+scripts/repairReviewMedia.ts:168:        part.includes(normalized.attachmentable_id)
+scripts/repairReviewMedia.ts:187:        ...(serviceIds.length ? [{ attachableId: { in: serviceIds.map(String) } }] : []),
+scripts/repairReviewMedia.ts:188:        ...(laravelAttachmentIds.length ? [{ legacyId: { in: laravelAttachmentIds } }] : []),
+scripts/repairReviewMedia.ts:192:    include: { attachmentType: { select: { legacyId: true } } },
+scripts/repairReviewMedia.ts:196:function sourceUrls(candidate: ImageCandidate, profileLegacyId: number | null): string[] {
+scripts/repairReviewMedia.ts:205:  if (profileLegacyId != null && docName && !/^https?:\/\//i.test(docName)) {
+scripts/repairReviewMedia.ts:214:      add(`${mediaBase()}/storage/ecard/${folder}/${profileLegacyId}/${filename}`)
+scripts/repairReviewMedia.ts:263:        attachableId: String(opts.review.legacyServiceId),
+scripts/repairReviewMedia.ts:278:          where: { legacyId: opts.candidate.laravel.id },
+scripts/repairReviewMedia.ts:279:          create: { legacyId: opts.candidate.laravel.id, ...data },
+scripts/repairReviewMedia.ts:360:  const sources = sourceUrls(selected, review.profile.legacyId)
+scripts/repairReviewMedia.ts:435:        include: { profile: { select: { slug: true, legacyId: true } } },
+scripts/repairReviewMedia.ts:447:        const rows = attachmentMap.get(row.attachmentable_id) || []
+scripts/repairReviewMedia.ts:449:        attachmentMap.set(row.attachmentable_id, rows)
+scripts/repairReviewMedia.ts:507:    include: { profile: { select: { slug: true, legacyId: true } } },
+scripts/repairReviewMedia.ts:520:        serviceId == null ? [] : legacy.attachments.filter((row) => row.attachmentable_id === serviceId)
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:14:- Matching uses legacyId / legacyServiceId / legacyPortfolioId / legacyPostId.
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:153:        self.portfolio_map: Dict[int, str] = {}
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:339:            "id", "profileId", "legacyId", "legacyServiceId",
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:340:            "legacyPortfolioId", "legacyPostId", "legacyPostTypeId",
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:420:        row = self.find_one("User", {"legacyId": legacy_user_id})
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:441:        row = self.find_one(table, {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:445:            self.event("REFERENCE_MISSING", table, legacyId=legacy_id)
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:483:            existing = self.find_one("Profile", {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:494:                "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:532:                "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:555:                if r.get("legacyId") != legacy_id
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:585:            cur.execute('SELECT id, "legacyId" FROM "Profile" WHERE "legacyId" IS NOT NULL')
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:587:                self.profile_map.setdefault(int(r["legacyId"]), r["id"])
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:602:                self.event("SKIP_PARENT_PROFILE_MISSING", "Setting", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:605:            existing = self.find_one("Setting", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:607:                "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:614:            context = {"legacyId": int(old["id"]), "profileLegacyId": int(pid), "key": old.get("key")}
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:623:            # Same profile/key without legacyId: treat as the same semantic setting
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:627:                if same_key.get("legacyId") in (None, int(old["id"])):
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:628:                    if self.apply and same_key.get("legacyId") is None:
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:631:                                'UPDATE "Setting" SET "legacyId"=%s WHERE id=%s',
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:660:                    self.event("SKIP_PARENT_PROFILE_MISSING", "ProfileSetting", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:662:                existing = self.find_one("ProfileSetting", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:664:                    "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:674:                context = {"legacyId": int(old["id"]), "profileLegacyId": int(pid)}
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:698:                existing = self.find_one("Contact", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:700:                    "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:710:                context = {"legacyId": int(old["id"]), "profileLegacyId": int(pid)}
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:733:                self.event("SKIP_PARENT_PROFILE_MISSING", "services", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:738:            common_context = {"legacyId": legacy_id, "profileLegacyId": int(pid), "postTypeId": pt}
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:741:                table, legacy_col = "Service", "legacyId"
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:791:    def sync_portfolios(self):
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:792:        print("4/8 Syncing Portfolio / Gallery / Video rows...")
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:794:            cur.execute("SELECT * FROM portfolios ORDER BY id")
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:803:                self.event("SKIP_PARENT_PROFILE_MISSING", "portfolios", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:808:            context = {"legacyId": legacy_id, "profileLegacyId": int(pid), "postTypeId": pt}
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:810:            # The original migration keeps a legacy Portfolio representation.
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:812:                "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:822:            existing = self.find_one("Portfolio", {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:823:            portfolio_id = None
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:826:                portfolio_id = existing["id"]
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:829:                    self.update("Portfolio", existing["id"], p_values, context=context)
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:831:                    self.event("KEEP_NEW", "Portfolio", reason="new_not_older", **context)
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:833:                portfolio_id = self.insert(
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:834:                    "Portfolio",
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:839:            if portfolio_id:
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:840:                self.portfolio_map[legacy_id] = portfolio_id
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:845:                    "legacyPortfolioId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:856:                existing_d = self.find_one(direct_table, {"legacyPortfolioId": legacy_id})
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:910:            "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:936:            "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:937:            "profileLegacyId": int(old["profile_id"]),
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:941:        existing = self.find_one("Post", {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:973:            "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:974:            "profileLegacyId": int(old["profile_id"]),
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1016:        context = {"legacyId": legacy_id, "profileLegacyId": int(old["profile_id"]), "postTypeId": pt}
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1057:                self.event("SKIP_PARENT_PROFILE_MISSING", "posts", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1071:                        legacyId=int(old["id"]), profileLegacyId=int(pid), postTypeId=pt
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1077:                    legacyId=int(old["id"]), profileLegacyId=int(pid), postTypeId=pt
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1101:                cur.execute('SELECT id, "legacyId" FROM "Post" WHERE "legacyId" IS NOT NULL')
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1103:                    self.post_map.setdefault(int(r["legacyId"]), r["id"])
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1118:            existing = self.find_one("PostMeta", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1120:                "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1127:            context = {"legacyId": int(old["id"]), "legacyPostId": legacy_post_id}
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1150:                            THEN a.attachmentable_id
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1156:                                WHERE p.id = a.attachmentable_id
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1164:                                WHERE s.id = a.attachmentable_id
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1168:                        WHEN a.attachmentable_type LIKE '%Portfolio'
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1171:                                FROM portfolios pf
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1172:                                WHERE pf.id = a.attachmentable_id
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1224:                    legacyId=int(old["id"]),
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1225:                    profileLegacyId=profile_legacy_id,
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1234:                    "legacyId":
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1249:                    legacyId=legacy_attachment_id,
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1250:                    profileLegacyId=profile_legacy_id,
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1263:                old.get("attachmentable_id")
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1286:                            "legacyId":
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1300:            elif "Portfolio" in old_type:
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1303:                    self.portfolio_map.get(
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1309:                    portfolio = self.find_one(
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1310:                        "Portfolio",
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1312:                            "legacyId":
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1318:                        portfolio
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1319:                        and not portfolio.get(
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1323:                        attachable_id = portfolio[
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1334:                # Attachment.attachableId
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1355:                    legacyId=legacy_attachment_id,
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1357:                    attachableLegacyId=
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1359:                    profileLegacyId=
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1419:                "legacyId":
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1428:                "attachableId":
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1442:                # docName/profile legacyId to locate
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1475:                "legacyId":
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1478:                "profileLegacyId":
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1484:                "attachableLegacyId":
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1505:                    "attachableId":
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1553:            for table in ("settings", "services", "portfolios", "posts"):
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1559:                        self.event("UNRESOLVED_PROFILE_PARENT", table, profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.before-attachment-profileid-fix.py:1593:            self.sync_portfolios()
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:202:            existing = self.pg_one("Profession", {"legacyId": legacy_id})
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:204:                self.event("KEEP_EXISTING", "Profession", legacyId=legacy_id, newId=existing["id"])
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:212:                self.event("OLD_REFERENCE_MISSING", "Profession", legacyId=legacy_id)
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:224:                if row.get("legacyId") not in (None, legacy_id):
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:227:                        legacyId=legacy_id, existingLegacyId=row.get("legacyId"),
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:232:                if row.get("legacyId") is None:
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:235:                        {"legacyId": legacy_id},
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:236:                        {"legacyId": legacy_id, "name": old["name"], "reason": "exact_name_link"},
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:238:                self.event("PROFESSION_LINKED_BY_NAME", "Profession", legacyId=legacy_id, newId=row["id"])
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:242:                self.event("PROFESSION_NAME_CONFLICT", "Profession", legacyId=legacy_id, name=old["name"])
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:248:                    "legacyId": legacy_id,
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:253:                {"legacyId": legacy_id, "name": old["name"]},
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:268:            existing = self.pg_one("User", {"legacyId": legacy_id})
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:271:                self.event("KEEP_EXISTING", "User", legacyId=legacy_id, newId=existing["id"])
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:286:                self.event("OLD_USER_MISSING", "User", legacyId=legacy_id)
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:292:                if row.get("legacyId") not in (None, legacy_id):
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:295:                        legacyId=legacy_id, email=old.get("email"),
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:296:                        existingLegacyId=row.get("legacyId"), existingId=row["id"]
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:300:                if row.get("legacyId") is None:
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:303:                        {"legacyId": legacy_id},
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:304:                        {"legacyId": legacy_id, "email": old.get("email"), "reason": "exact_email_link"},
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:307:                self.event("USER_LINKED_BY_EMAIL", "User", legacyId=legacy_id, newId=row["id"], email=old.get("email"))
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:311:                self.event("USER_EMAIL_CONFLICT", "User", legacyId=legacy_id, email=old.get("email"))
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:315:                self.event("SKIP_USER_NO_EMAIL", "User", legacyId=legacy_id)
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:326:                "legacyId": legacy_id,
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:335:                {"legacyId": legacy_id, "email": old["email"], "name": old.get("name")},
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:380:                    legacyId=legacy_id, oldUserId=old_user_id
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:392:                    legacyId=legacy_id, name=old.get("name"),
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:397:            new_pkg = self.pg_one("Package", {"legacyId": int(old_pkg["id"])})
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:401:                    legacyId=legacy_id, packageLegacyId=int(old_pkg["id"])
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:405:            existing = self.pg_one("Subscription", {"legacyId": legacy_id})
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:425:                "legacyId": legacy_id,
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:427:                "packageLegacyId": int(old_pkg["id"]),
+scripts/prepare_missing_legacy_accounts.wrapper-backup.py:438:                values["legacyId"] = legacy_id
+scripts/inspect_michaelangelo_missing_rows.py:26:        print("1. PORTFOLIO TABLE STRUCTURE")
+scripts/inspect_michaelangelo_missing_rows.py:37:              AND table_name='Portfolio'
+scripts/inspect_michaelangelo_missing_rows.py:68:        print("3. DO STALE ATTACHABLE IDs EXIST AS PORTFOLIOS?")
+scripts/inspect_michaelangelo_missing_rows.py:73:            FROM "Portfolio"
+scripts/inspect_michaelangelo_missing_rows.py:143:        print("5. ALL MICHAELANGELO PORTFOLIOS — FULL ROWS")
+scripts/inspect_michaelangelo_missing_rows.py:148:            FROM "Portfolio"
+scripts/inspect_michaelangelo_missing_rows.py:167:                    "legacyId" IN (
+scripts/inspect_michaelangelo_missing_rows.py:171:                    OR "attachableId" = ANY(%s)
+scripts/inspect_michaelangelo_missing_rows.py:173:            ORDER BY "legacyId", "createdAt"
+scripts/inspect_michaelangelo_missing_rows.py:182:        print("7. PORTFOLIOS WITH NULL LEGACY ID")
+scripts/inspect_michaelangelo_missing_rows.py:187:            FROM "Portfolio"
+scripts/inspect_michaelangelo_missing_rows.py:189:              AND "legacyId" IS NULL
+scripts/vbizme_safe_card_sync.py:14:- Matching uses legacyId / legacyServiceId / legacyPortfolioId / legacyPostId.
+scripts/vbizme_safe_card_sync.py:153:        self.portfolio_map: Dict[int, str] = {}
+scripts/vbizme_safe_card_sync.py:339:            "id", "profileId", "legacyId", "legacyServiceId",
+scripts/vbizme_safe_card_sync.py:340:            "legacyPortfolioId", "legacyPostId", "legacyPostTypeId",
+scripts/vbizme_safe_card_sync.py:372:                "attachableId",
+scripts/vbizme_safe_card_sync.py:455:        row = self.find_one("User", {"legacyId": legacy_user_id})
+scripts/vbizme_safe_card_sync.py:476:        row = self.find_one(table, {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.py:480:            self.event("REFERENCE_MISSING", table, legacyId=legacy_id)
+scripts/vbizme_safe_card_sync.py:518:            existing = self.find_one("Profile", {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.py:529:                "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.py:567:                "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.py:619:                if r.get("legacyId") != legacy_id
+scripts/vbizme_safe_card_sync.py:649:            cur.execute('SELECT id, "legacyId" FROM "Profile" WHERE "legacyId" IS NOT NULL')
+scripts/vbizme_safe_card_sync.py:651:                self.profile_map.setdefault(int(r["legacyId"]), r["id"])
+scripts/vbizme_safe_card_sync.py:666:                self.event("SKIP_PARENT_PROFILE_MISSING", "Setting", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.py:669:            existing = self.find_one("Setting", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.py:671:                "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.py:678:            context = {"legacyId": int(old["id"]), "profileLegacyId": int(pid), "key": old.get("key")}
+scripts/vbizme_safe_card_sync.py:691:            # Same profile/key without legacyId is the same semantic Setting.
+scripts/vbizme_safe_card_sync.py:703:                same_legacy = same_key.get("legacyId")
+scripts/vbizme_safe_card_sync.py:713:                                    'SET "legacyId"=%s '
+scripts/vbizme_safe_card_sync.py:715:                                    'AND "legacyId" IS NULL',
+scripts/vbizme_safe_card_sync.py:724:                                        "Setting legacyId link failed "
+scripts/vbizme_safe_card_sync.py:757:                    existingLegacyId=same_legacy,
+scripts/vbizme_safe_card_sync.py:783:                    self.event("SKIP_PARENT_PROFILE_MISSING", "ProfileSetting", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.py:785:                existing = self.find_one("ProfileSetting", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.py:787:                    "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.py:797:                context = {"legacyId": int(old["id"]), "profileLegacyId": int(pid)}
+scripts/vbizme_safe_card_sync.py:821:                existing = self.find_one("Contact", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.py:823:                    "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.py:833:                context = {"legacyId": int(old["id"]), "profileLegacyId": int(pid)}
+scripts/vbizme_safe_card_sync.py:856:                self.event("SKIP_PARENT_PROFILE_MISSING", "services", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.py:861:            common_context = {"legacyId": legacy_id, "profileLegacyId": int(pid), "postTypeId": pt}
+scripts/vbizme_safe_card_sync.py:864:                table, legacy_col = "Service", "legacyId"
+scripts/vbizme_safe_card_sync.py:949:    def sync_portfolios(self):
+scripts/vbizme_safe_card_sync.py:950:        print("4/8 Syncing Portfolio / Gallery / Video rows...")
+scripts/vbizme_safe_card_sync.py:952:            cur.execute("SELECT * FROM portfolios ORDER BY id")
+scripts/vbizme_safe_card_sync.py:961:                self.event("SKIP_PARENT_PROFILE_MISSING", "portfolios", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.py:966:            context = {"legacyId": legacy_id, "profileLegacyId": int(pid), "postTypeId": pt}
+scripts/vbizme_safe_card_sync.py:968:            # The original migration keeps a legacy Portfolio representation.
+scripts/vbizme_safe_card_sync.py:970:                "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.py:980:            existing = self.find_one("Portfolio", {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.py:981:            portfolio_id = None
+scripts/vbizme_safe_card_sync.py:984:                portfolio_id = existing["id"]
+scripts/vbizme_safe_card_sync.py:987:                    self.update("Portfolio", existing["id"], p_values, context=context)
+scripts/vbizme_safe_card_sync.py:989:                    self.event("KEEP_NEW", "Portfolio", reason="new_not_older", **context)
+scripts/vbizme_safe_card_sync.py:991:                portfolio_id = self.insert(
+scripts/vbizme_safe_card_sync.py:992:                    "Portfolio",
+scripts/vbizme_safe_card_sync.py:997:            if portfolio_id:
+scripts/vbizme_safe_card_sync.py:998:                self.portfolio_map[legacy_id] = portfolio_id
+scripts/vbizme_safe_card_sync.py:1003:                    "legacyPortfolioId": legacy_id,
+scripts/vbizme_safe_card_sync.py:1014:                existing_d = self.find_one(direct_table, {"legacyPortfolioId": legacy_id})
+scripts/vbizme_safe_card_sync.py:1068:            "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.py:1094:            "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.py:1095:            "profileLegacyId": int(old["profile_id"]),
+scripts/vbizme_safe_card_sync.py:1099:        existing = self.find_one("Post", {"legacyId": legacy_id})
+scripts/vbizme_safe_card_sync.py:1131:            "legacyId": legacy_id,
+scripts/vbizme_safe_card_sync.py:1132:            "profileLegacyId": int(old["profile_id"]),
+scripts/vbizme_safe_card_sync.py:1279:        context = {"legacyId": legacy_id, "profileLegacyId": int(old["profile_id"]), "postTypeId": pt}
+scripts/vbizme_safe_card_sync.py:1320:                self.event("SKIP_PARENT_PROFILE_MISSING", "posts", legacyId=old["id"], profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.py:1334:                        legacyId=int(old["id"]), profileLegacyId=int(pid), postTypeId=pt
+scripts/vbizme_safe_card_sync.py:1340:                    legacyId=int(old["id"]), profileLegacyId=int(pid), postTypeId=pt
+scripts/vbizme_safe_card_sync.py:1364:                cur.execute('SELECT id, "legacyId" FROM "Post" WHERE "legacyId" IS NOT NULL')
+scripts/vbizme_safe_card_sync.py:1366:                    self.post_map.setdefault(int(r["legacyId"]), r["id"])
+scripts/vbizme_safe_card_sync.py:1381:            existing = self.find_one("PostMeta", {"legacyId": int(old["id"])})
+scripts/vbizme_safe_card_sync.py:1383:                "legacyId": int(old["id"]),
+scripts/vbizme_safe_card_sync.py:1390:            context = {"legacyId": int(old["id"]), "legacyPostId": legacy_post_id}
+scripts/vbizme_safe_card_sync.py:1413:                            THEN a.attachmentable_id
+scripts/vbizme_safe_card_sync.py:1419:                                WHERE p.id = a.attachmentable_id
+scripts/vbizme_safe_card_sync.py:1427:                                WHERE s.id = a.attachmentable_id
+scripts/vbizme_safe_card_sync.py:1431:                        WHEN a.attachmentable_type LIKE '%Portfolio'
+scripts/vbizme_safe_card_sync.py:1434:                                FROM portfolios pf
+scripts/vbizme_safe_card_sync.py:1435:                                WHERE pf.id = a.attachmentable_id
+scripts/vbizme_safe_card_sync.py:1487:                    legacyId=int(old["id"]),
+scripts/vbizme_safe_card_sync.py:1488:                    profileLegacyId=profile_legacy_id,
+scripts/vbizme_safe_card_sync.py:1497:                    "legacyId":
+scripts/vbizme_safe_card_sync.py:1512:                    legacyId=legacy_attachment_id,
+scripts/vbizme_safe_card_sync.py:1513:                    profileLegacyId=profile_legacy_id,
+scripts/vbizme_safe_card_sync.py:1526:                old.get("attachmentable_id")
+scripts/vbizme_safe_card_sync.py:1549:                            "legacyId":
+scripts/vbizme_safe_card_sync.py:1563:            elif "Portfolio" in old_type:
+scripts/vbizme_safe_card_sync.py:1566:                    self.portfolio_map.get(
+scripts/vbizme_safe_card_sync.py:1572:                    portfolio = self.find_one(
+scripts/vbizme_safe_card_sync.py:1573:                        "Portfolio",
+scripts/vbizme_safe_card_sync.py:1575:                            "legacyId":
+scripts/vbizme_safe_card_sync.py:1581:                        portfolio
+scripts/vbizme_safe_card_sync.py:1582:                        and not portfolio.get(
+scripts/vbizme_safe_card_sync.py:1586:                        attachable_id = portfolio[
+scripts/vbizme_safe_card_sync.py:1597:                # Attachment.attachableId
+scripts/vbizme_safe_card_sync.py:1618:                    legacyId=legacy_attachment_id,
+scripts/vbizme_safe_card_sync.py:1620:                    attachableLegacyId=
+scripts/vbizme_safe_card_sync.py:1622:                    profileLegacyId=
+scripts/vbizme_safe_card_sync.py:1682:                "legacyId":
+scripts/vbizme_safe_card_sync.py:1691:                "attachableId":
+scripts/vbizme_safe_card_sync.py:1705:                # docName/profile legacyId to locate
+scripts/vbizme_safe_card_sync.py:1738:                "legacyId":
+scripts/vbizme_safe_card_sync.py:1741:                "profileLegacyId":
+scripts/vbizme_safe_card_sync.py:1747:                "attachableLegacyId":
+scripts/vbizme_safe_card_sync.py:1771:                    "attachableId":
+scripts/vbizme_safe_card_sync.py:1819:            for table in ("settings", "services", "portfolios", "posts"):
+scripts/vbizme_safe_card_sync.py:1825:                        self.event("UNRESOLVED_PROFILE_PARENT", table, profileLegacyId=pid)
+scripts/vbizme_safe_card_sync.py:1859:            self.sync_portfolios()
+scripts/link_proven_michaelangelo_portfolios.py:16:# OLD Portfolio ID -> NEW Portfolio ID -> OLD Attachment ID
+scripts/link_proven_michaelangelo_portfolios.py:31:old_url = urlparse(os.environ["LARAVEL_MYSQL_URL"])
+scripts/link_proven_michaelangelo_portfolios.py:57:            SELECT id,"legacyId",name,slug
+scripts/link_proven_michaelangelo_portfolios.py:59:            WHERE "legacyId"=%s
+scripts/link_proven_michaelangelo_portfolios.py:66:            f"Expected exactly one NEW Profile legacyId "
+scripts/link_proven_michaelangelo_portfolios.py:83:    for old_portfolio_id, new_portfolio_id, old_attachment_id in MAPPINGS:
+scripts/link_proven_michaelangelo_portfolios.py:87:        print("VERIFY OLD PORTFOLIO", old_portfolio_id)
+scripts/link_proven_michaelangelo_portfolios.py:92:        # OLD Portfolio
+scripts/link_proven_michaelangelo_portfolios.py:99:                FROM portfolios
+scripts/link_proven_michaelangelo_portfolios.py:101:            """, (old_portfolio_id,))
+scripts/link_proven_michaelangelo_portfolios.py:103:            old_portfolio = c.fetchone()
+scripts/link_proven_michaelangelo_portfolios.py:105:        if not old_portfolio:
+scripts/link_proven_michaelangelo_portfolios.py:107:                f"OLD Portfolio {old_portfolio_id} missing"
+scripts/link_proven_michaelangelo_portfolios.py:110:        if int(old_portfolio["profile_id"]) != PROFILE_LEGACY_ID:
+scripts/link_proven_michaelangelo_portfolios.py:112:                f"OLD Portfolio {old_portfolio_id} belongs to "
+scripts/link_proven_michaelangelo_portfolios.py:113:                f"profile {old_portfolio['profile_id']}, not 91"
+scripts/link_proven_michaelangelo_portfolios.py:126:                    attachmentable_id,
+scripts/link_proven_michaelangelo_portfolios.py:141:        if int(old_attachment["attachmentable_id"]) != old_portfolio_id:
+scripts/link_proven_michaelangelo_portfolios.py:144:                f"{old_attachment['attachmentable_id']}, expected "
+scripts/link_proven_michaelangelo_portfolios.py:145:                f"Portfolio {old_portfolio_id}"
+scripts/link_proven_michaelangelo_portfolios.py:148:        if "Portfolio" not in str(
+scripts/link_proven_michaelangelo_portfolios.py:152:                f"OLD Attachment {old_attachment_id} is not Portfolio"
+scripts/link_proven_michaelangelo_portfolios.py:157:        # NEW Portfolio
+scripts/link_proven_michaelangelo_portfolios.py:165:                    "legacyId",
+scripts/link_proven_michaelangelo_portfolios.py:170:                FROM "Portfolio"
+scripts/link_proven_michaelangelo_portfolios.py:172:            """, (new_portfolio_id,))
+scripts/link_proven_michaelangelo_portfolios.py:174:            new_portfolio = c.fetchone()
+scripts/link_proven_michaelangelo_portfolios.py:176:        if not new_portfolio:
+scripts/link_proven_michaelangelo_portfolios.py:178:                f"NEW Portfolio {new_portfolio_id} missing"
+scripts/link_proven_michaelangelo_portfolios.py:181:        new_portfolio = dict(new_portfolio)
+scripts/link_proven_michaelangelo_portfolios.py:183:        if new_portfolio["profileId"] != profile_id:
+scripts/link_proven_michaelangelo_portfolios.py:185:                f"NEW Portfolio {new_portfolio_id} belongs to wrong Profile"
+scripts/link_proven_michaelangelo_portfolios.py:188:        if new_portfolio["legacyId"] not in (
+scripts/link_proven_michaelangelo_portfolios.py:190:            old_portfolio_id,
+scripts/link_proven_michaelangelo_portfolios.py:193:                f"NEW Portfolio {new_portfolio_id} already has "
+scripts/link_proven_michaelangelo_portfolios.py:194:                f"legacyId={new_portfolio['legacyId']}"
+scripts/link_proven_michaelangelo_portfolios.py:199:        # No other Portfolio can already own this legacyId
+scripts/link_proven_michaelangelo_portfolios.py:206:                FROM "Portfolio"
+scripts/link_proven_michaelangelo_portfolios.py:207:                WHERE "legacyId"=%s
+scripts/link_proven_michaelangelo_portfolios.py:210:                old_portfolio_id,
+scripts/link_proven_michaelangelo_portfolios.py:211:                new_portfolio_id,
+scripts/link_proven_michaelangelo_portfolios.py:218:                f"OLD Portfolio legacyId {old_portfolio_id} is already "
+scripts/link_proven_michaelangelo_portfolios.py:219:                f"owned by another NEW Portfolio: {duplicate}"
+scripts/link_proven_michaelangelo_portfolios.py:232:                    "legacyId",
+scripts/link_proven_michaelangelo_portfolios.py:235:                    "attachableId",
+scripts/link_proven_michaelangelo_portfolios.py:239:                WHERE "legacyId"=%s
+scripts/link_proven_michaelangelo_portfolios.py:246:                f"Expected one NEW Attachment legacyId "
+scripts/link_proven_michaelangelo_portfolios.py:257:        if "Portfolio" not in str(
+scripts/link_proven_michaelangelo_portfolios.py:261:                f"Attachment {old_attachment_id} is not Portfolio type"
+scripts/link_proven_michaelangelo_portfolios.py:280:        portfolio_urls = {
+scripts/link_proven_michaelangelo_portfolios.py:281:            (new_portfolio.get("imageUrl") or "").strip(),
+scripts/link_proven_michaelangelo_portfolios.py:282:            (new_portfolio.get("attachmentUrl") or "").strip(),
+scripts/link_proven_michaelangelo_portfolios.py:285:        if attachment_url not in portfolio_urls:
+scripts/link_proven_michaelangelo_portfolios.py:287:                f"EXACT MEDIA MISMATCH for OLD Portfolio "
+scripts/link_proven_michaelangelo_portfolios.py:288:                f"{old_portfolio_id}"
+scripts/link_proven_michaelangelo_portfolios.py:300:                FROM "Portfolio"
+scripts/link_proven_michaelangelo_portfolios.py:317:        if matches != [new_portfolio_id]:
+scripts/link_proven_michaelangelo_portfolios.py:319:                f"Media URL for legacy Portfolio {old_portfolio_id} "
+scripts/link_proven_michaelangelo_portfolios.py:325:            "legacyPortfolioId": old_portfolio_id,
+scripts/link_proven_michaelangelo_portfolios.py:326:            "newPortfolioId": new_portfolio_id,
+scripts/link_proven_michaelangelo_portfolios.py:330:                new_attachment["attachableId"],
+scripts/link_proven_michaelangelo_portfolios.py:377:                UPDATE "Portfolio"
+scripts/link_proven_michaelangelo_portfolios.py:378:                SET "legacyId"=%s
+scripts/link_proven_michaelangelo_portfolios.py:381:                       "legacyId" IS NULL
+scripts/link_proven_michaelangelo_portfolios.py:382:                    OR "legacyId"=%s
+scripts/link_proven_michaelangelo_portfolios.py:385:                row["legacyPortfolioId"],
+scripts/link_proven_michaelangelo_portfolios.py:386:                row["newPortfolioId"],
+scripts/link_proven_michaelangelo_portfolios.py:387:                row["legacyPortfolioId"],
+scripts/link_proven_michaelangelo_portfolios.py:392:                    f"Portfolio update failed for "
+scripts/link_proven_michaelangelo_portfolios.py:393:                    f"{row['legacyPortfolioId']}"
+scripts/link_proven_michaelangelo_portfolios.py:401:                    "attachableId"=%s,
+scripts/link_proven_michaelangelo_portfolios.py:403:                    "attachableType"='App\\Models\\Portfolio'
+scripts/link_proven_michaelangelo_portfolios.py:406:                row["newPortfolioId"],
+scripts/link_proven_michaelangelo_portfolios.py:424:    print("Linked OLD Portfolios:", len(plan))
+scripts/link_proven_michaelangelo_portfolios.py:432:        row["legacyPortfolioId"]
+scripts/link_proven_michaelangelo_portfolios.py:440:                "legacyId",
+scripts/link_proven_michaelangelo_portfolios.py:445:            FROM "Portfolio"
+scripts/link_proven_michaelangelo_portfolios.py:446:            WHERE "legacyId" = ANY(%s)
+scripts/link_proven_michaelangelo_portfolios.py:447:            ORDER BY "legacyId"
+scripts/link_proven_michaelangelo_portfolios.py:456:    print("POST-COMMIT PORTFOLIOS")
+scripts/link_proven_michaelangelo_portfolios.py:464:            f"Expected 6 mapped portfolios after commit; "
+scripts/sync-laravel-tab-media.ts:6: *   GET /post-types?profile_id={legacyId}
+scripts/sync-laravel-tab-media.ts:7: *   GET /dynamic-section/{tabName}?profile_id={legacyId}
+scripts/sync-laravel-tab-media.ts:11: * Profile/Post/Service/Portfolio/Attachment by slug + legacyId.
+scripts/sync-laravel-tab-media.ts:59:  itemLegacyId: number | null
+scripts/sync-laravel-tab-media.ts:61:  attachmentLegacyId: number | null
+scripts/sync-laravel-tab-media.ts:62:  attachmentTypeLegacyId: number | null
+scripts/sync-laravel-tab-media.ts:63:  kind: 'profile' | 'post' | 'service' | 'portfolio' | 'attachment'
+scripts/sync-laravel-tab-media.ts:172:  hit: Omit<MediaHit, 'attachmentTypeLegacyId'> & { attachmentTypeLegacyId?: number | null }
+scripts/sync-laravel-tab-media.ts:176:  hits.push({ ...hit, attachmentTypeLegacyId: hit.attachmentTypeLegacyId ?? null })
+scripts/sync-laravel-tab-media.ts:208:  typeLegacyId?: number | null,
+scripts/sync-laravel-tab-media.ts:217:        attachmentTypeLegacyId: typeLegacyId ?? null,
+scripts/sync-laravel-tab-media.ts:218:        profileLegacyId: laravelId ?? undefined,
+scripts/sync-laravel-tab-media.ts:238:  const itemLegacyId = numericId(item.id)
+scripts/sync-laravel-tab-media.ts:239:  const itemId = itemLegacyId == null && typeof item.id === 'string' ? item.id : null
+scripts/sync-laravel-tab-media.ts:244:      itemLegacyId,
+scripts/sync-laravel-tab-media.ts:246:      attachmentLegacyId: null,
+scripts/sync-laravel-tab-media.ts:258:        itemLegacyId,
+scripts/sync-laravel-tab-media.ts:260:        attachmentLegacyId: attId,
+scripts/sync-laravel-tab-media.ts:269:      itemLegacyId,
+scripts/sync-laravel-tab-media.ts:271:      attachmentLegacyId: numericId(asRecord(featured)?.id),
+scripts/sync-laravel-tab-media.ts:286:        itemLegacyId,
+scripts/sync-laravel-tab-media.ts:288:        attachmentLegacyId: attId,
+scripts/sync-laravel-tab-media.ts:289:        attachmentTypeLegacyId: typeId ?? 8,
+scripts/sync-laravel-tab-media.ts:308:          itemLegacyId: null,
+scripts/sync-laravel-tab-media.ts:310:          attachmentLegacyId: null,
+scripts/sync-laravel-tab-media.ts:321:        itemLegacyId: null,
+scripts/sync-laravel-tab-media.ts:323:        attachmentLegacyId: null,
+scripts/sync-laravel-tab-media.ts:335:  if (/^gallery$/i.test(name) || /^portfolio$/i.test(name)) return 'portfolio'
+scripts/sync-laravel-tab-media.ts:342:  if (kind === 'portfolio' || /gallery|portfolio/i.test(section)) return `${prefix}/portfolios`
+scripts/sync-laravel-tab-media.ts:348:  if (hit.attachmentLegacyId != null) {
+scripts/sync-laravel-tab-media.ts:350:      where: { legacyId: hit.attachmentLegacyId, profileId },
+scripts/sync-laravel-tab-media.ts:359:  if (hit.kind === 'service' && (hit.itemLegacyId != null || hit.itemId)) {
+scripts/sync-laravel-tab-media.ts:362:      : await prisma.service.findFirst({ where: { legacyId: hit.itemLegacyId!, profileId } })
+scripts/sync-laravel-tab-media.ts:365:  if (hit.kind === 'portfolio' && (hit.itemLegacyId != null || hit.itemId)) {
+scripts/sync-laravel-tab-media.ts:367:      ? await prisma.portfolio.findFirst({ where: { id: hit.itemId, profileId } })
+scripts/sync-laravel-tab-media.ts:368:      : await prisma.portfolio.findFirst({ where: { legacyId: hit.itemLegacyId!, profileId } })
+scripts/sync-laravel-tab-media.ts:369:    if (row) await prisma.portfolio.update({ where: { id: row.id }, data: { imageUrl: newUrl } })
+scripts/sync-laravel-tab-media.ts:371:  if ((hit.kind === 'post' || hit.field === 'featured_image') && (hit.itemLegacyId != null || hit.itemId)) {
+scripts/sync-laravel-tab-media.ts:374:      : await prisma.post.findFirst({ where: { legacyId: hit.itemLegacyId!, profileId } })
+scripts/sync-laravel-tab-media.ts:384:    await prisma.portfolio.updateMany({ where: { profileId, imageUrl: hit.url }, data: { imageUrl: newUrl } })
+scripts/sync-laravel-tab-media.ts:405:      itemLegacyId: null,
+scripts/sync-laravel-tab-media.ts:407:      attachmentLegacyId: null,
+scripts/sync-laravel-tab-media.ts:418:      legacyId: true,
+scripts/sync-laravel-tab-media.ts:419:      attachmentType: { select: { legacyId: true } },
+scripts/sync-laravel-tab-media.ts:426:      itemLegacyId: null,
+scripts/sync-laravel-tab-media.ts:428:      attachmentLegacyId: att.legacyId,
+scripts/sync-laravel-tab-media.ts:429:      attachmentTypeLegacyId: att.attachmentType?.legacyId ?? 8,
+scripts/sync-laravel-tab-media.ts:437:    select: { id: true, featuredImage: true, legacyId: true },
+scripts/sync-laravel-tab-media.ts:443:      itemLegacyId: post.legacyId,
+scripts/sync-laravel-tab-media.ts:445:      attachmentLegacyId: null,
+scripts/sync-laravel-tab-media.ts:453:    select: { id: true, imageUrl: true, legacyId: true },
+scripts/sync-laravel-tab-media.ts:459:      itemLegacyId: service.legacyId,
+scripts/sync-laravel-tab-media.ts:461:      attachmentLegacyId: null,
+scripts/sync-laravel-tab-media.ts:467:  const portfolios = await prisma.portfolio.findMany({
+scripts/sync-laravel-tab-media.ts:469:    select: { id: true, imageUrl: true, legacyId: true },
+scripts/sync-laravel-tab-media.ts:471:  for (const portfolio of portfolios) {
+scripts/sync-laravel-tab-media.ts:472:    if (!portfolio.imageUrl) continue
+scripts/sync-laravel-tab-media.ts:474:      section: 'db-portfolio',
+scripts/sync-laravel-tab-media.ts:475:      itemLegacyId: portfolio.legacyId,
+scripts/sync-laravel-tab-media.ts:476:      itemId: portfolio.id,
+scripts/sync-laravel-tab-media.ts:477:      attachmentLegacyId: null,
+scripts/sync-laravel-tab-media.ts:478:      kind: 'portfolio',
+scripts/sync-laravel-tab-media.ts:480:      url: portfolio.imageUrl,
+scripts/sync-laravel-tab-media.ts:534:    select: { id: true, slug: true, legacyId: true, avatar: true },
+scripts/sync-laravel-tab-media.ts:540:  let laravelId = numericId(laravelProfile?.id) ?? dbProfile?.legacyId ?? null
+scripts/sync-laravel-tab-media.ts:542:    `  laravel /v/${slug} HTTP ${cardRes.status} numericId=${numericId(laravelProfile?.id) ?? 'none'} dbLegacyId=${dbProfile?.legacyId ?? 'none'}`
+scripts/sync-laravel-tab-media.ts:547:    errors.push(`Laravel /v/${slug} had no numeric id (HTTP ${cardRes.status}); using DB legacyId=${laravelId}`)
+scripts/sync-laravel-tab-media.ts:560:      errors: [`No new-backend profile for slug=${slug}${laravelId ? ` legacyId=${laravelId}` : ''}`],
+scripts/sync-laravel-tab-media.ts:627:        const typeId = related.find((h) => h.attachmentTypeLegacyId != null)?.attachmentTypeLegacyId
+scripts/inspect_final_card_sync.py:46:            "legacyId",
+scripts/inspect_final_card_sync.py:53:        WHERE "legacyId" IS NOT NULL
+scripts/inspect_final_card_sync.py:56:        r["legacyId"]: dict(r)
+scripts/inspect_final_card_sync.py:118:        "legacyId": p["id"],
+scripts/inspect_final_card_sync.py:129:        "legacyId": p["id"],
+scripts/inspect_final_card_sync.py:172:            SELECT id, "legacyId", name, email
+scripts/inspect_final_card_sync.py:174:            WHERE "legacyId" = ANY(%s)
+scripts/inspect_final_card_sync.py:178:            r["legacyId"]: dict(r)
+scripts/inspect_final_card_sync.py:232:            SELECT "legacyId"
+scripts/inspect_final_card_sync.py:234:            WHERE "legacyId" = ANY(%s)
+scripts/inspect_final_card_sync.py:287:        SELECT "legacyId"
+scripts/inspect_final_card_sync.py:289:        WHERE "legacyId" IS NOT NULL

@@ -53,6 +53,7 @@ export function galleryHasMedia(
 export type LiveGalleryRow = {
   id: string
   profileId: string
+  type: string
   title: string | null
   description: string | null
   url: string | null
@@ -73,6 +74,7 @@ const GALLERY_SAFE_SELECT = {
   profileId: true,
   title: true,
   description: true,
+  type: true,
   url: true,
   featuredImage: true,
   attachmentUrl: true,
@@ -86,6 +88,7 @@ const GALLERY_SAFE_SELECT = {
 const withGalleryDefaults = (row: {
   id: string
   profileId: string
+  type?: string | null
   title: string | null
   description: string | null
   url: string | null
@@ -98,6 +101,7 @@ const withGalleryDefaults = (row: {
   updatedAt: Date
 }): LiveGalleryRow => ({
   ...row,
+  type: row.type || 'Image',
   attachmentUrl: row.attachmentUrl ?? null,
   attachmentName: row.attachmentName ?? null,
   deletedAt: null,

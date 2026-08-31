@@ -1,0 +1,689 @@
+{
+  "mode": "DRY_RUN",
+  "generatedAt": "2026-08-28T19:19:16.907816Z",
+  "selectedProfiles": [54],
+  "excludedProfiles": [],
+  "summary": {
+    "CONSISTENCY_OK": 1,
+    "WOULD_INSERT": 74,
+    "WOULD_UPDATE_FROM_OLD": 8
+  },
+  "events": [
+    {
+      "action": "WOULD_INSERT",
+      "table": "Profile",
+      "newId": "c0fe38acf01e74a73b0ac81f2",
+      "legacyId": 54,
+      "slug": "mila-balanta"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c568a32f11ac74550b357bb3f",
+      "legacyId": 1575,
+      "profileLegacyId": 54,
+      "key": "profile_video_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cd69352b3206748248d385e48",
+      "legacyId": 1576,
+      "profileLegacyId": 54,
+      "key": "profile_image_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cc0698c74a9d7458b8f575e9a",
+      "legacyId": 1577,
+      "profileLegacyId": 54,
+      "key": "background_music_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cdfbc93dac59d4ab0b6ddeca8",
+      "legacyId": 1578,
+      "profileLegacyId": 54,
+      "key": "name_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cbeaf8da0c61847538e858d44",
+      "legacyId": 1579,
+      "profileLegacyId": 54,
+      "key": "profession_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c81ff67693bab41609d3dc9e9",
+      "legacyId": 1580,
+      "profileLegacyId": 54,
+      "key": "age_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cc2f7b513470848a3b86a4529",
+      "legacyId": 1581,
+      "profileLegacyId": 54,
+      "key": "address_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cdd6da54a2f3a432597d3a51a",
+      "legacyId": 1582,
+      "profileLegacyId": 54,
+      "key": "phone_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c0a17fc0eda2644a99a867918",
+      "legacyId": 1583,
+      "profileLegacyId": 54,
+      "key": "zip_code_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cdcf414d94a9d491b887dd0ac",
+      "legacyId": 1584,
+      "profileLegacyId": 54,
+      "key": "website_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cf3cd9643338c42549a78ecdb",
+      "legacyId": 1585,
+      "profileLegacyId": 54,
+      "key": "company_name_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cd7480d64ade34848a1edd3db",
+      "legacyId": 1586,
+      "profileLegacyId": 54,
+      "key": "gender_id_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c67518f01f9b043529e47e9d5",
+      "legacyId": 1587,
+      "profileLegacyId": 54,
+      "key": "marital_status_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c4792797ae321408ab0c260ac",
+      "legacyId": 1588,
+      "profileLegacyId": 54,
+      "key": "email_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c8743d44d29ec4ec2a2e02915",
+      "legacyId": 1589,
+      "profileLegacyId": 54,
+      "key": "about_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c594a0608beeb4b0394aa95f1",
+      "legacyId": 1590,
+      "profileLegacyId": 54,
+      "key": "save_contact_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c8507ffa2506f4579b9d3fba9",
+      "legacyId": 1591,
+      "profileLegacyId": 54,
+      "key": "share_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c604a74f7790c45d6a76a2b07",
+      "legacyId": 1592,
+      "profileLegacyId": 54,
+      "key": "twitter_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c6d8d0d3930bc449ead0cf3a9",
+      "legacyId": 1593,
+      "profileLegacyId": 54,
+      "key": "facebook_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cc524a64172a343bd8c940113",
+      "legacyId": 1594,
+      "profileLegacyId": 54,
+      "key": "instagram_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cb35e1fb2d1284001af1a6b09",
+      "legacyId": 1595,
+      "profileLegacyId": 54,
+      "key": "background_video_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c2cbde62cb64141da8ea3d876",
+      "legacyId": 4074,
+      "profileLegacyId": 54,
+      "key": "company_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c24963ba13916495dbff260bf",
+      "legacyId": 4075,
+      "profileLegacyId": 54,
+      "key": "myName_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "ce982f3c6c3994d528a5a0e26",
+      "legacyId": 4076,
+      "profileLegacyId": 54,
+      "key": "myProfession_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c0482b9c1e41f4340bb3f9647",
+      "legacyId": 4077,
+      "profileLegacyId": 54,
+      "key": "contactNav_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c9abe81cfeba64b65a0e92d6d",
+      "legacyId": 4078,
+      "profileLegacyId": 54,
+      "key": "faqNav_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c68debf4755ca4bea95b77386",
+      "legacyId": 4079,
+      "profileLegacyId": 54,
+      "key": "2dNav_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c0689122d8e28430886a31a2e",
+      "legacyId": 4080,
+      "profileLegacyId": 54,
+      "key": "missionStatementNav_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c2c85dccbe8c840f9b1aad9a4",
+      "legacyId": 4081,
+      "profileLegacyId": 54,
+      "key": "blogNav_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c553f98379e0642e9affd7146",
+      "legacyId": 4082,
+      "profileLegacyId": 54,
+      "key": "serviceNav_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c0ed710c568154458af476551",
+      "legacyId": 4083,
+      "profileLegacyId": 54,
+      "key": "navHome_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c38f1891cafd64647aa288bb7",
+      "legacyId": 4084,
+      "profileLegacyId": 54,
+      "key": "bgNav_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c098c023dad924259a5b46739",
+      "legacyId": 4085,
+      "profileLegacyId": 54,
+      "key": "bgNav_background_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c759130775d8745b0af20eed6",
+      "legacyId": 4086,
+      "profileLegacyId": 54,
+      "key": "myCompany_name_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "ce8603e2da8204a66991b0b32",
+      "legacyId": 4087,
+      "profileLegacyId": 54,
+      "key": "post_status_checkbox"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c8cd8ff22aec145de9b9f48ac",
+      "legacyId": 4088,
+      "profileLegacyId": 54,
+      "key": "myName_background_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "ce50297c4b5324449b768ea76",
+      "legacyId": 4089,
+      "profileLegacyId": 54,
+      "key": "myProfession_background_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cb608b09f49724a8d83f333d2",
+      "legacyId": 4090,
+      "profileLegacyId": 54,
+      "key": "profession_background_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c518be39c721c4a17b5948cde",
+      "legacyId": 4091,
+      "profileLegacyId": 54,
+      "key": "company_background_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c2708266e73e8464da88f3fc9",
+      "legacyId": 4092,
+      "profileLegacyId": 54,
+      "key": "email_text_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c4d1141ef9a174184b4951b9e",
+      "legacyId": 4093,
+      "profileLegacyId": 54,
+      "key": "email_background_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cf3d52748127b43f1bd8dda47",
+      "legacyId": 4094,
+      "profileLegacyId": 54,
+      "key": "address_text_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c43a14248e4724ea2be857093",
+      "legacyId": 4095,
+      "profileLegacyId": 54,
+      "key": "address_background_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cb2a91111c9b5421a8bbefd86",
+      "legacyId": 4096,
+      "profileLegacyId": 54,
+      "key": "phone_text_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "ca8f03bb470df4b78ae78b429",
+      "legacyId": 4097,
+      "profileLegacyId": 54,
+      "key": "phone_background_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c25d45a14a5ec41efbbda82c7",
+      "legacyId": 4098,
+      "profileLegacyId": 54,
+      "key": "website_text_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c521da0058d48478aae772d6e",
+      "legacyId": 4099,
+      "profileLegacyId": 54,
+      "key": "website_background_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "c48f5303fd7b344d5a88ff221",
+      "legacyId": 4100,
+      "profileLegacyId": 54,
+      "key": "marital_status_text_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Setting",
+      "newId": "cac512d8e0974412e9fc01958",
+      "legacyId": 4101,
+      "profileLegacyId": 54,
+      "key": "marital_status_background_color"
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Post",
+      "newId": "cd4467b32cf364869a9d7cc45",
+      "legacyId": 373,
+      "profileLegacyId": 54,
+      "postTypeId": 19
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "MissionStatement",
+      "newId": "cfe40c380ee8944bb878c3d96",
+      "legacyId": 373,
+      "profileLegacyId": 54,
+      "postTypeId": 19
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "TabItem",
+      "newId": "cc17f6347c77d4f14b3ff7a06",
+      "legacyId": 373,
+      "profileLegacyId": 54,
+      "postTypeId": 19
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Post",
+      "newId": "cbd8980048ffd432eb953cda9",
+      "legacyId": 374,
+      "profileLegacyId": 54,
+      "postTypeId": 6
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Blog",
+      "newId": "c8bce8878d56c4794bc9921f5",
+      "legacyId": 374,
+      "profileLegacyId": 54,
+      "postTypeId": 6
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "BlogDirect",
+      "newId": "c47933f3353ea48caa85e346c",
+      "legacyId": 374,
+      "profileLegacyId": 54,
+      "postTypeId": 6
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Post",
+      "newId": "c13fefbcec53f48ecb4400925",
+      "legacyId": 375,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Faq",
+      "newId": "c6ad399f5f38b4a40b1a3b02f",
+      "legacyId": 375,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "TabItem",
+      "newId": "cab946799eb4a4c789657e3e0",
+      "legacyId": 375,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Post",
+      "newId": "c896cb10871f243d58585186d",
+      "legacyId": 376,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Faq",
+      "newId": "cb0b1bb56a98d445da9fef755",
+      "legacyId": 376,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "TabItem",
+      "newId": "cd0e2ea44d4fd44f0ab616617",
+      "legacyId": 376,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Post",
+      "newId": "c541ff744cab2452589df4da6",
+      "legacyId": 377,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Faq",
+      "newId": "cd00f15f3dcc94b57be01fc29",
+      "legacyId": 377,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "TabItem",
+      "newId": "c11b9de55c2cd47b6a3824ee7",
+      "legacyId": 377,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Post",
+      "newId": "cd0a72a7cb42546fd8e2a06d3",
+      "legacyId": 378,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Faq",
+      "newId": "cda608607f3914201b7c5e260",
+      "legacyId": 378,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "TabItem",
+      "newId": "ce9214bb5ddf94c66b7e24239",
+      "legacyId": 378,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Post",
+      "newId": "c6991ea1ad7614926a33f0e62",
+      "legacyId": 379,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Faq",
+      "newId": "cb6224aabccac49ac9e18f8d0",
+      "legacyId": 379,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "TabItem",
+      "newId": "c636857edf504407daad6e586",
+      "legacyId": 379,
+      "profileLegacyId": 54,
+      "postTypeId": 13
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "Post",
+      "newId": "c59fc122a9f204ac59d5a0d8d",
+      "legacyId": 870,
+      "profileLegacyId": 54,
+      "postTypeId": 16
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "AboutMe",
+      "newId": "c9a92150ff041429cacaf99dd",
+      "legacyId": 870,
+      "profileLegacyId": 54,
+      "postTypeId": 16
+    },
+    {
+      "action": "WOULD_INSERT",
+      "table": "AboutMeDirect",
+      "newId": "cb35c817646bc48218ce2e76d",
+      "legacyId": 870,
+      "profileLegacyId": 54,
+      "postTypeId": 16
+    },
+    {
+      "action": "WOULD_UPDATE_FROM_OLD",
+      "table": "Attachment",
+      "rowId": "cmsuurd0p0kmscnkc4jy7e30f",
+      "legacyId": 205,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 54,
+      "docName": "mila.jpg"
+    },
+    {
+      "action": "WOULD_UPDATE_FROM_OLD",
+      "table": "Attachment",
+      "rowId": "cmsuuremd0l02cnkcb6v5qasc",
+      "legacyId": 1152,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 54,
+      "docName": "Mila cocoboca calypso.mp4"
+    },
+    {
+      "action": "WOULD_UPDATE_FROM_OLD",
+      "table": "Attachment",
+      "rowId": "cmsuuremf0l03cnkc5ugib59a",
+      "legacyId": 1153,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 54,
+      "docName": "Mila cocoboca calypso.mp4"
+    },
+    {
+      "action": "WOULD_UPDATE_FROM_OLD",
+      "table": "Attachment",
+      "rowId": "cmsuuremk0l04cnkchn4nbo1j",
+      "legacyId": 1154,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 54,
+      "docName": "mila.jpg"
+    },
+    {
+      "action": "WOULD_UPDATE_FROM_OLD",
+      "table": "Attachment",
+      "rowId": "cmsuuremw0l05cnkcngo3vr7u",
+      "legacyId": 1155,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Profile",
+      "attachableLegacyId": 54,
+      "docName": "Cocoboca-1080p-240502-1.mp4"
+    },
+    {
+      "action": "WOULD_UPDATE_FROM_OLD",
+      "table": "Attachment",
+      "rowId": "cmsuuren20l06cnkcjfgoskvp",
+      "legacyId": 1156,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Post",
+      "attachableLegacyId": 373,
+      "docName": "7938 png-2_1741778418_67d16df24d2ec.png"
+    },
+    {
+      "action": "WOULD_UPDATE_FROM_OLD",
+      "table": "Attachment",
+      "rowId": "cmsuurena0l07cnkchowx3vh4",
+      "legacyId": 1157,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Post",
+      "attachableLegacyId": 374,
+      "docName": "7938 png-2_1741778611_67d16eb35909a.png"
+    },
+    {
+      "action": "WOULD_UPDATE_FROM_OLD",
+      "table": "Attachment",
+      "rowId": "cmsuurg3b0laicnkc41xftqbl",
+      "legacyId": 2267,
+      "profileLegacyId": 54,
+      "attachableType": "App\\Models\\Post",
+      "attachableLegacyId": 870,
+      "docName": "mila_1750108651_685089eb10b4d.jpg"
+    },
+    {
+      "action": "CONSISTENCY_OK",
+      "table": "Profile",
+      "check": "all_selected_legacy_parents_resolved"
+    }
+  ]
+}

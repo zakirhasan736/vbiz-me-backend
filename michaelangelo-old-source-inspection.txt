@@ -1,0 +1,132 @@
+
+==========================================================================================
+1. OLD MYSQL ATTACHMENTS TABLE SCHEMA
+==========================================================================================
+Table:
+attachments
+Create Table:
+CREATE TABLE `attachments` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `doc_name` varchar(191) NOT NULL,
+  `attachmentable_type` varchar(191) NOT NULL,
+  `attachmentable_id` bigint(20) unsigned NOT NULL,
+  `attachment_type_id` bigint(20) unsigned DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `attachments_attachmentable_type_attachmentable_id_index` (`attachmentable_type`,`attachmentable_id`),
+  KEY `attachments_attachment_type_id_foreign` (`attachment_type_id`),
+  CONSTRAINT `attachments_attachment_type_id_foreign` FOREIGN KEY (`attachment_type_id`) REFERENCES `attachment_types` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=5234 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+==========================================================================================
+2. OLD MYSQL PORTFOLIOS TABLE SCHEMA
+==========================================================================================
+Table:
+portfolios
+Create Table:
+CREATE TABLE `portfolios` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `title` text DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `status` tinyint(1) DEFAULT 1,
+  `profile_id` bigint(20) unsigned DEFAULT NULL,
+  `post_type_id` bigint(20) unsigned DEFAULT NULL,
+  `url` text DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `portfolios_profile_id_foreign` (`profile_id`),
+  KEY `portfolios_post_type_id_foreign` (`post_type_id`),
+  CONSTRAINT `portfolios_post_type_id_foreign` FOREIGN KEY (`post_type_id`) REFERENCES `post_types` (`id`),
+  CONSTRAINT `portfolios_profile_id_foreign` FOREIGN KEY (`profile_id`) REFERENCES `profiles` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=922 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+==========================================================================================
+3. FULL OLD TARGET PORTFOLIO ROWS
+==========================================================================================
+
+{'id': 125, 'title': 'Rango Spader', 'description': None, 'status': 1, 'profile_id': 91, 'post_type_id': 5, 'url': None, 'created_at': datetime.datetime(2025, 3, 1, 0, 18, 45), 'updated_at': datetime.datetime(2025, 3, 1, 0, 18, 45)}
+
+{'id': 433, 'title': '8', 'description': None, 'status': 1, 'profile_id': 91, 'post_type_id': 4, 'url': None, 'created_at': datetime.datetime(2025, 8, 2, 2, 52, 39), 'updated_at': datetime.datetime(2025, 8, 2, 2, 52, 39)}
+
+{'id': 783, 'title': '8', 'description': None, 'status': 1, 'profile_id': 91, 'post_type_id': 4, 'url': None, 'created_at': datetime.datetime(2026, 5, 24, 8, 30, 5), 'updated_at': datetime.datetime(2026, 5, 24, 8, 30, 5)}
+
+{'id': 912, 'title': 'Wallet Image', 'description': None, 'status': 1, 'profile_id': 91, 'post_type_id': 4, 'url': None, 'created_at': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updated_at': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+
+{'id': 913, 'title': 'vBiz Me Screenshot', 'description': None, 'status': 1, 'profile_id': 91, 'post_type_id': 4, 'url': None, 'created_at': datetime.datetime(2026, 8, 18, 11, 29, 38), 'updated_at': datetime.datetime(2026, 8, 18, 11, 29, 38)}
+
+{'id': 914, 'title': '12', 'description': None, 'status': 1, 'profile_id': 91, 'post_type_id': 4, 'url': None, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+
+{'id': 915, 'title': '13', 'description': None, 'status': 1, 'profile_id': 91, 'post_type_id': 4, 'url': None, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+
+{'id': 916, 'title': '14', 'description': None, 'status': 1, 'profile_id': 91, 'post_type_id': 4, 'url': None, 'created_at': datetime.datetime(2026, 8, 21, 11, 16, 59), 'updated_at': datetime.datetime(2026, 8, 21, 11, 16, 59)}
+
+==========================================================================================
+4. FULL OLD TARGET ATTACHMENT ROWS
+==========================================================================================
+
+{'id': 858, 'doc_name': 'Logo-Transparency.png', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 125, 'attachment_type_id': 7, 'created_at': datetime.datetime(2025, 3, 1, 0, 18, 45), 'updated_at': datetime.datetime(2025, 3, 5, 14, 19, 8)}
+
+{'id': 1013, 'doc_name': 'Rango Spader.jpeg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 125, 'attachment_type_id': 5, 'created_at': datetime.datetime(2025, 3, 5, 14, 19, 8), 'updated_at': datetime.datetime(2025, 3, 5, 14, 19, 8)}
+
+{'id': 2419, 'doc_name': 'featured_1754103159_688d7d770ef84.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 433, 'attachment_type_id': 7, 'created_at': datetime.datetime(2025, 8, 2, 2, 52, 39), 'updated_at': datetime.datetime(2025, 8, 2, 2, 52, 39)}
+
+{'id': 4599, 'doc_name': 'featured_1779611406_6a12b70e008e5.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 783, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 5, 24, 8, 30, 6), 'updated_at': datetime.datetime(2026, 5, 24, 8, 30, 6)}
+
+{'id': 5198, 'doc_name': 'featured_1787052350_6a84413ea1504.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 912, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 25, 50), 'updated_at': datetime.datetime(2026, 8, 18, 11, 25, 50)}
+
+{'id': 5199, 'doc_name': 'featured_1787052578_6a844222cc1e1.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 913, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 18, 11, 29, 39), 'updated_at': datetime.datetime(2026, 8, 18, 11, 29, 39)}
+
+{'id': 5204, 'doc_name': 'featured_1787310810_6a8832da36456.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 914, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 13, 30), 'updated_at': datetime.datetime(2026, 8, 21, 11, 13, 30)}
+
+{'id': 5205, 'doc_name': 'featured_1787310869_6a8833157b513.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 915, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 14, 29), 'updated_at': datetime.datetime(2026, 8, 21, 11, 14, 29)}
+
+{'id': 5206, 'doc_name': 'featured_1787311019_6a8833abac368.jpg', 'attachmentable_type': 'App\\Models\\Portfolio', 'attachmentable_id': 916, 'attachment_type_id': 7, 'created_at': datetime.datetime(2026, 8, 21, 11, 17), 'updated_at': datetime.datetime(2026, 8, 21, 11, 17)}
+
+==========================================================================================
+5. ATTACHMENT TYPE TABLES
+==========================================================================================
+Attachment-related tables:
+['attachments', 'attachment_types']
+
+--- attachment_types ---
+{'id': 1, 'name': 'Profile Picture', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 2, 'name': 'Background Video', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 3, 'name': 'Background Music', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 4, 'name': 'Profile Background', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 5, 'name': 'Portfolio Gallery', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 6, 'name': 'Service Image', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 7, 'name': 'Featured Image', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 8, 'name': 'Post', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 9, 'name': 'Background Video', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 10, 'name': 'Background Video Link', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 11, 'name': 'Background Music Link', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 12, 'name': 'Qr', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 13, 'name': 'Profile Picture', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+{'id': 14, 'name': '2d Video Explainer', 'status': 'active', 'class': None, 'created_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'updated_at': datetime.datetime(2024, 7, 21, 15, 16, 19), 'deleted_at': None}
+
+==========================================================================================
+6. SEARCH OLD DB FOR RANGO SPADER
+==========================================================================================
+
+MATCH: attachments.doc_name
+{'value': 'Rango Spader.jpeg'}
+{'value': 'Rango Spader.jpeg'}
+{'value': 'Rango Spader.jpeg'}
+{'value': 'Rango Spader.jpeg'}
+{'value': 'Rango Spader.jpeg'}
+{'value': 'rango Spader Image_1774438175_69c3c71fc2964.jpg'}
+{'value': 'Rango Spader.jpeg'}
+
+MATCH: portfolios.title
+{'value': 'Rango Spader'}
+{'value': 'Rango Spader'}
+{'value': 'Rango Spader'}
+{'value': 'Rango Spader'}
+{'value': 'Rango Spader'}
+
+==========================================================================================
+DONE
+==========================================================================================
+READ ONLY — NOTHING CHANGED
