@@ -283,6 +283,8 @@ model Profile {
   avatar              String?
   colorCode           String    @default("#212121")
   address             String?
+  city                String?
+  state               String?
   zipCode             String?
   about               String?
   isEmploy            Boolean   @default(false)

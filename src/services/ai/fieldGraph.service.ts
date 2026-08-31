@@ -196,7 +196,7 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'LUNA',
     prompt:
-      'Use real articles found on the website. Place titles, excerpts, URLs, and images on News/Blogs. Only ask to draft extra posts if none were found. Do not invent company news events.',
+      'Use real articles found on the website. Place titles, excerpts, URLs, and images on Blogs and Media. Only ask to draft extra posts if none were found. Do not invent company news events.',
     getValue: (p) => p.blogs,
   },
   {

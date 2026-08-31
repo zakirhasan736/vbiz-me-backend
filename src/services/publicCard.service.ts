@@ -21,6 +21,7 @@ import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUrl } from '../utils/mediaUrl'
+import { formatProfileLocation, hasProfileLocationParts } from '../utils/personalAddress'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
 import { resolveProfileSharePreviewImageUrl, SHARE_PREVIEW_IMAGE_SETTING_KEY } from '../utils/sharePreviewImage'
@@ -556,6 +557,8 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
       email: profile.email,
       phone: profile.phone,
       address: profile.address,
+      city: profile.city,
+      state: profile.state,
       zip_code: profile.zipCode ?? address?.zipCode ?? null,
       zipCode: profile.zipCode ?? address?.zipCode ?? null,
       country: address?.country ?? null,
@@ -636,8 +639,8 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
         whatsapp: { enabled: Boolean(profile.whatsapp), value: profile.whatsapp || '' },
         website: { enabled: Boolean(profile.website), value: profile.website || '', url: profile.website || undefined },
         address: {
-          enabled: Boolean(profile.address || profile.zipCode),
-          value: [profile.address, profile.zipCode].filter((part) => Boolean(part?.trim())).join(', '),
+          enabled: hasProfileLocationParts(profile),
+          value: formatProfileLocation(profile) || '',
         },
         zip_code: {
           enabled: Boolean(profile.zipCode),
@@ -964,8 +967,10 @@ const getProfileAiData = async (profileId: string) => {
     whatsapp: profile.whatsapp,
     website: profile.website,
     // Laravel-compatible `location`; keep `address` alias for Node callers
-    location: [profile.address, profile.zipCode].filter((part) => Boolean(part?.trim())).join(', ') || profile.address,
+    location: formatProfileLocation(profile),
     address: profile.address,
+    city: profile.city,
+    state: profile.state,
     zipCode: profile.zipCode,
     zip_code: profile.zipCode,
     about: profile.about,
@@ -2316,7 +2321,7 @@ const saveContactCard = async (
           profileUrl,
           imageUrl,
           note: profile.about || '',
-          address: [profile.address, profile.zipCode].filter((part) => Boolean(part?.trim())).join(', ') || '',
+          address: formatProfileLocation(profile) || '',
         },
       },
     },

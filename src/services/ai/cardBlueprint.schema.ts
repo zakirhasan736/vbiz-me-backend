@@ -325,9 +325,9 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
     "pushNotifications": true, "emailNotifications": true
   }
 }
-Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, populate those arrays with real extracted items, including page URLs and image URLs when present. For blogs, copy real article titles and excerpts onto the News/Blogs tab — do not invent company news. For reviews/testimonials, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture distinct items present in the crawl, up to 30. Never invent customer reviews. If no real reviews exist, return an empty reviews array. Creative wording is allowed for about, FAQs, headlines, and extra blog ideas only when the owner asked to generate them, but never invent factual claims (years in business, licenses, awards, phone, email). Missing facts stay empty. Dates as YYYY-MM-DD when known. Never infer a date of birth; include personal.dob only when a source explicitly provides it.
+Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, populate those arrays with real extracted items, including page URLs and image URLs when present. For blogs, copy real article titles and excerpts onto the Blogs and Media tab — do not invent company news. For reviews/testimonials, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture distinct items present in the crawl, up to 30. Never invent customer reviews. If no real reviews exist, return an empty reviews array. Creative wording is allowed for about, FAQs, headlines, and extra blog ideas only when the owner asked to generate them, but never invent factual claims (years in business, licenses, awards, phone, email). Missing facts stay empty. Dates as YYYY-MM-DD when known. Never infer a date of birth; include personal.dob only when a source explicitly provides it.
 For services.type use ONLY: Web Development, App Design, SEO, Marketing, or Other.
-enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal and About Me are present. Never put Public Cards or My Info in enabledTabs — those are fixed product tabs. My Info Call/Text/Email is filled from Personal Info (phone, WhatsApp, email). Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, News/Blogs, Profile, Portfolio, Certifications/Licenses, FAQ).`
+enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal and About Me are present. Never put Public Cards or My Info in enabledTabs — those are fixed product tabs. My Info Call/Text/Email is filled from Personal Info (phone, WhatsApp, email). Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, Blogs and Media, Profile, Portfolio, Certifications/Licenses, FAQ).`
 
 export const TAB_CATALOG = [
   {
@@ -341,7 +341,7 @@ export const TAB_CATALOG = [
   { name: 'Skill', navId: 'skills', description: 'Skill groups and proficiency' },
   { name: 'Services', navId: 'services', description: 'Offerings, pricing, and delivery (multi-item)' },
   { name: 'Reviews', navId: 'reviews', description: 'Guest & client reviews (multi-item)' },
-  { name: 'News/Blogs', navId: 'blog', description: 'Articles, news, and blog posts (multi-item)' },
+  { name: 'Blogs and Media', navId: 'blog', description: 'Articles, blog posts, and media (multi-item)' },
   { name: 'Profile', navId: 'profile', description: 'Public profile headline, bio & photo' },
   { name: 'Portfolio', navId: 'gallery', description: 'Projects and case studies (multi-item)' },
   { name: 'Certifications/Licenses', navId: 'certificates', description: 'Licenses and certifications' },

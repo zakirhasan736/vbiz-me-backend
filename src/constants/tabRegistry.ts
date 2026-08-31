@@ -97,7 +97,7 @@ export const TAB_REGISTRY: Record<string, TabRegistryEntry> = {
   reviews: list('reviews', 'Reviews', 'reviews', 'reviews', 3, 'review'),
   gallery: list('gallery', 'Gallery', 'portfolios', 'gallery', 4, 'gallery'),
   videos: list('videos', 'Video', 'videos', 'video', 5, 'video'),
-  blogs: list('blogs', 'Blog', 'blogs', 'blog', 6, 'blog'),
+  blogs: list('blogs', 'Blogs and Media', 'blogs', 'blog', 6, 'blog'),
   general_posts: list('general_posts', 'Post', 'general-posts', 'Post', 7, 'general_post'),
   bbb_accreditations: list(
     'bbb_accreditations',

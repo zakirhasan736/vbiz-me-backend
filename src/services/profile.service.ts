@@ -1128,8 +1128,6 @@ const create = async (
     creationKey: creationKeyRaw,
     settings,
     profileSettings,
-    city: _city,
-    state: _state,
     skipCreateContactRules: skipCreateContactRulesRaw,
     ...raw
   } = input
@@ -1238,6 +1236,8 @@ const create = async (
         whatsapp: raw.whatsapp as string | undefined,
         website: raw.website as string | undefined,
         address: raw.address as string | undefined,
+        city: asOptionalString(raw.city),
+        state: asOptionalString(raw.state),
         zipCode: raw.zipCode as string | undefined,
         about: raw.about as string | undefined,
         prof: raw.prof as string | undefined,
@@ -1737,6 +1737,8 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
     designation: source.designation || undefined,
     website: source.website || undefined,
     address: source.address || undefined,
+    city: source.city || undefined,
+    state: source.state || undefined,
     zipCode: source.zipCode || undefined,
     about: source.about || undefined,
     prof: source.prof || undefined,
@@ -1818,7 +1820,7 @@ const update = async (
     throw new AppError(403, 'This card is suspended. Contact an administrator to restore access.')
   }
 
-  const { settings, profileSettings, city: _city, state: _state, status: rawStatus, ...raw } = data
+  const { settings, profileSettings, status: rawStatus, ...raw } = data
   const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
   const requestedStatus = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : undefined
@@ -1836,6 +1838,20 @@ const update = async (
     const zipValue = raw.zipCode
     profileData.zipCode =
       zipValue === null || zipValue === undefined || String(zipValue).trim() === '' ? null : String(zipValue).trim()
+  }
+
+  if ('city' in raw) {
+    const cityValue = raw.city
+    profileData.city =
+      cityValue === null || cityValue === undefined || String(cityValue).trim() === '' ? null : String(cityValue).trim()
+  }
+
+  if ('state' in raw) {
+    const stateValue = raw.state
+    profileData.state =
+      stateValue === null || stateValue === undefined || String(stateValue).trim() === ''
+        ? null
+        : String(stateValue).trim()
   }
 
   if (typeof profileData.slug === 'string') {
