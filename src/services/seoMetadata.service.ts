@@ -110,3 +110,66 @@ export function seoMetadataToSettings(input: Partial<SeoMetadata> | null | undef
     [SEO_META_KEYWORDS_SETTING_KEY]: JSON.stringify(seo.keywords),
   })
 }
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function deriveDefaultSeoFromProfile(input: {
+  name?: string | null
+  slug?: string | null
+  companyName?: string | null
+  designation?: string | null
+  profession?: string | null
+  about?: string | null
+}): SeoMetadata {
+  const name = String(input.name || input.slug || 'Digital Card').trim()
+  const company = String(input.companyName || '').trim()
+  const role = String(input.designation || input.profession || '').trim()
+  const about = stripHtml(String(input.about || ''))
+
+  const metaTitle = company && role ? `${name} | ${role}` : company ? `${name} | ${company}` : name
+  const metaDescription =
+    about ||
+    (role && company
+      ? `${role} at ${company}. Connect with ${name}.`
+      : role
+        ? `${role}. Connect with ${name}.`
+        : `${name}'s digital business card on vBiz Me.`)
+
+  return normalizeSeoMetadata({
+    metaTitle,
+    metaDescription,
+    keywords: [name, company, role].filter(Boolean),
+  })
+}
+
+export function mergeSeoSettingsWithDefaults(
+  settings: Record<string, string>,
+  profile: {
+    name?: string | null
+    slug?: string | null
+    companyName?: string | null
+    designation?: string | null
+    profession?: string | null
+    about?: string | null
+  }
+): Record<string, string> {
+  const hasTitle = Boolean(settings[SEO_META_TITLE_SETTING_KEY]?.trim())
+  const hasDescription = Boolean(settings[SEO_META_DESCRIPTION_SETTING_KEY]?.trim())
+  if (hasTitle && hasDescription) return settings
+
+  const defaults = deriveDefaultSeoFromProfile(profile)
+  return normalizeSeoSettings({
+    ...settings,
+    ...(hasTitle ? {} : { [SEO_META_TITLE_SETTING_KEY]: defaults.metaTitle }),
+    ...(hasDescription ? {} : { [SEO_META_DESCRIPTION_SETTING_KEY]: defaults.metaDescription }),
+    ...(!settings[SEO_META_KEYWORDS_SETTING_KEY]
+      ? { [SEO_META_KEYWORDS_SETTING_KEY]: JSON.stringify(defaults.keywords) }
+      : {}),
+  })
+}

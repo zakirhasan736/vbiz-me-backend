@@ -25,6 +25,7 @@ import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } fro
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
 import { mediaFromProfile } from './push.service'
+import { mergeSeoSettingsWithDefaults } from './seoMetadata.service'
 
 const RETURNING_SAVED_GUEST_EVENT = 'returning_saved_guest'
 const RETURNING_SAVED_GUEST_DELAY_MS = 3 * 24 * 60 * 60 * 1000
@@ -511,7 +512,14 @@ function resolveBackgroundAudio(
 }
 
 function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>>) {
-  const settings = settingsToMap(profile.settings)
+  const settings = mergeSeoSettingsWithDefaults(settingsToMap(profile.settings), {
+    name: profile.name,
+    slug: profile.slug,
+    companyName: profile.companyName,
+    designation: profile.designation,
+    profession: profile.profession?.name ?? profile.prof ?? null,
+    about: profile.about,
+  })
   const features: Record<string, boolean | string | number> = {}
   for (const [k, v] of Object.entries(settings)) {
     if (k.endsWith('_checkbox')) {
