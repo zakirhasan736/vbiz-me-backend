@@ -1987,6 +1987,7 @@ const getPublicCards = async (query: {
             { name: { contains: searchTerm, mode: 'insensitive' as const } },
             { companyName: { contains: searchTerm, mode: 'insensitive' as const } },
             { prof: { contains: searchTerm, mode: 'insensitive' as const } },
+            { designation: { contains: searchTerm, mode: 'insensitive' as const } },
             { slug: { contains: searchTerm, mode: 'insensitive' as const } },
           ],
         }
@@ -2027,6 +2028,7 @@ const getPublicCards = async (query: {
       slug: p.slug,
       profession: p.profession?.name || p.prof,
       profession_id: p.professionId,
+      designation: p.designation?.trim() || null,
       image: media.image,
       image_type: media.image_type,
       is_video: media.is_video,
