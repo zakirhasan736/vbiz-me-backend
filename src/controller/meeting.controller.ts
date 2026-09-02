@@ -1,3 +1,4 @@
+import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import meetingService from '../services/meeting.service'
 import { assertModule } from '../utils/adminAccess'
@@ -12,10 +13,19 @@ function assertScheduleAccess(user: Express.User) {
   assertModule(user.role, user.allowedModules, 'schedule')
 }
 
+function assertCreateMeetingAccess(user: Express.User) {
+  if (isStaffRole(user.role)) {
+    assertScheduleAccess(user)
+    return
+  }
+  if (user.role === 'vcard-owner' || user.role === 'corporate-owner') return
+  throw new AppError(403, 'FORBIDDEN ACCESS')
+}
+
 async function resolveActor(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, name: true },
+    select: { id: true, email: true, name: true, role: true },
   })
   if (!user) throw new AppError(403, 'Unauthorized')
   return user
@@ -29,10 +39,17 @@ const list = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Meetings fetched', data })
 })
 
+const listOwnerMeetings = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const query = MeetingZodSchema.listOwnerMeetingsQuery.parse(req.query)
+  const data = await meetingService.listOwnerMeetings(req.user.id, query)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Owner meetings fetched', data })
+})
+
 const listOwnerUpcoming = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const limit = Math.min(Number(req.query.limit) || 10, 50)
-  const data = await meetingService.listOwnerUpcoming(req.user.id, limit)
+  const query = MeetingZodSchema.listOwnerUpcomingQuery.parse(req.query)
+  const data = await meetingService.listOwnerUpcoming(req.user.id, query)
   sendResponse(res, { success: true, statusCode: 200, message: 'Upcoming meetings fetched', data })
 })
 
@@ -45,10 +62,10 @@ const getOne = catchAsyncError(async (req, res) => {
 
 const create = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  assertScheduleAccess(req.user)
+  assertCreateMeetingAccess(req.user)
   const body = MeetingZodSchema.createMeeting.parse(req.body)
   const actor = await resolveActor(req.user.id)
-  const data = await meetingService.create(actor, body)
+  const data = await meetingService.create(actor, body, req.user.role)
   sendResponse(res, { success: true, statusCode: 201, message: 'Meeting created', data })
 })
 
@@ -71,6 +88,7 @@ const remove = catchAsyncError(async (req, res) => {
 
 const meetingController = {
   list,
+  listOwnerMeetings,
   listOwnerUpcoming,
   getOne,
   create,

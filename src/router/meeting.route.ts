@@ -10,6 +10,7 @@ router.use(authMiddleware.isAuthenticateUser)
 router.use(authMiddleware.requireNotSuspended)
 
 router.get('/owner/upcoming', meetingController.listOwnerUpcoming)
+router.get('/owner', meetingController.listOwnerMeetings)
 router.get('/', meetingController.list)
 router.post('/', validSchema(MeetingZodSchema.createMeeting), meetingController.create)
 router.get('/:id', meetingController.getOne)

@@ -1,5 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client'
 import config from '../configs/config'
+import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
@@ -9,6 +10,8 @@ import { prisma } from '../utils/prisma'
 import type {
   CreateMeetingInput,
   ListMeetingsQuery,
+  ListOwnerMeetingsQuery,
+  MeetingScope,
   MeetingStatus,
   UpdateMeetingInput,
 } from '../zodValidation/meeting.zod'
@@ -28,12 +31,111 @@ type MeetingRow = {
   location: string | null
   notes: string | null
   status: string
+  scope: string
   profileId: string | null
+  groupProfileIds: Prisma.JsonValue | null
   createdById: string | null
   googleEventId: string | null
   meetLink: string | null
   createdAt: Date
   updatedAt: Date
+}
+
+function parseGroupProfileIds(value: Prisma.JsonValue | null | undefined): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || '').trim()).filter(Boolean)
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (Array.isArray(parsed)) {
+        return parsed.map((entry) => String(entry || '').trim()).filter(Boolean)
+      }
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+function resolveCreateScope(input: CreateMeetingInput): MeetingScope {
+  return input.scope ?? (input.profileId ? 'one_to_one' : 'global')
+}
+
+async function resolveGroupProfileIds(input: CreateMeetingInput): Promise<string[]> {
+  const explicit = (input.groupProfileIds || []).map((id) => id.trim()).filter(Boolean)
+  if (explicit.length) return [...new Set(explicit)]
+
+  const companyUserId = input.companyUserId?.trim()
+  if (!companyUserId) return []
+
+  const profiles = await prisma.profile.findMany({
+    where: { companyUserId },
+    select: { id: true },
+  })
+  return profiles.map((profile) => profile.id)
+}
+
+async function normalizeCreateInput(input: CreateMeetingInput) {
+  const scope = resolveCreateScope(input)
+  const groupProfileIds = scope === 'group' ? await resolveGroupProfileIds(input) : []
+
+  if (scope === 'group' && !groupProfileIds.length) {
+    throw new AppError(400, 'Group schedules require at least one card')
+  }
+
+  return {
+    scope,
+    profileId:
+      scope === 'global'
+        ? null
+        : scope === 'one_to_one'
+          ? (input.profileId ?? null)
+          : (input.profileId ?? groupProfileIds[0] ?? null),
+    groupProfileIds: scope === 'group' ? groupProfileIds : [],
+  }
+}
+
+async function assertOwnerCanCreateMeeting(
+  userId: string,
+  role: string | undefined | null,
+  input: CreateMeetingInput,
+  normalized: Awaited<ReturnType<typeof normalizeCreateInput>>
+) {
+  if (isStaffRole(role)) return
+
+  const apiRole = role === 'corporate-owner' || role === 'vcard-owner' ? role : null
+  if (!apiRole) throw new AppError(403, 'FORBIDDEN ACCESS')
+
+  if (normalized.scope === 'global') {
+    throw new AppError(403, 'Only admins can create global schedules')
+  }
+
+  const targetProfileIds =
+    normalized.scope === 'group' ? normalized.groupProfileIds : normalized.profileId ? [normalized.profileId] : []
+
+  if (!targetProfileIds.length) throw new AppError(400, 'Schedule target card is required')
+
+  const profiles = await prisma.profile.findMany({
+    where: { id: { in: targetProfileIds } },
+    select: { id: true, userId: true, companyUserId: true },
+  })
+
+  if (profiles.length !== targetProfileIds.length) {
+    throw new AppError(404, 'One or more schedule target cards were not found')
+  }
+
+  for (const profile of profiles) {
+    const ownsDirect = profile.userId === userId
+    const ownsCorporate = profile.companyUserId === userId
+    if (apiRole === 'vcard-owner' && !ownsDirect) {
+      throw new AppError(403, 'You can only schedule meetings for your own cards')
+    }
+    if (apiRole === 'corporate-owner' && !ownsDirect && !ownsCorporate) {
+      throw new AppError(403, 'You can only schedule meetings for cards on your corporate account')
+    }
+  }
 }
 
 /** Parse display time like "10:00 AM" / "14:30" into hours/minutes. */
@@ -83,7 +185,9 @@ function serializeMeeting(row: MeetingRow) {
     location: row.location,
     notes: row.notes,
     status: row.status as MeetingStatus,
+    scope: row.scope as MeetingScope,
     profileId: row.profileId,
+    groupProfileIds: parseGroupProfileIds(row.groupProfileIds),
     googleEventId: row.googleEventId,
     meetLink: row.meetLink,
     createdById: row.createdById,
@@ -238,27 +342,70 @@ async function sendMeetingEmails(input: {
   }
 }
 
+function notifyOwnerPush(meeting: MeetingRow, _meetLabel: string) {
+  const meetSuffix = meeting.meetLink ? ` Join link included.` : ''
+  const payload = {
+    title: `Upcoming session: ${meeting.type}`,
+    body: `${meeting.type} on ${meeting.date} at ${meeting.time}.${meetSuffix}`,
+    type: 'event_updates' as const,
+    url: meeting.meetLink || undefined,
+  }
+
+  if (meeting.scope === 'global') {
+    return
+  }
+
+  if (meeting.scope === 'group') {
+    for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) {
+      pushService.notifyProfileUpdate(profileId, payload)
+    }
+    return
+  }
+
+  if (!meeting.profileId) return
+  pushService.notifyProfileUpdate(meeting.profileId, payload)
+}
+
+async function resolveOwnerEmailsForMeeting(meeting: MeetingRow): Promise<{
+  emails: string[]
+  displayName: string | null
+}> {
+  if (meeting.scope === 'global') return { emails: [], displayName: null }
+
+  if (meeting.scope === 'group') {
+    const ids = parseGroupProfileIds(meeting.groupProfileIds)
+    const emailSets = await Promise.all(ids.map((profileId) => resolveOwnerEmails(profileId)))
+    const emails = [...new Set(emailSets.flatMap((entry) => entry.emails))]
+    return { emails, displayName: emailSets[0]?.displayName ?? null }
+  }
+
+  return resolveOwnerEmails(meeting.profileId)
+}
+
 async function notifyOwnerAnnouncement(actor: Actor, meeting: MeetingRow, ownerEmails: string[], meetLabel: string) {
   if (!ownerEmails.length) return
+  if (meeting.scope === 'global') return
 
   const meetLine = meeting.meetLink ? `\n\n${meetLabel}: ${meeting.meetLink}` : ''
   const notesLine = meeting.notes?.trim() ? `\n\n${meeting.notes.trim()}` : ''
+  const scopeLine = meeting.scope === 'group' ? '\n\nThis is a group session for your team cards.' : ''
 
   try {
     await announcementService.create(actor, {
       type: 'info',
       kind: 'announcement',
       title: `Upcoming session: ${meeting.type}`,
-      body: `You have a ${meeting.type} with admin on ${meeting.date} at ${meeting.time}.${notesLine}${meetLine}`,
+      body: `You have a ${meeting.type} with admin on ${meeting.date} at ${meeting.time}.${scopeLine}${notesLine}${meetLine}`,
       status: 'active',
       targetType: 'specific',
       targetEmails: ownerEmails,
       meta: {
-        profileId: meeting.profileId || '',
+        profileId: meeting.profileId || parseGroupProfileIds(meeting.groupProfileIds)[0] || '',
         meetingId: meeting.id,
         meetLink: meeting.meetLink || '',
         sendPush: '1',
         category: 'event',
+        meetingScope: meeting.scope,
       },
     })
   } catch (error) {
@@ -266,28 +413,13 @@ async function notifyOwnerAnnouncement(actor: Actor, meeting: MeetingRow, ownerE
   }
 }
 
-function notifyOwnerPush(meeting: MeetingRow, _meetLabel: string) {
-  if (!meeting.profileId) return
-
-  const meetSuffix = meeting.meetLink ? ` Join link included.` : ''
-  pushService.notifyProfileUpdate(meeting.profileId, {
-    title: `Upcoming session: ${meeting.type}`,
-    body: `${meeting.type} on ${meeting.date} at ${meeting.time}.${meetSuffix}`,
-    type: 'event_updates',
-    url: meeting.meetLink || undefined,
-  })
-}
-
-async function notifyMeetingCreated(
-  actor: Actor,
-  meeting: MeetingRow,
-  ownerEmails: string[],
-  ownerDisplayName: string | null,
-  meetLabel: string
-) {
+async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel: string) {
+  const { emails: ownerEmails, displayName: ownerDisplayName } = await resolveOwnerEmailsForMeeting(meeting)
   await notifyOwnerAnnouncement(actor, meeting, ownerEmails, meetLabel)
   notifyOwnerPush(meeting, meetLabel)
-  void sendMeetingEmails({ meeting, ownerEmails, ownerDisplayName, actor, meetLabel })
+  if (ownerEmails.length) {
+    void sendMeetingEmails({ meeting, ownerEmails, ownerDisplayName, actor, meetLabel })
+  }
 }
 
 const list = async (query: ListMeetingsQuery) => {
@@ -297,6 +429,7 @@ const list = async (query: ListMeetingsQuery) => {
   const where: Prisma.MeetingWhereInput = {
     ...(query.status ? { status: query.status } : {}),
     ...(query.type ? { type: query.type } : {}),
+    ...(query.scope ? { scope: query.scope } : {}),
     ...(query.profileId ? { profileId: query.profileId } : {}),
   }
 
@@ -325,38 +458,90 @@ const list = async (query: ListMeetingsQuery) => {
   }
 }
 
-const listOwnerUpcoming = async (userId: string, limit = 10) => {
+async function resolveOwnerProfileIds(userId: string, profileId?: string): Promise<string[]> {
   const profiles = await prisma.profile.findMany({
     where: {
       OR: [{ userId }, { companyUserId: userId }],
+      ...(profileId ? { id: profileId } : {}),
     },
     select: { id: true },
   })
+  return profiles.map((profile) => profile.id)
+}
 
-  const profileIds = profiles.map((p) => p.id)
-  if (!profileIds.length) {
-    return { items: [], total: 0 }
-  }
-
-  const now = new Date()
-  const where: Prisma.MeetingWhereInput = {
-    profileId: { in: profileIds },
-    status: 'Scheduled',
-    startsAt: { gte: now },
-  }
-
-  const [total, rows] = await Promise.all([
-    prisma.meeting.count({ where }),
-    prisma.meeting.findMany({
-      where,
-      orderBy: { startsAt: 'asc' },
-      take: limit,
-    }),
+async function fetchMeetingsVisibleToOwner(profileIds: string[]) {
+  const [globalRows, directRows, groupRows] = await Promise.all([
+    prisma.meeting.findMany({ where: { scope: 'global' }, orderBy: { startsAt: 'asc' } }),
+    profileIds.length
+      ? prisma.meeting.findMany({
+          where: { scope: 'one_to_one', profileId: { in: profileIds } },
+          orderBy: { startsAt: 'asc' },
+        })
+      : Promise.resolve([]),
+    prisma.meeting.findMany({ where: { scope: 'group' }, orderBy: { startsAt: 'asc' } }),
   ])
 
+  const groupMatches = groupRows.filter((row) => {
+    const ids = parseGroupProfileIds(row.groupProfileIds)
+    return ids.some((id) => profileIds.includes(id))
+  })
+
+  return [...globalRows, ...directRows, ...groupMatches]
+    .map(serializeMeeting)
+    .filter((item, index, all) => all.findIndex((entry) => entry.id === item.id) === index)
+    .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt)))
+}
+
+const listOwnerMeetings = async (userId: string, query: ListOwnerMeetingsQuery) => {
+  const profileIds = await resolveOwnerProfileIds(userId, query.profileId)
+  if (query.profileId && !profileIds.length) {
+    return { items: [], total: 0, skip: query.skip, limit: query.limit }
+  }
+
+  let items = await fetchMeetingsVisibleToOwner(profileIds)
+
+  if (query.status) {
+    items = items.filter((item) => item.status === query.status)
+  }
+
+  if (query.upcomingOnly) {
+    const now = new Date()
+    items = items.filter((item) => item.status === 'Scheduled' && new Date(item.startsAt) >= now)
+  }
+
+  if (query.from || query.to) {
+    const fromAt = query.from ? computeStartsAt(query.from, '12:00 AM') : null
+    const toAt = query.to ? computeStartsAt(query.to, '11:59 PM') : null
+    items = items.filter((item) => {
+      const startsAt = new Date(item.startsAt)
+      if (fromAt && startsAt < fromAt) return false
+      if (toAt && startsAt > toAt) return false
+      return true
+    })
+  }
+
+  const total = items.length
+  const skip = query.skip
+  const limit = query.limit
   return {
-    items: rows.map(serializeMeeting),
+    items: items.slice(skip, skip + limit),
     total,
+    skip,
+    limit,
+  }
+}
+
+const listOwnerUpcoming = async (userId: string, options: { limit?: number; profileId?: string } = {}) => {
+  const data = await listOwnerMeetings(userId, {
+    limit: options.limit ?? 10,
+    skip: 0,
+    profileId: options.profileId,
+    status: 'Scheduled',
+    upcomingOnly: true,
+  })
+  return {
+    items: data.items,
+    total: data.total,
   }
 }
 
@@ -366,14 +551,25 @@ const getOne = async (id: string) => {
   return serializeMeeting(row)
 }
 
-const create = async (actor: Actor, input: CreateMeetingInput) => {
-  if (input.profileId) {
-    await assertAdminCanContactProfile(actor.id, input.profileId)
+const create = async (actor: Actor, input: CreateMeetingInput, actorRole?: string | null) => {
+  const normalized = await normalizeCreateInput(input)
+  await assertOwnerCanCreateMeeting(actor.id, actorRole, input, normalized)
+
+  if (isStaffRole(actorRole)) {
+    if (normalized.profileId) {
+      await assertAdminCanContactProfile(actor.id, normalized.profileId)
+    }
+    if (normalized.scope === 'group') {
+      for (const profileId of normalized.groupProfileIds) {
+        await assertAdminCanContactProfile(actor.id, profileId)
+      }
+    }
   }
 
   const status = input.status ?? 'Scheduled'
   const startsAt = computeStartsAt(input.date, input.time)
-  const { emails: ownerEmails, displayName: ownerDisplayName } = await resolveOwnerEmails(input.profileId)
+  const primaryProfileId = normalized.profileId
+  const { emails: ownerEmails } = await resolveOwnerEmails(primaryProfileId)
   const meetLabel = meetLabelForEvent(null)
 
   let row = await prisma.meeting.create({
@@ -386,7 +582,9 @@ const create = async (actor: Actor, input: CreateMeetingInput) => {
       location: input.location ?? null,
       notes: input.notes ?? null,
       status,
-      profileId: input.profileId ?? null,
+      scope: normalized.scope,
+      profileId: primaryProfileId,
+      groupProfileIds: normalized.groupProfileIds.length ? normalized.groupProfileIds : undefined,
       createdById: actor.id,
     },
   })
@@ -415,9 +613,9 @@ const create = async (actor: Actor, input: CreateMeetingInput) => {
           ...(row.location ? {} : calendar.meetLink ? { location: calendar.meetLink } : {}),
         },
       })
-      await notifyMeetingCreated(actor, row, ownerEmails, ownerDisplayName, resolvedMeetLabel)
+      await notifyMeetingCreated(actor, row, resolvedMeetLabel)
     } else {
-      await notifyMeetingCreated(actor, row, ownerEmails, ownerDisplayName, meetLabel)
+      await notifyMeetingCreated(actor, row, meetLabel)
     }
   }
 
@@ -428,14 +626,16 @@ const create = async (actor: Actor, input: CreateMeetingInput) => {
     type: 'schedule',
     actor: actorLabel,
     actorId: actor.id,
-    profileId: input.profileId ?? null,
+    profileId: primaryProfileId,
     meta: {
       meetingId: row.id,
       meetingType: input.type,
+      meetingScope: normalized.scope,
       status,
       calendarEventId: row.googleEventId || '',
       meetLink: row.meetLink || '',
       calendarProvider: calendarIntegrationService.resolveProvider(),
+      groupProfileIds: normalized.groupProfileIds.join(','),
     },
   })
 
@@ -576,6 +776,7 @@ const remove = async (id: string, actor: Actor) => {
 
 const meetingService = {
   list,
+  listOwnerMeetings,
   listOwnerUpcoming,
   getOne,
   create,
