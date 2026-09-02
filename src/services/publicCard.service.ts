@@ -1369,6 +1369,8 @@ const getDynamicSection = async (
                   : {}
               const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
               const year = typeof metas.year === 'string' ? metas.year.trim() : ''
+              const metaGeneralInfoUrl = typeof metas.general_info_url === 'string' ? metas.general_info_url.trim() : ''
+              const publicHref = href || metaGeneralInfoUrl
               const attachments = [asset, urlAsset].filter(Boolean)
               const featuredImage = liveList ? (asset ? [asset] : []) : asset
               const isVideoTab = tab.storage === 'video_link' || tab.storage === 'video'
@@ -1380,10 +1382,10 @@ const getDynamicSection = async (
                 issuer,
                 year,
                 featured_image: featuredImage,
-                general_info_url: href,
-                url: href,
-                video_url: isVideoTab ? href : undefined,
-                review_link: { url: href, has_link: Boolean(href) },
+                general_info_url: publicHref,
+                url: publicHref,
+                video_url: isVideoTab ? publicHref : undefined,
+                review_link: { url: publicHref, has_link: Boolean(publicHref) },
                 attachments,
                 metas,
                 created_at: p.createdAt,
@@ -1570,6 +1572,32 @@ const getDynamicSection = async (
             : [],
         }
       }
+      let directDescription = ''
+
+      if (!String(about.description || '').trim() && typeof about.legacyPostId === 'number') {
+        directDescription = await prisma.$queryRaw<Array<{ description: string | null }>>`
+            SELECT description
+            FROM "AboutMeDirect"
+            WHERE "profileId" = ${profileId}
+              AND "legacyPostId" = ${about.legacyPostId}
+              AND "deletedAt" IS NULL
+              AND status = '1'
+            LIMIT 1
+          `
+          .then((rows) => rows[0]?.description || '')
+          .catch((error) => {
+            if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) {
+              throw error
+            }
+
+            return ''
+          })
+      }
+
+      // Never replace a nonblank public AboutMe value.
+      // Only use the exact AboutMeDirect legacy representation.
+      const publicDescription = String(about.description || '').trim() ? about.description || '' : directDescription
+
       return {
         type: 'About Me',
         postType: { name: 'About Me', title: 'About Me' },
@@ -1578,7 +1606,7 @@ const getDynamicSection = async (
           {
             id: about.id,
             title: about.title?.trim() || '',
-            description: about.description || '',
+            description: publicDescription,
             status: about.status || '1',
             featured_image: about.featuredMediaUrl ? abs(about.featuredMediaUrl) : null,
             featured_media_focus_y: featuredMediaFocusY,
