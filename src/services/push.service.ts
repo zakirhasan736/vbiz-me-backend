@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import webpush from 'web-push'
 import type { PushNotificationPreference } from '../../generated/prisma/client'
 import config from '../configs/config'
+import { buildFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
 import AppError from '../error/AppError'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from '../utils/mediaUrl'
@@ -451,7 +452,7 @@ const buildProfilePayload = async (
     body: partial.body,
     type: partial.type,
     slug: partial.slug || profile.slug,
-    url: partial.url || `/v/${profile.slug}`,
+    url: partial.url || (profile.slug ? buildFrontendPublicCardPath(profile.slug) : '/'),
     businessName: partial.businessName || businessName,
     icon,
     badge,
@@ -537,7 +538,7 @@ const sendTest = async (input: {
     body: input.body?.trim() || `${businessName} sent a test push notification.`,
     type: 'service_updates',
     slug: profile.slug || undefined,
-    url: profile.slug ? `/v/${profile.slug}` : '/',
+    url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : '/',
     businessName,
     ...media,
     profile_id: profile.id,

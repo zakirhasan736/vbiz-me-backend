@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import config from '../configs/config'
+import { buildFrontendPublicCardWalletArtUrl } from '../constants/frontendPublicCardPath'
 import AppError from '../error/AppError'
 import { publicReadableWhere, slugEquals } from '../utils/cardStatus'
 import { prisma } from '../utils/prisma'
@@ -57,7 +58,7 @@ function publicSiteBase(): string {
 function walletArtUrl(slug: string, format: 'card' | 'hero' | 'strip' | 'logo' | 'icon' = 'hero'): string | undefined {
   const base = publicSiteBase()
   if (!/^https:\/\//i.test(base)) return undefined
-  return `${base}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=face4`
+  return buildFrontendPublicCardWalletArtUrl(base, slug, format)
 }
 
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i

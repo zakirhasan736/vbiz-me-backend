@@ -3,12 +3,15 @@ import { isPrismaSchemaDrift } from './prismaErrors'
 
 type GalleryLike = {
   title?: string | null
+  legacyPostId?: number | null
+  legacyPortfolioId?: number | null
   featuredImage?: string | null
   attachmentUrl?: string | null
   attachmentName?: string | null
 }
 
 type PortfolioLike = {
+  legacyId?: number | null
   title?: string | null
   imageUrl?: string | null
   attachmentUrl?: string | null
@@ -26,15 +29,48 @@ export function fillMissingGalleryMedia<G extends GalleryLike, P extends Portfol
   portfolios: P[]
 ): G[] {
   if (!galleries.length || !portfolios.length) return galleries
-  const byTitle = new Map<string, P>()
+
+  const byLegacyId = new Map<number, P>()
+  const titleBuckets = new Map<string, P[]>()
+
   for (const row of portfolios) {
+    if (typeof row.legacyId === 'number' && !byLegacyId.has(row.legacyId)) {
+      byLegacyId.set(row.legacyId, row)
+    }
+
     const key = titleKey(row.title)
-    if (key && !byTitle.has(key)) byTitle.set(key, row)
+    if (!key) continue
+
+    const bucket = titleBuckets.get(key) || []
+    bucket.push(row)
+    titleBuckets.set(key, bucket)
   }
-  return galleries.map((gallery, index) => {
+
+  return galleries.map((gallery) => {
     if (gallery.featuredImage && gallery.attachmentUrl) return gallery
-    const legacy = (titleKey(gallery.title) ? byTitle.get(titleKey(gallery.title)) : undefined) || portfolios[index]
+
+    const linkedLegacyId =
+      typeof gallery.legacyPortfolioId === 'number'
+        ? gallery.legacyPortfolioId
+        : typeof gallery.legacyPostId === 'number'
+          ? gallery.legacyPostId
+          : null
+
+    let legacy = linkedLegacyId !== null ? byLegacyId.get(linkedLegacyId) : undefined
+
+    if (!legacy) {
+      const key = titleKey(gallery.title)
+      const matches = key ? titleBuckets.get(key) || [] : []
+
+      // A title is safe only when exactly one Portfolio row on this profile
+      // carries that title. Never fall back by array position.
+      if (matches.length === 1) {
+        legacy = matches[0]
+      }
+    }
+
     if (!legacy) return gallery
+
     return {
       ...gallery,
       featuredImage: gallery.featuredImage || legacy.imageUrl || gallery.featuredImage,

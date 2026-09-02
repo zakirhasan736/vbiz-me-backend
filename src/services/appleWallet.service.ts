@@ -1,5 +1,6 @@
 import { PKPass } from 'passkit-generator'
 import config from '../configs/config'
+import { buildFrontendPublicCardUrl, buildFrontendPublicCardWalletArtUrl } from '../constants/frontendPublicCardPath'
 import AppError from '../error/AppError'
 import { publicReadableWhere, slugEquals } from '../utils/cardStatus'
 import { prisma } from '../utils/prisma'
@@ -97,14 +98,14 @@ function publicSiteBase(): string {
 }
 
 function publicCardUrl(slug: string): string {
-  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}`
+  return buildFrontendPublicCardUrl(publicSiteBase(), slug)
 }
 
 function walletArtUrl(
   slug: string,
   format: 'card' | 'hero' | 'strip' | 'strip2x' | 'strip1x' | 'icon' = 'strip'
 ): string {
-  return `${publicSiteBase()}/v/${encodeURIComponent(slug)}/wallet-art?format=${format}&v=face4`
+  return buildFrontendPublicCardWalletArtUrl(publicSiteBase(), slug, format)
 }
 
 function hexToRgbCss(hex: string, fallback = 'rgb(11, 31, 58)'): string {

@@ -29,14 +29,17 @@ export async function loadProfileEngagementMetrics(
   }
   if (!profileIds.length) return metrics
 
-  const [socialEvents, guests] = await Promise.all([
+  const [socialEvents, saveEvents] = await Promise.all([
     prisma.eventLog.findMany({
       where: { profileId: { in: profileIds }, eventType: 'social_click' },
       select: { profileId: true, payload: true },
     }),
-    prisma.guestUserData.groupBy({
+    prisma.eventLog.groupBy({
       by: ['profileId'],
-      where: { profileId: { in: profileIds } },
+      where: {
+        profileId: { in: profileIds },
+        eventType: 'save_contact_download',
+      },
       _count: { _all: true },
     }),
   ])
@@ -71,9 +74,10 @@ export async function loadProfileEngagementMetrics(
     m.socialClicks = socialClicks
   }
 
-  for (const g of guests) {
-    const m = metrics.get(g.profileId)
-    if (m) m.saveCount += g._count._all
+  for (const row of saveEvents) {
+    if (!row.profileId) continue
+    const m = metrics.get(row.profileId)
+    if (m) m.saveCount += row._count._all
   }
 
   return metrics

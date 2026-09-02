@@ -269,25 +269,78 @@ export const TAB_KEY_TO_NAV_ID: Record<string, string> = Object.fromEntries(
 )
 
 export const NAV_CHECKBOX_TO_TAB_KEY: Record<string, string> = {
-  faqNav_checkbox: 'faqs',
-  '2dNav_checkbox': 'video_explainers',
+  // Core / extra navigation
+  navHome_checkbox: 'home',
+  navEducation_checkbox: 'education',
+  navResume_checkbox: 'resume',
+  contactNav_checkbox: 'contact-us',
+  pCardsNav_checkbox: 'public-cards',
+
+  // About / mission
+  aboutMeNav_checkbox: 'about_me',
   businessNav_checkbox: 'mission_statement',
-  blogNav_checkbox: 'blogs',
+  missionStatementNav_checkbox: 'mission_statement',
+
+  // Services
   serviceNav_checkbox: 'services',
+  servicesNav_checkbox: 'services',
+  additionalServicesNav_checkbox: 'additional_services',
+
+  // Clients / reviews
+  partnershipNav_checkbox: 'clients',
+  partnershipsNav_checkbox: 'clients',
+  clientsNav_checkbox: 'clients',
+  clintNav_checkbox: 'clients',
+  testimonialNav_checkbox: 'reviews',
+  reviewsNav_checkbox: 'reviews',
+
+  // Gallery / video
   galleryNav_checkbox: 'gallery',
   portfolioNav_checkbox: 'gallery',
-  testimonialNav_checkbox: 'reviews',
-  partnershipNav_checkbox: 'clients',
+  videoNav_checkbox: 'videos',
   videoLinksNav_checkbox: 'video_links',
-  meetOurTeamNav_checkbox: 'meet_our_team',
+  '2dNav_checkbox': 'video_explainers',
+  '2DVideoExplainerNav_checkbox': 'video_explainers',
+
+  // Blog / FAQ
+  blogNav_checkbox: 'blogs',
+  faqNav_checkbox: 'faqs',
+
+  // Certifications / government
+  certificationNav_checkbox: 'certificates',
+  certificatesLicensesNav_checkbox: 'certificates',
+  licensingNav_checkbox: 'licensing',
+  insuranceNav_checkbox: 'insurance_licenses',
   bbbNav_checkbox: 'bbb_accreditations',
+  betterBusinessBureauNav_checkbox: 'bbb_accreditations',
   dcpNav_checkbox: 'dcp',
+  departmentOfConsumerProtectionNav_checkbox: 'dcp',
+
+  // Calendar / team
+  meetingNav_checkbox: 'calendar',
+  meetOurTeamNav_checkbox: 'meet_our_team',
+  joinMyTeamNav_checkbox: 'join_my_team',
+
+  // Content sections
+  announcementNav_checkbox: 'announcements',
+  announcementsNav_checkbox: 'announcements',
+  bookingNav_checkbox: 'bookings',
+  eventsNav_checkbox: 'events',
+  mediaPressNav_checkbox: 'media_press',
+  pressNav_checkbox: 'media_press',
+  propertyListingNav_checkbox: 'property_listings',
+  whyChooseUsNav_checkbox: 'why_choose_us',
+  whoNav_checkbox: 'why_choose_us',
+
+  // Commerce / menus
+  inventoryNav_checkbox: 'inventory',
+  homeSolarNav_checkbox: 'home_solar',
+  breakfastNav_checkbox: 'breakfast',
+  lunchNav_checkbox: 'lunch',
+  dinnerNav_checkbox: 'dinner',
   restaurantMenuNav_checkbox: 'menu',
+  seeproduct_checkbox: 'products',
+  seeProductsNav_checkbox: 'products',
   solarNav_checkbox: 'home_solar',
   salesPersonNav_checkbox: 'sales_people',
-  seeproduct_checkbox: 'products',
-  certificationNav_checkbox: 'certificates',
-  licensingNav_checkbox: 'licensing',
-  meetingNav_checkbox: 'calendar',
-  aboutMeNav_checkbox: 'about_me',
 }

@@ -1,5 +1,6 @@
 import { UserRole as PrismaUserRole } from '../../generated/prisma/enums'
 import config from '../configs/config'
+import { buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
@@ -79,7 +80,7 @@ function resolveNonStaffOwner(profile: BirthdayProfile): OwnerCandidate | null {
 
 function cardPublicUrl(slug: string | null, profileId: string): string {
   const base = (config.FRONTEND_URL || '').replace(/\/$/, '')
-  if (slug?.trim()) return `${base}/v/${encodeURIComponent(slug.trim())}`
+  if (slug?.trim()) return buildFrontendPublicCardUrl(base, slug.trim())
   return `${base}/vcards/edit/home/${profileId}`
 }
 

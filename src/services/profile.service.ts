@@ -3,6 +3,7 @@ import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
 import { AccountStatus } from '../../generated/prisma/enums'
 import { buildAdminTeamCardsScopeWhere } from '../constants/adminTeamCards'
+import { buildFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
 import {
   CORPORATE_CARD_LIMIT_REACHED,
   FEATURE_LIMIT_REACHED,
@@ -2712,46 +2713,65 @@ const getDashboardStats = async (
     return emptyDashboardStats(now, chartDays, period)
   }
 
-  const [contacts, notes, guests, viewEvents, prevViewEvents, socialEvents, prevSocialEvents, recentLogs] =
-    await Promise.all([
-      prisma.contact.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
-      prisma.userNote.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
-      prisma.guestUserData.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
-      prisma.eventLog.findMany({
-        where: { profileId: { in: profileIds }, eventType: 'profile_view', ...createdAtFilter },
-        select: { createdAt: true, payload: true },
-      }),
-      prevSince && since
-        ? prisma.eventLog.findMany({
-            where: {
-              profileId: { in: profileIds },
-              eventType: 'profile_view',
-              createdAt: { gte: prevSince, lt: since },
-            },
-            select: { payload: true },
-          })
-        : Promise.resolve([] as Array<{ payload: unknown }>),
-      prisma.eventLog.findMany({
-        where: { profileId: { in: profileIds }, eventType: 'social_click', ...createdAtFilter },
-        select: { payload: true },
-      }),
-      prevSince && since
-        ? prisma.eventLog.findMany({
-            where: {
-              profileId: { in: profileIds },
-              eventType: 'social_click',
-              createdAt: { gte: prevSince, lt: since },
-            },
-            select: { payload: true },
-          })
-        : Promise.resolve([] as Array<{ payload: unknown }>),
-      prisma.eventLog.findMany({
-        where: { profileId: { in: profileIds } },
-        orderBy: { createdAt: 'desc' },
-        take: RECENT_ENGAGEMENT_LIMIT,
-        select: { id: true, eventType: true, payload: true, userAgent: true, createdAt: true },
-      }),
-    ])
+  const [
+    contacts,
+    notes,
+    guests,
+    contactSaves,
+    viewEvents,
+    prevViewEvents,
+    socialEvents,
+    prevSocialEvents,
+    recentLogs,
+  ] = await Promise.all([
+    prisma.contact.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
+    prisma.userNote.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
+    prisma.guestUserData.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
+
+    prisma.eventLog.count({
+      where: {
+        profileId: { in: profileIds },
+
+        eventType: 'save_contact_download',
+
+        ...createdAtFilter,
+      },
+    }),
+    prisma.eventLog.findMany({
+      where: { profileId: { in: profileIds }, eventType: 'profile_view', ...createdAtFilter },
+      select: { createdAt: true, payload: true },
+    }),
+    prevSince && since
+      ? prisma.eventLog.findMany({
+          where: {
+            profileId: { in: profileIds },
+            eventType: 'profile_view',
+            createdAt: { gte: prevSince, lt: since },
+          },
+          select: { payload: true },
+        })
+      : Promise.resolve([] as Array<{ payload: unknown }>),
+    prisma.eventLog.findMany({
+      where: { profileId: { in: profileIds }, eventType: 'social_click', ...createdAtFilter },
+      select: { payload: true },
+    }),
+    prevSince && since
+      ? prisma.eventLog.findMany({
+          where: {
+            profileId: { in: profileIds },
+            eventType: 'social_click',
+            createdAt: { gte: prevSince, lt: since },
+          },
+          select: { payload: true },
+        })
+      : Promise.resolve([] as Array<{ payload: unknown }>),
+    prisma.eventLog.findMany({
+      where: { profileId: { in: profileIds } },
+      orderBy: { createdAt: 'desc' },
+      take: RECENT_ENGAGEMENT_LIMIT,
+      select: { id: true, eventType: true, payload: true, userAgent: true, createdAt: true },
+    }),
+  ])
 
   const views = countDistinctGuests(viewEvents)
   const prevViews = countDistinctGuests(prevViewEvents)
@@ -2807,7 +2827,7 @@ const getDashboardStats = async (
     contactsLast30Days: contacts,
     notesLast30Days: notes,
     guestsLast30Days: guests,
-    contactSaves: guests,
+    contactSaves,
     uniqueViews: views,
     shares,
     period,
@@ -3049,7 +3069,7 @@ const listContactsPage = async (
     return { items, total, skip, limit }
   }
 
-  // Default / guest_save: platform contact saves (GuestUserData) — matches admin leads totals.
+  // Detailed saved-contact submissions; analytics save totals come from EventLog.
   const [total, rows] = await Promise.all([
     prisma.guestUserData.count({ where }),
     prisma.guestUserData.findMany({
@@ -3872,7 +3892,7 @@ const createTeamNotice = async (
           title: subject,
           body: text,
           type: 'announcement_updates',
-          url: targetProfile?.slug ? `/v/${targetProfile.slug}` : undefined,
+          url: targetProfile?.slug ? buildFrontendPublicCardPath(targetProfile.slug) : undefined,
         })
 
         if (actor && ownerEmails.length) {

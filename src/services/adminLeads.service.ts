@@ -239,8 +239,19 @@ function profileIdentitySearch(token: string): Prisma.ProfileWhereInput {
 
 const getStats = async () => {
   const [totalSaves, sourceProfiles, totalNotes] = await Promise.all([
-    prisma.guestUserData.count(),
-    prisma.guestUserData.findMany({ select: { profileId: true }, distinct: ['profileId'] }).then((rows) => rows.length),
+    prisma.eventLog.count({
+      where: { eventType: 'save_contact_download' },
+    }),
+    prisma.eventLog
+      .findMany({
+        where: {
+          eventType: 'save_contact_download',
+          profileId: { not: null },
+        },
+        select: { profileId: true },
+        distinct: ['profileId'],
+      })
+      .then((rows) => rows.length),
     prisma.userNote.count(),
   ])
 
