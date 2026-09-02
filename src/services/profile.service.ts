@@ -38,6 +38,7 @@ import {
   normalizeCardStatusName,
   resolveInitialCardLifecycle,
 } from '../utils/cardStatus'
+import { guestSaveDashboardVisibleWhere } from '../utils/crmLeadOrigin'
 import {
   DASHBOARD_ALL_CHART_DAYS,
   SOCIAL_CHANNELS,
@@ -2726,7 +2727,9 @@ const getDashboardStats = async (
   ] = await Promise.all([
     prisma.contact.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
     prisma.userNote.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
-    prisma.guestUserData.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
+    prisma.guestUserData.count({
+      where: { profileId: { in: profileIds }, ...createdAtFilter, ...guestSaveDashboardVisibleWhere() },
+    }),
 
     prisma.eventLog.count({
       where: {
@@ -2939,7 +2942,7 @@ const listContacts = async (
 
   const [guests, contacts, notes] = await Promise.all([
     prisma.guestUserData.findMany({
-      where: { profileId: { in: ids } },
+      where: { profileId: { in: ids }, ...guestSaveDashboardVisibleWhere() },
       orderBy: { createdAt: 'desc' },
       include: { profile: profileSelect },
       ...(limit ? { take: limit } : {}),
@@ -3070,10 +3073,11 @@ const listContactsPage = async (
   }
 
   // Detailed saved-contact submissions; analytics save totals come from EventLog.
+  const guestWhere = { ...where, ...guestSaveDashboardVisibleWhere() }
   const [total, rows] = await Promise.all([
-    prisma.guestUserData.count({ where }),
+    prisma.guestUserData.count({ where: guestWhere }),
     prisma.guestUserData.findMany({
-      where,
+      where: guestWhere,
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
@@ -3837,7 +3841,7 @@ const createTeamNotice = async (
     if (!emptyProfileIds(ids)) {
       const [guests, contacts, targetProfile, actor] = await Promise.all([
         prisma.guestUserData.findMany({
-          where: { profileId: { in: ids }, email: { not: null } },
+          where: { profileId: { in: ids }, email: { not: null }, ...guestSaveDashboardVisibleWhere() },
           select: { email: true },
         }),
         prisma.contact.findMany({

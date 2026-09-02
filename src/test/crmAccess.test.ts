@@ -3,6 +3,14 @@ import { describe, it } from 'node:test'
 import { defaultAllowFlagValue, entitlementsFromFeatures } from '../constants/packageAccess'
 import AppError from '../error/AppError'
 import {
+  buildCrmExternalLeadMeta,
+  crmOriginFromMeta,
+  guestSaveDashboardVisibleWhere,
+  guestSaveExternalWhere,
+  guestSaveOriginWhere,
+  isCrmExternalMeta,
+} from '../utils/crmLeadOrigin'
+import {
   assertCrmStaffAuthorization,
   assertRequestedProfileInScope,
   crmProfileWhere,
@@ -134,5 +142,27 @@ describe('CRM access scope', () => {
     assert.doesNotThrow(() => assertRequestedProfileInScope(single, 'card-a'))
     assertNotFound(() => assertRequestedProfileInScope(single, 'card-b'))
     assert.equal(isProfileIdInCrmScope({ profileIds: null }, 'any-card'), true)
+  })
+})
+
+describe('CRM external lead origin', () => {
+  it('marks and reads crmOrigin on guest meta', () => {
+    const meta = buildCrmExternalLeadMeta('Follow up Friday')
+    assert.equal(crmOriginFromMeta(meta), 'crm_external')
+    assert.equal(isCrmExternalMeta(meta), true)
+    assert.equal(crmOriginFromMeta({ userAgent: 'Mozilla' }), 'guest')
+    assert.equal(isCrmExternalMeta(null), false)
+  })
+
+  it('builds dashboard-visible vs external Prisma filters', () => {
+    assert.deepEqual(guestSaveDashboardVisibleWhere(), {
+      NOT: { meta: { path: ['crmOrigin'], equals: 'external' } },
+    })
+    assert.deepEqual(guestSaveExternalWhere(), {
+      meta: { path: ['crmOrigin'], equals: 'external' },
+    })
+    assert.deepEqual(guestSaveOriginWhere('guest'), guestSaveDashboardVisibleWhere())
+    assert.deepEqual(guestSaveOriginWhere('crm_external'), guestSaveExternalWhere())
+    assert.deepEqual(guestSaveOriginWhere(), {})
   })
 })

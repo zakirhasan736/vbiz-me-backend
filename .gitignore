@@ -31,3 +31,6 @@ coverage/
 
 # media migration failure reports
 scripts/reports/
+
+# local database dumps (do not commit)
+backups/
