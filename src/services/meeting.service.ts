@@ -342,7 +342,10 @@ async function sendMeetingEmails(input: {
   }
 }
 
-function notifyOwnerPush(meeting: MeetingRow, _meetLabel: string) {
+function notifyOwnerPush(meeting: MeetingRow, _meetLabel: string, onlyBackoffice = false) {
+  // Backoffice-only schedules stay in the owner banner / inbox — no public-card subscriber push.
+  if (onlyBackoffice) return
+
   const meetSuffix = meeting.meetLink ? ` Join link included.` : ''
   const payload = {
     title: `Upcoming session: ${meeting.type}`,
@@ -382,7 +385,13 @@ async function resolveOwnerEmailsForMeeting(meeting: MeetingRow): Promise<{
   return resolveOwnerEmails(meeting.profileId)
 }
 
-async function notifyOwnerAnnouncement(actor: Actor, meeting: MeetingRow, ownerEmails: string[], meetLabel: string) {
+async function notifyOwnerAnnouncement(
+  actor: Actor,
+  meeting: MeetingRow,
+  ownerEmails: string[],
+  meetLabel: string,
+  onlyBackoffice = false
+) {
   if (!ownerEmails.length) return
   if (meeting.scope === 'global') return
 
@@ -403,9 +412,9 @@ async function notifyOwnerAnnouncement(actor: Actor, meeting: MeetingRow, ownerE
         profileId: meeting.profileId || parseGroupProfileIds(meeting.groupProfileIds)[0] || '',
         meetingId: meeting.id,
         meetLink: meeting.meetLink || '',
-        sendPush: '1',
         category: 'event',
         meetingScope: meeting.scope,
+        ...(onlyBackoffice ? { onlyBackoffice: '1' } : { sendPush: '1' }),
       },
     })
   } catch (error) {
@@ -413,10 +422,10 @@ async function notifyOwnerAnnouncement(actor: Actor, meeting: MeetingRow, ownerE
   }
 }
 
-async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel: string) {
+async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel: string, onlyBackoffice = false) {
   const { emails: ownerEmails, displayName: ownerDisplayName } = await resolveOwnerEmailsForMeeting(meeting)
-  await notifyOwnerAnnouncement(actor, meeting, ownerEmails, meetLabel)
-  notifyOwnerPush(meeting, meetLabel)
+  await notifyOwnerAnnouncement(actor, meeting, ownerEmails, meetLabel, onlyBackoffice)
+  notifyOwnerPush(meeting, meetLabel, onlyBackoffice)
   if (ownerEmails.length) {
     void sendMeetingEmails({ meeting, ownerEmails, ownerDisplayName, actor, meetLabel })
   }
@@ -613,9 +622,9 @@ const create = async (actor: Actor, input: CreateMeetingInput, actorRole?: strin
           ...(row.location ? {} : calendar.meetLink ? { location: calendar.meetLink } : {}),
         },
       })
-      await notifyMeetingCreated(actor, row, resolvedMeetLabel)
+      await notifyMeetingCreated(actor, row, resolvedMeetLabel, Boolean(input.onlyBackoffice))
     } else {
-      await notifyMeetingCreated(actor, row, meetLabel)
+      await notifyMeetingCreated(actor, row, meetLabel, Boolean(input.onlyBackoffice))
     }
   }
 

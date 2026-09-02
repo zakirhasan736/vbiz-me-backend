@@ -55,6 +55,8 @@ const createTeamNoticeBody = z.object({
   targetProfileId: z.string().min(1).optional(),
   /** Admin card action: also deliver to this card's savers, owner inbox, push, and email. */
   deliver: z.boolean().optional().default(false),
+  /** Owner backoffice + in-app only — no public banner and no saver push/email. */
+  onlyBackoffice: z.boolean().optional().default(false),
 })
 
 /** Staff may assign ownership on create; other create fields pass through unchanged. */

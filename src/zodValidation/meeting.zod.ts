@@ -36,6 +36,8 @@ const createMeeting = z
     profileId: z.string().min(1).optional().nullable(),
     groupProfileIds: z.array(z.string().min(1)).max(200).optional(),
     companyUserId: z.string().min(1).optional().nullable(),
+    /** When true: owner backoffice + in-app only (no public-card / saver push). */
+    onlyBackoffice: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     const scope = data.scope ?? (data.profileId ? 'one_to_one' : 'global')

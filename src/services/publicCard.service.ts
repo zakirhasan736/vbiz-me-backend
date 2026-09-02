@@ -2146,6 +2146,50 @@ const saveGuestUser = async (
     submittedAt,
   }
 
+  // Prefer returning an existing save for this guest/email so visitors aren't duplicated.
+  const existingByGuest = guestId
+    ? await prisma.guestUserData.findFirst({
+        where: {
+          profileId: profile.id,
+          meta: { path: ['guestId'], equals: guestId },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+    : null
+  const existingByEmail =
+    existingByGuest ||
+    (await prisma.guestUserData.findFirst({
+      where: {
+        profileId: profile.id,
+        email: { equals: email, mode: 'insensitive' },
+      },
+      orderBy: { createdAt: 'desc' },
+    }))
+
+  if (existingByEmail) {
+    const updated = await prisma.guestUserData.update({
+      where: { id: existingByEmail.id },
+      data: {
+        fullName,
+        phone,
+        email,
+        meta,
+      },
+    })
+    return {
+      id: updated.id,
+      full_name: updated.fullName,
+      phone: updated.phone,
+      email: updated.email,
+      profile_id: updated.profileId,
+      profile_slug: profile.slug || null,
+      owner_name: profile.name || null,
+      meta: updated.meta,
+      created_at: updated.createdAt.toISOString(),
+      already_saved: true,
+    }
+  }
+
   const row = await prisma.guestUserData.create({
     data: {
       profileId: profile.id,
@@ -2185,6 +2229,7 @@ const saveGuestUser = async (
     owner_name: profile.name || null,
     meta: row.meta,
     created_at: row.createdAt.toISOString(),
+    already_saved: false,
   }
 }
 

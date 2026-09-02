@@ -16,6 +16,8 @@ import { isPaidAccess } from '../utils/paidAccess'
 import { prisma } from '../utils/prisma'
 import { buildCheckoutLineItems, checkoutModeForItems, toStripeSubscriptionLineItems } from '../utils/stripeCheckout'
 import { decideStripeEvent, stripeOwnerRefs } from '../utils/stripeWebhook'
+import { ASSISTANT_SETTING_KEY } from './assistantPolicy'
+import { updateConfig as updateAssistantConfig } from './profileAssistant.service'
 
 function quoteAgreement(
   pkg: {
@@ -234,6 +236,178 @@ const createPaymentLinkForUser = async (userId: string) => {
   return createCheckoutSession(userId, role, existing.packageId, { kind: 'admin_payment_link' })
 }
 
+const AI_ASSISTANCE_ADDON = 'ai_assistance'
+const AI_ASSISTANCE_FEATURE_KEY = 'allow_ai_assistance'
+
+const createAiAssistanceCheckoutSession = async (
+  userId: string,
+  role: string | null | undefined,
+  options?: { profileId?: string | null; successPath?: string | null; cancelPath?: string | null }
+) => {
+  if (isStaffRole(role)) throw new AppError(403, 'Staff accounts do not use owner billing.')
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, name: true, stripeId: true },
+  })
+  if (!user) throw new AppError(404, 'User not found')
+
+  const entitlements = await prisma.corporateFeatureOverride.findUnique({
+    where: { userId_featureKey: { userId, featureKey: AI_ASSISTANCE_FEATURE_KEY } },
+  })
+  if (entitlements?.featureValue === '1' || entitlements?.featureValue === 'true') {
+    throw new AppError(400, 'AI Assistance is already unlocked on your account.')
+  }
+
+  const profileId = String(options?.profileId || '').trim()
+  if (profileId) {
+    const profile = await prisma.profile.findFirst({
+      where: {
+        id: profileId,
+        OR: [{ userId }, { companyUserId: userId }],
+      },
+      select: { id: true },
+    })
+    if (!profile) throw new AppError(403, 'You do not have access to that card.')
+  }
+
+  const monthlyCents = config.AI_ASSISTANCE_ADDON_PRICE_CENTS
+  const stripe = getStripe()
+  let customerId = user.stripeId || undefined
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: user.email,
+      name: user.name || undefined,
+      metadata: { userId: user.id },
+    })
+    customerId = customer.id
+    await prisma.user.update({ where: { id: user.id }, data: { stripeId: customerId } })
+  }
+
+  const successPath =
+    String(options?.successPath || '').trim() ||
+    (profileId
+      ? `/vcards/edit/settings/ai-assistance?cardId=${encodeURIComponent(profileId)}&aiAssistance=success`
+      : '/settings?aiAssistance=success')
+  const cancelPath =
+    String(options?.cancelPath || '').trim() ||
+    (profileId
+      ? `/vcards/edit/settings/ai-assistance?cardId=${encodeURIComponent(profileId)}&aiAssistance=cancel`
+      : '/settings?aiAssistance=cancel')
+
+  const metadata = {
+    userId: user.id,
+    addon: AI_ASSISTANCE_ADDON,
+    profileId,
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    mode: 'subscription',
+    customer: customerId,
+    client_reference_id: user.id,
+    success_url: frontendPath(successPath),
+    cancel_url: frontendPath(cancelPath),
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: 'usd',
+          unit_amount: monthlyCents,
+          recurring: { interval: 'month' },
+          product_data: {
+            name: 'AI Assistance',
+            description: 'Premium guest AI assistant for your vBiz Me cards ($10 / month).',
+          },
+        },
+      },
+    ],
+    metadata,
+    subscription_data: { metadata },
+  })
+
+  if (!session.url) throw new AppError(502, 'Stripe did not return a checkout URL.')
+  return {
+    url: session.url,
+    assigned: false as const,
+    firstInvoiceCents: monthlyCents,
+    recurringCents: monthlyCents,
+  }
+}
+
+async function enableAiAssistanceForProfile(profileId: string) {
+  const trimmed = profileId.trim()
+  if (!trimmed) return
+  try {
+    await updateAssistantConfig(trimmed, { enabled: true })
+  } catch (error) {
+    logger.warn('Could not auto-enable AI Assistance on profile after payment', { profileId: trimmed, error })
+    await prisma.setting.upsert({
+      where: { profileId_key: { profileId: trimmed, key: ASSISTANT_SETTING_KEY } },
+      create: { profileId: trimmed, key: ASSISTANT_SETTING_KEY, value: '1' },
+      update: { value: '1' },
+    })
+  }
+}
+
+async function activateAiAssistanceAddon(object: Record<string, unknown>) {
+  const { userId, profileId } = stripeOwnerRefs(object)
+  if (!userId) {
+    logger.warn('AI Assistance activate skipped: missing userId metadata')
+    return
+  }
+
+  await prisma.corporateFeatureOverride.upsert({
+    where: { userId_featureKey: { userId, featureKey: AI_ASSISTANCE_FEATURE_KEY } },
+    create: { userId, featureKey: AI_ASSISTANCE_FEATURE_KEY, featureValue: '1' },
+    update: { featureValue: '1' },
+  })
+
+  if (profileId) {
+    await enableAiAssistanceForProfile(profileId)
+  }
+
+  const amount =
+    typeof object.amount_total === 'number'
+      ? object.amount_total
+      : typeof object.amount_paid === 'number'
+        ? object.amount_paid
+        : config.AI_ASSISTANCE_ADDON_PRICE_CENTS
+
+  const invoiceId = String(object.id || object.invoice || '')
+  if (invoiceId) {
+    const recent = await prisma.transaction.findMany({
+      where: { userId, provider: 'stripe' },
+      orderBy: { createdAt: 'desc' },
+      take: 25,
+      select: { meta: true },
+    })
+    const already = recent.some((row) => {
+      const meta = row.meta && typeof row.meta === 'object' ? (row.meta as { stripeEventObjectId?: string }) : null
+      return meta?.stripeEventObjectId === invoiceId
+    })
+    if (!already) {
+      await prisma.transaction.create({
+        data: {
+          userId,
+          amount,
+          currency: 'usd',
+          status: 'paid',
+          provider: 'stripe',
+          meta: { stripeEventObjectId: invoiceId, addon: AI_ASSISTANCE_ADDON, profileId: profileId || null },
+        },
+      })
+    }
+  }
+}
+
+async function revokeAiAssistanceAddon(object: Record<string, unknown>) {
+  const { userId } = stripeOwnerRefs(object)
+  if (!userId) return
+  await prisma.corporateFeatureOverride.deleteMany({
+    where: { userId, featureKey: AI_ASSISTANCE_FEATURE_KEY },
+  })
+}
+
 async function findSubscriptionFromEvent(object: Record<string, unknown>) {
   const { userId, packageId, subscriptionId: localSubId } = stripeOwnerRefs(object)
   const stripeSubId =
@@ -419,7 +593,19 @@ const handleWebhook = async (rawBody: Buffer | string, signature: string | undef
     data: { object },
   })
 
-  if (decision.action === 'activate') {
+  const refs = stripeOwnerRefs(object)
+  const isAiAddon = refs.addon === AI_ASSISTANCE_ADDON
+
+  if (isAiAddon) {
+    if (decision.action === 'activate') {
+      await activateAiAssistanceAddon(object)
+    } else if (
+      decision.action === 'sync_status' &&
+      (decision.stripeStatus === 'canceled' || decision.stripeStatus === 'unpaid')
+    ) {
+      await revokeAiAssistanceAddon(object)
+    }
+  } else if (decision.action === 'activate') {
     await activatePaidAccess(object, decision.markSignupCharged)
   } else if (decision.action === 'sync_status') {
     await syncStripeStatus(object, decision.stripeStatus)
@@ -436,6 +622,7 @@ const handleWebhook = async (rawBody: Buffer | string, signature: string | undef
 
 const stripeService = {
   createCheckoutSession,
+  createAiAssistanceCheckoutSession,
   createPaymentLinkForUser,
   assignFreePackage,
   handleWebhook,

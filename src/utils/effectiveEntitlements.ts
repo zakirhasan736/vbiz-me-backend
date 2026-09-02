@@ -179,7 +179,13 @@ export function buildEffectiveEntitlements(input: EntitlementCatalogInput): Effe
     : input.role === 'corporate-owner'
       ? 'corporate'
       : 'single'
-  const overrides = ownerMode === 'single' || !paid ? [] : input.overrides || []
+  // Corporate UI overrides apply fully when paid. Paid single-owner accounts may still hold
+  // allow_* add-on overrides (e.g. AI Assistance purchased via Stripe).
+  const rawOverrides = !paid ? [] : input.overrides || []
+  const overrides =
+    ownerMode === 'single'
+      ? rawOverrides.filter((row) => row.featureKey.trim().toLowerCase().startsWith('allow_'))
+      : rawOverrides
   const merged = mergeFeatures(paid ? input.features : null, overrides)
   const access = entitlementsFromFeatures(merged, paid)
   const assignedFeatures = hasAssignedPackage ? input.features || [] : []

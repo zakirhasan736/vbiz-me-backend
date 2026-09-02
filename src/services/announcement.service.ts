@@ -2,6 +2,7 @@ import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
+import authUtils from '../utils/auth.utils'
 import { prisma } from '../utils/prisma'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
 import type {
@@ -348,10 +349,13 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
     meta: { announcementId: row.id, kind, type, status, targetType, profileId: profileId || '' },
   })
 
-  // Background: if admin requested push delivery (via meta), send push notifications.
+  // Background: push card subscribers only when the notice is public-facing.
+  // Backoffice-only notices stay in owner banner / inbox (no saver Web Push).
   try {
     const meta = input.meta ?? {}
+    const showPublic = isShowPublic(meta)
     const wantsPush =
+      showPublic &&
       typeof meta === 'object' &&
       meta !== null &&
       ('sendPush' in meta || (meta.sendTo && String(meta.sendTo).includes('push')))
@@ -398,6 +402,39 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
 
           for (const pid of profileIds) {
             await pushService.sendToProfile(pid, payloadPartial)
+          }
+
+          // Also email people who saved / contacted this card (specific public notices).
+          if (profileId && targetType === 'specific') {
+            const [guests, contacts] = await Promise.all([
+              prisma.guestUserData.findMany({
+                where: { profileId, email: { not: null } },
+                select: { email: true },
+              }),
+              prisma.contact.findMany({
+                where: { profileId, email: { not: null } },
+                select: { email: true },
+              }),
+            ])
+            const saverEmails = [
+              ...new Set(
+                [...guests, ...contacts]
+                  .map((r) => (r.email || '').trim().toLowerCase())
+                  .filter(Boolean)
+                  .filter((email) => !targetEmails.map((e) => e.toLowerCase()).includes(email))
+              ),
+            ]
+            const subject = row.title || defaultTitle(row.type as AnnouncementType)
+            const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${row.body
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/\n/g, '<br/>')}</p></div>`
+            await Promise.all(
+              saverEmails.map((email) =>
+                authUtils.sendEmail({ receiverMail: email, subject, html }).catch(() => undefined)
+              )
+            )
           }
         } catch {
           /* swallow background errors */
