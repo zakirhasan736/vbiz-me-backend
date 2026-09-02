@@ -106,11 +106,11 @@ const getDynamicSection = catchAsyncError(async (req, res) => {
     undefined,
     skip > 0 ? skip + limit : limit
   )
-  const section = data as { items?: unknown[] }
-  if (Array.isArray(section.items) && skip > 0) {
+  const section = data as { items?: unknown[] } | null | undefined
+  if (section && Array.isArray(section.items) && skip > 0) {
     section.items = section.items.slice(skip, skip + limit)
   }
-  const items = Array.isArray(section.items) ? section.items : null
+  const items = section && Array.isArray(section.items) ? section.items : null
   logPublicSectionMedia(param(req.params.name), profileId, data)
   sendPublicResponse(res, {
     success: true,
