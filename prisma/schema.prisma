@@ -367,6 +367,7 @@ model Profile {
   aiGenerationLogs    AiGenerationLog[]
   assistantConfig     ProfileAssistantConfig?
   assistantKnowledge  ProfileAssistantKnowledge[]
+  landingDemoCards    LandingDemoCard[]
 
   @@index([userId])
   @@index([companyUserId])
@@ -1727,6 +1728,24 @@ model CardTemplate {
   updatedAt   DateTime @updatedAt
 
   @@index([status, sortOrder])
+}
+
+/** Curated homepage "Explore live demos" list. Admin CRUD can edit later; seed provides defaults. */
+model LandingDemoCard {
+  id                   String   @id @default(cuid())
+  category             String
+  slug                 String   @unique
+  /** Curated list subtitle (e.g. CEO/Founder). Falls back to Profile.designation when null. */
+  designationOverride  String?
+  profileId            String?
+  profile              Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  sortOrder            Int      @default(0)
+  status               String   @default("active")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([status, sortOrder])
+  @@index([profileId])
 }
 
 model PushSubscription {

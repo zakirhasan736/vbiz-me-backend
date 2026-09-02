@@ -2,6 +2,7 @@ import { createServer } from 'http'
 import app from './app'
 import seedCardStatuses from './bootstrap/seedCardStatuses'
 import seedCardTemplates from './bootstrap/seedCardTemplates'
+import seedLandingDemoCards from './bootstrap/seedLandingDemoCards'
 import seedPackages from './bootstrap/seedPackages'
 import { startBillingTrialCron } from './bootstrap/startBillingTrialCron'
 import { startBirthdayWishCron } from './bootstrap/startBirthdayWishCron'
@@ -18,6 +19,7 @@ const main = async () => {
     await seedPackages()
     await seedCardStatuses()
     await seedCardTemplates()
+    await seedLandingDemoCards()
 
     const httpServer = createServer(app)
     attachSocket(httpServer)

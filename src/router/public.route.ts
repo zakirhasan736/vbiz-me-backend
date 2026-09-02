@@ -45,6 +45,7 @@ router.post(
 router.get('/profile-ai-data/:id', publicController.getAiData)
 router.get('/dynamic-section/:name', publicController.getDynamicSection)
 router.get('/public-cards', publicController.getPublicCards)
+router.get('/landing/demo-cards', publicController.getLandingDemoCards)
 router.post('/save-guest-user', formData.none(), publicController.saveGuestUser)
 router.post('/save-note', publicController.saveNote)
 router.get('/notes', publicController.listNotes)
