@@ -74,6 +74,8 @@ model User {
   createdPosts         Post[]                @relation("PostCreatedBy")
   updatedPosts         Post[]                @relation("PostUpdatedBy")
   createdMeetings      Meeting[]             @relation("MeetingCreatedBy")
+  assignedWorkNotes    WorkNote[]            @relation("WorkNoteAssignee")
+  createdWorkNotes     WorkNote[]            @relation("WorkNoteCreatedBy")
   auditLogs            AuditLog[]            @relation("AuditLogActor")
   supportTickets       SupportTicket[]       @relation("SupportTicketCreatedBy")
   announcements        Announcement[]        @relation("AnnouncementCreatedBy")
@@ -362,6 +364,7 @@ model Profile {
   menus               Menu[]
   attachments         Attachment[]
   meetings            Meeting[]
+  workNotes           WorkNote[]
   auditLogs           AuditLog[]
   birthdayWishLogs    BirthdayWishLog[]
   aiGenerationLogs    AiGenerationLog[]
@@ -1571,7 +1574,7 @@ model EventLog {
 }
 
 model Meeting {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   host             String
   type             String
   date             String
@@ -1579,25 +1582,62 @@ model Meeting {
   startsAt         DateTime
   location         String?
   notes            String?
-  status           String   @default("Scheduled")
+  status           String    @default("Scheduled")
   /** global | group | one_to_one */
-  scope            String   @default("one_to_one")
+  scope            String    @default("one_to_one")
   profileId        String?
-  profile          Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  profile          Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
   /** Profile ids included in a group session (JSON string array). */
   groupProfileIds  Json?
   createdById      String?
-  createdBy        User?    @relation("MeetingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy        User?     @relation("MeetingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   googleEventId    String?
   meetLink         String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  reminderSentAt   DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([status])
   @@index([startsAt])
   @@index([profileId])
   @@index([type])
   @@index([scope])
+  @@index([reminderSentAt, startsAt])
+}
+
+model WorkNote {
+  id             String    @id @default(cuid())
+  title          String
+  description    String?
+  /** not_started | in_progress | in_review | complete */
+  status         String    @default("not_started")
+  assigneeUserId String?
+  assignee       User?     @relation("WorkNoteAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  createdById    String
+  createdBy      User      @relation("WorkNoteCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  profileId      String?
+  profile        Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  /** Zoho CRM lead id when linked */
+  leadRef        String?
+  startsAt       DateTime?
+  dueAt          DateTime?
+  remindAt       DateTime?
+  reminderSentAt DateTime?
+  ownerUserId    String?
+  companyUserId  String?
+  sortOrder      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status])
+  @@index([status, sortOrder])
+  @@index([assigneeUserId])
+  @@index([createdById])
+  @@index([profileId])
+  @@index([ownerUserId])
+  @@index([companyUserId])
+  @@index([dueAt])
+  @@index([remindAt, reminderSentAt])
 }
 
 model AuditLog {

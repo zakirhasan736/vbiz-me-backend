@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import AppError from '../error/AppError'
 import crmService, { type CrmActor } from '../services/crm.service'
 import catchAsyncError from '../utils/catchAsyncError'
@@ -51,12 +52,36 @@ const deleteLead = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'CRM lead deleted', data })
 })
 
+const schedulePeopleQuery = z.object({
+  q: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.string().trim().max(200).optional()),
+  limit: z.coerce.number().int().min(1).max(40).default(20),
+})
+
+const searchSchedulePeople = catchAsyncError(async (req, res) => {
+  const query = schedulePeopleQuery.parse(req.query)
+  const data = await crmService.searchSchedulePeople(actorFromReq(req), query)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Schedule people fetched', data })
+})
+
+const scheduleCalendar = catchAsyncError(async (req, res) => {
+  const query = CrmZodSchema.scheduleCalendarQuery.parse(req.query)
+  const data = await crmService.getCrmScheduleCalendar(actorFromReq(req), query)
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: 'CRM schedule calendar fetched',
+    data,
+  })
+})
+
 const crmController = {
   dashboard,
   listLeads,
   createLead,
   patchLead,
   deleteLead,
+  searchSchedulePeople,
+  scheduleCalendar,
 }
 
 export default crmController

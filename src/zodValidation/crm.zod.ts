@@ -34,15 +34,27 @@ const idParam = z.object({
   id: z.string().trim().min(1),
 })
 
+const isoDate = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
+
+const scheduleCalendarQuery = z.object({
+  from: isoDate,
+  to: isoDate,
+})
+
 const CrmZodSchema = {
   listLeadsQuery,
   createLeadBody,
   patchLeadBody,
   idParam,
+  scheduleCalendarQuery,
 }
 
 export type CrmListLeadsQuery = z.infer<typeof listLeadsQuery>
 export type CrmCreateLeadBody = z.infer<typeof createLeadBody>
 export type CrmPatchLeadBody = z.infer<typeof patchLeadBody>
+export type CrmScheduleCalendarQuery = z.infer<typeof scheduleCalendarQuery>
 
 export default CrmZodSchema

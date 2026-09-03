@@ -1,7 +1,7 @@
 import config from '../configs/config'
 import logger from '../utils/logger'
 import googleCalendarService from './googleCalendar/googleCalendar.service'
-import zohoCalendarService from './zohoCalendar/zohoCalendar.service'
+import zohoCalendarService, { type CalendarListedEvent } from './zohoCalendar/zohoCalendar.service'
 
 export type CalendarMeetingInput = {
   summary: string
@@ -18,6 +18,8 @@ export type CalendarMeetingResult = {
   htmlLink: string | null
   provider: 'zoho' | 'google'
 }
+
+export type { CalendarListedEvent }
 
 export type CalendarProvider = 'zoho' | 'google' | 'none'
 
@@ -77,12 +79,32 @@ const deleteMeetingEvent = async (eventId: string): Promise<boolean> => {
   return googleCalendarService.deleteMeetingEvent(eventId)
 }
 
+const listMeetingEvents = async (input: {
+  from: string
+  to: string
+}): Promise<{ events: CalendarListedEvent[]; error: string | null; provider: CalendarProvider }> => {
+  const provider = resolveProvider()
+  if (provider === 'zoho') {
+    const result = await zohoCalendarService.listMeetingEvents(input)
+    return { ...result, provider }
+  }
+  if (provider === 'google') {
+    return {
+      events: [],
+      error: 'Google Calendar list is not used for CRM Schedules; configure Zoho Calendar',
+      provider,
+    }
+  }
+  return { events: [], error: 'No calendar provider configured', provider: 'none' }
+}
+
 const calendarIntegrationService = {
   resolveProvider,
   meetLabel,
   createMeetingEvent,
   updateMeetingEvent,
   deleteMeetingEvent,
+  listMeetingEvents,
 }
 
 export default calendarIntegrationService

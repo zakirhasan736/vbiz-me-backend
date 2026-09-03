@@ -28,6 +28,10 @@ const {
   ZOHO_ACCOUNTS_DOMAIN,
   ZOHO_API_DOMAIN,
   CALENDAR_PROVIDER,
+  CRM_REMINDER_CRON_ENABLED,
+  CRM_REMINDER_CRON_TZ,
+  CRM_REMINDER_CRON_EXPR,
+  CRM_REMINDER_LEAD_MINUTES,
   FACEBOOK_APP_ID,
   FACEBOOK_APP_SECRET,
   STRIPE_SECRET_KEY,
@@ -159,6 +163,12 @@ export default {
   },
   CALENDAR: {
     PROVIDER: (CALENDAR_PROVIDER || 'auto').trim().toLowerCase(),
+  },
+  CRM_REMINDER_CRON: {
+    ENABLED: (CRM_REMINDER_CRON_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
+    TZ: (CRM_REMINDER_CRON_TZ || 'Asia/Dhaka').trim() || 'Asia/Dhaka',
+    EXPR: (CRM_REMINDER_CRON_EXPR || '*/5 * * * *').trim() || '*/5 * * * *',
+    LEAD_MINUTES: Number(CRM_REMINDER_LEAD_MINUTES) || 30,
   },
   FACEBOOK_APP_ID,
   FACEBOOK_APP_SECRET,
