@@ -132,6 +132,10 @@ function isInboxOnly(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | 
   return metaRecord(meta)?.channel === 'inbox'
 }
 
+function isShowPublic(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
+  return metaRecord(meta)?.showPublic === '1'
+}
+
 function isBirthdayNotice(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
   return metaRecord(meta)?.kind === 'birthday'
 }
@@ -537,21 +541,65 @@ const remove = async (id: string, actor: Actor) => {
 }
 
 const clearLive = async (actor: Actor) => {
-  const result = await prisma.announcement.updateMany({
-    where: { status: 'active', targetType: 'all' },
-    data: { status: 'archived' },
+  // Public cards show any active banner with showPublic=1 (global or specific).
+  // Admin "live" UI historically only listed targetType=all, so Clear must also
+  // archive specific public banners — otherwise admin looks empty while cards still show.
+  const active = await prisma.announcement.findMany({
+    where: { status: 'active' },
+    select: { id: true, meta: true, targetType: true },
   })
+  const announcementIds = active
+    .filter((row) => {
+      if (isInboxOnly(row.meta)) return false
+      if (row.targetType === 'all') return true
+      return isShowPublic(row.meta)
+    })
+    .map((row) => row.id)
+
+  if (announcementIds.length) {
+    await prisma.announcement.updateMany({
+      where: { id: { in: announcementIds } },
+      data: { status: 'archived' },
+    })
+  }
+
+  // PublicAnnouncementBanner prefers admin-origin team notices over announcements.
+  // Archive those too so Clear removes every admin-driven public notice strip.
+  const staffAuthors = await prisma.user.findMany({
+    where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } },
+    select: { id: true },
+  })
+  const staffIds = staffAuthors.map((user) => user.id)
+
+  let teamNoticeCount = 0
+  if (staffIds.length) {
+    const teamResult = await prisma.teamNotice.updateMany({
+      where: {
+        status: 'active',
+        audience: 'all',
+        ownerId: { in: staffIds },
+      },
+      data: { status: 'archived' },
+    })
+    teamNoticeCount = teamResult.count
+  }
+
+  const clearedCount = announcementIds.length + teamNoticeCount
 
   await writeAuditLog({
     action: 'Global Banner Cleared',
-    details: `Archived ${result.count} active global announcement(s)`,
+    details: `Archived ${announcementIds.length} announcement banner(s) and ${teamNoticeCount} admin team notice(s)`,
     type: 'status',
     actor: actor.name || actor.email,
     actorId: actor.id,
-    meta: { clearedCount: result.count },
+    meta: {
+      clearedCount,
+      announcementCount: announcementIds.length,
+      teamNoticeCount,
+    },
   })
 
-  return { clearedCount: result.count }
+  return { clearedCount }
 }
 
 const getActiveForUser = async (user: { email: string; role?: string }) => {
@@ -583,10 +631,6 @@ const getActiveForUser = async (user: { email: string; role?: string }) => {
     banner: bannerRow ? serializeAnnouncement(bannerRow) : null,
     inbox,
   }
-}
-
-function isShowPublic(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
-  return metaRecord(meta)?.showPublic === '1'
 }
 
 const getActiveForPublicCard = async (profileId: string, viewer?: PublicViewerIdentity) => {
