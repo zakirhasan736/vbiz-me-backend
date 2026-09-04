@@ -25,6 +25,7 @@ import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUr
 import { formatProfileLocation, hasProfileLocationParts } from '../utils/personalAddress'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
+import { collectSaveContactPhotoCandidates, resolveSaveContactPhotoUrls } from '../utils/saveContactPhoto'
 import { resolveProfileSharePreviewImageUrl, SHARE_PREVIEW_IMAGE_SETTING_KEY } from '../utils/sharePreviewImage'
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
@@ -675,6 +676,17 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
     ...card.settings,
     ...(aboutFeaturedMediaUrl ? { about_me_featured_media_url: aboutFeaturedMediaUrl } : {}),
     ...(sharePreviewImageUrl ? { [SHARE_PREVIEW_IMAGE_SETTING_KEY]: sharePreviewImageUrl } : {}),
+  }
+  const saveContactPhoto = collectSaveContactPhotoCandidates({
+    id: profile.id,
+    avatar: profile.avatar,
+    legacyId: profile.legacyId,
+    settings: card.settings,
+    attachments: profile.attachments,
+    aboutMeFeaturedUrl: aboutFeaturedMediaUrl,
+  })[0]
+  if (saveContactPhoto && card.action_buttons.save_contact?.data) {
+    card.action_buttons.save_contact.data.imageUrl = saveContactPhoto
   }
   const [team_notices, gallery] = await Promise.all([
     profileService.listPublicTeamNoticesForProfile(
@@ -2371,7 +2383,14 @@ const saveContactCard = async (
       : slug
         ? buildFrontendPublicCardPath(slug)
         : ''
-  const imageUrl = mediaFromProfile(profile).icon || ''
+  const imageUrls = await resolveSaveContactPhotoUrls({
+    id: profile.id,
+    avatar: profile.avatar,
+    legacyId: profile.legacyId,
+    settings: profile.settings,
+    attachments: profile.attachments,
+  })
+  const imageUrl = imageUrls[0] || ''
 
   return {
     action_buttons: {
@@ -2387,6 +2406,7 @@ const saveContactCard = async (
           slug,
           profileUrl,
           imageUrl,
+          imageUrls,
           note: profile.about || '',
           address: formatProfileLocation(profile) || '',
         },

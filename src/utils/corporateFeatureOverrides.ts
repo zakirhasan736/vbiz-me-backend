@@ -1,4 +1,4 @@
-import { CARD_LIMIT_FEATURE_KEY } from '../constants/packageAccess'
+import { CARD_LIMIT_FEATURE_KEY, isMandatoryPackageAccess } from '../constants/packageAccess'
 import AppError from '../error/AppError'
 
 export type CorporateFeatureOverrideInput = {
@@ -16,6 +16,7 @@ export function sanitizeCorporateFeatureOverrides(
     if (featureKey === CARD_LIMIT_FEATURE_KEY) {
       throw new AppError(400, 'Card limits are set with the account card limit, not a package override.')
     }
+    if (isMandatoryPackageAccess(featureKey)) continue
     if (!/^[a-z0-9_]{1,80}$/.test(featureKey)) {
       throw new AppError(400, `Invalid feature key: ${row.featureKey}`)
     }

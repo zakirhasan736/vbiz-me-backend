@@ -13,7 +13,8 @@ const ASSISTANT_SETTING_KEY = 'aiAssistance_checkbox'
  * so Corporate owners are never silently attached to Free.
  *
  * Also locks AI Assistance as a paid add-on on every package (allow_ai_assistance=0),
- * and keeps michaelangelo-casanova-2 AI Assistance enabled by default.
+ * keeps michaelangelo-casanova-2 AI Assistance enabled by default, and forces
+ * push notification on for every package (allow_push_notification=1).
  */
 const seedPackages = async (): Promise<void> => {
   const retired = await prisma.package.findMany({
@@ -104,6 +105,30 @@ const seedPackages = async (): Promise<void> => {
   }
   if (seededCrm) {
     logger.info(`Seeded CRM package flag on ${seededCrm} package(s) (allow_crm)`)
+  }
+
+  const PUSH_FEATURE_KEY = 'allow_push_notification'
+  let seededPush = 0
+  for (const pkg of packages) {
+    const existing = await prisma.packageFeature.findUnique({
+      where: { packageId_featureKey: { packageId: pkg.id, featureKey: PUSH_FEATURE_KEY } },
+      select: { id: true, featureValue: true },
+    })
+    if (existing?.featureValue === '1') continue
+    if (existing) {
+      await prisma.packageFeature.update({
+        where: { id: existing.id },
+        data: { featureValue: '1' },
+      })
+    } else {
+      await prisma.packageFeature.create({
+        data: { packageId: pkg.id, featureKey: PUSH_FEATURE_KEY, featureValue: '1' },
+      })
+    }
+    seededPush += 1
+  }
+  if (seededPush) {
+    logger.info(`Enabled mandatory push notification on ${seededPush} package(s) (allow_push_notification=1)`)
   }
 
   const FILE_SIZE_BY_SLUG: Record<string, string> = {

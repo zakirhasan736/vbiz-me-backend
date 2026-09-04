@@ -9,7 +9,11 @@ export const PACKAGE_ACCESS_FEATURES = [
   { key: 'allow_crm', label: 'CRM' },
 ] as const
 
+/** Always included for every card owner — not sellable or lockable by package. */
+export const MANDATORY_PACKAGE_ACCESS_KEYS = ['allow_push_notification'] as const
+
 export type PackageAccessKey = (typeof PACKAGE_ACCESS_FEATURES)[number]['key']
+export type MandatoryPackageAccessKey = (typeof MANDATORY_PACKAGE_ACCESS_KEYS)[number]
 
 export type PackageAccessMap = Record<PackageAccessKey, boolean>
 
@@ -40,11 +44,27 @@ export const EXPLICIT_ALLOW_FLAG_KEYS = [
 ] as const
 
 const ACCESS_KEY_SET = new Set<string>(PACKAGE_ACCESS_FEATURES.map((item) => item.key))
+const MANDATORY_ACCESS_KEY_SET = new Set<string>(MANDATORY_PACKAGE_ACCESS_KEYS)
 const TRUTHY = new Set(['1', 'true', 'yes', 'on', 'enabled'])
 const FALSY = new Set(['0', 'false', 'no', 'off', 'disabled'])
 
 export function isPackageAccessKey(key: string): key is PackageAccessKey {
   return ACCESS_KEY_SET.has(key.trim().toLowerCase())
+}
+
+export function isMandatoryPackageAccess(key: string): boolean {
+  return MANDATORY_ACCESS_KEY_SET.has(key.trim().toLowerCase())
+}
+
+export function configurablePackageAccessFeatures() {
+  return PACKAGE_ACCESS_FEATURES.filter((item) => !isMandatoryPackageAccess(item.key))
+}
+
+function applyMandatoryPackageAccess(map: PackageAccessMap): PackageAccessMap {
+  for (const key of MANDATORY_PACKAGE_ACCESS_KEYS) {
+    map[key] = true
+  }
+  return map
 }
 
 export function allPackageAccessEnabled(): PackageAccessMap {
@@ -71,14 +91,14 @@ export function entitlementsFromFeatures(
   // Premium add-ons: missing flags stay locked unless explicitly enabled.
   map.allow_ai_assistance = false
   map.allow_crm = false
-  if (!features?.length) return map
+  if (!features?.length) return applyMandatoryPackageAccess(map)
   for (const item of PACKAGE_ACCESS_FEATURES) {
     const row = features.find((feature) => feature.featureKey.trim().toLowerCase() === item.key)
     if (!row) continue
     const defaultWhenMissing = item.key === 'allow_ai_assistance' || item.key === 'allow_crm' ? false : whenMissing
     map[item.key] = parseAccessFlag(row.featureValue, defaultWhenMissing)
   }
-  return map
+  return applyMandatoryPackageAccess(map)
 }
 
 /** Default explicit allow_* featureValue used when backfilling missing package flags. */

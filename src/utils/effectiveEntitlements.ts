@@ -1,6 +1,7 @@
 import {
   allPackageAccessEnabled,
   entitlementsFromFeatures,
+  isMandatoryPackageAccess,
   isUnlimitedFeatureValue,
   parseAccessFlag,
   type PackageAccessMap,
@@ -92,6 +93,7 @@ function mergeFeatures(
   for (const row of overrides || []) {
     const key = row.featureKey.trim().toLowerCase()
     if (key === MAX_CARDS_FEATURE_KEY) continue
+    if (isMandatoryPackageAccess(key)) continue
     merged.set(key, row.featureValue)
   }
   return [...merged.entries()].map(([featureKey, featureValue]) => ({ featureKey, featureValue: featureValue ?? null }))
@@ -155,6 +157,7 @@ export function isCatalogFeatureAllowed(
   key: string
 ): boolean {
   const featureKey = key.trim().toLowerCase()
+  if (isMandatoryPackageAccess(featureKey)) return true
   const unpaidOwner = entitlements.source !== 'staff' && !entitlements.subscriptionActive
   if (unpaidOwner && featureKey.startsWith('allow_')) return false
   if (featureKey in entitlements.access) {
