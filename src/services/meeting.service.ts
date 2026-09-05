@@ -296,7 +296,7 @@ async function sendMeetingEmails(input: {
   actor: Actor
   meetLabel: string
 }) {
-  if (!config.MAIL_ADDRESS || !config.MAIL_PASS) return
+  if (!config.ZOHO_EMAIL_USER || !config.ZOHO_EMAIL_PASSWORD) return
 
   const subject = `Upcoming session: ${input.meeting.type} on ${input.meeting.date}`
   const adminSubject = `Scheduled: ${input.meeting.type} with ${input.meeting.host}`

@@ -360,7 +360,7 @@ const sendProfileEmail = async (
   } catch (error) {
     logger.error('Admin profile email delivery failed', { error, profileId, recipient })
     const message = error instanceof Error ? error.message : ''
-    if (message.includes('MAIL_ADDRESS and MAIL_PASS')) {
+    if (message.includes('ZOHO_EMAIL_USER and ZOHO_EMAIL_PASSWORD')) {
       throw new AppError(503, 'Email delivery is not configured on the server')
     }
     throw new AppError(502, 'Email could not be delivered. Please try again.')

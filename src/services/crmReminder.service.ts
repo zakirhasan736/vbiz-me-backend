@@ -291,7 +291,7 @@ async function processCrmEventReminders(leadMinutes: number) {
       { crmEventId: event.id, href: '/crm' }
     )
 
-    if (config.MAIL_ADDRESS && config.MAIL_PASS) {
+    if (config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
       const html = crmEventEmailHtml({
         recipientName: displayName || 'there',
         type: event.type,

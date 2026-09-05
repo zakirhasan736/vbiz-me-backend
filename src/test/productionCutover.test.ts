@@ -14,7 +14,7 @@ describe('production cutover', () => {
   it('requires mail and database env and rolls login OTP back without a code deploy', () => {
     assert.deepEqual(
       missingEnvKeys({ DATABASE_URL: 'postgres://x', ACCESS_TOKEN_SECRET: 'a' }, PRODUCTION_REQUIRED_ENV),
-      ['REFRESH_TOKEN_SECRET', 'FRONTEND_URL', 'MAIL_ADDRESS', 'MAIL_PASS']
+      ['REFRESH_TOKEN_SECRET', 'FRONTEND_URL', 'ZOHO_EMAIL_USER', 'ZOHO_EMAIL_PASSWORD']
     )
     assert.equal(loginOtpRollbackEnv().LOGIN_OTP_REQUIRED, 'false')
     assert.equal(stripeWebhookPath(), '/api/v1/billing/webhook')

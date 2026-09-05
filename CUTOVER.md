@@ -48,7 +48,7 @@ Do **not** delete cards. Admin-granted subscriptions stay active. Stripe paid ac
 ## Env (backend)
 
 - [ ] `LOGIN_OTP_REQUIRED=true` (default). Staff remain password-only.
-- [ ] Mail working (`MAIL_ADDRESS` / `MAIL_PASS`) so owner OTP and password-setup mail send.
+- [ ] Mail working (`ZOHO_EMAIL_USER` / `ZOHO_EMAIL_PASSWORD`) so owner OTP and password-setup mail send.
 - [ ] `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` if Checkout is going live.
 - [ ] Stripe Dashboard webhook: `POST https://<api-host>/api/v1/billing/webhook` (raw JSON body).
 - [ ] Frontend: `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_PUBLIC_API_URL` already pointing at this API.
