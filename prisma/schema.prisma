@@ -78,6 +78,10 @@ model User {
   assignedWorkNotes    WorkNote[]            @relation("WorkNoteAssignee")
   createdWorkNotes     WorkNote[]            @relation("WorkNoteCreatedBy")
   createdLeadNotes     LeadNote[]            @relation("LeadNoteCreatedBy")
+  oneOnOneRequests     OneOnOneRequest[]     @relation("OneOnOneRequestCreator")
+  oneOnOneMeetings     OneOnOneMeeting[]     @relation("OneOnOneMeetingCreator")
+  oneOnOneCardOwners   OneOnOneRequest[]     @relation("OneOnOneCardOwner")
+  oneOnOneMeetingOwners OneOnOneMeeting[]    @relation("OneOnOneMeetingOwner")
   auditLogs            AuditLog[]            @relation("AuditLogActor")
   supportTickets       SupportTicket[]       @relation("SupportTicketCreatedBy")
   announcements        Announcement[]        @relation("AnnouncementCreatedBy")
@@ -368,11 +372,13 @@ model Profile {
   meetings            Meeting[]
   crmEvents           CrmEvent[]
   workNotes           WorkNote[]
+  oneOnOneRequests    OneOnOneRequest[]
   auditLogs           AuditLog[]
   birthdayWishLogs    BirthdayWishLog[]
   aiGenerationLogs    AiGenerationLog[]
   assistantConfig     ProfileAssistantConfig?
   assistantKnowledge  ProfileAssistantKnowledge[]
+  landingDemoCards    LandingDemoCard[]
 
   @@index([userId])
   @@index([companyUserId])
@@ -1702,6 +1708,93 @@ model WorkNote {
   @@index([remindAt, reminderSentAt])
 }
 
+/**
+ * Public 1-on-1 guest request. Parent of one_on_one_meetings.
+ * Business request stays intact even when scheduling fails.
+ * Statuses: open | awaiting_guest | scheduled | cancelled | completed
+ */
+model OneOnOneRequest {
+  id               String   @id @default(cuid())
+  profileId        String
+  profile          Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  guestName        String
+  guestEmail       String
+  guestPhone       String?
+  message          String?
+  status           String   @default("open")
+  cardOwnerUserId  String?
+  cardOwnerUser    User?    @relation("OneOnOneCardOwner", fields: [cardOwnerUserId], references: [id], onDelete: SetNull)
+  corporateId      String? // company owner user id (nullable)
+  createdByUserId  String?
+  createdByUser    User?    @relation("OneOnOneRequestCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  proposedTitle    String?
+  proposedDescription String?
+  proposedTimezone String?
+  proposedDurationMinutes Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  meeting          OneOnOneMeeting?
+  proposedSlots    OneOnOneProposedSlot[]
+
+  @@index([profileId, status])
+  @@index([guestEmail])
+  @@index([status])
+  @@index([cardOwnerUserId])
+}
+
+/**
+ * Owner-proposed date/time options. Guest picks one; that creates the meeting.
+ */
+model OneOnOneProposedSlot {
+  id               String   @id @default(cuid())
+  requestId        String
+  request          OneOnOneRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  date             String // YYYY-MM-DD
+  startTime        String // HH:mm (24h)
+  durationMinutes  Int      @default(30)
+  timezone         String
+  status           String   @default("available") // available | selected | discarded
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([requestId, status])
+}
+
+/**
+ * Separate meeting entity linked to the original 1-on-1 request.
+ * Statuses: scheduled | rescheduled | cancelled | completed
+ */
+model OneOnOneMeeting {
+  id                   String   @id @default(cuid())
+  requestId            String   @unique
+  request              OneOnOneRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  cardId               String
+  cardOwnerUserId      String
+  cardOwnerUser        User     @relation("OneOnOneMeetingOwner", fields: [cardOwnerUserId], references: [id], onDelete: Restrict)
+  corporateId          String?
+  zohoCalendarEventId  String?
+  zohoMeetingId        String?
+  zohoMeetingUrl       String?
+  title                String
+  description          String?
+  startAt              DateTime
+  endAt                DateTime
+  timezone             String
+  status               String   @default("scheduled")
+  createdByUserId      String
+  createdByUser        User     @relation("OneOnOneMeetingCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  cancelledAt          DateTime?
+  completedAt          DateTime?
+
+  @@index([cardOwnerUserId, status])
+  @@index([cardId])
+  @@index([status])
+  @@index([createdByUserId])
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   action    String
@@ -1829,6 +1922,24 @@ model CardTemplate {
   updatedAt   DateTime @updatedAt
 
   @@index([status, sortOrder])
+}
+
+/** Curated homepage "Explore live demos" list. Admin CRUD can edit later; seed provides defaults. */
+model LandingDemoCard {
+  id                   String   @id @default(cuid())
+  category             String
+  slug                 String   @unique
+  /** Curated list subtitle (e.g. CEO/Founder). Falls back to Profile.designation when null. */
+  designationOverride  String?
+  profileId            String?
+  profile              Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  sortOrder            Int      @default(0)
+  status               String   @default("active")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([status, sortOrder])
+  @@index([profileId])
 }
 
 model PushSubscription {

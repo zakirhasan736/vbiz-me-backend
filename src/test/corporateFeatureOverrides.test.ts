@@ -26,6 +26,14 @@ describe('corporate feature overrides', () => {
     assert.deepEqual(result, [{ featureKey: 'allow_2d_explainer', featureValue: '0' }])
   })
 
+  it('drops push notification overrides because the feature is mandatory', () => {
+    const result = sanitizeCorporateFeatureOverrides([
+      { featureKey: 'allow_push_notification', featureValue: '0' },
+      { featureKey: 'allow_canva', featureValue: '0' },
+    ])
+    assert.deepEqual(result, [{ featureKey: 'allow_canva', featureValue: '0' }])
+  })
+
   it('rejects max_cards so card caps stay on Subscription.quantity', () => {
     assert.throws(
       () => sanitizeCorporateFeatureOverrides([{ featureKey: 'max_cards', featureValue: '99' }]),

@@ -2,6 +2,7 @@ import announcementService from '../services/announcement.service'
 import appleWalletService from '../services/appleWallet.service'
 import { issueLandingLiveToken, issuePublicLiveToken } from '../services/geminiLive.service'
 import googleWalletService from '../services/googleWallet.service'
+import landingDemoCardService from '../services/landingDemoCard.service'
 import profileService from '../services/profile.service'
 import publicCardService from '../services/publicCard.service'
 import pushService from '../services/push.service'
@@ -139,6 +140,12 @@ const getPublicCards = catchAsyncError(async (req, res) => {
     dropdowns: req.query.dropdowns === undefined ? undefined : String(req.query.dropdowns),
   })
   res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120')
+  res.status(200).json(payload)
+})
+
+const getLandingDemoCards = catchAsyncError(async (_req, res) => {
+  const payload = await landingDemoCardService.getLandingDemoCards()
+  res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
   res.status(200).json(payload)
 })
 
@@ -322,6 +329,7 @@ const publicController = {
   createLandingAssistantLiveToken,
   getDynamicSection,
   getPublicCards,
+  getLandingDemoCards,
   saveGuestUser,
   saveNote,
   listNotes,

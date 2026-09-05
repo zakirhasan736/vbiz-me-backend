@@ -12,6 +12,8 @@ export function stripeOwnerRefs(object: Record<string, unknown>): {
   userId: string
   packageId: string
   subscriptionId: string
+  addon: string
+  profileId: string
 } {
   const metadata =
     object.metadata && typeof object.metadata === 'object' ? (object.metadata as Record<string, unknown>) : {}
@@ -19,6 +21,10 @@ export function stripeOwnerRefs(object: Record<string, unknown>): {
     userId: String(metadata.userId || object.client_reference_id || '').trim(),
     packageId: String(metadata.packageId || '').trim(),
     subscriptionId: String(metadata.subscriptionId || '').trim(),
+    addon: String(metadata.addon || '')
+      .trim()
+      .toLowerCase(),
+    profileId: String(metadata.profileId || '').trim(),
   }
 }
 

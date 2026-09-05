@@ -2,6 +2,7 @@ import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
+import authUtils from '../utils/auth.utils'
 import { prisma } from '../utils/prisma'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
 import type {
@@ -129,6 +130,20 @@ function profileIdFromMeta(
 
 function isInboxOnly(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
   return metaRecord(meta)?.channel === 'inbox'
+}
+
+function isShowPublic(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
+  return metaRecord(meta)?.showPublic === '1'
+}
+
+function wantsSendPush(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
+  const m = metaRecord(meta)
+  if (!m) return false
+  if (m.sendPush === '0' || m.sendPush === false || m.sendPush === 0) return false
+  if (m.sendPush === '1' || m.sendPush === true || m.sendPush === 1) return true
+  if ('sendPush' in m) return true
+  const sendTo = m.sendTo
+  return typeof sendTo === 'string' && sendTo.includes('push')
 }
 
 function isBirthdayNotice(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
@@ -348,15 +363,15 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
     meta: { announcementId: row.id, kind, type, status, targetType, profileId: profileId || '' },
   })
 
-  // Background: if admin requested push delivery (via meta), send push notifications.
+  // Background Web Push:
+  // - showPublic + sendPush → subscribers / savers (public-facing)
+  // - sendPush without showPublic → owner/target profiles only (inbox/banner companion)
   try {
     const meta = input.meta ?? {}
-    const wantsPush =
-      typeof meta === 'object' &&
-      meta !== null &&
-      ('sendPush' in meta || (meta.sendTo && String(meta.sendTo).includes('push')))
+    const showPublic = isShowPublic(meta)
+    const pushRequested = wantsSendPush(meta)
 
-    if (wantsPush) {
+    if (pushRequested) {
       void (async () => {
         try {
           const profileIds = new Set<string>()
@@ -381,8 +396,9 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
             for (const p of owned) profileIds.add(p.id)
           }
 
-          // If global, send to all profiles that have active push subscriptions
-          if (targetType === 'all') {
+          // Global public announcements: blast to every active push subscription.
+          // Inbox-only globals still resolve via target emails / profileId above.
+          if (showPublic && targetType === 'all') {
             const subs = await prisma.pushSubscription.findMany({
               where: { isActive: true },
               select: { profileId: true },
@@ -398,6 +414,39 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
 
           for (const pid of profileIds) {
             await pushService.sendToProfile(pid, payloadPartial)
+          }
+
+          // Guest email blast only for public-facing specific card notices.
+          if (showPublic && profileId && targetType === 'specific') {
+            const [guests, contacts] = await Promise.all([
+              prisma.guestUserData.findMany({
+                where: { profileId, email: { not: null } },
+                select: { email: true },
+              }),
+              prisma.contact.findMany({
+                where: { profileId, email: { not: null } },
+                select: { email: true },
+              }),
+            ])
+            const saverEmails = [
+              ...new Set(
+                [...guests, ...contacts]
+                  .map((r) => (r.email || '').trim().toLowerCase())
+                  .filter(Boolean)
+                  .filter((email) => !targetEmails.map((e) => e.toLowerCase()).includes(email))
+              ),
+            ]
+            const subject = row.title || defaultTitle(row.type as AnnouncementType)
+            const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${row.body
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/\n/g, '<br/>')}</p></div>`
+            await Promise.all(
+              saverEmails.map((email) =>
+                authUtils.sendEmail({ receiverMail: email, subject, html }).catch(() => undefined)
+              )
+            )
           }
         } catch {
           /* swallow background errors */
@@ -500,21 +549,65 @@ const remove = async (id: string, actor: Actor) => {
 }
 
 const clearLive = async (actor: Actor) => {
-  const result = await prisma.announcement.updateMany({
-    where: { status: 'active', targetType: 'all' },
-    data: { status: 'archived' },
+  // Public cards show any active banner with showPublic=1 (global or specific).
+  // Admin "live" UI historically only listed targetType=all, so Clear must also
+  // archive specific public banners — otherwise admin looks empty while cards still show.
+  const active = await prisma.announcement.findMany({
+    where: { status: 'active' },
+    select: { id: true, meta: true, targetType: true },
   })
+  const announcementIds = active
+    .filter((row) => {
+      if (isInboxOnly(row.meta)) return false
+      if (row.targetType === 'all') return true
+      return isShowPublic(row.meta)
+    })
+    .map((row) => row.id)
+
+  if (announcementIds.length) {
+    await prisma.announcement.updateMany({
+      where: { id: { in: announcementIds } },
+      data: { status: 'archived' },
+    })
+  }
+
+  // PublicAnnouncementBanner prefers admin-origin team notices over announcements.
+  // Archive those too so Clear removes every admin-driven public notice strip.
+  const staffAuthors = await prisma.user.findMany({
+    where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } },
+    select: { id: true },
+  })
+  const staffIds = staffAuthors.map((user) => user.id)
+
+  let teamNoticeCount = 0
+  if (staffIds.length) {
+    const teamResult = await prisma.teamNotice.updateMany({
+      where: {
+        status: 'active',
+        audience: 'all',
+        ownerId: { in: staffIds },
+      },
+      data: { status: 'archived' },
+    })
+    teamNoticeCount = teamResult.count
+  }
+
+  const clearedCount = announcementIds.length + teamNoticeCount
 
   await writeAuditLog({
     action: 'Global Banner Cleared',
-    details: `Archived ${result.count} active global announcement(s)`,
+    details: `Archived ${announcementIds.length} announcement banner(s) and ${teamNoticeCount} admin team notice(s)`,
     type: 'status',
     actor: actor.name || actor.email,
     actorId: actor.id,
-    meta: { clearedCount: result.count },
+    meta: {
+      clearedCount,
+      announcementCount: announcementIds.length,
+      teamNoticeCount,
+    },
   })
 
-  return { clearedCount: result.count }
+  return { clearedCount }
 }
 
 const getActiveForUser = async (user: { email: string; role?: string }) => {
@@ -546,10 +639,6 @@ const getActiveForUser = async (user: { email: string; role?: string }) => {
     banner: bannerRow ? serializeAnnouncement(bannerRow) : null,
     inbox,
   }
-}
-
-function isShowPublic(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
-  return metaRecord(meta)?.showPublic === '1'
 }
 
 const getActiveForPublicCard = async (profileId: string, viewer?: PublicViewerIdentity) => {

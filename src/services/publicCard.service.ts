@@ -25,6 +25,7 @@ import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUr
 import { formatProfileLocation, hasProfileLocationParts } from '../utils/personalAddress'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
+import { collectSaveContactPhotoCandidates, resolveSaveContactPhotoUrls } from '../utils/saveContactPhoto'
 import { resolveProfileSharePreviewImageUrl, SHARE_PREVIEW_IMAGE_SETTING_KEY } from '../utils/sharePreviewImage'
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
@@ -675,6 +676,17 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
     ...card.settings,
     ...(aboutFeaturedMediaUrl ? { about_me_featured_media_url: aboutFeaturedMediaUrl } : {}),
     ...(sharePreviewImageUrl ? { [SHARE_PREVIEW_IMAGE_SETTING_KEY]: sharePreviewImageUrl } : {}),
+  }
+  const saveContactPhoto = collectSaveContactPhotoCandidates({
+    id: profile.id,
+    avatar: profile.avatar,
+    legacyId: profile.legacyId,
+    settings: card.settings,
+    attachments: profile.attachments,
+    aboutMeFeaturedUrl: aboutFeaturedMediaUrl,
+  })[0]
+  if (saveContactPhoto && card.action_buttons.save_contact?.data) {
+    card.action_buttons.save_contact.data.imageUrl = saveContactPhoto
   }
   const [team_notices, gallery] = await Promise.all([
     profileService.listPublicTeamNoticesForProfile(
@@ -1987,6 +1999,7 @@ const getPublicCards = async (query: {
             { name: { contains: searchTerm, mode: 'insensitive' as const } },
             { companyName: { contains: searchTerm, mode: 'insensitive' as const } },
             { prof: { contains: searchTerm, mode: 'insensitive' as const } },
+            { designation: { contains: searchTerm, mode: 'insensitive' as const } },
             { slug: { contains: searchTerm, mode: 'insensitive' as const } },
           ],
         }
@@ -2027,6 +2040,7 @@ const getPublicCards = async (query: {
       slug: p.slug,
       profession: p.profession?.name || p.prof,
       profession_id: p.professionId,
+      designation: p.designation?.trim() || null,
       image: media.image,
       image_type: media.image_type,
       is_video: media.is_video,
@@ -2146,6 +2160,50 @@ const saveGuestUser = async (
     submittedAt,
   }
 
+  // Prefer returning an existing save for this guest/email so visitors aren't duplicated.
+  const existingByGuest = guestId
+    ? await prisma.guestUserData.findFirst({
+        where: {
+          profileId: profile.id,
+          meta: { path: ['guestId'], equals: guestId },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+    : null
+  const existingByEmail =
+    existingByGuest ||
+    (await prisma.guestUserData.findFirst({
+      where: {
+        profileId: profile.id,
+        email: { equals: email, mode: 'insensitive' },
+      },
+      orderBy: { createdAt: 'desc' },
+    }))
+
+  if (existingByEmail) {
+    const updated = await prisma.guestUserData.update({
+      where: { id: existingByEmail.id },
+      data: {
+        fullName,
+        phone,
+        email,
+        meta,
+      },
+    })
+    return {
+      id: updated.id,
+      full_name: updated.fullName,
+      phone: updated.phone,
+      email: updated.email,
+      profile_id: updated.profileId,
+      profile_slug: profile.slug || null,
+      owner_name: profile.name || null,
+      meta: updated.meta,
+      created_at: updated.createdAt.toISOString(),
+      already_saved: true,
+    }
+  }
+
   const row = await prisma.guestUserData.create({
     data: {
       profileId: profile.id,
@@ -2185,6 +2243,7 @@ const saveGuestUser = async (
     owner_name: profile.name || null,
     meta: row.meta,
     created_at: row.createdAt.toISOString(),
+    already_saved: false,
   }
 }
 
@@ -2324,7 +2383,14 @@ const saveContactCard = async (
       : slug
         ? buildFrontendPublicCardPath(slug)
         : ''
-  const imageUrl = mediaFromProfile(profile).icon || ''
+  const imageUrls = await resolveSaveContactPhotoUrls({
+    id: profile.id,
+    avatar: profile.avatar,
+    legacyId: profile.legacyId,
+    settings: profile.settings,
+    attachments: profile.attachments,
+  })
+  const imageUrl = imageUrls[0] || ''
 
   return {
     action_buttons: {
@@ -2340,6 +2406,7 @@ const saveContactCard = async (
           slug,
           profileUrl,
           imageUrl,
+          imageUrls,
           note: profile.about || '',
           address: formatProfileLocation(profile) || '',
         },

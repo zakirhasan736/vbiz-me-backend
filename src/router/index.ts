@@ -18,6 +18,7 @@ import fontsRoute from './fonts.route'
 import healthRoute from './health.route'
 import mediaRoute from './media.route'
 import meetingRoute from './meeting.route'
+import oneOnOneRoute from './oneOnOne.route'
 import profileRoute from './profile.route'
 import publicRoute from './public.route'
 import supportRoute from './support.route'
@@ -34,6 +35,7 @@ const modulePaths = [
   { path: '/profiles', route: profileRoute },
   { path: '/media', route: mediaRoute },
   { path: '/meetings', route: meetingRoute },
+  { path: '/one-on-one', route: oneOnOneRoute },
   { path: '/ai/card-agent', route: cardAgentRoute },
   { path: '/integrations/canva', route: canvaRoute },
   { path: '/crm', route: crmRoute },

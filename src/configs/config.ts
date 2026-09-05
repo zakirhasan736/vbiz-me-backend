@@ -36,13 +36,13 @@ const {
   FACEBOOK_APP_SECRET,
   STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET,
+  AI_ASSISTANCE_ADDON_PRICE_CENTS,
   MAIL_ADDRESS,
   MAIL_PASS,
   RESEND_MAIL_MINUTES,
   OTP_EXPIRE_MINUTES,
   FORGOT_PASSWORD_EXPIRY_MINUTES,
   PASSWORD_SETUP_EXPIRY_MINUTES,
-  LOGIN_OTP_REQUIRED,
   PUBLIC_SIGNUP_ENABLED,
   AWS_ACCESS_KEY_ID,
   AWS_SECRET_ACCESS_KEY,
@@ -176,11 +176,24 @@ export default {
     SECRET_KEY: (STRIPE_SECRET_KEY || '').trim(),
     WEBHOOK_SECRET: (STRIPE_WEBHOOK_SECRET || '').trim(),
   },
+  /** AI Assistance monthly add-on (USD cents). Default $10.00. */
+  AI_ASSISTANCE_ADDON_PRICE_CENTS: Math.max(100, Number(AI_ASSISTANCE_ADDON_PRICE_CENTS) || 1000),
   MAIL_ADDRESS,
   MAIL_PASS,
   RESEND_MAIL_MINUTES: Number(RESEND_MAIL_MINUTES),
   OTP_EXPIRE_MINUTES: Number(OTP_EXPIRE_MINUTES) || 10,
-  LOGIN_OTP_REQUIRED: (LOGIN_OTP_REQUIRED || 'true').trim().toLowerCase() !== 'false',
+  /**
+   * TEMP: force login email OTP off while transactional mail is broken.
+   * Restore: `(LOGIN_OTP_REQUIRED || 'false').trim().toLowerCase() === 'true'`
+   * and set LOGIN_OTP_REQUIRED=true in env.
+   */
+  LOGIN_OTP_REQUIRED: false,
+  /**
+   * TEMP: skip “verify email before login” while mail is broken.
+   * Restore: `(EMAIL_VERIFICATION_REQUIRED || 'false').trim().toLowerCase() === 'true'`
+   * and set EMAIL_VERIFICATION_REQUIRED=true in env.
+   */
+  EMAIL_VERIFICATION_REQUIRED: false,
   PUBLIC_SIGNUP_ENABLED: (PUBLIC_SIGNUP_ENABLED || 'false').trim().toLowerCase() === 'true',
   FORGOT_PASSWORD_EXPIRY_MINUTES: Number(FORGOT_PASSWORD_EXPIRY_MINUTES) || 15,
   PASSWORD_SETUP_EXPIRY_MINUTES: Number(PASSWORD_SETUP_EXPIRY_MINUTES) || 15,

@@ -3748,7 +3748,8 @@ async function writeTeamNoticeViewerState(opts: {
   profileId: string
   noticeId: string
   viewer: PublicViewerIdentity
-  suppressUntil: Date
+  dismissedAt?: Date | null
+  suppressUntil?: Date | null
 }) {
   const viewerState = (
     prisma as unknown as {
@@ -3770,13 +3771,14 @@ async function writeTeamNoticeViewerState(opts: {
       profileId: opts.profileId,
       visitorId: opts.viewer.visitorId,
       browserKey: opts.viewer.browserKey,
-      suppressUntil: opts.suppressUntil,
+      dismissedAt: opts.dismissedAt ?? null,
+      suppressUntil: opts.suppressUntil ?? null,
     },
     update: {
       profileId: opts.profileId,
       visitorId: opts.viewer.visitorId ?? undefined,
-      dismissedAt: null,
-      suppressUntil: opts.suppressUntil,
+      dismissedAt: opts.dismissedAt === undefined ? undefined : opts.dismissedAt,
+      suppressUntil: opts.suppressUntil === undefined ? undefined : opts.suppressUntil,
     },
   })
 }
@@ -3801,6 +3803,7 @@ const createTeamNotice = async (
     audience: 'all' | 'savers'
     targetProfileId?: string
     deliver?: boolean
+    onlyBackoffice?: boolean
   }
 ): Promise<TeamNoticeRow> => {
   const staff = isAdminRole(role)
@@ -3813,9 +3816,10 @@ const createTeamNotice = async (
 
   let recipientCount: number | undefined
   const targetProfileId = input.targetProfileId || undefined
+  const onlyBackoffice = Boolean(input.onlyBackoffice)
 
   // Public card banners must target one card — never publish globally without a card id.
-  if (input.audience === 'all' && !targetProfileId) {
+  if (input.audience === 'all' && !targetProfileId && !onlyBackoffice) {
     throw new AppError(400, 'Select a specific card for this announcement. Global all-card banners are disabled.')
   }
 
@@ -3835,7 +3839,76 @@ const createTeamNotice = async (
 
   const shouldDeliver = Boolean(input.deliver) || (staff && Boolean(targetProfileId))
 
-  if (input.audience === 'savers' || shouldDeliver) {
+  if (onlyBackoffice && targetProfileId) {
+    const [targetProfile, actor] = await Promise.all([
+      prisma.profile.findUnique({
+        where: { id: targetProfileId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          email: true,
+          user: { select: { email: true } },
+          companyUser: { select: { email: true } },
+        },
+      }),
+      prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, name: true } }),
+    ])
+    const ownerEmails = [targetProfile?.user?.email, targetProfile?.companyUser?.email, targetProfile?.email]
+      .map((email) => (email || '').trim().toLowerCase())
+      .filter(Boolean)
+    recipientCount = ownerEmails.length
+
+    if (actor && ownerEmails.length) {
+      const subject =
+        input.type === 'system' || input.type === 'warning'
+          ? `Important notice from ${targetProfile?.name || 'vBiz Me'}`
+          : `Update from ${targetProfile?.name || 'vBiz Me'}`
+      const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br/>')}</p></div>`
+      await Promise.all(
+        ownerEmails.map((email) =>
+          authUtils.sendEmail({ receiverMail: email, subject, html }).catch((err) => {
+            logger.error('Team notice owner email failed', email, err)
+          })
+        )
+      )
+      void announcementService
+        .create(actor, {
+          type:
+            input.type === 'warning' || input.type === 'system'
+              ? 'warning'
+              : input.type === 'success'
+                ? 'success'
+                : 'info',
+          title: `Card notice · ${targetProfile?.name || targetProfile?.slug || 'vCard'}`,
+          body: text,
+          status: 'active',
+          targetType: 'specific',
+          targetEmails: [...new Set(ownerEmails)],
+          meta: { profileId: targetProfileId, source: 'card_notice', onlyBackoffice: '1' },
+        })
+        .catch((error) => logger.error('Card owner backoffice notice failed', { targetProfileId, error }))
+    }
+
+    const row = await prisma.teamNotice.create({
+      data: {
+        ownerId: userId,
+        text,
+        type: input.type,
+        audience: 'savers',
+        targetProfileId,
+        recipientCount: recipientCount ?? 0,
+        status: 'active',
+      },
+    })
+    return serializeTeamNotice(row, staff ? 'admin' : 'owner')
+  }
+
+  if ((input.audience === 'savers' || shouldDeliver) && !onlyBackoffice) {
     const profiles = await listForUser(userId, role)
     const ids = targetProfileId ? [targetProfileId] : profiles.map((p) => p.id)
     if (!emptyProfileIds(ids)) {
@@ -4047,15 +4120,16 @@ const dismissPublicTeamNotice = async (opts: { profileId: string; noticeId: stri
   })
   if (!existing) throw new AppError(404, 'Notice not found')
 
-  const suppressUntil = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  // Permanent dismiss (same contract as global public announcements) — not a 24h snooze.
   await writeTeamNoticeViewerState({
     profileId,
     noticeId,
     viewer: opts.viewer,
-    suppressUntil,
+    dismissedAt: new Date(),
+    suppressUntil: null,
   })
 
-  return { id: noticeId, dismissed: true, suppressUntil: suppressUntil.toISOString() }
+  return { id: noticeId, dismissed: true }
 }
 
 export type PortfolioMemberRow = {

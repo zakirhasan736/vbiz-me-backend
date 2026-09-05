@@ -117,7 +117,9 @@ const login = async (body: ILoginBody): Promise<ILoginResult> => {
     })
   }
 
-  if (!user.isVerified) {
+  // TEMP: email delivery is broken — skip verification gate until mail is fixed.
+  // Re-enable by setting EMAIL_VERIFICATION_REQUIRED=true (and LOGIN_OTP_REQUIRED=true for OTP).
+  if (config.EMAIL_VERIFICATION_REQUIRED && !user.isVerified) {
     const cooldown = await queueOrSendVerificationEmail(user.email, { awaitSend: false })
     throw authUtils.buildEmailNotVerifiedError(user, cooldown)
   }

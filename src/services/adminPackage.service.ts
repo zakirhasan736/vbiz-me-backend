@@ -1,3 +1,4 @@
+import { isMandatoryPackageAccess, MANDATORY_PACKAGE_ACCESS_KEYS } from '../constants/packageAccess'
 import {
   inferOwnerModeFromCatalog,
   prismaOwnerMode,
@@ -39,6 +40,28 @@ async function ensureUniqueSlug(base: string, excludeId?: string): Promise<strin
     i += 1
     slug = `${slugify(base).slice(0, 100)}-${i}`
   }
+}
+
+function withMandatoryPackageFeatures(
+  features: { featureKey: string; featureValue?: string | null }[] | undefined
+): { featureKey: string; featureValue: string | null }[] {
+  const seen = new Set<string>()
+  const next: { featureKey: string; featureValue: string | null }[] = []
+  for (const row of features ?? []) {
+    const featureKey = row.featureKey.trim()
+    if (!featureKey) continue
+    const key = featureKey.toLowerCase()
+    seen.add(key)
+    next.push({
+      featureKey,
+      featureValue: isMandatoryPackageAccess(key) ? '1' : row.featureValue?.trim() || null,
+    })
+  }
+  for (const key of MANDATORY_PACKAGE_ACCESS_KEYS) {
+    if (seen.has(key)) continue
+    next.push({ featureKey: key, featureValue: '1' })
+  }
+  return next
 }
 
 const featureSelect = {
@@ -179,9 +202,9 @@ const create = async (body: CreateAdminPackageBody, actor: ActorContext): Promis
       isActive: body.isActive ?? true,
       sortOrder: body.sortOrder ?? 0,
       features: {
-        create: (body.features ?? []).map((f) => ({
-          featureKey: f.featureKey.trim(),
-          featureValue: f.featureValue?.trim() || null,
+        create: withMandatoryPackageFeatures(body.features).map((f) => ({
+          featureKey: f.featureKey,
+          featureValue: f.featureValue,
         })),
       },
     },
@@ -221,13 +244,14 @@ const update = async (id: string, body: UpdateAdminPackageBody, actor: ActorCont
 
   const row = await prisma.$transaction(async (tx) => {
     if (body.features !== undefined) {
+      const features = withMandatoryPackageFeatures(body.features)
       await tx.packageFeature.deleteMany({ where: { packageId: id } })
-      if (body.features.length > 0) {
+      if (features.length > 0) {
         await tx.packageFeature.createMany({
-          data: body.features.map((f) => ({
+          data: features.map((f) => ({
             packageId: id,
-            featureKey: f.featureKey.trim(),
-            featureValue: f.featureValue?.trim() || null,
+            featureKey: f.featureKey,
+            featureValue: f.featureValue,
           })),
         })
       }

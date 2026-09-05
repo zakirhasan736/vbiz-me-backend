@@ -326,6 +326,33 @@ describe('required matrix: CORPORATE', () => {
     assert.equal(result.access.allow_canva, false)
   })
 
+  it('keeps push notification on for every package even when the flag is off', () => {
+    const free = entitlementsFromFeatures(flags({ allow_push_notification: '0', allow_canva: '0' }))
+    assert.equal(free.allow_push_notification, true)
+    assert.equal(free.allow_canva, false)
+
+    const locked = buildEffectiveEntitlements({
+      role: 'vcard-owner',
+      pkg: { id: 'free', slug: 'free', name: 'Free' },
+      features: flags({ allow_push_notification: '0' }),
+      subscription: { id: 'sub', quantity: 1, endsAt: null },
+      overrides: flags({ allow_push_notification: '0' }),
+    })
+    assert.equal(locked.access.allow_push_notification, true)
+  })
+
+  it('keeps push notification allowed when Stripe is still pending', () => {
+    const unpaid = buildEffectiveEntitlements({
+      role: 'vcard-owner',
+      pkg: { id: 'pro', slug: 'professional', name: 'Professional' },
+      features: flags({ allow_push_notification: '0' }),
+      subscription: { id: 'sub', endsAt: null, provider: 'stripe', stripeStatus: 'incomplete' },
+    })
+    assert.equal(unpaid.subscriptionActive, false)
+    assert.equal(unpaid.access.allow_push_notification, true)
+    assert.equal(isCatalogFeatureAllowed(unpaid, 'allow_push_notification'), true)
+  })
+
   it('Remove override → global value inherited again', () => {
     const catalog = flags({ allow_canva: '1' })
     const restored = buildEffectiveEntitlements({

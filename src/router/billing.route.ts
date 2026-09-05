@@ -25,4 +25,27 @@ router.post(
   })
 )
 
+router.post(
+  '/checkout-ai-assistance',
+  authMiddleware.isAuthenticateUser,
+  authMiddleware.requireNotSuspended,
+  catchAsyncError(async (req, res) => {
+    if (!req.user?.id) throw new AppError(403, 'Unauthorized')
+    const profileId = String(req.body?.profileId || '').trim() || null
+    const successPath = String(req.body?.successPath || '').trim() || null
+    const cancelPath = String(req.body?.cancelPath || '').trim() || null
+    const data = await stripeService.createAiAssistanceCheckoutSession(req.user.id, req.user.role, {
+      profileId,
+      successPath,
+      cancelPath,
+    })
+    sendResponse(res, {
+      success: true,
+      statusCode: 200,
+      message: 'AI Assistance checkout created',
+      data,
+    })
+  })
+)
+
 export default router
