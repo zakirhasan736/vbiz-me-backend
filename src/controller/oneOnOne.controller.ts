@@ -1,3 +1,4 @@
+import { toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import oneOnOneService from '../services/oneOnOne.service'
 import catchAsyncError from '../utils/catchAsyncError'
@@ -13,7 +14,12 @@ async function resolveActor(userId: string) {
     select: { id: true, email: true, name: true, role: true },
   })
   if (!user) throw new AppError(403, 'Unauthorized')
-  return user
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: toApiRole(user.role),
+  }
 }
 
 const createPublicRequest = catchAsyncError(async (req, res) => {

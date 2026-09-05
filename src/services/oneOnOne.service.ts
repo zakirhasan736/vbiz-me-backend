@@ -240,10 +240,20 @@ async function resolveCardOwnerUser(profileId: string) {
   return profile
 }
 
-async function assertOwnerCanSchedule(actor: Actor, request: RequestRow) {
-  if (isStaffRole(actor.role)) return
+function normalizeActorRole(role?: string | null): string | null {
+  if (!role) return null
+  if (role === 'VCARD_OWNER') return 'vcard-owner'
+  if (role === 'CORPORATE_OWNER') return 'corporate-owner'
+  if (role === 'ADMIN') return 'admin'
+  if (role === 'SUPER_ADMIN') return 'super-admin'
+  return role
+}
 
-  if (actor.role !== 'vcard-owner' && actor.role !== 'corporate-owner') {
+async function assertOwnerCanSchedule(actor: Actor, request: RequestRow) {
+  const role = normalizeActorRole(actor.role)
+  if (isStaffRole(role)) return
+
+  if (role !== 'vcard-owner' && role !== 'corporate-owner') {
     throw new AppError(403, 'Only card owners or corporate admins can schedule 1-on-1 meetings')
   }
 
@@ -253,10 +263,10 @@ async function assertOwnerCanSchedule(actor: Actor, request: RequestRow) {
   })
   if (!profile) throw new AppError(404, 'Card not found')
 
-  if (actor.role === 'vcard-owner' && profile.userId !== actor.id) {
+  if (role === 'vcard-owner' && profile.userId !== actor.id) {
     throw new AppError(403, 'You can only schedule meetings for your own cards')
   }
-  if (actor.role === 'corporate-owner') {
+  if (role === 'corporate-owner') {
     if (profile.companyUserId !== actor.id && profile.userId !== actor.id) {
       throw new AppError(403, 'You can only schedule meetings for cards on your corporate account')
     }
@@ -264,9 +274,10 @@ async function assertOwnerCanSchedule(actor: Actor, request: RequestRow) {
 }
 
 async function assertCanListOwnerRequests(actor: Actor) {
-  if (isStaffRole(actor.role)) return
+  const role = normalizeActorRole(actor.role)
+  if (isStaffRole(role)) return
 
-  if (actor.role !== 'vcard-owner' && actor.role !== 'corporate-owner') {
+  if (role !== 'vcard-owner' && role !== 'corporate-owner') {
     throw new AppError(403, 'Only card owners or corporate admins can view 1-on-1 requests')
   }
 

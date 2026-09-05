@@ -136,6 +136,16 @@ function isShowPublic(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue |
   return metaRecord(meta)?.showPublic === '1'
 }
 
+function wantsSendPush(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
+  const m = metaRecord(meta)
+  if (!m) return false
+  if (m.sendPush === '0' || m.sendPush === false || m.sendPush === 0) return false
+  if (m.sendPush === '1' || m.sendPush === true || m.sendPush === 1) return true
+  if ('sendPush' in m) return true
+  const sendTo = m.sendTo
+  return typeof sendTo === 'string' && sendTo.includes('push')
+}
+
 function isBirthdayNotice(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
   return metaRecord(meta)?.kind === 'birthday'
 }
@@ -353,18 +363,15 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
     meta: { announcementId: row.id, kind, type, status, targetType, profileId: profileId || '' },
   })
 
-  // Background: push card subscribers only when the notice is public-facing.
-  // Backoffice-only notices stay in owner banner / inbox (no saver Web Push).
+  // Background Web Push:
+  // - showPublic + sendPush → subscribers / savers (public-facing)
+  // - sendPush without showPublic → owner/target profiles only (inbox/banner companion)
   try {
     const meta = input.meta ?? {}
     const showPublic = isShowPublic(meta)
-    const wantsPush =
-      showPublic &&
-      typeof meta === 'object' &&
-      meta !== null &&
-      ('sendPush' in meta || (meta.sendTo && String(meta.sendTo).includes('push')))
+    const pushRequested = wantsSendPush(meta)
 
-    if (wantsPush) {
+    if (pushRequested) {
       void (async () => {
         try {
           const profileIds = new Set<string>()
@@ -389,8 +396,9 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
             for (const p of owned) profileIds.add(p.id)
           }
 
-          // If global, send to all profiles that have active push subscriptions
-          if (targetType === 'all') {
+          // Global public announcements: blast to every active push subscription.
+          // Inbox-only globals still resolve via target emails / profileId above.
+          if (showPublic && targetType === 'all') {
             const subs = await prisma.pushSubscription.findMany({
               where: { isActive: true },
               select: { profileId: true },
@@ -408,8 +416,8 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
             await pushService.sendToProfile(pid, payloadPartial)
           }
 
-          // Also email people who saved / contacted this card (specific public notices).
-          if (profileId && targetType === 'specific') {
+          // Guest email blast only for public-facing specific card notices.
+          if (showPublic && profileId && targetType === 'specific') {
             const [guests, contacts] = await Promise.all([
               prisma.guestUserData.findMany({
                 where: { profileId, email: { not: null } },

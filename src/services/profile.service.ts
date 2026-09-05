@@ -3744,7 +3744,8 @@ async function writeTeamNoticeViewerState(opts: {
   profileId: string
   noticeId: string
   viewer: PublicViewerIdentity
-  suppressUntil: Date
+  dismissedAt?: Date | null
+  suppressUntil?: Date | null
 }) {
   const viewerState = (
     prisma as unknown as {
@@ -3766,13 +3767,14 @@ async function writeTeamNoticeViewerState(opts: {
       profileId: opts.profileId,
       visitorId: opts.viewer.visitorId,
       browserKey: opts.viewer.browserKey,
-      suppressUntil: opts.suppressUntil,
+      dismissedAt: opts.dismissedAt ?? null,
+      suppressUntil: opts.suppressUntil ?? null,
     },
     update: {
       profileId: opts.profileId,
       visitorId: opts.viewer.visitorId ?? undefined,
-      dismissedAt: null,
-      suppressUntil: opts.suppressUntil,
+      dismissedAt: opts.dismissedAt === undefined ? undefined : opts.dismissedAt,
+      suppressUntil: opts.suppressUntil === undefined ? undefined : opts.suppressUntil,
     },
   })
 }
@@ -4114,15 +4116,16 @@ const dismissPublicTeamNotice = async (opts: { profileId: string; noticeId: stri
   })
   if (!existing) throw new AppError(404, 'Notice not found')
 
-  const suppressUntil = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  // Permanent dismiss (same contract as global public announcements) — not a 24h snooze.
   await writeTeamNoticeViewerState({
     profileId,
     noticeId,
     viewer: opts.viewer,
-    suppressUntil,
+    dismissedAt: new Date(),
+    suppressUntil: null,
   })
 
-  return { id: noticeId, dismissed: true, suppressUntil: suppressUntil.toISOString() }
+  return { id: noticeId, dismissed: true }
 }
 
 export type PortfolioMemberRow = {
