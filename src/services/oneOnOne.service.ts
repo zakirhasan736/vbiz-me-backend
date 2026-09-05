@@ -18,6 +18,20 @@ import pushService from './push.service'
 
 type Actor = { id: string; email: string; name?: string | null; role?: string | null }
 
+/** Production must run `prisma generate` after schema changes or delegates are undefined. */
+function assertOneOnOneClientReady() {
+  const client = prisma as unknown as {
+    oneOnOneRequest?: { findFirst: unknown }
+    oneOnOneMeeting?: { findFirst: unknown }
+  }
+  if (!client.oneOnOneRequest || !client.oneOnOneMeeting) {
+    throw new AppError(
+      503,
+      '1-on-1 is not ready on this server. Run `npx prisma generate` and `npx prisma migrate deploy`, then restart the API.'
+    )
+  }
+}
+
 type RequestRow = {
   id: string
   profileId: string
@@ -290,6 +304,7 @@ async function createOrUpdateZohoEvent(opts: {
 }
 
 const createPublicRequest = async (input: CreatePublicRequestInput) => {
+  assertOneOnOneClientReady()
   const profile = await resolveCardOwnerUser(input.profileId)
   const guestName = input.guestName.trim()
   const guestEmail = normalizeEmail(input.guestEmail)
@@ -343,6 +358,7 @@ const createPublicRequest = async (input: CreatePublicRequestInput) => {
 }
 
 const listOpenRequests = async (actor: Actor, query: ListOpenRequestsQuery) => {
+  assertOneOnOneClientReady()
   await assertCanListOwnerRequests(actor)
 
   const isStaff = isStaffRole(actor.role)
