@@ -1,7 +1,9 @@
 import config from '../configs/config'
+import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import announcementService from './announcement.service'
+import crmEventService from './crmEvent.service'
 import pushService from './push.service'
 
 type SystemActor = {
@@ -51,6 +53,99 @@ async function notifyEmails(emails: string[], title: string, body: string, meta:
   }
 }
 
+function escapeHtml(value: string): string {
+  const entities: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  }
+  return value.replace(/[&<>"']/g, (character) => entities[character] || character)
+}
+
+function crmEventEmailHtml(input: {
+  recipientName: string
+  type: string
+  host: string
+  date: string
+  time: string
+  attachments: { url: string; fileName: string; resourceType?: string | null }[]
+}) {
+  const attachmentBlock = input.attachments.length
+    ? [
+        '<p style="margin:16px 0 8px"><strong>Attachments</strong></p>',
+        '<ul style="padding-left:18px;margin:0">',
+        ...input.attachments.map(
+          (file) =>
+            `<li style="margin:4px 0"><a href="${escapeHtml(file.url)}" style="color:#be123c;text-decoration:none">${escapeHtml(file.fileName)}</a>${
+              file.resourceType
+                ? ` <span style="color:#64748b;font-size:12px">(${escapeHtml(file.resourceType)})</span>`
+                : ''
+            }</li>`
+        ),
+        '</ul>',
+      ].join('')
+    : ''
+
+  return [
+    '<div style="margin:0 auto;max-width:640px;font-family:Arial,sans-serif;color:#172033;line-height:1.6">',
+    `<p>Hello ${escapeHtml(input.recipientName)},</p>`,
+    `<p>You have a scheduled CRM event from vBiz Me.</p>`,
+    '<div style="margin:20px 0;padding:16px 20px;border:1px solid #ffe4e6;border-radius:12px;background:#fff1f2">',
+    `<p style="margin:0 0 8px"><strong>${escapeHtml(input.type)}</strong></p>`,
+    `<p style="margin:0 0 4px">For: ${escapeHtml(input.host)}</p>`,
+    `<p style="margin:0 0 4px">Date: ${escapeHtml(input.date)}</p>`,
+    `<p style="margin:0">Time: ${escapeHtml(input.time)}</p>`,
+    attachmentBlock,
+    '</div>',
+    '<p style="margin-top:24px">Regards,<br><strong>vBiz.me Team</strong></p>',
+    '</div>',
+  ].join('')
+}
+
+async function resolveProfileEmails(profileId: string | null | undefined): Promise<{
+  emails: string[]
+  displayName: string | null
+}> {
+  if (!profileId) return { emails: [], displayName: null }
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: {
+      name: true,
+      email: true,
+      user: { select: { email: true, name: true } },
+      companyUser: { select: { email: true } },
+    },
+  })
+  if (!profile) return { emails: [], displayName: null }
+  const emails = [
+    ...new Set(
+      [profile.user?.email, profile.email, profile.companyUser?.email]
+        .map((e) => e?.trim().toLowerCase())
+        .filter((e): e is string => Boolean(e))
+    ),
+  ]
+  return {
+    emails,
+    displayName: profile.user?.name?.trim() || profile.name?.trim() || null,
+  }
+}
+
+function parseGroupProfileIds(value: unknown): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) return value.map(String).filter(Boolean)
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 async function processWorkNoteReminders(leadMinutes: number) {
   const now = new Date()
   const windowEnd = new Date(now.getTime() + leadMinutes * 60 * 1000)
@@ -79,16 +174,16 @@ async function processWorkNoteReminders(leadMinutes: number) {
 
     await notifyEmails(
       emails,
-      overdue ? `Overdue work note: ${note.title}` : `Work note reminder: ${note.title}`,
+      overdue ? `Overdue note: ${note.title}` : `Note reminder: ${note.title}`,
       overdue
-        ? `"${note.title}" was due ${dueLabel}. Open CRM Work Notes to update it.`
-        : `"${note.title}" is due ${dueLabel}. Open CRM Work Notes to continue.`,
+        ? `"${note.title}" was due ${dueLabel}. Open CRM Notes to update it.`
+        : `"${note.title}" is due ${dueLabel}. Open CRM Notes to continue.`,
       { workNoteId: note.id, href: '/crm' }
     )
 
     if (note.profileId) {
       pushService.notifyProfileUpdate(note.profileId, {
-        title: overdue ? 'Overdue work note' : 'Work note reminder',
+        title: overdue ? 'Overdue note' : 'Note reminder',
         body: note.title,
         type: 'event_updates',
       })
@@ -149,10 +244,102 @@ async function processMeetingReminders(leadMinutes: number) {
   }
 }
 
+async function processCrmEventReminders(leadMinutes: number) {
+  const now = new Date()
+  const windowEnd = new Date(now.getTime() + leadMinutes * 60 * 1000)
+
+  const events = await prisma.crmEvent.findMany({
+    where: {
+      status: 'Scheduled',
+      reminderSentAt: null,
+      startsAt: { gte: now, lte: windowEnd },
+    },
+    take: 50,
+  })
+
+  for (const event of events) {
+    const attachments = crmEventService.parseAttachments(event.attachments)
+    const emails = new Set<string>()
+    let displayName = event.recipientName?.trim() || event.host
+
+    if (event.recipientEmail?.trim()) {
+      emails.add(event.recipientEmail.trim().toLowerCase())
+    }
+
+    if (event.scope === 'group') {
+      const ids = parseGroupProfileIds(event.groupProfileIds)
+      for (const profileId of ids) {
+        const resolved = await resolveProfileEmails(profileId)
+        for (const email of resolved.emails) emails.add(email)
+        if (!event.recipientName && resolved.displayName) displayName = resolved.displayName
+      }
+    } else if (event.profileId) {
+      const resolved = await resolveProfileEmails(event.profileId)
+      for (const email of resolved.emails) emails.add(email)
+      if (!event.recipientName && resolved.displayName) displayName = resolved.displayName
+    }
+
+    const recipientList = [...emails]
+    const attachmentSummary = attachments.length
+      ? ` Includes ${attachments.length} attachment${attachments.length === 1 ? '' : 's'}.`
+      : ''
+
+    await notifyEmails(
+      recipientList,
+      `CRM event: ${event.type}`,
+      `${event.type} for ${event.host} is scheduled at ${event.date} ${event.time}.${attachmentSummary}`,
+      { crmEventId: event.id, href: '/crm' }
+    )
+
+    if (config.MAIL_ADDRESS && config.MAIL_PASS) {
+      const html = crmEventEmailHtml({
+        recipientName: displayName || 'there',
+        type: event.type,
+        host: event.host,
+        date: event.date,
+        time: event.time,
+        attachments,
+      })
+      const subject = `${event.type} — ${event.date} ${event.time}`
+      for (const email of recipientList) {
+        void authUtils
+          .sendEmail({
+            receiverMail: email,
+            subject,
+            html,
+          })
+          .catch((error) => logger.error('CRM event reminder email failed', { error, email, crmEventId: event.id }))
+      }
+    }
+
+    if (event.profileId) {
+      pushService.notifyProfileUpdate(event.profileId, {
+        title: `CRM event: ${event.type}`,
+        body: `${event.date} ${event.time}`,
+        type: 'event_updates',
+      })
+    } else if (event.scope === 'group') {
+      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) {
+        pushService.notifyProfileUpdate(profileId, {
+          title: `CRM event: ${event.type}`,
+          body: `${event.date} ${event.time}`,
+          type: 'event_updates',
+        })
+      }
+    }
+
+    await prisma.crmEvent.update({
+      where: { id: event.id },
+      data: { reminderSentAt: now },
+    })
+  }
+}
+
 export async function runCrmReminders() {
   const leadMinutes = config.CRM_REMINDER_CRON.LEAD_MINUTES
   await processWorkNoteReminders(leadMinutes)
   await processMeetingReminders(leadMinutes)
+  await processCrmEventReminders(leadMinutes)
 }
 
 const crmReminderService = {

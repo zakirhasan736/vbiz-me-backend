@@ -23,7 +23,7 @@ const list = catchAsyncError(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: 200,
-    message: 'Work notes fetched',
+    message: 'Notes fetched',
     data: data.items,
     totalDoc: data.total,
     meta: listMeta(data.skip, data.limit, data.total),
@@ -35,7 +35,7 @@ const getOne = catchAsyncError(async (req, res) => {
   const access = await crmService.resolveCrmAccess(actor)
   const { id } = WorkNoteZodSchema.idParam.parse(req.params)
   const data = await workNoteService.getWorkNote(actor, access, id)
-  sendResponse(res, { success: true, statusCode: 200, message: 'Work note fetched', data })
+  sendResponse(res, { success: true, statusCode: 200, message: 'Note fetched', data })
 })
 
 const create = catchAsyncError(async (req, res) => {
@@ -43,7 +43,7 @@ const create = catchAsyncError(async (req, res) => {
   const access = await crmService.resolveCrmAccess(actor)
   const body = WorkNoteZodSchema.createBody.parse(req.body)
   const data = await workNoteService.createWorkNote(actor, access, body as unknown as Record<string, unknown>)
-  sendResponse(res, { success: true, statusCode: 201, message: 'Work note created', data })
+  sendResponse(res, { success: true, statusCode: 201, message: 'Note created', data })
 })
 
 const update = catchAsyncError(async (req, res) => {
@@ -52,7 +52,7 @@ const update = catchAsyncError(async (req, res) => {
   const { id } = WorkNoteZodSchema.idParam.parse(req.params)
   const body = WorkNoteZodSchema.updateBody.parse(req.body)
   const data = await workNoteService.updateWorkNote(actor, access, id, body as unknown as Record<string, unknown>)
-  sendResponse(res, { success: true, statusCode: 200, message: 'Work note updated', data })
+  sendResponse(res, { success: true, statusCode: 200, message: 'Note updated', data })
 })
 
 const reorder = catchAsyncError(async (req, res) => {
@@ -60,7 +60,7 @@ const reorder = catchAsyncError(async (req, res) => {
   const access = await crmService.resolveCrmAccess(actor)
   const body = WorkNoteZodSchema.reorderBody.parse(req.body)
   const data = await workNoteService.reorderWorkNotes(actor, access, body.items)
-  sendResponse(res, { success: true, statusCode: 200, message: 'Work notes reordered', data })
+  sendResponse(res, { success: true, statusCode: 200, message: 'Notes reordered', data })
 })
 
 const remove = catchAsyncError(async (req, res) => {
@@ -68,7 +68,7 @@ const remove = catchAsyncError(async (req, res) => {
   const access = await crmService.resolveCrmAccess(actor)
   const { id } = WorkNoteZodSchema.idParam.parse(req.params)
   const data = await workNoteService.deleteWorkNote(actor, access, id)
-  sendResponse(res, { success: true, statusCode: 200, message: 'Work note deleted', data })
+  sendResponse(res, { success: true, statusCode: 200, message: 'Note deleted', data })
 })
 
 const workNoteController = {

@@ -220,7 +220,10 @@ export async function createWorkNote(actor: CrmActor, access: CrmAccessContext, 
 
   const startsAt = parseDate(body.startsAt)
   const dueAt = parseDate(body.dueAt)
-  const remindAt = parseDate(body.remindAt) || (dueAt ? new Date(dueAt.getTime() - 30 * 60 * 1000) : null)
+  if (!startsAt || !dueAt) {
+    throw new AppError(400, 'Start and due dates are required')
+  }
+  const remindAt = parseDate(body.remindAt) || new Date(dueAt.getTime() - 30 * 60 * 1000)
 
   let companyUserId: string | null = null
   let ownerUserId: string | null = actor.id
@@ -312,11 +315,13 @@ export async function updateWorkNote(
 
   if ('startsAt' in body) {
     const v = parseDate(body.startsAt)
-    if (v !== undefined) data.startsAt = v
+    if (v === null || v === undefined) throw new AppError(400, 'Start date is required')
+    data.startsAt = v
   }
   if ('dueAt' in body) {
     const v = parseDate(body.dueAt)
-    if (v !== undefined) data.dueAt = v
+    if (v === null || v === undefined) throw new AppError(400, 'Due date is required')
+    data.dueAt = v
   }
   if ('remindAt' in body) {
     const v = parseDate(body.remindAt)

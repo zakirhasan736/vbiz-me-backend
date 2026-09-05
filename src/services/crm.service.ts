@@ -20,6 +20,7 @@ import {
 } from '../utils/crmScope'
 import { prisma } from '../utils/prisma'
 import { mapGuestSave, mergeAdminMeta, type AdminLeadRow } from './adminLeads.service'
+import crmEventService from './crmEvent.service'
 import { assertUserPackageAccess } from './entitlement.service'
 import {
   countOpenForActor as countOpenWorkNotesForActor,
@@ -32,7 +33,7 @@ import {
 
 export type { CrmAccessContext, CrmActor, CrmScopeKind }
 
-export type CrmLeadRow = AdminLeadRow
+export type CrmLeadRow = AdminLeadRow & { notesCount: number }
 
 export async function resolveCrmAccess(actor: CrmActor): Promise<CrmAccessContext> {
   const kind = resolveCrmScopeKind(actor.role)
@@ -225,11 +226,22 @@ export async function listCrmLeads(
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
-      include: { profile: profileInclude },
+      include: {
+        profile: profileInclude,
+        _count: { select: { leadNotes: true } },
+      },
     }),
   ])
 
-  return { items: rows.map(mapGuestSave), total, skip, limit }
+  return {
+    items: rows.map((row) => ({
+      ...mapGuestSave(row),
+      notesCount: row._count.leadNotes,
+    })),
+    total,
+    skip,
+    limit,
+  }
 }
 
 export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unknown>): Promise<CrmLeadRow> {
@@ -265,7 +277,7 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
     include: { profile: profileInclude },
   })
 
-  return mapGuestSave(row)
+  return { ...mapGuestSave(row), notesCount: 0 }
 }
 
 async function loadScopedGuest(actor: CrmActor, id: string) {
@@ -289,9 +301,12 @@ export async function patchCrmLead(
   const updated = await prisma.guestUserData.update({
     where: { id },
     data: { meta: mergeAdminMeta(existing.meta, body) },
-    include: { profile: profileInclude },
+    include: {
+      profile: profileInclude,
+      _count: { select: { leadNotes: true } },
+    },
   })
-  return mapGuestSave(updated)
+  return { ...mapGuestSave(updated), notesCount: updated._count.leadNotes }
 }
 
 export async function deleteCrmLead(actor: CrmActor, id: string) {
@@ -433,8 +448,16 @@ export async function searchSchedulePeople(
   return results.slice(0, limit)
 }
 
+export type CrmScheduleCalendarAttachment = {
+  url: string
+  fileName: string
+  mimeType?: string | null
+  publicId?: string | null
+  resourceType?: 'image' | 'video' | 'audio' | null
+}
+
 export type CrmScheduleCalendarItem = {
-  kind: 'meeting' | 'work_note'
+  kind: 'meeting' | 'work_note' | 'event'
   id: string
   zohoEventId?: string | null
   title: string
@@ -446,6 +469,7 @@ export type CrmScheduleCalendarItem = {
   status: string
   meetLink?: string | null
   notes?: string | null
+  attachments?: CrmScheduleCalendarAttachment[]
   scope?: string
   profileId?: string | null
   canManageMeeting: boolean
@@ -563,9 +587,10 @@ export async function getCrmScheduleCalendar(
     throw new AppError(400, 'Invalid from/to date range')
   }
 
-  const [meetings, workNotes] = await Promise.all([
+  const [meetings, workNotes, crmEvents] = await Promise.all([
     listMeetingsForScheduleFeed(access, fromBound, toBound),
     listWorkNotesByStartsAtRange(actor, access, query.from, query.to),
+    crmEventService.listCrmEventsByStartsAtRange(access, fromBound, toBound),
   ])
 
   const meetingItems: CrmScheduleCalendarItem[] = meetings.map((row) => ({
@@ -596,8 +621,8 @@ export async function getCrmScheduleCalendar(
         id: note.id,
         zohoEventId: null,
         title: note.title,
-        host: note.assigneeName || note.createdByName || 'Work note',
-        type: 'Work Note',
+        host: note.assigneeName || note.createdByName || 'Note',
+        type: 'Note',
         date,
         time,
         startsAt: note.startsAt!,
@@ -610,7 +635,31 @@ export async function getCrmScheduleCalendar(
       }
     })
 
-  const items = [...meetingItems, ...noteItems].sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt)))
+  const eventItems: CrmScheduleCalendarItem[] = crmEvents.map((row) => {
+    const attachments = crmEventService.parseAttachments(row.attachments)
+    return {
+      kind: 'event' as const,
+      id: row.id,
+      zohoEventId: row.googleEventId,
+      title: row.type,
+      host: row.host,
+      type: row.type,
+      date: row.date,
+      time: row.time,
+      startsAt: row.startsAt.toISOString(),
+      status: row.status,
+      meetLink: row.meetLink,
+      notes: attachments.length ? `${attachments.length} attachment${attachments.length === 1 ? '' : 's'}` : null,
+      attachments,
+      scope: row.scope,
+      profileId: row.profileId,
+      canManageMeeting: true,
+    }
+  })
+
+  const items = [...meetingItems, ...noteItems, ...eventItems].sort((a, b) =>
+    String(a.startsAt).localeCompare(String(b.startsAt))
+  )
 
   return { items, zohoError: null }
 }

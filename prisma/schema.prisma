@@ -74,8 +74,10 @@ model User {
   createdPosts         Post[]                @relation("PostCreatedBy")
   updatedPosts         Post[]                @relation("PostUpdatedBy")
   createdMeetings      Meeting[]             @relation("MeetingCreatedBy")
+  createdCrmEvents     CrmEvent[]            @relation("CrmEventCreatedBy")
   assignedWorkNotes    WorkNote[]            @relation("WorkNoteAssignee")
   createdWorkNotes     WorkNote[]            @relation("WorkNoteCreatedBy")
+  createdLeadNotes     LeadNote[]            @relation("LeadNoteCreatedBy")
   auditLogs            AuditLog[]            @relation("AuditLogActor")
   supportTickets       SupportTicket[]       @relation("SupportTicketCreatedBy")
   announcements        Announcement[]        @relation("AnnouncementCreatedBy")
@@ -364,6 +366,7 @@ model Profile {
   menus               Menu[]
   attachments         Attachment[]
   meetings            Meeting[]
+  crmEvents           CrmEvent[]
   workNotes           WorkNote[]
   auditLogs           AuditLog[]
   birthdayWishLogs    BirthdayWishLog[]
@@ -1537,6 +1540,7 @@ model GuestUserData {
   meta      Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  leadNotes LeadNote[]
 
   @@index([profileId])
   @@index([profileId, createdAt])
@@ -1603,6 +1607,64 @@ model Meeting {
   @@index([type])
   @@index([scope])
   @@index([reminderSentAt, startsAt])
+}
+
+/** CRM wish / outreach events (separate from vCard ProfileEvent and Meeting). */
+model CrmEvent {
+  id              String    @id @default(cuid())
+  host            String
+  type            String
+  date            String
+  time            String
+  startsAt        DateTime
+  status          String    @default("Scheduled")
+  /** global | group | one_to_one */
+  scope           String    @default("one_to_one")
+  profileId       String?
+  profile         Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  /** Profile ids included in a group event (JSON string array). */
+  groupProfileIds Json?
+  /** [{ url, fileName, mimeType?, publicId?, resourceType? }] image|video|audio */
+  attachments     Json?
+  /** Selected card or saved-guest recipient for cron mail delivery. */
+  recipientEmail  String?
+  recipientName   String?
+  createdById     String?
+  createdBy       User?     @relation("CrmEventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  googleEventId   String?
+  meetLink        String?
+  reminderSentAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([startsAt])
+  @@index([profileId])
+  @@index([type])
+  @@index([scope])
+  @@index([reminderSentAt, startsAt])
+}
+
+/** Private follow-up notes on a CRM lead / guest save. Not WorkNotes. */
+model LeadNote {
+  id              String        @id @default(cuid())
+  guestUserDataId String
+  guestUserData   GuestUserData @relation(fields: [guestUserDataId], references: [id], onDelete: Cascade)
+  createdById     String
+  createdBy       User          @relation("LeadNoteCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  /** text | voice | voice_to_text */
+  kind            String
+  content         String?
+  audioUrl        String?
+  audioFileName   String?
+  audioMimeType   String?
+  startsAt        DateTime?
+  dueAt           DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([guestUserDataId, createdAt])
+  @@index([createdById])
 }
 
 model WorkNote {

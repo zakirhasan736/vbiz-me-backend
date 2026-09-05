@@ -3,6 +3,8 @@ import { WORK_NOTE_STATUSES } from '../services/workNote.service'
 
 const emptyToUndefined = (value: unknown) => (value === '' || value == null ? undefined : value)
 
+const requiredDate = z.string().trim().min(1, 'Date is required')
+
 const listQuery = z.object({
   q: z.preprocess(emptyToUndefined, z.string().trim().min(1).max(200).optional()),
   status: z.preprocess(emptyToUndefined, z.enum(WORK_NOTE_STATUSES).optional()),
@@ -17,8 +19,8 @@ const createBody = z.object({
   assigneeUserId: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
   profileId: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
   leadRef: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
-  startsAt: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
-  dueAt: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  startsAt: requiredDate,
+  dueAt: requiredDate,
   remindAt: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
 })
 
@@ -31,11 +33,19 @@ const updateBody = z
     assigneeUserId: z.string().trim().min(1).nullable().optional(),
     profileId: z.string().trim().min(1).nullable().optional(),
     leadRef: z.string().trim().min(1).nullable().optional(),
-    startsAt: z.string().trim().min(1).nullable().optional(),
-    dueAt: z.string().trim().min(1).nullable().optional(),
+    startsAt: requiredDate.optional(),
+    dueAt: requiredDate.optional(),
     remindAt: z.string().trim().min(1).nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field is required' })
+  .superRefine((value, ctx) => {
+    if ('startsAt' in value && (value.startsAt == null || !String(value.startsAt).trim())) {
+      ctx.addIssue({ code: 'custom', path: ['startsAt'], message: 'Start date is required' })
+    }
+    if ('dueAt' in value && (value.dueAt == null || !String(value.dueAt).trim())) {
+      ctx.addIssue({ code: 'custom', path: ['dueAt'], message: 'Due date is required' })
+    }
+  })
 
 const reorderBody = z.object({
   items: z
