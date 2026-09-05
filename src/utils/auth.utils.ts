@@ -255,6 +255,9 @@ const isUserAccessible = (user: {
   return status === 'ACTIVE' || status === 'PAUSED' || status === 'SUSPENDED'
 }
 
+const EMAIL_LOGO_CID = 'vbiz-logo'
+const EMAIL_LOGO_PATH = join(__dirname, '../assets/email/logo-vbizme.png')
+
 const readTemplate = (templateName: string): string => {
   return readFileSync(join(__dirname, '../templates', templateName), 'utf-8')
 }
@@ -265,6 +268,12 @@ const applyTemplateVars = (template: string, vars: Record<string, string>) => {
     template
   )
 }
+
+const brandLogoAttachment = (): { filename: string; path: string; cid: string } => ({
+  filename: 'logo-vbizme.png',
+  path: EMAIL_LOGO_PATH,
+  cid: EMAIL_LOGO_CID,
+})
 
 const sendEmail = async (data: {
   html: string
@@ -289,12 +298,19 @@ const sendEmail = async (data: {
     requireTLS: !config.MAIL_SMTP.SECURE,
   })
 
+  const attachments = [...(data.attachments ?? [])]
+  const needsBrandLogo =
+    data.html.includes(`cid:${EMAIL_LOGO_CID}`) && !attachments.some((a) => a.cid === EMAIL_LOGO_CID)
+  if (needsBrandLogo) {
+    attachments.push(brandLogoAttachment())
+  }
+
   return transporter.sendMail({
     from: config.ZOHO_EMAIL_USER,
     to: data.receiverMail,
     subject: data.subject,
     html: data.html,
-    attachments: data.attachments,
+    attachments: attachments.length ? attachments : undefined,
   })
 }
 
