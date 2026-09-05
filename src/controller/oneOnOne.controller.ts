@@ -34,7 +34,7 @@ const scheduleMeeting = catchAsyncError(async (req, res) => {
   const body = OneOnOneZodSchema.scheduleMeeting.parse(req.body)
   const actor = await resolveActor(req.user.id)
   const data = await oneOnOneService.scheduleMeetingFromRequest(actor, body)
-  sendResponse(res, { success: true, statusCode: 200, message: 'Meeting scheduled', data })
+  sendResponse(res, { success: true, statusCode: 200, message: 'Time options sent to guest', data })
 })
 
 const rescheduleMeeting = catchAsyncError(async (req, res) => {
@@ -82,6 +82,18 @@ const getMeetingByToken = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Meeting details fetched', data })
 })
 
+const confirmGuestSlot = catchAsyncError(async (req, res) => {
+  const requestId = param(req.params.requestId)
+  const body = OneOnOneZodSchema.confirmGuestSlot.parse(req.body)
+  const data = await oneOnOneService.confirmGuestSlot(requestId, body)
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: data.alreadyConfirmed ? 'Meeting already confirmed' : 'Meeting confirmed',
+    data,
+  })
+})
+
 const oneOnOneController = {
   createPublicRequest,
   listOpenRequests,
@@ -92,6 +104,7 @@ const oneOnOneController = {
   listOwnerMeetings,
   getMeetingForGuest,
   getMeetingByToken,
+  confirmGuestSlot,
 }
 
 export default oneOnOneController

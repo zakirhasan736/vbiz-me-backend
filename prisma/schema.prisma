@@ -1609,6 +1609,7 @@ model Meeting {
 /**
  * Public 1-on-1 guest request. Parent of one_on_one_meetings.
  * Business request stays intact even when scheduling fails.
+ * Statuses: open | awaiting_guest | scheduled | cancelled | completed
  */
 model OneOnOneRequest {
   id               String   @id @default(cuid())
@@ -1618,21 +1619,44 @@ model OneOnOneRequest {
   guestEmail       String
   guestPhone       String?
   message          String?
-  status           String   @default("open") // open | scheduled | cancelled | completed
+  status           String   @default("open")
   cardOwnerUserId  String?
   cardOwnerUser    User?    @relation("OneOnOneCardOwner", fields: [cardOwnerUserId], references: [id], onDelete: SetNull)
   corporateId      String? // company owner user id (nullable)
   createdByUserId  String?
   createdByUser    User?    @relation("OneOnOneRequestCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  proposedTitle    String?
+  proposedDescription String?
+  proposedTimezone String?
+  proposedDurationMinutes Int?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   meeting          OneOnOneMeeting?
+  proposedSlots    OneOnOneProposedSlot[]
 
   @@index([profileId, status])
   @@index([guestEmail])
   @@index([status])
   @@index([cardOwnerUserId])
+}
+
+/**
+ * Owner-proposed date/time options. Guest picks one; that creates the meeting.
+ */
+model OneOnOneProposedSlot {
+  id               String   @id @default(cuid())
+  requestId        String
+  request          OneOnOneRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  date             String // YYYY-MM-DD
+  startTime        String // HH:mm (24h)
+  durationMinutes  Int      @default(30)
+  timezone         String
+  status           String   @default("available") // available | selected | discarded
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([requestId, status])
 }
 
 /**

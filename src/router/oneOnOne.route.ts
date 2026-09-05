@@ -42,5 +42,10 @@ router.post(
 /** Guest deep-link (tokenized) — public. */
 router.get('/guest/token/:token', oneOnOneController.getMeetingByToken)
 router.get('/guest/:requestId', oneOnOneController.getMeetingForGuest)
+router.post(
+  '/guest/:requestId/confirm-slot',
+  validSchema(OneOnOneZodSchema.confirmGuestSlot),
+  oneOnOneController.confirmGuestSlot
+)
 
 export default router
