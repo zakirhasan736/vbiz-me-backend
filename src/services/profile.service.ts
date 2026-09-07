@@ -2194,8 +2194,8 @@ const replaceCollection = async <T extends Record<string, unknown>>(
                 : typeof mapped.imageUrl === 'string'
                   ? mapped.imageUrl
                   : null,
-            attachmentUrl: typeof mapped.attachmentUrl === 'string' ? mapped.attachmentUrl : null,
-            attachmentName: typeof mapped.attachmentName === 'string' ? mapped.attachmentName : null,
+            attachmentUrl: null,
+            attachmentName: null,
           },
         })
       }

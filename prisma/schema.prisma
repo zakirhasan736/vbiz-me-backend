@@ -545,6 +545,10 @@ model Gallery {
   description    String?
   url            String?
   featuredImage  String?
+  /**
+   * Deprecated: secondary portfolio attachments are no longer used.
+   * Columns kept for legacy rows; writes always null them.
+   */
   attachmentUrl  String?
   attachmentName String?
   status         String    @default("1")
@@ -1281,7 +1285,8 @@ model Portfolio {
   url            String?
   imageUrl       String?
   /**
-   * Secondary image/video attachment (admin “Attachments (Images/Video)”).
+   * Deprecated: secondary portfolio attachments are no longer used.
+   * Columns kept for legacy rows; writes always null them.
    */
   attachmentUrl  String?
   attachmentName String?
