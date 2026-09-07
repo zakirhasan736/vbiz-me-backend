@@ -221,8 +221,6 @@ const serializeDedicatedRow = (tab: TabRegistryEntry, row: DirectRow) => {
     row.metas && typeof row.metas === 'object' && !Array.isArray(row.metas)
       ? { ...(row.metas as Record<string, unknown>) }
       : {}
-  if (row.attachmentUrl) metas.attachmentUrl = row.attachmentUrl
-  if (row.attachmentName) metas.attachmentName = row.attachmentName
   if (row.rating != null) metas.rating = row.rating
   return serializeTabItem({
     id: row.id,
@@ -251,11 +249,6 @@ const listModel = (tab: TabRegistryEntry): any => {
 }
 
 const galleryData = (input: TabItemInput) => {
-  const metas = input.metas || {}
-  const attachments =
-    metas.attachments && typeof metas.attachments === 'object' && !Array.isArray(metas.attachments)
-      ? (metas.attachments as Record<string, unknown>)
-      : {}
   return {
     title: str(input.title),
     description: str(input.description),
@@ -264,8 +257,9 @@ const galleryData = (input: TabItemInput) => {
     status: statusOf(input.status),
     ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
     metas: input.metas != null ? (input.metas as Prisma.InputJsonValue) : undefined,
-    attachmentUrl: str(metas.attachmentUrl ?? attachments.url),
-    attachmentName: str(metas.attachmentName ?? attachments.name),
+    // Secondary portfolio attachments removed — keep columns null.
+    attachmentUrl: null,
+    attachmentName: null,
   }
 }
 
@@ -314,22 +308,8 @@ const listUpdateData = (tab: TabRegistryEntry, input: TabItemInput) => {
 
 const galleryUpdateData = (input: TabItemInput) => ({
   ...genericUpdateData(input),
-  ...(input.metas?.attachmentUrl !== undefined ||
-  (input.metas?.attachments && typeof input.metas.attachments === 'object')
-    ? {
-        attachmentUrl: str(
-          input.metas?.attachmentUrl ?? (input.metas?.attachments as Record<string, unknown> | undefined)?.url
-        ),
-      }
-    : {}),
-  ...(input.metas?.attachmentName !== undefined ||
-  (input.metas?.attachments && typeof input.metas.attachments === 'object')
-    ? {
-        attachmentName: str(
-          input.metas?.attachmentName ?? (input.metas?.attachments as Record<string, unknown> | undefined)?.name
-        ),
-      }
-    : {}),
+  attachmentUrl: null,
+  attachmentName: null,
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -628,11 +608,13 @@ const updateTabItem = async (
                   ...(input.status !== undefined ? { status: statusOf(input.status) } : {}),
                 }
               : listUpdateData(tab, input)
+    // Singleton tables (WhyChooseUs / AboutMe) have no sortOrder column.
+    const supportsSortOrder = tab.storage !== 'about_me' && !isSingletonSectionStorage(tab.storage)
     const row = await model.update({
       where: { id: itemId },
       data: {
         ...base,
-        ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
+        ...(supportsSortOrder && typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
       },
     })
     return serializeDedicatedRow(tab, row)

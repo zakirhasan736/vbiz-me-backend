@@ -1,5 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
+import { crmOriginFromMeta, guestSaveDashboardVisibleWhere } from '../utils/crmLeadOrigin'
 import { prisma } from '../utils/prisma'
 import type { ListLeadsQuery, PatchLeadBody } from '../zodValidation/adminLeads.zod'
 
@@ -35,6 +36,7 @@ export type AdminLeadRow = {
   vCardCompany: string
   kind: 'guest_save' | 'guest_message'
   consent: boolean
+  origin: 'guest' | 'crm_external'
   metadata: LeadMetadata
 }
 
@@ -85,7 +87,7 @@ function readAdminMeta(meta: unknown): AdminMeta {
   }
 }
 
-function mergeAdminMeta(existingMeta: unknown, patch: PatchLeadBody): Prisma.InputJsonValue {
+export function mergeAdminMeta(existingMeta: unknown, patch: PatchLeadBody): Prisma.InputJsonValue {
   const root = { ...asRecord(existingMeta) }
   const admin = { ...asRecord(root.admin) }
 
@@ -135,7 +137,7 @@ function cardIdentityFromProfile(profile: ProfileSelect) {
   }
 }
 
-function mapGuestSave(row: {
+export function mapGuestSave(row: {
   id: string
   fullName: string | null
   phone: string | null
@@ -164,6 +166,7 @@ function mapGuestSave(row: {
     ...cardIdentityFromProfile(row.profile),
     kind: 'guest_save',
     consent: true,
+    origin: crmOriginFromMeta(row.meta),
     metadata: metadataFromMeta(row.meta),
   }
 }
@@ -197,6 +200,7 @@ function mapGuestNote(row: {
     ...cardIdentityFromProfile(row.profile),
     kind: 'guest_message',
     consent: true,
+    origin: 'guest',
     metadata: Object.keys(meta).length ? metadataFromMeta(row.meta) : { ...EMPTY_METADATA },
   }
 }
@@ -275,6 +279,7 @@ const listSaves = async (query: ListLeadsQuery): Promise<AdminLeadsPage> => {
   const limit = Math.min(100, Math.max(1, query.limit ?? 50))
   const tokens = searchTokens(query.q)
   const where: Prisma.GuestUserDataWhereInput = {
+    ...guestSaveDashboardVisibleWhere(),
     ...(query.profileId ? { profileId: query.profileId } : {}),
     ...(tokens.length
       ? {

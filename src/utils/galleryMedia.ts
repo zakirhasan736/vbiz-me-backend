@@ -6,16 +6,12 @@ type GalleryLike = {
   legacyPostId?: number | null
   legacyPortfolioId?: number | null
   featuredImage?: string | null
-  attachmentUrl?: string | null
-  attachmentName?: string | null
 }
 
 type PortfolioLike = {
   legacyId?: number | null
   title?: string | null
   imageUrl?: string | null
-  attachmentUrl?: string | null
-  attachmentName?: string | null
 }
 
 const titleKey = (value?: string | null) =>
@@ -23,7 +19,7 @@ const titleKey = (value?: string | null) =>
     .trim()
     .toLowerCase()
 
-/** Copy featured/attachment URLs from legacy Portfolio rows onto Gallery rows that only have titles. */
+/** Copy featured URLs from legacy Portfolio rows onto Gallery rows that only have titles. */
 export function fillMissingGalleryMedia<G extends GalleryLike, P extends PortfolioLike>(
   galleries: G[],
   portfolios: P[]
@@ -47,7 +43,7 @@ export function fillMissingGalleryMedia<G extends GalleryLike, P extends Portfol
   }
 
   return galleries.map((gallery) => {
-    if (gallery.featuredImage && gallery.attachmentUrl) return gallery
+    if (gallery.featuredImage) return gallery
 
     const linkedLegacyId =
       typeof gallery.legacyPortfolioId === 'number'
@@ -74,16 +70,12 @@ export function fillMissingGalleryMedia<G extends GalleryLike, P extends Portfol
     return {
       ...gallery,
       featuredImage: gallery.featuredImage || legacy.imageUrl || gallery.featuredImage,
-      attachmentUrl: gallery.attachmentUrl || legacy.attachmentUrl || gallery.attachmentUrl,
-      attachmentName: gallery.attachmentName || legacy.attachmentName || gallery.attachmentName,
     }
   })
 }
 
-export function galleryHasMedia(
-  rows: Array<{ featuredImage?: string | null; attachmentUrl?: string | null }>
-): boolean {
-  return rows.some((row) => Boolean(row.featuredImage || row.attachmentUrl))
+export function galleryHasMedia(rows: Array<{ featuredImage?: string | null }>): boolean {
+  return rows.some((row) => Boolean(row.featuredImage))
 }
 
 export type LiveGalleryRow = {

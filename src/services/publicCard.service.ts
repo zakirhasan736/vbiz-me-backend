@@ -16,8 +16,9 @@ import {
 } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
 import { readAboutMeFeaturedMediaUrl, readAboutMeMediaFocusY } from '../utils/aboutMeMediaFocus'
+import { PUBLIC_ATTACHMENT_KIND_ALIASES, sameMediaUrl, scoreAttachmentTypeName } from '../utils/attachmentTypeMatch'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
-import { listGalleriesForProfile } from '../utils/galleryMedia'
+import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
@@ -35,13 +36,7 @@ import { mergeSeoSettingsWithDefaults } from './seoMetadata.service'
 const RETURNING_SAVED_GUEST_EVENT = 'returning_saved_guest'
 const RETURNING_SAVED_GUEST_DELAY_MS = 3 * 24 * 60 * 60 * 1000
 
-const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
-  profile: ['profile picture', 'profile pic', 'profile_pic', 'avatar', 'profile image', 'profile'],
-  background: ['background video/image', 'background_media', 'bg_video', 'bg video', 'background video', 'background'],
-  intro: ['intro vcard video', 'intro video', 'profile video', 'intro'],
-  explainer: ['2d video explainer', '2d explainer', '2d video', 'video explainer', 'video_explainer'],
-  audio: ['background music', 'background audio', 'bg music', 'audio', 'music'],
-}
+const ATTACHMENT_TYPE_ALIASES = PUBLIC_ATTACHMENT_KIND_ALIASES
 
 type AttachmentWithType = Attachment & {
   attachmentType?: { name: string | null; legacyId?: number | null } | null
@@ -247,19 +242,6 @@ function isDurableMediaUrl(url?: string | null): boolean {
   return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('/')
 }
 
-function attachmentLabel(att: AttachmentWithType): string {
-  return `${att.attachmentType?.name || ''} ${att.docName || ''}`.toLowerCase()
-}
-
-function scoreAttachmentAlias(label: string, aliases: string[]): number {
-  let best = -1
-  for (const alias of aliases) {
-    if (!label.includes(alias)) continue
-    best = Math.max(best, alias.length)
-  }
-  return best
-}
-
 function resolveAttachmentUrl(att: AttachmentWithType | undefined, profileLegacyId?: number | null) {
   if (!att) return null
   return ensureAbsoluteMediaUrl(att.url, {
@@ -351,18 +333,25 @@ function pickAttachment(attachments: AttachmentWithType[], kind: keyof typeof AT
   let bestScore = -1
 
   for (const att of attachments) {
-    const label = attachmentLabel(att)
-    if (kind === 'background' && (label.includes('music') || /\baudio\b/.test(label))) continue
-    if (kind === 'intro' && (label.includes('music') || label.includes('background'))) continue
-    if (kind === 'audio' && !(label.includes('music') || label.includes('audio'))) continue
-    if (kind === 'profile' && (label.includes('intro') || label.includes('background') || label.includes('music'))) {
-      continue
+    const typeName = att.attachmentType?.name?.toLowerCase() || ''
+
+    // Exclude other media families by type name (never by filename alone).
+    if (kind === 'background') {
+      if (scoreAttachmentTypeName(typeName, ATTACHMENT_TYPE_ALIASES.audio) >= 0) continue
+      if (scoreAttachmentTypeName(typeName, ATTACHMENT_TYPE_ALIASES.intro) >= 0) continue
+    }
+    if (kind === 'intro') {
+      if (scoreAttachmentTypeName(typeName, ATTACHMENT_TYPE_ALIASES.audio) >= 0) continue
+      if (scoreAttachmentTypeName(typeName, ATTACHMENT_TYPE_ALIASES.background) >= 0) continue
+    }
+    if (kind === 'profile') {
+      if (scoreAttachmentTypeName(typeName, ATTACHMENT_TYPE_ALIASES.intro) >= 0) continue
+      if (scoreAttachmentTypeName(typeName, ATTACHMENT_TYPE_ALIASES.background) >= 0) continue
+      if (scoreAttachmentTypeName(typeName, ATTACHMENT_TYPE_ALIASES.audio) >= 0) continue
     }
 
-    const score = Math.max(
-      scoreAttachmentAlias(att.attachmentType?.name?.toLowerCase() || '', aliases),
-      scoreAttachmentAlias(att.docName?.toLowerCase() || '', aliases)
-    )
+    // Type name only — filenames must never classify Intro vs Background.
+    const score = scoreAttachmentTypeName(typeName, aliases)
     if (score > bestScore) {
       bestScore = score
       best = att
@@ -411,18 +400,48 @@ function resolveBackgroundMedia(
   legacyId?: number | null
 ): MediaBlock {
   const enabled = isSettingEnabled(settings, 'background_video_checkbox', 'bg_video_checkbox')
+  const introUrl = settings.intro_video_url?.trim() || ''
+
+  const resolveFromUrl = (fileUrl: string): MediaBlock => {
+    // Contaminated cards: identical intro+background URLs with only an Intro attachment → keep intro, clear wallpaper.
+    if (introUrl && sameMediaUrl(fileUrl, introUrl)) {
+      const introAtt = pickAttachment(attachments, 'intro')
+      const bgAtt = pickAttachment(attachments, 'background')
+      const introAttUrl = resolveAttachmentUrl(introAtt, legacyId)
+      const bgAttUrl = resolveAttachmentUrl(bgAtt, legacyId)
+      if (bgAttUrl && !sameMediaUrl(bgAttUrl, introUrl)) {
+        return toMediaBlockFromUrl(bgAttUrl, enabled)
+      }
+      if (introAttUrl && sameMediaUrl(introAttUrl, fileUrl) && !bgAttUrl) {
+        return emptyMediaBlock()
+      }
+      if (introAttUrl && sameMediaUrl(introAttUrl, fileUrl) && bgAttUrl && sameMediaUrl(bgAttUrl, introUrl)) {
+        return emptyMediaBlock()
+      }
+    }
+    return toMediaBlockFromUrl(fileUrl, enabled)
+  }
 
   if (Object.prototype.hasOwnProperty.call(settings, 'background_media_url')) {
     const fileUrl = settings.background_media_url?.trim()
-    if (fileUrl) return toMediaBlockFromUrl(fileUrl, enabled)
+    if (fileUrl) return resolveFromUrl(fileUrl)
     return emptyMediaBlock()
   }
 
   const fileUrl = settings.background_media_url?.trim()
-  if (fileUrl) return toMediaBlockFromUrl(fileUrl, enabled)
+  if (fileUrl) return resolveFromUrl(fileUrl)
 
   const fromAttachment = toMediaBlock(pickAttachment(attachments, 'background'), enabled, legacyId)
-  if (fromAttachment.url) return fromAttachment
+  if (fromAttachment.url) {
+    if (introUrl && sameMediaUrl(fromAttachment.url, introUrl)) {
+      const introAtt = pickAttachment(attachments, 'intro')
+      const introAttUrl = resolveAttachmentUrl(introAtt, legacyId)
+      if (introAttUrl && sameMediaUrl(introAttUrl, fromAttachment.url)) {
+        return emptyMediaBlock()
+      }
+    }
+    return fromAttachment
+  }
 
   return emptyMediaBlock()
 }
@@ -701,9 +720,13 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
       orderBy: { sortOrder: 'asc' },
     })
     .catch(() => [])
-  // Gallery is authoritative once this profile has Gallery rows.
-  // Legacy Portfolio is only a fallback when Gallery is truly empty.
-  const source = gallery.length ? gallery : legacyPortfolio
+  const filledGallery = fillMissingGalleryMedia(gallery, legacyPortfolio)
+  // Prefer Gallery when it has media; otherwise fall back to Portfolio images.
+  const source = galleryHasMedia(filledGallery)
+    ? filledGallery
+    : legacyPortfolio.length
+      ? legacyPortfolio
+      : filledGallery
   const portfolio = source.map((item) => {
     const featuredImage = 'featuredImage' in item ? item.featuredImage : item.imageUrl
     const legacyPostId = 'legacyPostId' in item && typeof item.legacyPostId === 'number' ? item.legacyPostId : null
@@ -720,10 +743,6 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
 
       // Backward-compatible frontend field.
       imageUrl: featuredImage,
-
-      // True secondary attachment only.
-      attachmentUrl: item.attachmentUrl,
-      attachmentName: item.attachmentName,
     }
   })
   return { ...card, portfolio, team_notices }
@@ -973,7 +992,15 @@ const getProfileAiData = async (profileId: string) => {
     listGalleriesForProfile(profileId, 200),
     getPublicAssistantSupplement(profileId),
   ])
-  const galleries = galleryRows.filter((row) => String(row.status) === '1')
+  const galleries = fillMissingGalleryMedia(
+    galleryRows.filter((row) => String(row.status) === '1'),
+    profile.portfolios
+  )
+  const portfolioSource = galleryHasMedia(galleries)
+    ? galleries
+    : profile.portfolios.length
+      ? profile.portfolios
+      : galleries
 
   const formatDate = (d: Date | null | undefined) => {
     if (!d) return null
@@ -1040,7 +1067,7 @@ const getProfileAiData = async (profileId: string) => {
       toDate: formatDate(e.toDate),
       tillNow: e.tillNow,
     })),
-    portfolio: (galleries.length ? galleries : profile.portfolios).map((p) => {
+    portfolio: portfolioSource.map((p) => {
       const featuredImage = 'featuredImage' in p ? p.featuredImage : p.imageUrl
       const legacyPostId = 'legacyPostId' in p && typeof p.legacyPostId === 'number' ? p.legacyPostId : null
 
@@ -1056,15 +1083,6 @@ const getProfileAiData = async (profileId: string) => {
 
         // Backward-compatible frontend field.
         imageUrl: featuredImage,
-
-        attachmentUrl: p.attachmentUrl,
-        attachmentName: p.attachmentName,
-        attachments: p.attachmentUrl
-          ? {
-              url: p.attachmentUrl,
-              name: p.attachmentName || '',
-            }
-          : null,
       }
     }),
     customSections: [],
@@ -1427,7 +1445,7 @@ const getDynamicSection = async (
         status: string
         createdAt: Date
       }
-      const [galleryRows, legacy] = await Promise.all([
+      const [galleryRowsRaw, legacy] = await Promise.all([
         listGalleriesForProfile(profileId, takeOverride ?? 100).then((rows) =>
           rows.filter((row) => String(row.status) === '1')
         ),
@@ -1437,6 +1455,7 @@ const getDynamicSection = async (
           take: takeOverride ?? 100,
         }),
       ])
+      const galleryRows = fillMissingGalleryMedia(galleryRowsRaw, legacy)
       const mappedLegacy: PublicGalleryRow[] = legacy.map((p) => ({
         id: p.id,
         title: p.title,
@@ -1448,15 +1467,26 @@ const getDynamicSection = async (
         status: String(p.status),
         createdAt: p.createdAt,
       }))
-      // Gallery is authoritative once this profile has Gallery rows.
-      // Legacy Portfolio is only a fallback when Gallery is truly empty.
-      const items: PublicGalleryRow[] = galleryRows.length ? galleryRows : mappedLegacy
+      // Use Gallery when it has media (after portfolio backfill). Otherwise fall back to Portfolio.
+      const items: PublicGalleryRow[] = galleryHasMedia(galleryRows)
+        ? galleryRows
+        : galleryHasMedia(mappedLegacy)
+          ? mappedLegacy
+          : galleryRows.length
+            ? galleryRows
+            : mappedLegacy
       logPublicSectionMedia(
         name,
         profileId,
         { items },
         {
-          source: galleryRows.length ? 'gallery' : mappedLegacy.length ? 'portfolio' : 'gallery-empty',
+          source: galleryHasMedia(galleryRows)
+            ? 'gallery'
+            : galleryHasMedia(mappedLegacy)
+              ? 'portfolio'
+              : galleryRows.length
+                ? 'gallery-empty-media'
+                : 'gallery-empty',
           galleryDb: galleryRows.map((row) => ({
             id: row.id,
             title: row.title,
@@ -1482,20 +1512,14 @@ const getDynamicSection = async (
           profile: { id: profileId },
           items: items.map((p) => {
             const imageUrl = abs(p.featuredImage, null, 5, 'Portfolio Gallery')
-            const attachmentUrl = abs(p.attachmentUrl, p.attachmentName, 5, 'Portfolio Attachment')
-            const featured = mediaAsset(p.id, p.title, imageUrl || attachmentUrl)
-            const attachment = attachmentUrl
-              ? { id: `${p.id}-attachment`, doc_name: p.attachmentName || p.title || 'attachment', url: attachmentUrl }
-              : null
-            const gallery = [featured, attachment].filter(Boolean)
+            const featured = mediaAsset(p.id, p.title, imageUrl)
             return {
               id: p.id,
               title: p.title,
               description: p.description,
               status: p.status === '0' ? 0 : 1,
               featured_image: featured,
-              gallery,
-              attachments: attachment ? [attachment] : featured ? [featured] : [],
+              gallery: featured ? [featured] : [],
               general_info_url: p.url,
               created_at: p.createdAt,
             }

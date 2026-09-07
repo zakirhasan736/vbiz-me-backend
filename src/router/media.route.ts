@@ -3,6 +3,7 @@ import multer from 'multer'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import profileService from '../services/profile.service'
+import { BUILDER_ATTACHMENT_TYPE_ALIASES, attachmentTypeNameMatches } from '../utils/attachmentTypeMatch'
 import catchAsyncError from '../utils/catchAsyncError'
 import { prisma } from '../utils/prisma'
 import s3Utils from '../utils/s3'
@@ -18,27 +19,9 @@ const validateAttachmentUpload = (_file: Express.Multer.File, _attachmentType?: 
   // Builder media accepts any image/video/audio/document the client sends — no mime gate.
 }
 
-const ATTACHMENT_TYPE_ALIASES: Record<string, string[]> = {
-  'Profile Image/Video': [
-    'profile image/video',
-    'profile picture',
-    'profile pic',
-    'profile_pic',
-    'avatar',
-    'profile image',
-    'profile',
-  ],
-  'Background Video/Image': [
-    'background video/image',
-    'background_media',
-    'bg_video',
-    'bg video',
-    'background video',
-    'background',
-  ],
-  'Intro vCard Video': ['intro vcard video', 'intro video', 'profile video', 'intro'],
-  '2D Video Explainer': ['2d video explainer', '2d explainer', '2d video', 'video explainer', 'video_explainer'],
-  'Background Music': ['background music', 'background audio', 'bg music', 'audio', 'music'],
+function isSameBuilderAttachmentType(typeName: string | null | undefined, canonicalType: string): boolean {
+  const aliases = BUILDER_ATTACHMENT_TYPE_ALIASES[canonicalType]
+  return attachmentTypeNameMatches(typeName, canonicalType, aliases)
 }
 
 router.use(authMiddleware.isAuthenticateUser)
@@ -78,15 +61,13 @@ router.post(
           }))
         attachmentTypeId = type.id
 
-        // Replace prior attachments of the same builder type so clears/hydrates stay consistent.
-        const aliases = ATTACHMENT_TYPE_ALIASES[attachmentTypeName] || [attachmentTypeName.toLowerCase()]
+        // Replace prior attachments of the same builder type (type name only — never docName).
         const existing = await prisma.attachment.findMany({
           where: { profileId },
           include: { attachmentType: true },
         })
         for (const att of existing) {
-          const label = `${att.attachmentType?.name || ''} ${att.docName || ''}`.toLowerCase()
-          if (!aliases.some((alias) => label.includes(alias))) continue
+          if (!isSameBuilderAttachmentType(att.attachmentType?.name, attachmentTypeName)) continue
           const key = att.publicId?.trim()
           if (key) {
             try {
@@ -138,16 +119,12 @@ router.post(
 
     await profileService.getOwnedLite(profileId, req.user.id, req.user.role)
 
-    const aliases = ATTACHMENT_TYPE_ALIASES[attachmentType] || [attachmentType.toLowerCase()]
     const attachments = await prisma.attachment.findMany({
       where: { profileId },
       include: { attachmentType: true },
     })
 
-    const matched = attachments.filter((att) => {
-      const label = `${att.attachmentType?.name || ''} ${att.docName || ''}`.toLowerCase()
-      return aliases.some((alias) => label.includes(alias))
-    })
+    const matched = attachments.filter((att) => isSameBuilderAttachmentType(att.attachmentType?.name, attachmentType))
 
     for (const att of matched) {
       const key = att.publicId?.trim()

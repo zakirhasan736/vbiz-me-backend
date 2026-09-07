@@ -3,18 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Something went wrong — VBizMe</title>
+    <title>Something went wrong — vBiz Me</title>
     <style>
       body {
-        font-family: Arial, Helvetica, sans-serif;
+        font-family: Inter, Helvetica, Arial, sans-serif;
         margin: 0;
         padding: 0;
-        background-color: #f4f6f8;
+        background-color: #f5f5f4;
         display: flex;
         justify-content: center;
         align-items: center;
         min-height: 100vh;
-        color: #1a1a1a;
+        color: #0b1020;
       }
       .container {
         text-align: center;
@@ -22,55 +22,70 @@
         width: 90%;
         background: #ffffff;
         padding: 40px 28px;
-        border-radius: 10px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+        border-radius: 8px;
+        border: 1px solid #e7e5e4;
       }
-      .brand {
-        font-size: 14px;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-        color: #0f766e;
-        margin-bottom: 20px;
+      .logo {
+        display: block;
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 16px;
+      }
+      .accent {
+        width: 48px;
+        height: 2px;
+        background-color: #d4af37;
+        margin: 0 auto 24px;
       }
       .icon {
         color: #e11d48;
-        margin-bottom: 20px;
+        margin-bottom: 16px;
       }
       h1 {
         font-size: 22px;
         font-weight: 700;
         margin: 0 0 12px;
-        color: #111827;
+        color: #0b1020;
       }
       p {
         font-size: 15px;
-        color: #4b5563;
+        color: #737373;
         line-height: 1.6;
         margin: 0 0 28px;
       }
       .button {
         display: inline-block;
-        background-color: #111827;
+        background-color: #0b1020;
         color: #ffffff;
         text-decoration: none;
         font-size: 15px;
-        font-weight: 600;
+        font-weight: 700;
         padding: 12px 24px;
         border-radius: 6px;
       }
       .button:hover {
-        background-color: #374151;
+        background-color: #1c2333;
+      }
+      .footer {
+        margin-top: 28px;
+        font-size: 12px;
+        color: #a3a3a3;
+      }
+      .footer a {
+        color: #737373;
+        text-decoration: underline;
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <div class="brand">VBizMe</div>
+      <img class="logo" src="https://www.vbizme.com/logo-vbizme.webp" alt="vBiz Me" width="56" height="56" />
+      <div class="accent"></div>
       <div class="icon">
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          width="64"
-          height="64"
+          width="48"
+          height="48"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -86,6 +101,11 @@
       <h1>Something went wrong</h1>
       <p>We could not complete your request. Please try again, or return to the site and continue from there.</p>
       <a href="{{link}}" class="button">Back to site</a>
+      <div class="footer">
+        <a href="https://www.vbizme.com/privacy-policy">Privacy</a>
+        ·
+        <a href="https://www.vbizme.com/terms-and-conditions">Terms</a>
+      </div>
     </div>
   </body>
 </html>

@@ -132,26 +132,15 @@ const replacePortfolios = catchAsyncError(async (req, res) => {
     'portfolios',
     items,
     (item) => {
-      const attachments =
-        item.attachments && typeof item.attachments === 'object'
-          ? (item.attachments as { url?: unknown; name?: unknown })
-          : null
-      const attachmentUrl =
-        (typeof item.attachmentUrl === 'string' && item.attachmentUrl) ||
-        (typeof attachments?.url === 'string' && attachments.url) ||
-        null
-      const attachmentName =
-        (typeof item.attachmentName === 'string' && item.attachmentName) ||
-        (typeof attachments?.name === 'string' && attachments.name) ||
-        null
       return {
         title: item.title,
         description: item.description,
         status: String(item.status ?? '1'),
         url: item.url,
         featuredImage: typeof item.featuredImage === 'string' ? item.featuredImage : item.imageUrl,
-        attachmentUrl,
-        attachmentName,
+        // Portfolio secondary attachments removed — always clear on save.
+        attachmentUrl: null,
+        attachmentName: null,
       }
     }
   )

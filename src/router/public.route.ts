@@ -22,6 +22,8 @@ router.post(
   publicAssistantRateLimiter,
   publicController.createLandingAssistantLiveToken
 )
+// Analytics beacons must not compete with page-load GETs for the shared IP budget.
+router.post('/track-event', validSchema(PublicZodSchema.trackEvent), publicController.trackEvent)
 
 router.use(publicRateLimiter)
 
@@ -50,7 +52,6 @@ router.post('/save-guest-user', formData.none(), publicController.saveGuestUser)
 router.post('/save-note', publicController.saveNote)
 router.get('/notes', publicController.listNotes)
 router.get('/save-contact/:id', publicController.saveContact)
-router.post('/track-event', validSchema(PublicZodSchema.trackEvent), publicController.trackEvent)
 
 router.get('/push/subscription-status/:slug', publicController.pushStatus)
 router.get('/push/vapid-public-key', publicController.pushVapidPublicKey)

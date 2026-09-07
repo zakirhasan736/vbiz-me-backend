@@ -255,6 +255,9 @@ const isUserAccessible = (user: {
   return status === 'ACTIVE' || status === 'PAUSED' || status === 'SUSPENDED'
 }
 
+const EMAIL_LOGO_CID = 'vbiz-logo'
+const EMAIL_LOGO_PATH = join(__dirname, '../assets/email/logo-vbizme.png')
+
 const readTemplate = (templateName: string): string => {
   return readFileSync(join(__dirname, '../templates', templateName), 'utf-8')
 }
@@ -266,39 +269,48 @@ const applyTemplateVars = (template: string, vars: Record<string, string>) => {
   )
 }
 
+const brandLogoAttachment = (): { filename: string; path: string; cid: string } => ({
+  filename: 'logo-vbizme.png',
+  path: EMAIL_LOGO_PATH,
+  cid: EMAIL_LOGO_CID,
+})
+
 const sendEmail = async (data: {
   html: string
   receiverMail: string
   subject: string
   attachments?: { filename?: string; path?: string; cid?: string }[]
 }) => {
-  if (!config.MAIL_ADDRESS || !config.MAIL_PASS) {
-    throw new Error('MAIL_ADDRESS and MAIL_PASS must be configured to send email')
+  if (!config.ZOHO_EMAIL_USER || !config.ZOHO_EMAIL_PASSWORD) {
+    throw new Error('ZOHO_EMAIL_USER and ZOHO_EMAIL_PASSWORD must be configured to send email')
   }
 
   const transporter = nodemailer.createTransport({
-    host: 'smtp.office365.com',
-    secure: false,
+    host: config.MAIL_SMTP.HOST,
+    port: config.MAIL_SMTP.PORT,
+    secure: config.MAIL_SMTP.SECURE,
     auth: {
-      user: config.MAIL_ADDRESS,
-      pass: config.MAIL_PASS,
+      user: config.ZOHO_EMAIL_USER,
+      pass: config.ZOHO_EMAIL_PASSWORD,
     },
-    port: 587,
     debug: config.NODE_ENV === 'development',
     connectionTimeout: 10000,
-    tls: {
-      ciphers: 'SSLv3',
-      rejectUnauthorized: false,
-    },
-    requireTLS: true,
+    requireTLS: !config.MAIL_SMTP.SECURE,
   })
 
+  const attachments = [...(data.attachments ?? [])]
+  const needsBrandLogo =
+    data.html.includes(`cid:${EMAIL_LOGO_CID}`) && !attachments.some((a) => a.cid === EMAIL_LOGO_CID)
+  if (needsBrandLogo) {
+    attachments.push(brandLogoAttachment())
+  }
+
   return transporter.sendMail({
-    from: config.MAIL_ADDRESS,
+    from: config.ZOHO_EMAIL_USER,
     to: data.receiverMail,
     subject: data.subject,
     html: data.html,
-    attachments: data.attachments,
+    attachments: attachments.length ? attachments : undefined,
   })
 }
 

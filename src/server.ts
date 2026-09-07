@@ -6,6 +6,7 @@ import seedLandingDemoCards from './bootstrap/seedLandingDemoCards'
 import seedPackages from './bootstrap/seedPackages'
 import { startBillingTrialCron } from './bootstrap/startBillingTrialCron'
 import { startBirthdayWishCron } from './bootstrap/startBirthdayWishCron'
+import { startCrmReminderCron } from './bootstrap/startCrmReminderCron'
 import config from './configs/config'
 import logger from './utils/logger'
 import { prisma } from './utils/prisma'
@@ -25,6 +26,7 @@ const main = async () => {
     attachSocket(httpServer)
     startBirthdayWishCron()
     startBillingTrialCron()
+    startCrmReminderCron()
 
     httpServer.listen(config.PORT, () => {
       logger.info(`🔗 Database connected && server running on port ${config.PORT}`)
