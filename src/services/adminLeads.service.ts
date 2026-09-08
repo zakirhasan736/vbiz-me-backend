@@ -155,8 +155,6 @@ export function mapGuestSave(row: {
     phoneNumber: row.phone || '',
     email: row.email || '',
     privateNotes: admin.privateNotes,
-    lastReply: admin.lastReply,
-    lastReplyAt: admin.lastReplyAt,
     submittedAt: row.createdAt.toISOString(),
     vCardId: row.profileId,
     vCardSlug: row.profile.slug || '',
@@ -242,16 +240,12 @@ function profileIdentitySearch(token: string): Prisma.ProfileWhereInput {
 }
 
 const getStats = async () => {
+  const visible = guestSaveDashboardVisibleWhere()
   const [totalSaves, sourceProfiles, totalNotes] = await Promise.all([
-    prisma.eventLog.count({
-      where: { eventType: 'save_contact_download' },
-    }),
-    prisma.eventLog
+    prisma.guestUserData.count({ where: visible }),
+    prisma.guestUserData
       .findMany({
-        where: {
-          eventType: 'save_contact_download',
-          profileId: { not: null },
-        },
+        where: visible,
         select: { profileId: true },
         distinct: ['profileId'],
       })
@@ -345,6 +339,11 @@ const listNotes = async (query: ListLeadsQuery): Promise<AdminLeadsPage> => {
 }
 
 const patchSave = async (id: string, body: PatchLeadBody): Promise<AdminLeadRow> => {
+  // Contact saves are identity records only — guest replies live on UserNote (Notes tab).
+  if (body.lastReply !== undefined) {
+    throw new AppError(400, 'Replies are only supported on lead notes, not contact saves')
+  }
+
   const existing = await prisma.guestUserData.findUnique({
     where: { id },
     include: { profile: profileInclude },

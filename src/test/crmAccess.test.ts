@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { Prisma } from '../../generated/prisma/client'
 import { defaultAllowFlagValue, entitlementsFromFeatures } from '../constants/packageAccess'
 import AppError from '../error/AppError'
 import {
@@ -156,7 +157,12 @@ describe('CRM external lead origin', () => {
 
   it('builds dashboard-visible vs external Prisma filters', () => {
     assert.deepEqual(guestSaveDashboardVisibleWhere(), {
-      NOT: { meta: { path: ['crmOrigin'], equals: 'external' } },
+      OR: [
+        { meta: { equals: Prisma.DbNull } },
+        { meta: { path: ['crmOrigin'], equals: Prisma.DbNull } },
+        { meta: { path: ['crmOrigin'], equals: Prisma.JsonNull } },
+        { meta: { path: ['crmOrigin'], equals: 'guest' } },
+      ],
     })
     assert.deepEqual(guestSaveExternalWhere(), {
       meta: { path: ['crmOrigin'], equals: 'external' },

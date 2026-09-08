@@ -1,3 +1,4 @@
+import { guestSaveDashboardVisibleWhere } from './crmLeadOrigin'
 import {
   countDistinctGuestsByChannel,
   SOCIAL_CHANNEL_LABELS,
@@ -34,11 +35,12 @@ export async function loadProfileEngagementMetrics(
       where: { profileId: { in: profileIds }, eventType: 'social_click' },
       select: { profileId: true, payload: true },
     }),
-    prisma.eventLog.groupBy({
+    // Guest form submissions — same definition as dashboard Contact Saves / admin leads.
+    prisma.guestUserData.groupBy({
       by: ['profileId'],
       where: {
         profileId: { in: profileIds },
-        eventType: 'save_contact_download',
+        ...guestSaveDashboardVisibleWhere(),
       },
       _count: { _all: true },
     }),

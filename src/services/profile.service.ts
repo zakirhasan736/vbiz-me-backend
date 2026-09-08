@@ -2189,11 +2189,9 @@ const replaceCollection = async <T extends Record<string, unknown>>(
             status: Number.isFinite(statusValue) ? statusValue : 1,
             url: typeof mapped.url === 'string' ? mapped.url : null,
             imageUrl:
-              typeof mapped.featuredImage === 'string'
-                ? mapped.featuredImage
-                : typeof mapped.imageUrl === 'string'
-                  ? mapped.imageUrl
-                  : null,
+              (typeof mapped.featuredImage === 'string' ? mapped.featuredImage.trim() : '') ||
+              (typeof mapped.imageUrl === 'string' ? mapped.imageUrl.trim() : '') ||
+              null,
             attachmentUrl: null,
             attachmentName: null,
           },
@@ -2714,67 +2712,50 @@ const getDashboardStats = async (
     return emptyDashboardStats(now, chartDays, period)
   }
 
-  const [
-    contacts,
-    notes,
-    guests,
-    contactSaves,
-    viewEvents,
-    prevViewEvents,
-    socialEvents,
-    prevSocialEvents,
-    recentLogs,
-  ] = await Promise.all([
-    prisma.contact.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
-    prisma.userNote.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
-    prisma.guestUserData.count({
-      where: { profileId: { in: profileIds }, ...createdAtFilter, ...guestSaveDashboardVisibleWhere() },
-    }),
-
-    prisma.eventLog.count({
-      where: {
-        profileId: { in: profileIds },
-
-        eventType: 'save_contact_download',
-
-        ...createdAtFilter,
-      },
-    }),
-    prisma.eventLog.findMany({
-      where: { profileId: { in: profileIds }, eventType: 'profile_view', ...createdAtFilter },
-      select: { createdAt: true, payload: true },
-    }),
-    prevSince && since
-      ? prisma.eventLog.findMany({
-          where: {
-            profileId: { in: profileIds },
-            eventType: 'profile_view',
-            createdAt: { gte: prevSince, lt: since },
-          },
-          select: { payload: true },
-        })
-      : Promise.resolve([] as Array<{ payload: unknown }>),
-    prisma.eventLog.findMany({
-      where: { profileId: { in: profileIds }, eventType: 'social_click', ...createdAtFilter },
-      select: { payload: true },
-    }),
-    prevSince && since
-      ? prisma.eventLog.findMany({
-          where: {
-            profileId: { in: profileIds },
-            eventType: 'social_click',
-            createdAt: { gte: prevSince, lt: since },
-          },
-          select: { payload: true },
-        })
-      : Promise.resolve([] as Array<{ payload: unknown }>),
-    prisma.eventLog.findMany({
-      where: { profileId: { in: profileIds } },
-      orderBy: { createdAt: 'desc' },
-      take: RECENT_ENGAGEMENT_LIMIT,
-      select: { id: true, eventType: true, payload: true, userAgent: true, createdAt: true },
-    }),
-  ])
+  const [contacts, notes, guests, viewEvents, prevViewEvents, socialEvents, prevSocialEvents, recentLogs] =
+    await Promise.all([
+      prisma.contact.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
+      prisma.userNote.count({ where: { profileId: { in: profileIds }, ...createdAtFilter } }),
+      // Guest form submissions (name/email/phone) — same source as /profiles/contacts list.
+      prisma.guestUserData.count({
+        where: { profileId: { in: profileIds }, ...createdAtFilter, ...guestSaveDashboardVisibleWhere() },
+      }),
+      prisma.eventLog.findMany({
+        where: { profileId: { in: profileIds }, eventType: 'profile_view', ...createdAtFilter },
+        select: { createdAt: true, payload: true },
+      }),
+      prevSince && since
+        ? prisma.eventLog.findMany({
+            where: {
+              profileId: { in: profileIds },
+              eventType: 'profile_view',
+              createdAt: { gte: prevSince, lt: since },
+            },
+            select: { payload: true },
+          })
+        : Promise.resolve([] as Array<{ payload: unknown }>),
+      prisma.eventLog.findMany({
+        where: { profileId: { in: profileIds }, eventType: 'social_click', ...createdAtFilter },
+        select: { payload: true },
+      }),
+      prevSince && since
+        ? prisma.eventLog.findMany({
+            where: {
+              profileId: { in: profileIds },
+              eventType: 'social_click',
+              createdAt: { gte: prevSince, lt: since },
+            },
+            select: { payload: true },
+          })
+        : Promise.resolve([] as Array<{ payload: unknown }>),
+      prisma.eventLog.findMany({
+        where: { profileId: { in: profileIds } },
+        orderBy: { createdAt: 'desc' },
+        take: RECENT_ENGAGEMENT_LIMIT,
+        select: { id: true, eventType: true, payload: true, userAgent: true, createdAt: true },
+      }),
+    ])
+  const contactSaves = guests
 
   const views = countDistinctGuests(viewEvents)
   const prevViews = countDistinctGuests(prevViewEvents)
@@ -2973,8 +2954,8 @@ const listContacts = async (
       profile: g.profile,
       source: 'guest_save' as const,
       privateNotes: admin.privateNotes,
-      lastReply: admin.lastReply,
-      lastReplyAt: admin.lastReplyAt,
+      lastReply: undefined,
+      lastReplyAt: undefined,
     }
   })
 
@@ -3072,7 +3053,7 @@ const listContactsPage = async (
     return { items, total, skip, limit }
   }
 
-  // Detailed saved-contact submissions; analytics save totals come from EventLog.
+  // Detailed saved-contact submissions (aligned with dashboard contactSaves / saveCount).
   const guestWhere = { ...where, ...guestSaveDashboardVisibleWhere() }
   const [total, rows] = await Promise.all([
     prisma.guestUserData.count({ where: guestWhere }),
@@ -3096,8 +3077,8 @@ const listContactsPage = async (
       profile: g.profile,
       source: 'guest_save' as const,
       privateNotes: admin.privateNotes,
-      lastReply: admin.lastReply,
-      lastReplyAt: admin.lastReplyAt,
+      lastReply: undefined,
+      lastReplyAt: undefined,
     }
   })
   return { items, total, skip, limit }
@@ -3119,9 +3100,13 @@ const patchContact = async (
       include: { profile: { select: { id: true, name: true, slug: true } } },
     })
     if (!existing || !ownedIds.has(existing.profileId)) return null
+    // Contact saves are identity-only; guest replies live on UserNote (source=note).
+    if (body.lastReply !== undefined) {
+      throw new AppError(400, 'Replies are only supported on lead notes, not contact saves')
+    }
     const updated = await prisma.guestUserData.update({
       where: { id: contactId },
-      data: { meta: mergeOwnerContactMeta(existing.meta, body) },
+      data: { meta: mergeOwnerContactMeta(existing.meta, { privateNotes: body.privateNotes }) },
       include: { profile: { select: { id: true, name: true, slug: true } } },
     })
     const admin = readOwnerContactMeta(updated.meta)
@@ -3135,8 +3120,8 @@ const patchContact = async (
       profile: updated.profile,
       source: 'guest_save' as const,
       privateNotes: admin.privateNotes,
-      lastReply: admin.lastReply,
-      lastReplyAt: admin.lastReplyAt,
+      lastReply: undefined,
+      lastReplyAt: undefined,
     }
   }
 
