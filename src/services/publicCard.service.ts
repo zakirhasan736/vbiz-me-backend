@@ -1242,7 +1242,15 @@ const getDynamicSection = async (
         })
       }
       if (!rows.length) {
-        return null
+        // Keep success + empty payload so clients can show empty state (not an error).
+        return {
+          type: '2D Video Explainer',
+          postType: { name: '2D Video Explainer', title: '2D Video Explainer' },
+          profile: { id: profileId },
+          video: { doc_name: '', url: '' },
+          external_url: { url: null, has_external_url: false },
+          items: [],
+        }
       }
       const items = rows.map((p) => {
         const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
@@ -1695,7 +1703,7 @@ const getDynamicSection = async (
           ...education.map((e) => ({
             id: e.id,
             title: e.degree || e.institute,
-            description: [e.institute, e.degree].filter(Boolean).join(' â€” '),
+            description: [e.institute, e.degree].filter(Boolean).join(' — '),
             status: '1',
           })),
           ...experiences.map((e) => ({

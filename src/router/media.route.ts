@@ -3,7 +3,11 @@ import multer from 'multer'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import profileService from '../services/profile.service'
-import { BUILDER_ATTACHMENT_TYPE_ALIASES, attachmentTypeNameMatches } from '../utils/attachmentTypeMatch'
+import {
+  BUILDER_ATTACHMENT_TYPE_ALIASES,
+  attachmentTypeNameMatches,
+  isSingletonBuilderAttachmentType,
+} from '../utils/attachmentTypeMatch'
 import catchAsyncError from '../utils/catchAsyncError'
 import { prisma } from '../utils/prisma'
 import s3Utils from '../utils/s3'
@@ -61,22 +65,26 @@ router.post(
           }))
         attachmentTypeId = type.id
 
-        // Replace prior attachments of the same builder type (type name only — never docName).
-        const existing = await prisma.attachment.findMany({
-          where: { profileId },
-          include: { attachmentType: true },
-        })
-        for (const att of existing) {
-          if (!isSameBuilderAttachmentType(att.attachmentType?.name, attachmentTypeName)) continue
-          const key = att.publicId?.trim()
-          if (key) {
-            try {
-              await s3Utils.destroy(key)
-            } catch {
-              /* best-effort */
+        // Replace prior S3 objects only for singleton profile-media slots.
+        // Multi-item types (Portfolio Gallery, Service Featured, Blog Featured, …)
+        // share one type name across many items — destroying by type orphans older CDN URLs.
+        if (isSingletonBuilderAttachmentType(attachmentTypeName)) {
+          const existing = await prisma.attachment.findMany({
+            where: { profileId },
+            include: { attachmentType: true },
+          })
+          for (const att of existing) {
+            if (!isSameBuilderAttachmentType(att.attachmentType?.name, attachmentTypeName)) continue
+            const key = att.publicId?.trim()
+            if (key) {
+              try {
+                await s3Utils.destroy(key)
+              } catch {
+                /* best-effort */
+              }
             }
+            await prisma.attachment.delete({ where: { id: att.id } })
           }
-          await prisma.attachment.delete({ where: { id: att.id } })
         }
       }
       attachment = await prisma.attachment.create({
