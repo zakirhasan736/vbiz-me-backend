@@ -35,6 +35,7 @@ const createCrmEvent = z
     type: eventType,
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
     time: z.string().trim().min(1).max(50),
+    description: z.string().trim().min(1, 'description is required').max(5000),
     status: eventStatus.optional(),
     scope: eventScope.optional(),
     profileId: z.string().min(1).optional().nullable(),
@@ -70,6 +71,7 @@ const updateCrmEvent = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD')
       .optional(),
     time: z.string().trim().min(1).max(50).optional(),
+    description: z.string().trim().max(5000).optional().nullable(),
     status: eventStatus.optional(),
     scope: eventScope.optional(),
     profileId: z.string().min(1).optional().nullable(),

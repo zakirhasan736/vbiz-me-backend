@@ -132,12 +132,16 @@ const replacePortfolios = catchAsyncError(async (req, res) => {
     'portfolios',
     items,
     (item) => {
+      const featured =
+        (typeof item.featuredImage === 'string' ? item.featuredImage.trim() : '') ||
+        (typeof item.imageUrl === 'string' ? item.imageUrl.trim() : '') ||
+        null
       return {
         title: item.title,
         description: item.description,
         status: String(item.status ?? '1'),
         url: item.url,
-        featuredImage: typeof item.featuredImage === 'string' ? item.featuredImage : item.imageUrl,
+        featuredImage: featured,
         // Portfolio secondary attachments removed — always clear on save.
         attachmentUrl: null,
         attachmentName: null,

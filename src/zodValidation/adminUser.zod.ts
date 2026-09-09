@@ -67,6 +67,10 @@ const createAdminUser = z
     message: PASSWORD_NOT_SAME_AS_EMAIL,
     path: ['password'],
   })
+  .refine((data) => data.cardLimit === undefined || data.cardLimit > 1, {
+    message: 'Corporate accounts require a card limit greater than 1',
+    path: ['cardLimit'],
+  })
 
 const updateAdminUser = z
   .object({
@@ -132,6 +136,10 @@ const updateAdminUser = z
       path: ['password'],
     }
   )
+  .refine((data) => data.cardLimit === undefined || data.cardLimit > 1, {
+    message: 'Corporate accounts require a card limit greater than 1',
+    path: ['cardLimit'],
+  })
 
 const setAdminUserStatus = z.object({
   accountStatus,

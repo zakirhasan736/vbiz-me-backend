@@ -297,6 +297,10 @@ export async function patchCrmLead(
   id: string,
   body: { privateNotes?: string; lastReply?: string }
 ): Promise<CrmLeadRow> {
+  // Guest replies belong on notepad UserNotes, not GuestUserData contact saves.
+  if (body.lastReply !== undefined) {
+    throw new AppError(400, 'Replies are only supported on lead notes, not contact saves')
+  }
   const existing = await loadScopedGuest(actor, id)
   const updated = await prisma.guestUserData.update({
     where: { id },
@@ -649,7 +653,9 @@ export async function getCrmScheduleCalendar(
       startsAt: row.startsAt.toISOString(),
       status: row.status,
       meetLink: row.meetLink,
-      notes: attachments.length ? `${attachments.length} attachment${attachments.length === 1 ? '' : 's'}` : null,
+      notes:
+        row.description?.trim() ||
+        (attachments.length ? `${attachments.length} attachment${attachments.length === 1 ? '' : 's'}` : null),
       attachments,
       scope: row.scope,
       profileId: row.profileId,

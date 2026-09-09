@@ -18,6 +18,7 @@ import AppError from '../error/AppError'
 import { readAboutMeFeaturedMediaUrl, readAboutMeMediaFocusY } from '../utils/aboutMeMediaFocus'
 import { PUBLIC_ATTACHMENT_KIND_ALIASES, sameMediaUrl, scoreAttachmentTypeName } from '../utils/attachmentTypeMatch'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
+import { CRM_LEAD_ORIGIN_GUEST } from '../utils/crmLeadOrigin'
 import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
@@ -2176,6 +2177,8 @@ const saveGuestUser = async (
   const meta = {
     ...clientMeta,
     ...(guestId ? { guestId } : {}),
+    // Stamp guest origin so dashboard/admin filters include this row (never CRM-external).
+    crmOrigin: CRM_LEAD_ORIGIN_GUEST,
     profileId: profile.id,
     profileSlug: profile.slug || null,
     ownerName: profile.name || null,
@@ -2396,8 +2399,7 @@ const saveContactCard = async (
     },
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
-
-  liveDashboardHub.emitKpi('save', [profile.userId, profile.companyUserId])
+  // Do not emit dashboard:kpi save — that KPI tracks guest form submissions (GuestUserData), not VCF downloads.
 
   const frontendBase = (config.FRONTEND_URL || '').replace(/\/$/, '')
   const slug = profile.slug || ''
@@ -2512,7 +2514,7 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
 
   const guestName = savedGuest.fullName?.trim() || 'A saved contact'
   const cardName = profile.name?.trim() || profile.slug || 'your vCard'
-  const body = `Hey! ${guestName} is reviewing your card again. Have a question for them? Open your saved contacts and start a conversation.`
+  const body = `Hey! ${guestName} is reviewing your card again. Check Lead Notes if they left a message — you can reply there.`
 
   await prisma.$transaction([
     prisma.eventLog.create({

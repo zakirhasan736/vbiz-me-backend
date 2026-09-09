@@ -19,6 +19,11 @@ const titleKey = (value?: string | null) =>
     .trim()
     .toLowerCase()
 
+const mediaUrl = (value?: string | null) => {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  return trimmed || null
+}
+
 /** Copy featured URLs from legacy Portfolio rows onto Gallery rows that only have titles. */
 export function fillMissingGalleryMedia<G extends GalleryLike, P extends PortfolioLike>(
   galleries: G[],
@@ -42,8 +47,11 @@ export function fillMissingGalleryMedia<G extends GalleryLike, P extends Portfol
     titleBuckets.set(key, bucket)
   }
 
-  return galleries.map((gallery) => {
-    if (gallery.featuredImage) return gallery
+  return galleries.map((gallery, index) => {
+    const existing = mediaUrl(gallery.featuredImage)
+    if (existing) {
+      return existing === gallery.featuredImage ? gallery : { ...gallery, featuredImage: existing }
+    }
 
     const linkedLegacyId =
       typeof gallery.legacyPortfolioId === 'number'
@@ -58,24 +66,31 @@ export function fillMissingGalleryMedia<G extends GalleryLike, P extends Portfol
       const key = titleKey(gallery.title)
       const matches = key ? titleBuckets.get(key) || [] : []
 
-      // A title is safe only when exactly one Portfolio row on this profile
-      // carries that title. Never fall back by array position.
+      // Prefer a unique title match. Duplicate titles (common in the editor) are
+      // ambiguous, so fall through to sort-order / index alignment with Portfolio.
       if (matches.length === 1) {
         legacy = matches[0]
       }
     }
 
-    if (!legacy) return gallery
+    if (!legacy) {
+      legacy = portfolios[index]
+    }
+
+    const fromLegacy = mediaUrl(legacy?.imageUrl)
+    if (!fromLegacy) {
+      return existing === gallery.featuredImage ? gallery : { ...gallery, featuredImage: existing }
+    }
 
     return {
       ...gallery,
-      featuredImage: gallery.featuredImage || legacy.imageUrl || gallery.featuredImage,
+      featuredImage: fromLegacy,
     }
   })
 }
 
 export function galleryHasMedia(rows: Array<{ featuredImage?: string | null }>): boolean {
-  return rows.some((row) => Boolean(row.featuredImage))
+  return rows.some((row) => Boolean(mediaUrl(row.featuredImage)))
 }
 
 export type LiveGalleryRow = {

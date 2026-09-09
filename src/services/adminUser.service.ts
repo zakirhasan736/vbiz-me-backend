@@ -519,6 +519,12 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
   if (ownerMode === 'corporate' && !companyName) {
     throw new AppError(400, 'Company / organization is required for Corporate accounts')
   }
+  if (ownerMode === 'corporate') {
+    const cardLimit = body.cardLimit == null ? null : Math.round(Number(body.cardLimit))
+    if (cardLimit == null || !Number.isFinite(cardLimit) || cardLimit <= 1) {
+      throw new AppError(400, 'Corporate accounts require a card limit greater than 1')
+    }
+  }
   if (ownerMode === 'single' && body.featureOverrides?.length) {
     throw new AppError(400, 'Feature overrides apply only to Corporate package accounts.')
   }
@@ -673,6 +679,12 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
       if (!companyName) {
         throw new AppError(400, 'Company / organization is required for Corporate accounts')
       }
+      if (body.cardLimit !== undefined) {
+        const cardLimit = Math.round(Number(body.cardLimit))
+        if (!Number.isFinite(cardLimit) || cardLimit <= 1) {
+          throw new AppError(400, 'Corporate accounts require a card limit greater than 1')
+        }
+      }
     }
   }
 
@@ -734,6 +746,12 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
           : undefined
 
     if (packageChanged) {
+      if (targetOwnerMode === 'corporate') {
+        const cardLimit = body.cardLimit == null ? null : Math.round(Number(body.cardLimit))
+        if (cardLimit == null || !Number.isFinite(cardLimit) || cardLimit <= 1) {
+          throw new AppError(400, 'Corporate accounts require a card limit greater than 1')
+        }
+      }
       await subscriptionService.changePackageSubscription(user.id, body.packageId, {
         cardLimit: targetOwnerMode === 'corporate' ? body.cardLimit : undefined,
         negotiatedMonthlyCents: targetOwnerMode === 'corporate' ? (body.negotiatedMonthlyCents ?? null) : null,
@@ -756,6 +774,12 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
 
   if (!packageChanged) {
     if (body.cardLimit !== undefined) {
+      if (ownerRole === 'corporate-owner') {
+        const cardLimit = Math.round(Number(body.cardLimit))
+        if (!Number.isFinite(cardLimit) || cardLimit <= 1) {
+          throw new AppError(400, 'Corporate accounts require a card limit greater than 1')
+        }
+      }
       await setCorporateCardLimit(user.id, ownerRole, body.cardLimit)
     }
     if (body.negotiatedMonthlyCents !== undefined) {

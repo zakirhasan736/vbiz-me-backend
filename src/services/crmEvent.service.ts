@@ -30,6 +30,7 @@ type CrmEventRow = {
   time: string
   startsAt: Date
   status: string
+  description: string | null
   scope: string
   profileId: string | null
   groupProfileIds: Prisma.JsonValue | null
@@ -177,6 +178,7 @@ function serializeCrmEvent(row: CrmEventRow) {
     time: row.time,
     startsAt: row.startsAt.toISOString(),
     status: row.status as CrmEventStatus,
+    description: row.description,
     scope: row.scope as CrmEventScope,
     profileId: row.profileId,
     groupProfileIds: parseGroupProfileIds(row.groupProfileIds),
@@ -198,13 +200,16 @@ function calendarSummary(type: string, host: string) {
 function calendarDescription(input: {
   host: string
   type: string
+  description?: string | null
   attachments: CrmEventAttachment[]
   meetLink?: string | null
 }) {
   const attachmentLines = input.attachments.map((a) => `- ${a.fileName}: ${a.url}`).join('\n')
+  const userDescription = input.description?.trim() || null
   const parts = [
     `vBiz Me CRM event: ${input.type}`,
     `Host / card: ${input.host}`,
+    userDescription,
     attachmentLines ? `Attachments:\n${attachmentLines}` : null,
     input.meetLink ? `Link: ${input.meetLink}` : null,
   ].filter(Boolean)
@@ -372,6 +377,7 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
       time: input.time,
       startsAt,
       status,
+      description: input.description.trim(),
       scope: normalized.scope,
       profileId: primaryProfileId,
       groupProfileIds: normalized.groupProfileIds.length ? normalized.groupProfileIds : undefined,
@@ -389,6 +395,7 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
         description: calendarDescription({
           host: input.host,
           type: input.type,
+          description: input.description,
           attachments,
         }),
         date: input.date,
@@ -463,6 +470,7 @@ const update = async (actor: CrmActor, access: CrmAccessContext, id: string, inp
       ...(input.time !== undefined ? { time: input.time } : {}),
       ...(dateOrTimeChanged ? { startsAt: computeStartsAt(nextDate, nextTime) } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.description !== undefined ? { description: input.description?.trim() || null } : {}),
       ...(input.profileId !== undefined ? { profileId: input.profileId } : {}),
       ...(input.groupProfileIds !== undefined ? { groupProfileIds: input.groupProfileIds } : {}),
       ...(input.attachments !== undefined ? { attachments: nextAttachments } : {}),
@@ -488,6 +496,7 @@ const update = async (actor: CrmActor, access: CrmAccessContext, id: string, inp
         input.time !== undefined ||
         input.host !== undefined ||
         input.type !== undefined ||
+        input.description !== undefined ||
         input.attachments !== undefined
       ) {
         const updatedCal = await calendarIntegrationService.updateMeetingEvent(existing.googleEventId, {
@@ -495,6 +504,7 @@ const update = async (actor: CrmActor, access: CrmAccessContext, id: string, inp
           description: calendarDescription({
             host: row.host,
             type: row.type,
+            description: row.description,
             attachments: nextAttachments,
             meetLink: row.meetLink,
           }),

@@ -1,4 +1,4 @@
-import type { Prisma } from '../../generated/prisma/client'
+import { Prisma } from '../../generated/prisma/client'
 
 export const CRM_EXTERNAL_ORIGIN = 'external' as const
 export const CRM_LEAD_ORIGIN_GUEST = 'guest' as const
@@ -22,15 +22,20 @@ export function isCrmExternalMeta(meta: unknown): boolean {
   return crmOriginFromMeta(meta) === CRM_LEAD_ORIGIN_EXTERNAL
 }
 
-/** Prisma filter: guest saves that belong on backoffice dashboards / admin leads. */
+/**
+ * Guest saves that belong on backoffice dashboards / admin leads.
+ *
+ * Do NOT use `NOT: { path equals 'external' }` alone — Postgres treats a missing
+ * JSON path as NULL, so `NOT (NULL = 'external')` drops every public form save.
+ */
 export function guestSaveDashboardVisibleWhere(): Prisma.GuestUserDataWhereInput {
   return {
-    NOT: {
-      meta: {
-        path: ['crmOrigin'],
-        equals: CRM_EXTERNAL_ORIGIN,
-      },
-    },
+    OR: [
+      { meta: { equals: Prisma.DbNull } },
+      { meta: { path: ['crmOrigin'], equals: Prisma.DbNull } },
+      { meta: { path: ['crmOrigin'], equals: Prisma.JsonNull } },
+      { meta: { path: ['crmOrigin'], equals: CRM_LEAD_ORIGIN_GUEST } },
+    ],
   }
 }
 

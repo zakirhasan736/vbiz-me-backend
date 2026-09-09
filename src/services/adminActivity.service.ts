@@ -228,7 +228,7 @@ const listActivityFeed = async (query: ActivityFeedQuery) => {
       },
     }),
     prisma.eventLog.count({
-      where: { eventType: { in: ['save_guest_user', 'save_contact_download', 'save_note'] } },
+      where: { eventType: 'save_guest_user' },
     }),
     prisma.auditLog.count(),
   ])

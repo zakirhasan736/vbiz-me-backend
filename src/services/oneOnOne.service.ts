@@ -451,6 +451,7 @@ async function pushGuestMeetingNotification(opts: {
   dateLabel: string
   timeLabel: string
   meetingUrl: string | null
+  message?: string | null
 }) {
   if (!opts.guestProfileId) return { sent: false as const, reason: 'no_push_subscription' as const }
 
@@ -463,7 +464,10 @@ async function pushGuestMeetingNotification(opts: {
           ? 'Your 1-on-1 was rescheduled'
           : 'Your 1-on-1 was cancelled'
 
-  const body =
+  const reply = opts.message?.trim()
+  const truncatedReply = reply && reply.length > 120 ? `${reply.slice(0, 117).trimEnd()}...` : reply || ''
+
+  let body =
     opts.eventType === 'times_proposed'
       ? `${opts.ownerName} shared ${opts.dateLabel}. Open the link to pick a time.`
       : opts.eventType === 'scheduled'
@@ -471,6 +475,10 @@ async function pushGuestMeetingNotification(opts: {
         : opts.eventType === 'rescheduled'
           ? `${opts.ownerName} moved your meeting to ${opts.dateLabel} at ${opts.timeLabel}.`
           : `${opts.ownerName} cancelled the meeting for ${opts.dateLabel} at ${opts.timeLabel}.`
+
+  if (opts.eventType === 'times_proposed' && truncatedReply) {
+    body = `${body} Message: "${truncatedReply}"`
+  }
 
   pushService.notifyProfileUpdate(opts.guestProfileId, {
     title,
@@ -659,7 +667,7 @@ const scheduleMeetingFromRequest = async (actor: Actor, input: ScheduleMeetingIn
   const timezone = input.timezone || 'UTC'
   const durationMinutes = input.durationMinutes ?? 30
   const title = input.title || `1-on-1 with ${request.guestName}`
-  const description = input.description || request.message || null
+  const description = input.description?.trim() || null
 
   const uniqueSlots = new Map<string, { date: string; startTime: string }>()
   for (const slot of input.slots) {
@@ -702,6 +710,7 @@ const scheduleMeetingFromRequest = async (actor: Actor, input: ScheduleMeetingIn
   const slotLines = slots.map((s) => `${s.date} at ${s.startTime} (${s.timezone})`)
   const optionsLabel = `${slots.length} time option${slots.length === 1 ? '' : 's'}`
 
+  const messageToGuest = description?.trim() || ''
   await sendEmailsSafe(
     [request.guestEmail],
     `${ownerName} proposed times for your 1-on-1`,
@@ -712,7 +721,7 @@ const scheduleMeetingFromRequest = async (actor: Actor, input: ScheduleMeetingIn
         { label: 'Host', value: ownerName },
         { label: 'Options', value: slotLines.join(' · ') },
         { label: 'Duration', value: `${durationMinutes} minutes` },
-        { label: 'Note', value: description || '—' },
+        ...(messageToGuest ? [{ label: 'Message', value: messageToGuest }] : []),
       ],
       ctaLabel: 'Choose your time',
       ctaUrl: pickUrl,
@@ -730,6 +739,7 @@ const scheduleMeetingFromRequest = async (actor: Actor, input: ScheduleMeetingIn
     dateLabel: optionsLabel,
     timeLabel: 'pick a time',
     meetingUrl: pickUrl,
+    message: messageToGuest || null,
   })
 
   return {

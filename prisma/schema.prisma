@@ -1629,6 +1629,8 @@ model CrmEvent {
   time            String
   startsAt        DateTime
   status          String    @default("Scheduled")
+  /** Optional free-text details shown on the board and calendar sync. */
+  description     String?
   /** global | group | one_to_one */
   scope           String    @default("one_to_one")
   profileId       String?
