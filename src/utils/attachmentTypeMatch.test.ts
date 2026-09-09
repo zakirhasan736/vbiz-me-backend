@@ -4,6 +4,7 @@ import {
   BUILDER_ATTACHMENT_TYPE_ALIASES,
   PUBLIC_ATTACHMENT_KIND_ALIASES,
   attachmentTypeNameMatches,
+  isSingletonBuilderAttachmentType,
   sameMediaUrl,
   scoreAttachmentTypeName,
 } from '../utils/attachmentTypeMatch'
@@ -14,6 +15,19 @@ describe('attachmentTypeMatch', () => {
     assert.equal(attachmentTypeNameMatches('intro video', 'Intro vCard Video'), true)
     assert.equal(attachmentTypeNameMatches('Background Video/Image', 'Intro vCard Video'), false)
     assert.equal(attachmentTypeNameMatches('Background Video/Image', 'Background Video/Image'), true)
+  })
+
+  it('treats only profile-media slots as singleton replaceable types', () => {
+    assert.equal(isSingletonBuilderAttachmentType('Profile Image/Video'), true)
+    assert.equal(isSingletonBuilderAttachmentType('Background Video/Image'), true)
+    assert.equal(isSingletonBuilderAttachmentType('Intro vCard Video'), true)
+    assert.equal(isSingletonBuilderAttachmentType('2D Video Explainer'), true)
+    assert.equal(isSingletonBuilderAttachmentType('Background Music'), true)
+    assert.equal(isSingletonBuilderAttachmentType('Portfolio Gallery'), false)
+    assert.equal(isSingletonBuilderAttachmentType('Service Featured'), false)
+    assert.equal(isSingletonBuilderAttachmentType('Blog Featured'), false)
+    assert.equal(isSingletonBuilderAttachmentType('Featured Image'), false)
+    assert.equal(isSingletonBuilderAttachmentType('About Me Featured'), false)
   })
 
   it('does not match bare short tokens', () => {

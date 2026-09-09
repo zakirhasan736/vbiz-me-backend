@@ -55,6 +55,21 @@ export function attachmentTypeNameMatches(
   return scoreAttachmentTypeName(name, list) >= 0
 }
 
+/**
+ * Singleton profile-media slots (avatar, background, intro, explainer, music).
+ * Only these should replace/destroy prior S3 objects on upload.
+ * Collection types (Portfolio Gallery, Service Featured, etc.) must keep prior files —
+ * each item stores its own URL and deleting by shared type orphans older items.
+ */
+export function isSingletonBuilderAttachmentType(typeName: string | null | undefined): boolean {
+  const name = (typeName || '').trim()
+  if (!name) return false
+  for (const canonical of Object.keys(BUILDER_ATTACHMENT_TYPE_ALIASES)) {
+    if (attachmentTypeNameMatches(name, canonical)) return true
+  }
+  return false
+}
+
 export function normalizeMediaUrlKey(url: string | null | undefined): string {
   return (url || '').trim().split(/[?#]/)[0].toLowerCase()
 }
