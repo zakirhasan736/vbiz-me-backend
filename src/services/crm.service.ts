@@ -33,7 +33,11 @@ import {
 
 export type { CrmAccessContext, CrmActor, CrmScopeKind }
 
-export type CrmLeadRow = AdminLeadRow & { notesCount: number }
+export type CrmLeadRow = AdminLeadRow & {
+  notesCount: number
+  schedulesCount: number
+  eventsCount: number
+}
 
 export async function resolveCrmAccess(actor: CrmActor): Promise<CrmAccessContext> {
   const kind = resolveCrmScopeKind(actor.role)
@@ -228,7 +232,7 @@ export async function listCrmLeads(
       take: limit,
       include: {
         profile: profileInclude,
-        _count: { select: { leadNotes: true } },
+        _count: { select: { leadNotes: true, meetings: true, crmEvents: true } },
       },
     }),
   ])
@@ -237,6 +241,8 @@ export async function listCrmLeads(
     items: rows.map((row) => ({
       ...mapGuestSave(row),
       notesCount: row._count.leadNotes,
+      schedulesCount: row._count.meetings,
+      eventsCount: row._count.crmEvents,
     })),
     total,
     skip,
@@ -277,7 +283,7 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
     include: { profile: profileInclude },
   })
 
-  return { ...mapGuestSave(row), notesCount: 0 }
+  return { ...mapGuestSave(row), notesCount: 0, schedulesCount: 0, eventsCount: 0 }
 }
 
 async function loadScopedGuest(actor: CrmActor, id: string) {
@@ -307,16 +313,85 @@ export async function patchCrmLead(
     data: { meta: mergeAdminMeta(existing.meta, body) },
     include: {
       profile: profileInclude,
-      _count: { select: { leadNotes: true } },
+      _count: { select: { leadNotes: true, meetings: true, crmEvents: true } },
     },
   })
-  return { ...mapGuestSave(updated), notesCount: updated._count.leadNotes }
+  return {
+    ...mapGuestSave(updated),
+    notesCount: updated._count.leadNotes,
+    schedulesCount: updated._count.meetings,
+    eventsCount: updated._count.crmEvents,
+  }
 }
 
 export async function deleteCrmLead(actor: CrmActor, id: string) {
   await loadScopedGuest(actor, id)
   await prisma.guestUserData.delete({ where: { id } })
   return { id, deleted: true }
+}
+
+export type LeadScheduleRow = {
+  id: string
+  host: string
+  type: string
+  date: string
+  time: string
+  startsAt: string
+  status: string
+  meetLink: string | null
+  notes: string | null
+}
+
+export type LeadEventRow = {
+  id: string
+  host: string
+  type: string
+  date: string
+  time: string
+  startsAt: string
+  status: string
+  description: string | null
+  recipientName: string | null
+}
+
+export async function listLeadSchedules(actor: CrmActor, leadId: string): Promise<LeadScheduleRow[]> {
+  await loadScopedGuest(actor, leadId)
+  const rows = await prisma.meeting.findMany({
+    where: { guestUserDataId: leadId },
+    orderBy: { startsAt: 'desc' },
+    take: 100,
+  })
+  return rows.map((row) => ({
+    id: row.id,
+    host: row.host,
+    type: row.type,
+    date: row.date,
+    time: row.time,
+    startsAt: row.startsAt.toISOString(),
+    status: row.status,
+    meetLink: row.meetLink,
+    notes: row.notes,
+  }))
+}
+
+export async function listLeadEvents(actor: CrmActor, leadId: string): Promise<LeadEventRow[]> {
+  await loadScopedGuest(actor, leadId)
+  const rows = await prisma.crmEvent.findMany({
+    where: { guestUserDataId: leadId },
+    orderBy: { startsAt: 'desc' },
+    take: 100,
+  })
+  return rows.map((row) => ({
+    id: row.id,
+    host: row.host,
+    type: row.type,
+    date: row.date,
+    time: row.time,
+    startsAt: row.startsAt.toISOString(),
+    status: row.status,
+    description: row.description,
+    recipientName: row.recipientName,
+  }))
 }
 
 export type SchedulePerson = {
@@ -677,6 +752,8 @@ const crmService = {
   createCrmLead,
   patchCrmLead,
   deleteCrmLead,
+  listLeadSchedules,
+  listLeadEvents,
   searchSchedulePeople,
   getCrmScheduleCalendar,
 }

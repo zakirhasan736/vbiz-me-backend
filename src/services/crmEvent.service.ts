@@ -37,6 +37,7 @@ type CrmEventRow = {
   attachments: Prisma.JsonValue | null
   recipientEmail: string | null
   recipientName: string | null
+  guestUserDataId?: string | null
   createdById: string | null
   googleEventId: string | null
   meetLink: string | null
@@ -185,12 +186,30 @@ function serializeCrmEvent(row: CrmEventRow) {
     attachments: parseAttachments(row.attachments),
     recipientEmail: row.recipientEmail,
     recipientName: row.recipientName,
+    guestUserDataId: row.guestUserDataId ?? null,
     googleEventId: row.googleEventId,
     meetLink: row.meetLink,
     createdById: row.createdById,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }
+}
+
+async function resolveOptionalGuestUserDataId(
+  guestUserDataId: string | null | undefined,
+  profileId: string | null
+): Promise<string | null> {
+  const id = guestUserDataId?.trim()
+  if (!id) return null
+  const lead = await prisma.guestUserData.findUnique({
+    where: { id },
+    select: { id: true, profileId: true },
+  })
+  if (!lead) throw new AppError(404, 'Lead not found')
+  if (profileId && lead.profileId !== profileId) {
+    throw new AppError(400, 'Lead does not belong to this card')
+  }
+  return lead.id
 }
 
 function calendarSummary(type: string, host: string) {
@@ -365,6 +384,7 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
   const startsAt = computeStartsAt(input.date, input.time)
   const attachments = normalizeAttachments(input.attachments)
   const primaryProfileId = normalized.profileId
+  const guestUserDataId = await resolveOptionalGuestUserDataId(input.guestUserDataId, primaryProfileId)
   const { emails: ownerEmails } = await resolveOwnerEmails(primaryProfileId)
   const recipientEmail = input.recipientEmail?.trim().toLowerCase() || ownerEmails[0] || null
   const recipientName = input.recipientName?.trim() || input.host.trim() || null
@@ -384,6 +404,7 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
       attachments: attachments.length ? attachments : undefined,
       recipientEmail,
       recipientName,
+      guestUserDataId,
       createdById: actor.id,
     },
   })

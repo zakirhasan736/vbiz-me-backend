@@ -34,6 +34,7 @@ type MeetingRow = {
   scope: string
   profileId: string | null
   groupProfileIds: Prisma.JsonValue | null
+  guestUserDataId?: string | null
   createdById: string | null
   googleEventId: string | null
   meetLink: string | null
@@ -188,12 +189,30 @@ function serializeMeeting(row: MeetingRow) {
     scope: row.scope as MeetingScope,
     profileId: row.profileId,
     groupProfileIds: parseGroupProfileIds(row.groupProfileIds),
+    guestUserDataId: row.guestUserDataId ?? null,
     googleEventId: row.googleEventId,
     meetLink: row.meetLink,
     createdById: row.createdById,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }
+}
+
+async function resolveOptionalGuestUserDataId(
+  guestUserDataId: string | null | undefined,
+  profileId: string | null
+): Promise<string | null> {
+  const id = guestUserDataId?.trim()
+  if (!id) return null
+  const lead = await prisma.guestUserData.findUnique({
+    where: { id },
+    select: { id: true, profileId: true },
+  })
+  if (!lead) throw new AppError(404, 'Lead not found')
+  if (profileId && lead.profileId !== profileId) {
+    throw new AppError(400, 'Lead does not belong to this card')
+  }
+  return lead.id
 }
 
 async function resolveOwnerEmails(profileId: string | null | undefined): Promise<{
@@ -422,12 +441,66 @@ async function notifyOwnerAnnouncement(
   }
 }
 
+async function resolveGuestContact(guestUserDataId: string | null | undefined): Promise<{
+  email: string | null
+  name: string | null
+}> {
+  if (!guestUserDataId) return { email: null, name: null }
+  const guest = await prisma.guestUserData.findUnique({
+    where: { id: guestUserDataId },
+    select: { email: true, fullName: true },
+  })
+  return {
+    email: guest?.email?.trim().toLowerCase() || null,
+    name: guest?.fullName?.trim() || null,
+  }
+}
+
 async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel: string, onlyBackoffice = false) {
   const { emails: ownerEmails, displayName: ownerDisplayName } = await resolveOwnerEmailsForMeeting(meeting)
-  await notifyOwnerAnnouncement(actor, meeting, ownerEmails, meetLabel, onlyBackoffice)
+  const guest = await resolveGuestContact(meeting.guestUserDataId)
+  const receiverEmails = [...new Set([...ownerEmails, ...(guest.email ? [guest.email] : [])])]
+  const displayName = guest.name || ownerDisplayName
+
+  await notifyOwnerAnnouncement(actor, meeting, receiverEmails, meetLabel, onlyBackoffice)
   notifyOwnerPush(meeting, meetLabel, onlyBackoffice)
-  if (ownerEmails.length) {
-    void sendMeetingEmails({ meeting, ownerEmails, ownerDisplayName, actor, meetLabel })
+  if (receiverEmails.length) {
+    void sendMeetingEmails({
+      meeting,
+      ownerEmails: receiverEmails,
+      ownerDisplayName: displayName,
+      actor,
+      meetLabel,
+    })
+  }
+  await notifySenderAnnouncement(actor, meeting, meetLabel)
+}
+
+async function notifySenderAnnouncement(actor: Actor, meeting: MeetingRow, meetLabel: string) {
+  const senderEmail = actor.email?.trim().toLowerCase()
+  if (!senderEmail) return
+
+  const meetLine = meeting.meetLink ? `\n\n${meetLabel}: ${meeting.meetLink}` : ''
+  try {
+    await announcementService.create(actor, {
+      type: 'info',
+      kind: 'announcement',
+      title: `Session booked: ${meeting.type}`,
+      body: `You booked a ${meeting.type} with ${meeting.host} on ${meeting.date} at ${meeting.time}.${meetLine}`,
+      status: 'active',
+      targetType: 'specific',
+      targetEmails: [senderEmail],
+      meta: {
+        meetingId: meeting.id,
+        meetLink: meeting.meetLink || '',
+        category: 'event',
+        channel: 'inbox',
+        sendPush: '1',
+        userId: actor.id,
+      },
+    })
+  } catch (error) {
+    logger.error('Failed to create meeting announcement for sender', error)
   }
 }
 
@@ -578,6 +651,7 @@ const create = async (actor: Actor, input: CreateMeetingInput, actorRole?: strin
   const status = input.status ?? 'Scheduled'
   const startsAt = computeStartsAt(input.date, input.time)
   const primaryProfileId = normalized.profileId
+  const guestUserDataId = await resolveOptionalGuestUserDataId(input.guestUserDataId, primaryProfileId)
   const { emails: ownerEmails } = await resolveOwnerEmails(primaryProfileId)
   const meetLabel = meetLabelForEvent(null)
 
@@ -594,6 +668,7 @@ const create = async (actor: Actor, input: CreateMeetingInput, actorRole?: strin
       scope: normalized.scope,
       profileId: primaryProfileId,
       groupProfileIds: normalized.groupProfileIds.length ? normalized.groupProfileIds : undefined,
+      guestUserDataId,
       createdById: actor.id,
     },
   })
