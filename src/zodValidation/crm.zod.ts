@@ -10,7 +10,7 @@ const listLeadsQuery = z.object({
   profileId: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
   origin: z.preprocess(emptyToUndefined, z.enum(['guest', 'crm_external']).optional()),
   skip: z.coerce.number().int().min(0).default(0),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: z.coerce.number().int().min(1).max(100).default(10),
 })
 
 const createLeadBody = z.object({

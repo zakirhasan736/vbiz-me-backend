@@ -1,6 +1,7 @@
 import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { crmOriginFromMeta, guestSaveDashboardVisibleWhere } from '../utils/crmLeadOrigin'
+import { leadMetadataFromGuestMeta } from '../utils/guestSaveMeta'
 import { prisma } from '../utils/prisma'
 import type { ListLeadsQuery, PatchLeadBody } from '../zodValidation/adminLeads.zod'
 
@@ -108,18 +109,7 @@ function str(value: unknown, fallback = ''): string {
 }
 
 function metadataFromMeta(meta: unknown): LeadMetadata {
-  const m = asRecord(meta)
-  return {
-    userAgent: str(m.userAgent),
-    language: str(m.language),
-    platform: str(m.platform),
-    browser: str(m.browser),
-    device: str(m.device),
-    screen: str(m.screen),
-    timezone: str(m.timezone),
-    approximateLocation: str(m.approximateLocation) || str(m.location) || 'Unknown',
-    referrer: str(m.referrer) || 'Direct / QR',
-  }
+  return leadMetadataFromGuestMeta(meta)
 }
 
 function ownerFromProfile(profile: ProfileSelect) {
