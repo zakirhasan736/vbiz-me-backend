@@ -32,10 +32,6 @@ import {
 
 export type { CrmAccessContext, CrmActor, CrmScopeKind }
 
-export type CrmLeadRow = AdminLeadRow & {
-  notesCount: number
-  schedulesCount: number
-  eventsCount: number
 export type CrmLeadCardRef = {
   leadId: string
   profileId: string
@@ -47,6 +43,8 @@ export type CrmLeadCardRef = {
 
 export type CrmLeadRow = AdminLeadRow & {
   notesCount: number
+  schedulesCount: number
+  eventsCount: number
   /** Cards this person (email) appears on — unique by profile. */
   cards?: CrmLeadCardRef[]
   /** All guest-save row ids under this grouped lead. */
@@ -58,8 +56,13 @@ function normalizeLeadEmail(email: string | null | undefined): string {
 }
 
 /** One person per email; same email on many cards → one row with `cards`. No email → one row per save. */
-function groupCrmLeadsByEmail(rows: Array<AdminLeadRow & { notesCount: number }>): CrmLeadRow[] {
-  const buckets = new Map<string, Array<AdminLeadRow & { notesCount: number }>>()
+function groupCrmLeadsByEmail(
+  rows: Array<AdminLeadRow & { notesCount: number; schedulesCount: number; eventsCount: number }>
+): CrmLeadRow[] {
+  const buckets = new Map<
+    string,
+    Array<AdminLeadRow & { notesCount: number; schedulesCount: number; eventsCount: number }>
+  >()
   const order: string[] = []
 
   for (const row of rows) {
@@ -90,9 +93,13 @@ function groupCrmLeadsByEmail(rows: Array<AdminLeadRow & { notesCount: number }>
     }
     const cards = [...cardsByProfile.values()]
     const notesCount = list.reduce((sum, row) => sum + (row.notesCount || 0), 0)
+    const schedulesCount = list.reduce((sum, row) => sum + (row.schedulesCount || 0), 0)
+    const eventsCount = list.reduce((sum, row) => sum + (row.eventsCount || 0), 0)
     return {
       ...primary,
       notesCount,
+      schedulesCount,
+      eventsCount,
       cards,
       leadIds: list.map((row) => row.id),
       // Prefer primary card fields from the newest unique card set when only one card.
@@ -142,7 +149,7 @@ export async function listCrmLeads(
     orderBy: { createdAt: 'desc' },
     include: {
       profile: profileInclude,
-      _count: { select: { leadNotes: true } },
+      _count: { select: { leadNotes: true, meetings: true, crmEvents: true } },
     },
   })
 
@@ -150,6 +157,8 @@ export async function listCrmLeads(
     rows.map((row) => ({
       ...mapGuestSave(row),
       notesCount: row._count.leadNotes,
+      schedulesCount: row._count.meetings,
+      eventsCount: row._count.crmEvents,
     }))
   )
   const total = grouped.length
@@ -308,66 +317,6 @@ export async function getCrmDashboard(actor: CrmActor) {
   }
 }
 
-export async function listCrmLeads(
-  actor: CrmActor,
-  query: { q?: string; profileId?: string; origin?: CrmLeadOrigin; skip?: number; limit?: number }
-) {
-  const access = await resolveCrmAccess(actor)
-  const skip = Math.max(0, query.skip ?? 0)
-  const limit = Math.min(100, Math.max(1, query.limit ?? 50))
-
-  if (access.profileIds !== null && access.profileIds.length === 0) {
-    return { items: [] as CrmLeadRow[], total: 0, skip, limit }
-  }
-
-  const tokens = searchTokens(query.q)
-  const where: Prisma.GuestUserDataWhereInput = {
-    ...scopedProfileFilter(access.profileIds, query.profileId),
-    ...guestSaveOriginWhere(query.origin),
-    ...(tokens.length
-      ? {
-          AND: tokens.map((token) => {
-            const search = { contains: token, mode: 'insensitive' as const }
-            return {
-              OR: [
-                { fullName: search },
-                { email: search },
-                { phone: search },
-                { profile: { is: profileIdentitySearch(token) } },
-              ],
-            }
-          }),
-        }
-      : {}),
-  }
-
-  const [total, rows] = await Promise.all([
-    prisma.guestUserData.count({ where }),
-    prisma.guestUserData.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit,
-      include: {
-        profile: profileInclude,
-        _count: { select: { leadNotes: true, meetings: true, crmEvents: true } },
-      },
-    }),
-  ])
-
-  return {
-    items: rows.map((row) => ({
-      ...mapGuestSave(row),
-      notesCount: row._count.leadNotes,
-      schedulesCount: row._count.meetings,
-      eventsCount: row._count.crmEvents,
-    })),
-    total,
-    skip,
-    limit,
-  }
-}
-
 export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unknown>): Promise<CrmLeadRow> {
   const access = await resolveCrmAccess(actor)
   const body = stripClientOwnershipClaims(rawBody)
@@ -425,6 +374,8 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
       const mapped = {
         ...mapGuestSave(updated),
         notesCount: updated._count.leadNotes,
+        schedulesCount: 0,
+        eventsCount: 0,
       }
       return {
         ...mapped,
@@ -456,21 +407,22 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
     include: { profile: profileInclude },
   })
 
-  return { ...mapGuestSave(row), notesCount: 0, schedulesCount: 0, eventsCount: 0 }
-  const mapped = { ...mapGuestSave(row), notesCount: 0 }
   return {
-    ...mapped,
+    ...mapGuestSave(row),
+    notesCount: 0,
+    schedulesCount: 0,
+    eventsCount: 0,
     cards: [
       {
-        leadId: mapped.id,
-        profileId: mapped.vCardId,
-        slug: mapped.vCardSlug,
-        name: mapped.vCardName,
-        submittedAt: mapped.submittedAt,
-        origin: mapped.origin,
+        leadId: row.id,
+        profileId: row.profileId,
+        slug: row.profile?.slug || '',
+        name: row.profile?.name || '',
+        submittedAt: row.createdAt.toISOString(),
+        origin: 'crm_external' as const,
       },
     ],
-    leadIds: [mapped.id],
+    leadIds: [row.id],
   }
 }
 

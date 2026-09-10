@@ -93,6 +93,8 @@ model User {
   featureOverrides     CorporateFeatureOverride[]
 
   @@index([provider, providerId])
+  @@index([createdById])
+  @@index([role])
 }
 
 model ForgotPasswordToken {
@@ -382,10 +384,17 @@ model Profile {
 
   @@index([userId])
   @@index([companyUserId])
+  @@index([createdById])
+  @@index([statusId])
+  @@index([professionId])
   @@index([slug])
   @@index([email])
   @@index([isPublic])
   @@index([isDraft])
+  @@index([updatedAt])
+  @@index([createdAt])
+  @@index([isPublic, isDraft, updatedAt])
+  @@index([professionId, isPublic, isDraft])
 }
 
 model Address {
@@ -403,6 +412,7 @@ model Address {
   updatedAt DateTime @updatedAt
 
   @@index([profileId])
+  @@index([profileId, isPrimary])
 }
 
 model Education {
@@ -500,6 +510,7 @@ model Blog {
   updatedAt        DateTime  @updatedAt
 
   @@index([profileId])
+  @@index([profileId, deletedAt, status])
   @@map("BlogDirect")
 }
 
@@ -531,6 +542,7 @@ model TabItem {
 
   @@index([profileId])
   @@index([profileId, tabKey])
+  @@index([profileId, tabKey, deletedAt, status])
   @@index([tabKey])
   @@index([legacyPostId])
 }
@@ -1375,6 +1387,7 @@ model PostMeta {
 
   @@index([postId])
   @@index([metaKey])
+  @@index([postId, metaKey])
 }
 
 model AttachmentType {
