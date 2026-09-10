@@ -51,6 +51,12 @@ export type CrmLeadRow = AdminLeadRow & {
   leadIds?: string[]
 }
 
+type CrmLeadCountRow = AdminLeadRow & {
+  notesCount: number
+  schedulesCount: number
+  eventsCount: number
+}
+
 function normalizeLeadEmail(email: string | null | undefined): string {
   return typeof email === 'string' ? email.trim().toLowerCase() : ''
 }
@@ -91,13 +97,8 @@ async function countLeadMeetingsAndEvents(leadIds: string[]): Promise<{
 }
 
 /** One person per email; same email on many cards → one row with `cards`. No email → one row per save. */
-function groupCrmLeadsByEmail(
-  rows: Array<AdminLeadRow & { notesCount: number; schedulesCount: number; eventsCount: number }>
-): CrmLeadRow[] {
-  const buckets = new Map<
-    string,
-    Array<AdminLeadRow & { notesCount: number; schedulesCount: number; eventsCount: number }>
-  >()
+function groupCrmLeadsByEmail(rows: CrmLeadCountRow[]): CrmLeadRow[] {
+  const buckets = new Map<string, CrmLeadCountRow[]>()
   const order: string[] = []
 
   for (const row of rows) {
@@ -151,7 +152,7 @@ export async function listCrmLeads(
 ) {
   const access = await resolveCrmAccess(actor)
   const skip = Math.max(0, query.skip ?? 0)
-  const limit = Math.min(100, Math.max(1, query.limit ?? 10))
+  const limit = Math.min(100, Math.max(1, query.limit ?? 50))
 
   if (access.profileIds !== null && access.profileIds.length === 0) {
     return { items: [] as CrmLeadRow[], total: 0, skip, limit }
@@ -384,7 +385,7 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
       orderBy: { createdAt: 'desc' },
       include: {
         profile: profileInclude,
-        _count: { select: { leadNotes: true } },
+        _count: { select: { leadNotes: true, meetings: true, crmEvents: true } },
       },
     })
     if (existing) {
@@ -404,14 +405,14 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
         },
         include: {
           profile: profileInclude,
-          _count: { select: { leadNotes: true } },
+          _count: { select: { leadNotes: true, meetings: true, crmEvents: true } },
         },
       })
       const mapped = {
         ...mapGuestSave(updated),
         notesCount: updated._count.leadNotes,
-        schedulesCount: 0,
-        eventsCount: 0,
+        schedulesCount: updated._count.meetings,
+        eventsCount: updated._count.crmEvents,
       }
       return {
         ...mapped,
