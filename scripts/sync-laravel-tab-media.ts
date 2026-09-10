@@ -48,7 +48,6 @@ const EXTRA_TABS = [
   'Certifications/Licenses',
   'Faq',
   'Reviews',
-  'Video Links',
   'About Me',
 ]
 

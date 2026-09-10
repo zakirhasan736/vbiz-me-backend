@@ -243,7 +243,6 @@ export const NAV_ID_TO_TAB_KEY: Record<string, string> = {
   'meet-team': 'meet_our_team',
   calendar: 'calendar',
   faq: 'faqs',
-  'video-links': 'video_links',
   announcement: 'announcements',
   bbb: 'bbb_accreditations',
   booking: 'bookings',
@@ -298,7 +297,8 @@ export const NAV_CHECKBOX_TO_TAB_KEY: Record<string, string> = {
   galleryNav_checkbox: 'gallery',
   portfolioNav_checkbox: 'gallery',
   videoNav_checkbox: 'videos',
-  videoLinksNav_checkbox: 'video_links',
+  // Legacy: older cards used videoLinksNav for the Videos tab.
+  videoLinksNav_checkbox: 'videos',
   '2dNav_checkbox': 'video_explainers',
   '2DVideoExplainerNav_checkbox': 'video_explainers',
 
