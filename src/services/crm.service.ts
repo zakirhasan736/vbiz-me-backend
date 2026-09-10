@@ -55,6 +55,41 @@ function normalizeLeadEmail(email: string | null | undefined): string {
   return typeof email === 'string' ? email.trim().toLowerCase() : ''
 }
 
+/** Count meetings/events by lead id without GuestUserData `_count` (stale clients may lack those relations). */
+async function countLeadMeetingsAndEvents(leadIds: string[]): Promise<{
+  meetings: Map<string, number>
+  events: Map<string, number>
+}> {
+  const meetings = new Map<string, number>()
+  const events = new Map<string, number>()
+  if (!leadIds.length) return { meetings, events }
+
+  try {
+    const [meetingRows, eventRows] = await Promise.all([
+      prisma.meeting.groupBy({
+        by: ['guestUserDataId'],
+        where: { guestUserDataId: { in: leadIds } },
+        _count: { _all: true },
+      }),
+      prisma.crmEvent.groupBy({
+        by: ['guestUserDataId'],
+        where: { guestUserDataId: { in: leadIds } },
+        _count: { _all: true },
+      }),
+    ])
+    for (const row of meetingRows) {
+      if (row.guestUserDataId) meetings.set(row.guestUserDataId, row._count._all)
+    }
+    for (const row of eventRows) {
+      if (row.guestUserDataId) events.set(row.guestUserDataId, row._count._all)
+    }
+  } catch {
+    // Production client/DB may not expose guestUserDataId yet — keep zeros.
+  }
+
+  return { meetings, events }
+}
+
 /** One person per email; same email on many cards → one row with `cards`. No email → one row per save. */
 function groupCrmLeadsByEmail(
   rows: Array<AdminLeadRow & { notesCount: number; schedulesCount: number; eventsCount: number }>
@@ -149,16 +184,17 @@ export async function listCrmLeads(
     orderBy: { createdAt: 'desc' },
     include: {
       profile: profileInclude,
-      _count: { select: { leadNotes: true, meetings: true, crmEvents: true } },
+      _count: { select: { leadNotes: true } },
     },
   })
 
+  const activity = await countLeadMeetingsAndEvents(rows.map((row) => row.id))
   const grouped = groupCrmLeadsByEmail(
     rows.map((row) => ({
       ...mapGuestSave(row),
       notesCount: row._count.leadNotes,
-      schedulesCount: row._count.meetings,
-      eventsCount: row._count.crmEvents,
+      schedulesCount: activity.meetings.get(row.id) ?? 0,
+      eventsCount: activity.events.get(row.id) ?? 0,
     }))
   )
   const total = grouped.length
@@ -453,14 +489,15 @@ export async function patchCrmLead(
     data: { meta: mergeAdminMeta(existing.meta, body) },
     include: {
       profile: profileInclude,
-      _count: { select: { leadNotes: true, meetings: true, crmEvents: true } },
+      _count: { select: { leadNotes: true } },
     },
   })
+  const activity = await countLeadMeetingsAndEvents([id])
   return {
     ...mapGuestSave(updated),
     notesCount: updated._count.leadNotes,
-    schedulesCount: updated._count.meetings,
-    eventsCount: updated._count.crmEvents,
+    schedulesCount: activity.meetings.get(id) ?? 0,
+    eventsCount: activity.events.get(id) ?? 0,
   }
 }
 
