@@ -10,7 +10,7 @@ export const PACKAGE_ACCESS_FEATURES = [
 ] as const
 
 /** Always included for every card owner — not sellable or lockable by package. */
-export const MANDATORY_PACKAGE_ACCESS_KEYS = ['allow_push_notification'] as const
+export const MANDATORY_PACKAGE_ACCESS_KEYS = ['allow_push_notification', 'allow_crm'] as const
 
 export type PackageAccessKey = (typeof PACKAGE_ACCESS_FEATURES)[number]['key']
 export type MandatoryPackageAccessKey = (typeof MANDATORY_PACKAGE_ACCESS_KEYS)[number]
@@ -88,23 +88,52 @@ export function entitlementsFromFeatures(
   whenMissing = true
 ): PackageAccessMap {
   const map = whenMissing ? allPackageAccessEnabled() : allPackageAccessDisabled()
-  // Premium add-ons: missing flags stay locked unless explicitly enabled.
+  // Premium add-on: missing AI Assistance stays locked unless explicitly enabled.
   map.allow_ai_assistance = false
-  map.allow_crm = false
   if (!features?.length) return applyMandatoryPackageAccess(map)
   for (const item of PACKAGE_ACCESS_FEATURES) {
     const row = features.find((feature) => feature.featureKey.trim().toLowerCase() === item.key)
     if (!row) continue
-    const defaultWhenMissing = item.key === 'allow_ai_assistance' || item.key === 'allow_crm' ? false : whenMissing
+    const defaultWhenMissing = item.key === 'allow_ai_assistance' ? false : whenMissing
     map[item.key] = parseAccessFlag(row.featureValue, defaultWhenMissing)
   }
   return applyMandatoryPackageAccess(map)
 }
 
+/** Catalog rule: Canva on every package except Free. */
+export function catalogAllowCanvaValue(slug?: string | null): '0' | '1' {
+  return String(slug || '')
+    .trim()
+    .toLowerCase() === 'free'
+    ? '0'
+    : '1'
+}
+
+/** Catalog rule: CRM is included on every package (not plan-gated). */
+export function catalogAllowCrmValue(_slug?: string | null): '0' | '1' {
+  void _slug
+  return '1'
+}
+
+/**
+ * Linked corporate members keep their own subscription row (often Free) but inherit
+ * enabled allow_* features from the company plan (Canva, etc.).
+ */
+export function mergeInheritedPackageAccess(
+  memberAccess: PackageAccessMap,
+  parentAccess: PackageAccessMap
+): PackageAccessMap {
+  const next = { ...memberAccess }
+  for (const item of PACKAGE_ACCESS_FEATURES) {
+    if (parentAccess[item.key]) next[item.key] = true
+  }
+  return applyMandatoryPackageAccess(next)
+}
+
 /** Default explicit allow_* featureValue used when backfilling missing package flags. */
 export function defaultAllowFlagValue(featureKey: string): '0' | '1' {
   const key = featureKey.trim().toLowerCase()
-  if (key === 'allow_ai_assistance' || key === 'allow_crm') return '0'
+  if (key === 'allow_ai_assistance') return '0'
   return '1'
 }
 

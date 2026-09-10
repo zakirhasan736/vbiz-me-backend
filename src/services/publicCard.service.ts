@@ -20,6 +20,7 @@ import { PUBLIC_ATTACHMENT_KIND_ALIASES, sameMediaUrl, scoreAttachmentTypeName }
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { CRM_LEAD_ORIGIN_GUEST } from '../utils/crmLeadOrigin'
 import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
+import { enrichGuestSaveMeta } from '../utils/guestSaveMeta'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
@@ -2152,7 +2153,12 @@ const saveGuestUser = async (
     profile_id?: string
     meta?: unknown
   },
-  requestMeta?: { ip?: string; userAgent?: string }
+  requestMeta?: {
+    ip?: string
+    userAgent?: string
+    cfCity?: string | null
+    cfCountry?: string | null
+  }
 ) => {
   const fullName = String(input.full_name || input.name || '').trim()
   const phone = String(input.phone || '').trim()
@@ -2182,16 +2188,20 @@ const saveGuestUser = async (
 
   const submittedAt = new Date().toISOString()
   const guestId = typeof clientMeta.guestId === 'string' ? clientMeta.guestId.trim().slice(0, 128) : ''
+  const enriched = enrichGuestSaveMeta(clientMeta, {
+    ip: requestMeta?.ip || null,
+    userAgent: requestMeta?.userAgent || null,
+    cfCity: requestMeta?.cfCity || null,
+    cfCountry: requestMeta?.cfCountry || null,
+  })
   const meta = {
-    ...clientMeta,
+    ...enriched,
     ...(guestId ? { guestId } : {}),
     // Stamp guest origin so dashboard/admin filters include this row (never CRM-external).
     crmOrigin: CRM_LEAD_ORIGIN_GUEST,
     profileId: profile.id,
     profileSlug: profile.slug || null,
     ownerName: profile.name || null,
-    ip: requestMeta?.ip || null,
-    userAgent: requestMeta?.userAgent || (typeof clientMeta.userAgent === 'string' ? clientMeta.userAgent : null),
     submittedAt,
   }
 
