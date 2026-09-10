@@ -64,14 +64,29 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => entities[character] || character)
 }
 
+function truncateForPush(value: string, max = 140): string {
+  const trimmed = value.trim()
+  if (trimmed.length <= max) return trimmed
+  return `${trimmed.slice(0, Math.max(0, max - 1)).trimEnd()}…`
+}
+
 function crmEventEmailHtml(input: {
   recipientName: string
   type: string
   host: string
   date: string
   time: string
+  description?: string | null
   attachments: { url: string; fileName: string; resourceType?: string | null }[]
 }) {
+  const description = input.description?.trim()
+  const descriptionBlock = description
+    ? [
+        '<p style="margin:16px 0 8px"><strong>Message</strong></p>',
+        `<p style="margin:0;white-space:pre-wrap">${escapeHtml(description)}</p>`,
+      ].join('')
+    : ''
+
   const attachmentBlock = input.attachments.length
     ? [
         '<p style="margin:16px 0 8px"><strong>Attachments</strong></p>',
@@ -96,7 +111,8 @@ function crmEventEmailHtml(input: {
     `<p style="margin:0 0 8px"><strong>${escapeHtml(input.type)}</strong></p>`,
     `<p style="margin:0 0 4px">For: ${escapeHtml(input.host)}</p>`,
     `<p style="margin:0 0 4px">Date: ${escapeHtml(input.date)}</p>`,
-    `<p style="margin:0">Time: ${escapeHtml(input.time)}</p>`,
+    `<p style="margin:0${description || input.attachments.length ? ' 0 4px' : ''}">Time: ${escapeHtml(input.time)}</p>`,
+    descriptionBlock,
     attachmentBlock,
     '</div>',
     '<p style="margin-top:24px">Regards,<br><strong>vBiz.me Team</strong></p>',
@@ -196,45 +212,139 @@ async function processWorkNoteReminders(leadMinutes: number) {
   }
 }
 
-async function processMeetingReminders(leadMinutes: number) {
+function meetingReminderEmailHtml(input: {
+  recipientName: string
+  type: string
+  host: string
+  date: string
+  time: string
+  notes?: string | null
+  meetLink?: string | null
+}) {
+  const meetBlock = input.meetLink
+    ? `<p style="margin:16px 0"><a href="${escapeHtml(input.meetLink)}" style="display:inline-block;padding:12px 20px;background:#0f766e;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Join meeting</a></p>`
+    : ''
+  const notesBlock = input.notes?.trim()
+    ? `<p style="margin:12px 0 0;white-space:pre-wrap">${escapeHtml(input.notes.trim())}</p>`
+    : ''
+
+  return [
+    '<div style="margin:0 auto;max-width:640px;font-family:Arial,sans-serif;color:#172033;line-height:1.6">',
+    `<p>Hello ${escapeHtml(input.recipientName)},</p>`,
+    '<p>Your scheduled session is starting now.</p>',
+    '<div style="margin:20px 0;padding:16px 20px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc">',
+    `<p style="margin:0 0 8px"><strong>${escapeHtml(input.type)}</strong></p>`,
+    `<p style="margin:0 0 4px">With: ${escapeHtml(input.host)}</p>`,
+    `<p style="margin:0 0 4px">Date: ${escapeHtml(input.date)}</p>`,
+    `<p style="margin:0">Time: ${escapeHtml(input.time)}</p>`,
+    notesBlock,
+    '</div>',
+    meetBlock,
+    '<p style="margin-top:24px">Regards,<br><strong>vBiz.me Team</strong></p>',
+    '</div>',
+  ].join('')
+}
+
+const MEETING_CATCHUP_DAYS = 7
+
+async function processMeetingReminders() {
   const now = new Date()
-  const windowEnd = new Date(now.getTime() + leadMinutes * 60 * 1000)
+  const catchupFloor = new Date(now.getTime() - MEETING_CATCHUP_DAYS * 24 * 60 * 60 * 1000)
 
   const meetings = await prisma.meeting.findMany({
     where: {
       status: 'Scheduled',
       reminderSentAt: null,
-      startsAt: { gte: now, lte: windowEnd },
+      startsAt: { gte: catchupFloor, lte: now },
     },
     take: 50,
     include: {
-      profile: {
-        select: {
-          id: true,
-          email: true,
-          user: { select: { email: true } },
-        },
-      },
+      createdBy: { select: { id: true, email: true, name: true } },
+      guestUserData: { select: { email: true, fullName: true } },
     },
   })
 
   for (const meeting of meetings) {
-    const emails = [meeting.profile?.email, meeting.profile?.user?.email].filter((e): e is string => Boolean(e))
-    await notifyEmails(
-      emails,
-      `Upcoming: ${meeting.type}`,
-      `${meeting.type} with ${meeting.host} starts at ${meeting.date} ${meeting.time}.${
-        meeting.meetLink ? ` Join: ${meeting.meetLink}` : ''
-      }`,
-      { meetingId: meeting.id, href: '/crm' }
-    )
+    const emails = new Set<string>()
+    let displayName = meeting.host
 
-    if (meeting.profileId) {
-      pushService.notifyProfileUpdate(meeting.profileId, {
-        title: `Upcoming: ${meeting.type}`,
-        body: `${meeting.date} ${meeting.time}`,
-        type: 'event_updates',
+    const guestEmail = meeting.guestUserData?.email?.trim().toLowerCase()
+    if (guestEmail) emails.add(guestEmail)
+    if (meeting.guestUserData?.fullName?.trim()) {
+      displayName = meeting.guestUserData.fullName.trim()
+    }
+
+    if (meeting.scope === 'group') {
+      const ids = parseGroupProfileIds(meeting.groupProfileIds)
+      for (const profileId of ids) {
+        const resolved = await resolveProfileEmails(profileId)
+        for (const email of resolved.emails) emails.add(email)
+        if (!meeting.guestUserData?.fullName && resolved.displayName) displayName = resolved.displayName
+      }
+    } else if (meeting.profileId) {
+      const resolved = await resolveProfileEmails(meeting.profileId)
+      for (const email of resolved.emails) emails.add(email)
+      if (!meeting.guestUserData?.fullName && resolved.displayName) displayName = resolved.displayName
+    }
+
+    const recipientList = [...emails]
+    const joinHint = meeting.meetLink ? ` Join: ${meeting.meetLink}` : ''
+    const receiverBody = `${meeting.type} with ${meeting.host} starts at ${meeting.date} ${meeting.time}.${joinHint}`
+
+    await notifyEmails(recipientList, `Upcoming: ${meeting.type}`, receiverBody, {
+      meetingId: meeting.id,
+      href: '/crm',
+    })
+
+    if (config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
+      const html = meetingReminderEmailHtml({
+        recipientName: displayName || 'there',
+        type: meeting.type,
+        host: meeting.host,
+        date: meeting.date,
+        time: meeting.time,
+        notes: meeting.notes,
+        meetLink: meeting.meetLink,
       })
+      const subject = `Session starting: ${meeting.type} — ${meeting.date} ${meeting.time}`
+      for (const email of recipientList) {
+        void authUtils
+          .sendEmail({
+            receiverMail: email,
+            subject,
+            html,
+          })
+          .catch((error) => logger.error('Meeting reminder email failed', { error, email, meetingId: meeting.id }))
+      }
+    }
+
+    const pushPayload = {
+      title: `Upcoming: ${meeting.type}`,
+      body: `${meeting.date} ${meeting.time}`,
+      type: 'event_updates' as const,
+      url: meeting.meetLink || undefined,
+    }
+
+    if (meeting.scope === 'group') {
+      for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) {
+        pushService.notifyProfileUpdate(profileId, pushPayload)
+      }
+    } else if (meeting.profileId) {
+      pushService.notifyProfileUpdate(meeting.profileId, pushPayload)
+    }
+
+    const senderEmail = meeting.createdBy?.email?.trim().toLowerCase()
+    if (senderEmail && meeting.createdBy) {
+      await notifyEmails(
+        [senderEmail],
+        `Your session is starting: ${meeting.type}`,
+        `Your ${meeting.type} with ${meeting.host} starts at ${meeting.date} ${meeting.time}.${joinHint}`,
+        {
+          meetingId: meeting.id,
+          href: '/crm',
+          userId: meeting.createdBy.id,
+        }
+      )
     }
 
     await prisma.meeting.update({
@@ -244,23 +354,29 @@ async function processMeetingReminders(leadMinutes: number) {
   }
 }
 
-async function processCrmEventReminders(leadMinutes: number) {
+const CRM_EVENT_CATCHUP_DAYS = 7
+
+async function processCrmEventReminders() {
   const now = new Date()
-  const windowEnd = new Date(now.getTime() + leadMinutes * 60 * 1000)
+  const catchupFloor = new Date(now.getTime() - CRM_EVENT_CATCHUP_DAYS * 24 * 60 * 60 * 1000)
 
   const events = await prisma.crmEvent.findMany({
     where: {
       status: 'Scheduled',
       reminderSentAt: null,
-      startsAt: { gte: now, lte: windowEnd },
+      startsAt: { gte: catchupFloor, lte: now },
     },
     take: 50,
+    include: {
+      createdBy: { select: { id: true, email: true, name: true } },
+    },
   })
 
   for (const event of events) {
     const attachments = crmEventService.parseAttachments(event.attachments)
     const emails = new Set<string>()
     let displayName = event.recipientName?.trim() || event.host
+    const description = event.description?.trim() || ''
 
     if (event.recipientEmail?.trim()) {
       emails.add(event.recipientEmail.trim().toLowerCase())
@@ -283,13 +399,14 @@ async function processCrmEventReminders(leadMinutes: number) {
     const attachmentSummary = attachments.length
       ? ` Includes ${attachments.length} attachment${attachments.length === 1 ? '' : 's'}.`
       : ''
+    const messageSummary = description ? ` ${truncateForPush(description, 180)}` : ''
+    const receiverBody = `${event.type} for ${event.host} — ${event.date} ${event.time}.${messageSummary}${attachmentSummary}`
+    const pushBody = description ? truncateForPush(description) : `${event.date} ${event.time}`
 
-    await notifyEmails(
-      recipientList,
-      `CRM event: ${event.type}`,
-      `${event.type} for ${event.host} is scheduled at ${event.date} ${event.time}.${attachmentSummary}`,
-      { crmEventId: event.id, href: '/crm' }
-    )
+    await notifyEmails(recipientList, `CRM event: ${event.type}`, receiverBody, {
+      crmEventId: event.id,
+      href: '/crm',
+    })
 
     if (config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
       const html = crmEventEmailHtml({
@@ -298,6 +415,7 @@ async function processCrmEventReminders(leadMinutes: number) {
         host: event.host,
         date: event.date,
         time: event.time,
+        description,
         attachments,
       })
       const subject = `${event.type} — ${event.date} ${event.time}`
@@ -315,17 +433,31 @@ async function processCrmEventReminders(leadMinutes: number) {
     if (event.profileId) {
       pushService.notifyProfileUpdate(event.profileId, {
         title: `CRM event: ${event.type}`,
-        body: `${event.date} ${event.time}`,
+        body: pushBody,
         type: 'event_updates',
       })
     } else if (event.scope === 'group') {
       for (const profileId of parseGroupProfileIds(event.groupProfileIds)) {
         pushService.notifyProfileUpdate(profileId, {
           title: `CRM event: ${event.type}`,
-          body: `${event.date} ${event.time}`,
+          body: pushBody,
           type: 'event_updates',
         })
       }
+    }
+
+    const senderEmail = event.createdBy?.email?.trim().toLowerCase()
+    if (senderEmail && event.createdBy) {
+      await notifyEmails(
+        [senderEmail],
+        `Your wish was delivered: ${event.type}`,
+        `Your ${event.type} for ${event.host} was sent at ${event.date} ${event.time}.${messageSummary}`,
+        {
+          crmEventId: event.id,
+          href: '/crm',
+          userId: event.createdBy.id,
+        }
+      )
     }
 
     await prisma.crmEvent.update({
@@ -338,8 +470,8 @@ async function processCrmEventReminders(leadMinutes: number) {
 export async function runCrmReminders() {
   const leadMinutes = config.CRM_REMINDER_CRON.LEAD_MINUTES
   await processWorkNoteReminders(leadMinutes)
-  await processMeetingReminders(leadMinutes)
-  await processCrmEventReminders(leadMinutes)
+  await processMeetingReminders()
+  await processCrmEventReminders()
 }
 
 const crmReminderService = {

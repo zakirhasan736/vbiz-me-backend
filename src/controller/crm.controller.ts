@@ -74,12 +74,26 @@ const scheduleCalendar = catchAsyncError(async (req, res) => {
   })
 })
 
+const listLeadSchedules = catchAsyncError(async (req, res) => {
+  const { leadId } = z.object({ leadId: z.string().trim().min(1) }).parse(req.params)
+  const data = await crmService.listLeadSchedules(actorFromReq(req), leadId)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Lead schedules fetched', data })
+})
+
+const listLeadEvents = catchAsyncError(async (req, res) => {
+  const { leadId } = z.object({ leadId: z.string().trim().min(1) }).parse(req.params)
+  const data = await crmService.listLeadEvents(actorFromReq(req), leadId)
+  sendResponse(res, { success: true, statusCode: 200, message: 'Lead events fetched', data })
+})
+
 const crmController = {
   dashboard,
   listLeads,
   createLead,
   patchLead,
   deleteLead,
+  listLeadSchedules,
+  listLeadEvents,
   searchSchedulePeople,
   scheduleCalendar,
 }

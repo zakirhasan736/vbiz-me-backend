@@ -44,6 +44,8 @@ const createCrmEvent = z
     attachments: z.array(attachmentItem).max(20).optional().default([]),
     recipientEmail: z.string().trim().email().max(320).optional().nullable(),
     recipientName: z.string().trim().max(200).optional().nullable(),
+    /** Optional CRM lead (guest save) this event was created from. */
+    guestUserDataId: z.string().min(1).optional().nullable(),
   })
   .superRefine((data, ctx) => {
     const scope = data.scope ?? (data.profileId ? 'one_to_one' : 'global')
