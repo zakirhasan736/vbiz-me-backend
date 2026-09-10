@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
-import { AccountStatus } from '../../generated/prisma/enums'
+import { AccountStatus, AuthProvider } from '../../generated/prisma/enums'
 import { buildAdminTeamCardsScopeWhere } from '../constants/adminTeamCards'
 import { buildFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
 import {
@@ -10,7 +10,7 @@ import {
   featureLimitReachedError,
 } from '../constants/packageErrors'
 import { resolveOwnerMode } from '../constants/packageOwnerMode'
-import { isStaffRole, toApiRole } from '../constants/userRole'
+import { isStaffRole, toApiRole, toPrismaRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
 import {
@@ -59,10 +59,13 @@ import {
   type SocialChannel,
 } from '../utils/dashboardAnalytics'
 import {
+  CORPORATE_MEMBER_DEFAULT_PASSWORD,
   POST_STYLE_CLONE_SELECT,
   blankDuplicatedIdentityFields,
   cloneRecord,
+  corporateMemberCardOwnership,
   duplicatedCardOwnership,
+  memberDuplicatedIdentityFields,
   omitCloneKeys,
   remapDuplicatedCardSettings,
   settingsMapFromRows,
@@ -1718,59 +1721,155 @@ const clonePrimaryProfileCollections = async (
   )
 }
 
-const duplicate = async (profileId: string, userId: string, role: string) => {
+const duplicate = async (
+  profileId: string,
+  userId: string,
+  role: string,
+  member?: {
+    name: string
+    email: string
+    password?: string
+    phone?: string | null
+    designation?: string | null
+  }
+) => {
   const source = await getOwned(profileId, userId, role)
+  const isStaffActor = isStaff(role) || isAdminRole(role)
+  const corporateParentId = await resolveCorporateParentUserId(source, userId, role)
+
+  if (corporateParentId && !member) {
+    throw new AppError(400, 'Member name, email, and password are required to duplicate a corporate team card')
+  }
+  if (member && !corporateParentId) {
+    throw new AppError(400, 'Member login can only be provisioned for cards under a corporate account')
+  }
+
+  let memberUserId: string | null = null
+  let provisionedMemberUserId: string | null = null
+
+  if (member && corporateParentId) {
+    const email = member.email.trim().toLowerCase()
+    const name = member.name.trim()
+    const password = (member.password?.trim() || CORPORATE_MEMBER_DEFAULT_PASSWORD).trim()
+    if (password.toLowerCase() === email) {
+      throw new AppError(400, "Password can't be the same as email")
+    }
+
+    const existingUser = await prisma.user.findUnique({ where: { email } })
+    if (existingUser) {
+      throw new AppError(400, 'Email already registered')
+    }
+
+    await assertCreateContactsAvailable(email, member.phone)
+
+    const hashedPassword = await authUtils.hashPassword(password)
+    const memberUser = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        role: toPrismaRole('vcard-owner'),
+        provider: AuthProvider.LOCAL,
+        isVerified: true,
+        isActive: true,
+        accountStatus: AccountStatus.ACTIVE,
+        companyName: typeof source.companyName === 'string' ? source.companyName : null,
+        createdById: userId,
+      },
+      select: { id: true },
+    })
+    provisionedMemberUserId = memberUser.id
+    try {
+      await subscriptionService.ensureOwnerStarterSubscription(memberUser.id, 'vcard-owner')
+    } catch (error) {
+      await prisma.user.delete({ where: { id: memberUser.id } }).catch(() => undefined)
+      throw error
+    }
+    memberUserId = memberUser.id
+  }
+
   const customTabIdMap = new Map<string, string>()
   const settings = remapDuplicatedCardSettings(settingsMapFromRows(source.settings), profileId, customTabIdMap)
-  const ownership = duplicatedCardOwnership(
-    {
-      userId: typeof source.userId === 'string' ? source.userId : null,
-      companyUserId: typeof source.companyUserId === 'string' ? source.companyUserId : null,
-      createdById: typeof source.createdById === 'string' ? source.createdById : null,
-    },
-    userId
-  )
-  const created = await create(userId, role, {
-    name: '',
-    email: '',
-    skipCreateContactRules: true,
-    ownerUserId: ownership.userId || undefined,
-    companyName: source.companyName || undefined,
-    designation: source.designation || undefined,
-    website: source.website || undefined,
-    address: source.address || undefined,
-    city: source.city || undefined,
-    state: source.state || undefined,
-    zipCode: source.zipCode || undefined,
-    about: source.about || undefined,
-    prof: source.prof || undefined,
-    template: source.template,
-    themeConfig: source.themeConfig || undefined,
-    facebook: source.facebook || undefined,
-    instagram: source.instagram || undefined,
-    twitter: source.twitter || undefined,
-    tiktok: source.tiktok || undefined,
-    youtube: source.youtube || undefined,
-    linkedin: source.linkedin || undefined,
-    isDraft: true,
-    isPublic: false,
-    settings,
-    profileSettings: source.profileSettings
-      ? {
-          profileTemplate: source.profileSettings.profileTemplate,
-          layoutStyle: source.profileSettings.layoutStyle || undefined,
-          buttonStyle: source.profileSettings.buttonStyle || undefined,
-          cornerStyle: source.profileSettings.cornerStyle || undefined,
-          themeConfig: source.profileSettings.themeConfig || undefined,
-        }
-      : undefined,
-  })
+  const ownership =
+    memberUserId && corporateParentId
+      ? corporateMemberCardOwnership(corporateParentId, memberUserId)
+      : duplicatedCardOwnership(
+          {
+            userId: typeof source.userId === 'string' ? source.userId : null,
+            companyUserId: typeof source.companyUserId === 'string' ? source.companyUserId : null,
+            createdById: typeof source.createdById === 'string' ? source.createdById : null,
+          },
+          userId
+        )
+
+  const memberName = member?.name?.trim() || ''
+  const memberDesignation =
+    member && typeof member.designation === 'string' ? member.designation.trim() || undefined : undefined
+
+  let created: { id: string }
+  try {
+    created = await create(userId, role, {
+      name: memberName,
+      email: '',
+      skipCreateContactRules: true,
+      // Staff: assign under the corporate account so capacity is checked there.
+      // Corporate owner: leave unset (creates under self), then reassign to the member.
+      ownerUserId:
+        memberUserId && corporateParentId && isStaffActor
+          ? corporateParentId
+          : !memberUserId && ownership.userId
+            ? ownership.userId
+            : undefined,
+      companyName: source.companyName || undefined,
+      designation: memberDesignation || source.designation || undefined,
+      website: source.website || undefined,
+      address: source.address || undefined,
+      city: source.city || undefined,
+      state: source.state || undefined,
+      zipCode: source.zipCode || undefined,
+      about: source.about || undefined,
+      prof: source.prof || undefined,
+      template: source.template,
+      themeConfig: source.themeConfig || undefined,
+      facebook: source.facebook || undefined,
+      instagram: source.instagram || undefined,
+      twitter: source.twitter || undefined,
+      tiktok: source.tiktok || undefined,
+      youtube: source.youtube || undefined,
+      linkedin: source.linkedin || undefined,
+      isDraft: true,
+      isPublic: false,
+      settings,
+      profileSettings: source.profileSettings
+        ? {
+            profileTemplate: source.profileSettings.profileTemplate,
+            layoutStyle: source.profileSettings.layoutStyle || undefined,
+            buttonStyle: source.profileSettings.buttonStyle || undefined,
+            cornerStyle: source.profileSettings.cornerStyle || undefined,
+            themeConfig: source.profileSettings.themeConfig || undefined,
+          }
+        : undefined,
+    })
+  } catch (error) {
+    if (provisionedMemberUserId) {
+      await prisma.user.delete({ where: { id: provisionedMemberUserId } }).catch(() => undefined)
+    }
+    throw error
+  }
 
   try {
+    const identity = memberUserId
+      ? memberDuplicatedIdentityFields({
+          name: memberName,
+          email: member!.email,
+          phone: member?.phone,
+        })
+      : blankDuplicatedIdentityFields()
+
     await prisma.profile.update({
       where: { id: created.id },
       data: {
-        ...blankDuplicatedIdentityFields(),
+        ...identity,
         ...ownership,
         avatar: source.avatar,
         colorCode: source.colorCode,
@@ -1783,17 +1882,57 @@ const duplicate = async (profileId: string, userId: string, role: string) => {
         countryCode: source.countryCode,
         maritalStatusId:
           source.maritalStatus?.id ?? (typeof source.maritalStatusId === 'string' ? source.maritalStatusId : null),
+        ...(memberDesignation ? { designation: memberDesignation } : {}),
       },
     })
     await clonePrimaryProfileCollections(profileId, created.id, customTabIdMap)
   } catch (error) {
     await prisma.profile.delete({ where: { id: created.id } }).catch(() => undefined)
+    if (provisionedMemberUserId) {
+      await prisma.user.delete({ where: { id: provisionedMemberUserId } }).catch(() => undefined)
+    }
     throw error
   }
 
   const duplicated = await loadProfileDetail({ id: created.id })
   if (!duplicated) throw new AppError(404, 'Duplicated profile not found')
   return duplicated
+}
+
+/** Resolve the corporate account that should own capacity for a duplicated team card. */
+const resolveCorporateParentUserId = async (
+  source: {
+    userId?: unknown
+    companyUserId?: unknown
+  },
+  actorUserId: string,
+  actorRole: string
+): Promise<string | null> => {
+  const candidateIds = [
+    typeof source.companyUserId === 'string' ? source.companyUserId : '',
+    typeof source.userId === 'string' ? source.userId : '',
+  ].filter(Boolean)
+
+  for (const candidateId of candidateIds) {
+    const user = await prisma.user.findFirst({
+      where: { id: candidateId, deletedAt: null },
+      select: { id: true, role: true },
+    })
+    if (!user) continue
+    const apiRole = toApiRole(user.role)
+    if (apiRole === 'corporate-owner') return user.id
+    const entitlements = await getEffectiveEntitlements(user.id, apiRole)
+    if (entitlements.ownerMode === 'corporate') return user.id
+  }
+
+  if (!isStaff(actorRole) && !isAdminRole(actorRole)) {
+    const actorEntitlements = await getEffectiveEntitlements(actorUserId, actorRole)
+    if (actorEntitlements.ownerMode === 'corporate' || actorRole === 'corporate-owner') {
+      return actorUserId
+    }
+  }
+
+  return null
 }
 
 const update = async (

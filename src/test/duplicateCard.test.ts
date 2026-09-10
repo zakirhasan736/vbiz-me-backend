@@ -3,7 +3,10 @@ import { describe, it } from 'node:test'
 import {
   blankDuplicatedIdentityFields,
   cloneRecord,
+  CORPORATE_MEMBER_DEFAULT_PASSWORD,
+  corporateMemberCardOwnership,
   duplicatedCardOwnership,
+  memberDuplicatedIdentityFields,
   omitCloneKeys,
   remapDuplicatedCardSettings,
   settingsMapFromRows,
@@ -60,6 +63,40 @@ describe('duplicatedCardOwnership', () => {
       duplicatedCardOwnership({ userId: 'owner-9', companyUserId: 'corp-2', createdById: 'admin-1' }, 'admin-1'),
       { userId: 'owner-9', companyUserId: 'corp-2', createdById: 'owner-9' }
     )
+  })
+})
+
+describe('corporateMemberCardOwnership', () => {
+  it('links the member as owner under the corporate company account', () => {
+    assert.deepEqual(corporateMemberCardOwnership('corp-1', 'member-9'), {
+      userId: 'member-9',
+      companyUserId: 'corp-1',
+      createdById: 'corp-1',
+    })
+  })
+})
+
+describe('memberDuplicatedIdentityFields', () => {
+  it('applies member personal identity and keeps other identity fields blank', () => {
+    assert.deepEqual(
+      memberDuplicatedIdentityFields({ name: ' Jacky Hernandez ', email: 'Jacky@Example.com', phone: ' 555 ' }),
+      {
+        name: 'Jacky Hernandez',
+        lastName: null,
+        slug: null,
+        dob: null,
+        email: 'jacky@example.com',
+        phone: '555',
+        genderId: null,
+      }
+    )
+  })
+
+  it('exposes a strong default member password constant', () => {
+    assert.ok(CORPORATE_MEMBER_DEFAULT_PASSWORD.length >= 8)
+    assert.match(CORPORATE_MEMBER_DEFAULT_PASSWORD, /[A-Z]/)
+    assert.match(CORPORATE_MEMBER_DEFAULT_PASSWORD, /[0-9]/)
+    assert.match(CORPORATE_MEMBER_DEFAULT_PASSWORD, /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\/]/)
   })
 })
 

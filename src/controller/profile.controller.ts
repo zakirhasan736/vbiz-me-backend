@@ -44,7 +44,13 @@ const create = catchAsyncError(async (req, res) => {
 
 const duplicate = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
-  const data = await profileService.duplicate(param(req.params.id), req.user.id, req.user.role)
+  const raw = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : null
+  const hasMemberFields =
+    raw &&
+    ((typeof (raw as { email?: unknown }).email === 'string' && String((raw as { email?: unknown }).email).trim()) ||
+      (typeof (raw as { name?: unknown }).name === 'string' && String((raw as { name?: unknown }).name).trim()))
+  const member = hasMemberFields ? ProfileZodSchema.duplicateProfileBody.parse(raw) : undefined
+  const data = await profileService.duplicate(param(req.params.id), req.user.id, req.user.role, member)
   sendResponse(res, { success: true, statusCode: 201, message: 'Profile duplicated as draft', data })
 })
 

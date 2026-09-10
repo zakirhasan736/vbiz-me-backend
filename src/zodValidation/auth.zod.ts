@@ -115,4 +115,5 @@ const AuthZodSchema = {
   persistTours,
 }
 
+export { strongPassword }
 export default AuthZodSchema

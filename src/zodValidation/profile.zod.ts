@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { strongPassword } from './auth.zod'
 
 const ENGAGEMENT_EVENT_TYPES = [
   'profile_view',
@@ -67,6 +68,23 @@ const createProfileBody = z
   })
   .passthrough()
 
+/**
+ * Corporate owners must provision a member login when duplicating a team card.
+ * Staff/admin duplicates may omit this body (legacy clone ownership).
+ */
+const duplicateProfileBody = z
+  .object({
+    name: z.string().trim().min(1, 'Name is required').max(200),
+    email: z.string().trim().email('Valid email is required').max(320),
+    password: strongPassword.optional(),
+    phone: z.string().trim().max(40).optional().nullable(),
+    designation: z.string().trim().max(200).optional().nullable(),
+  })
+  .refine((data) => !data.password || data.password.trim().toLowerCase() !== data.email.trim().toLowerCase(), {
+    message: "Password can't be the same as email",
+    path: ['password'],
+  })
+
 const upsertAboutMeBody = z.object({
   title: z.string().max(500).optional().nullable(),
   description: z.string().max(100_000).optional().nullable(),
@@ -86,6 +104,7 @@ const ProfileZodSchema = {
   patchContactBody,
   createTeamNoticeBody,
   createProfileBody,
+  duplicateProfileBody,
   upsertAboutMeBody,
   ENGAGEMENT_EVENT_TYPES,
 }
@@ -93,5 +112,6 @@ const ProfileZodSchema = {
 export type ListProfilesQuery = z.infer<typeof listProfilesQuery>
 export type PatchContactBody = z.infer<typeof patchContactBody>
 export type CreateTeamNoticeBody = z.infer<typeof createTeamNoticeBody>
+export type DuplicateProfileBody = z.infer<typeof duplicateProfileBody>
 
 export default ProfileZodSchema

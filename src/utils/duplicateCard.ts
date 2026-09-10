@@ -65,7 +65,7 @@ export type DuplicatedIdentityFields = {
   slug: null
   dob: null
   email: string
-  phone: null
+  phone: string | null
   genderId: null
 }
 
@@ -111,6 +111,45 @@ export function duplicatedCardOwnership(
     createdById: createdBy && createdBy !== actorUserId ? createdBy : ownerId,
   }
 }
+
+/** Corporate team member card: member owns the card; corporate account remains the company parent. */
+export function corporateMemberCardOwnership(
+  corporateUserId: string,
+  memberUserId: string
+): {
+  userId: string
+  companyUserId: string
+  createdById: string
+} {
+  return {
+    userId: memberUserId,
+    companyUserId: corporateUserId,
+    createdById: corporateUserId,
+  }
+}
+
+/** Identity for a newly provisioned corporate member card (not a blank clone). */
+export function memberDuplicatedIdentityFields(input: {
+  name: string
+  email: string
+  phone?: string | null
+}): DuplicatedIdentityFields {
+  const name = input.name.trim()
+  const email = input.email.trim().toLowerCase()
+  const phone = typeof input.phone === 'string' ? input.phone.trim() || null : null
+  return {
+    name,
+    lastName: null,
+    slug: null,
+    dob: null,
+    email,
+    phone,
+    genderId: null,
+  }
+}
+
+/** Default login password when corporate owners provision a member without a custom one. */
+export const CORPORATE_MEMBER_DEFAULT_PASSWORD = 'Secret@vbizme123//'
 
 /** Copy every setting key, including empty/null values the editor still expects. */
 export function settingsMapFromRows(
