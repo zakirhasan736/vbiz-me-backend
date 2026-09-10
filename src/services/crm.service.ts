@@ -408,25 +408,22 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
     include: { profile: profileInclude },
   })
 
-  const mapped = {
+  return {
     ...mapGuestSave(row),
     notesCount: 0,
     schedulesCount: 0,
     eventsCount: 0,
-  }
-  return {
-    ...mapped,
     cards: [
       {
-        leadId: mapped.id,
-        profileId: mapped.vCardId,
-        slug: mapped.vCardSlug,
-        name: mapped.vCardName,
-        submittedAt: mapped.submittedAt,
-        origin: mapped.origin,
+        leadId: row.id,
+        profileId: row.profileId,
+        slug: row.profile?.slug || '',
+        name: row.profile?.name || '',
+        submittedAt: row.createdAt.toISOString(),
+        origin: 'crm_external' as const,
       },
     ],
-    leadIds: [mapped.id],
+    leadIds: [row.id],
   }
 }
 
