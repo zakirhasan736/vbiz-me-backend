@@ -1,4 +1,9 @@
-import { PACKAGE_ACCESS_FEATURES, type PackageAccessKey, type PackageAccessMap } from '../constants/packageAccess'
+import {
+  PACKAGE_ACCESS_FEATURES,
+  mergeInheritedPackageAccess,
+  type PackageAccessKey,
+  type PackageAccessMap,
+} from '../constants/packageAccess'
 import {
   FEATURE_NOT_INCLUDED_MESSAGE,
   featureLimitReachedError,
@@ -24,7 +29,8 @@ import { prisma } from '../utils/prisma'
 export { buildEffectiveEntitlements, isCatalogFeatureAllowed, staffEntitlements } from '../utils/effectiveEntitlements'
 export type { EffectiveEntitlements, EntitlementCatalogInput, EntitlementLimits } from '../utils/effectiveEntitlements'
 
-export async function getEffectiveEntitlements(userId: string, role?: string | null): Promise<EffectiveEntitlements> {
+/** Own subscription entitlements only — no linked-company inheritance (avoids recursion). */
+async function loadOwnEntitlements(userId: string, role?: string | null): Promise<EffectiveEntitlements> {
   if (isStaffRole(role)) return staffEntitlements()
 
   const now = new Date()
@@ -72,6 +78,60 @@ export async function getEffectiveEntitlements(userId: string, role?: string | n
     overrides: overrideRows,
     cardsUsed,
   })
+}
+
+/**
+ * Linked team-card members (`userId` = member, `companyUserId` = corporate parent).
+ * Returns the corporate parent user id when present.
+ */
+export async function findLinkedCorporateParentUserId(memberUserId: string): Promise<string | null> {
+  const linked = await prisma.profile.findFirst({
+    where: {
+      userId: memberUserId,
+      companyUserId: { not: null },
+      NOT: { companyUserId: memberUserId },
+    },
+    select: {
+      companyUserId: true,
+      companyUser: { select: { id: true, role: true, deletedAt: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  const parentId = linked?.companyUserId?.trim()
+  if (!parentId || !linked?.companyUser || linked.companyUser.deletedAt) return null
+
+  const parentRole = toApiRole(linked.companyUser.role)
+  if (parentRole === 'corporate-owner') return parentId
+
+  const parentOwn = await loadOwnEntitlements(parentId, parentRole)
+  if (parentOwn.ownerMode === 'corporate') return parentId
+  return null
+}
+
+export async function getEffectiveEntitlements(userId: string, role?: string | null): Promise<EffectiveEntitlements> {
+  if (isStaffRole(role)) return staffEntitlements()
+
+  const own = await loadOwnEntitlements(userId, role)
+  // Corporate owners already hold the company plan — no parent inheritance.
+  if (role === 'corporate-owner' || own.ownerMode === 'corporate') return own
+
+  const parentId = await findLinkedCorporateParentUserId(userId)
+  if (!parentId) return own
+
+  const parentUser = await prisma.user.findFirst({
+    where: { id: parentId, deletedAt: null },
+    select: { role: true },
+  })
+  const parentRole = parentUser ? toApiRole(parentUser.role) : 'corporate-owner'
+  const parent = await loadOwnEntitlements(parentId, parentRole)
+  if (parent.ownerMode !== 'corporate' && parentRole !== 'corporate-owner') return own
+
+  return {
+    ...own,
+    // Keep single back office / card-scoped CRM; unlock company allow_* features.
+    access: mergeInheritedPackageAccess(own.access, parent.access),
+  }
 }
 
 export async function getUserPackageAccess(userId: string, role?: string | null): Promise<PackageAccessMap> {

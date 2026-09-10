@@ -101,6 +101,40 @@ export function entitlementsFromFeatures(
   return applyMandatoryPackageAccess(map)
 }
 
+/** Catalog rule: Canva on every package except Free. */
+export function catalogAllowCanvaValue(slug?: string | null): '0' | '1' {
+  return String(slug || '')
+    .trim()
+    .toLowerCase() === 'free'
+    ? '0'
+    : '1'
+}
+
+/** Catalog rule: CRM on Professional, Concierge, and Corporate only. */
+export function catalogAllowCrmValue(slug?: string | null): '0' | '1' {
+  const normalized = String(slug || '')
+    .trim()
+    .toLowerCase()
+  return normalized === 'professional' || normalized === 'professional-concierge' || normalized === 'corporate'
+    ? '1'
+    : '0'
+}
+
+/**
+ * Linked corporate members keep their own subscription row (often Free) but inherit
+ * enabled allow_* features from the company plan (CRM, Canva, etc.).
+ */
+export function mergeInheritedPackageAccess(
+  memberAccess: PackageAccessMap,
+  parentAccess: PackageAccessMap
+): PackageAccessMap {
+  const next = { ...memberAccess }
+  for (const item of PACKAGE_ACCESS_FEATURES) {
+    if (parentAccess[item.key]) next[item.key] = true
+  }
+  return applyMandatoryPackageAccess(next)
+}
+
 /** Default explicit allow_* featureValue used when backfilling missing package flags. */
 export function defaultAllowFlagValue(featureKey: string): '0' | '1' {
   const key = featureKey.trim().toLowerCase()

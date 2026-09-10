@@ -1,9 +1,67 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import {
+  catalogAllowCanvaValue,
+  catalogAllowCrmValue,
+  defaultAllowFlagValue,
+  entitlementsFromFeatures,
+  mergeInheritedPackageAccess,
+} from '../constants/packageAccess'
+import { crmProfileWhere, profileOwnedByCrmActor, resolveCrmScopeKind } from '../utils/crmScope'
 import { buildEffectiveEntitlements } from '../utils/effectiveEntitlements'
 
 const flags = (rows: Record<string, string>) =>
   Object.entries(rows).map(([featureKey, featureValue]) => ({ featureKey, featureValue }))
+
+describe('Canva catalog flag', () => {
+  it('locks Free and unlocks every other package slug', () => {
+    assert.equal(catalogAllowCanvaValue('free'), '0')
+    assert.equal(catalogAllowCanvaValue('FREE'), '0')
+    assert.equal(catalogAllowCanvaValue('professional'), '1')
+    assert.equal(catalogAllowCanvaValue('professional-concierge'), '1')
+    assert.equal(catalogAllowCanvaValue('corporate'), '1')
+    assert.equal(catalogAllowCanvaValue(null), '1')
+    assert.equal(defaultAllowFlagValue('allow_canva'), '1')
+  })
+})
+
+describe('CRM catalog flag', () => {
+  it('unlocks Professional, Concierge, and Corporate only', () => {
+    assert.equal(catalogAllowCrmValue('free'), '0')
+    assert.equal(catalogAllowCrmValue('professional'), '1')
+    assert.equal(catalogAllowCrmValue('professional-concierge'), '1')
+    assert.equal(catalogAllowCrmValue('corporate'), '1')
+    assert.equal(catalogAllowCrmValue(null), '0')
+    assert.equal(defaultAllowFlagValue('allow_crm'), '0')
+  })
+})
+
+describe('linked corporate member package inheritance', () => {
+  it('inherits CRM and Canva from the company plan while keeping Free locks otherwise', () => {
+    const member = entitlementsFromFeatures(flags({ allow_canva: '0', allow_crm: '0' }), true)
+    const parent = entitlementsFromFeatures(flags({ allow_canva: '1', allow_crm: '1', allow_seo: '1' }), true)
+    const merged = mergeInheritedPackageAccess(member, parent)
+    assert.equal(merged.allow_crm, true)
+    assert.equal(merged.allow_canva, true)
+    assert.equal(merged.allow_seo, true)
+    assert.equal(member.allow_crm, false)
+  })
+
+  it('does not unlock CRM when the company plan has it off', () => {
+    const member = entitlementsFromFeatures(flags({ allow_crm: '0' }), true)
+    const parent = entitlementsFromFeatures(flags({ allow_crm: '0', allow_canva: '1' }), true)
+    const merged = mergeInheritedPackageAccess(member, parent)
+    assert.equal(merged.allow_crm, false)
+    assert.equal(merged.allow_canva, true)
+  })
+
+  it('keeps linked member CRM scope on their own card only', () => {
+    assert.equal(resolveCrmScopeKind('vcard-owner'), 'single')
+    assert.deepEqual(crmProfileWhere('member-1', 'single'), { userId: 'member-1' })
+    assert.equal(profileOwnedByCrmActor('single', 'member-1', { userId: 'member-1', companyUserId: 'corp-1' }), true)
+    assert.equal(profileOwnedByCrmActor('single', 'member-1', { userId: 'sibling-2', companyUserId: 'corp-1' }), false)
+  })
+})
 
 describe('central entitlement service', () => {
   it('resolves Free catalog entitlements as Single', () => {
@@ -24,7 +82,7 @@ describe('central entitlement service', () => {
     assert.equal(result.limits.maxCards, 1)
   })
 
-  it('ignores leftover subscription quantity and overrides on Single packages', () => {
+  it('ignores leftover card quantity on Single packages but keeps allow_* add-on overrides', () => {
     const result = buildEffectiveEntitlements({
       role: 'corporate-owner',
       pkg: { id: 'pkg-free', slug: 'free', name: 'Free' },
@@ -34,8 +92,9 @@ describe('central entitlement service', () => {
     })
     assert.equal(result.ownerMode, 'single')
     assert.equal(result.limits.maxCards, 1)
-    assert.equal(result.access.allow_canva, false)
-    assert.equal(result.overrides.length, 0)
+    assert.equal(result.access.allow_canva, true)
+    assert.equal(result.overrides.length, 1)
+    assert.equal(result.overrides[0]?.featureKey, 'allow_canva')
   })
 
   it('resolves Professional catalog entitlements as Single', () => {

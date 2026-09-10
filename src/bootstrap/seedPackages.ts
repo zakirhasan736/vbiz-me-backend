@@ -1,4 +1,4 @@
-import { RETIRED_PACKAGE_SLUGS } from '../constants/packageAccess'
+import { RETIRED_PACKAGE_SLUGS, catalogAllowCanvaValue, catalogAllowCrmValue } from '../constants/packageAccess'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 
@@ -13,8 +13,10 @@ const ASSISTANT_SETTING_KEY = 'aiAssistance_checkbox'
  * so Corporate owners are never silently attached to Free.
  *
  * Also locks AI Assistance as a paid add-on on every package (allow_ai_assistance=0),
- * keeps michaelangelo-casanova-2 AI Assistance enabled by default, and forces
- * push notification on for every package (allow_push_notification=1).
+ * keeps michaelangelo-casanova-2 AI Assistance enabled by default, forces
+ * push notification on for every package (allow_push_notification=1), and
+ * enables Canva on every package except Free (allow_canva=1 / free=0), and
+ * syncs CRM onto Professional / Concierge / Corporate (allow_crm).
  */
 const seedPackages = async (): Promise<void> => {
   const retired = await prisma.package.findMany({
@@ -87,24 +89,56 @@ const seedPackages = async (): Promise<void> => {
     logger.info(`AI Assistance premium rollout: locked ${rolled.count} package flag(s)`)
   }
 
+  // CRM: Professional / Concierge / Corporate on; Free and others off (force-sync like Canva).
   const CRM_FEATURE_KEY = 'allow_crm'
-  const CRM_INCLUDED_SLUGS = new Set(['professional', 'professional-concierge', 'corporate'])
   let seededCrm = 0
   for (const pkg of packages) {
+    const featureValue = catalogAllowCrmValue(pkg.slug)
     const existing = await prisma.packageFeature.findUnique({
       where: { packageId_featureKey: { packageId: pkg.id, featureKey: CRM_FEATURE_KEY } },
-      select: { id: true },
+      select: { id: true, featureValue: true },
     })
-    if (existing) continue
-    const slug = (pkg.slug || '').trim().toLowerCase()
-    const featureValue = CRM_INCLUDED_SLUGS.has(slug) ? '1' : '0'
-    await prisma.packageFeature.create({
-      data: { packageId: pkg.id, featureKey: CRM_FEATURE_KEY, featureValue },
-    })
+    if (existing?.featureValue === featureValue) continue
+    if (existing) {
+      await prisma.packageFeature.update({
+        where: { id: existing.id },
+        data: { featureValue },
+      })
+    } else {
+      await prisma.packageFeature.create({
+        data: { packageId: pkg.id, featureKey: CRM_FEATURE_KEY, featureValue },
+      })
+    }
     seededCrm += 1
   }
   if (seededCrm) {
-    logger.info(`Seeded CRM package flag on ${seededCrm} package(s) (allow_crm)`)
+    logger.info(`Synced CRM package flag on ${seededCrm} package(s) (allow_crm; Pro/Concierge/Corporate=1)`)
+  }
+
+  // Canva: all paid packages on; Free only stays locked.
+  const CANVA_FEATURE_KEY = 'allow_canva'
+  let seededCanva = 0
+  for (const pkg of packages) {
+    const featureValue = catalogAllowCanvaValue(pkg.slug)
+    const existing = await prisma.packageFeature.findUnique({
+      where: { packageId_featureKey: { packageId: pkg.id, featureKey: CANVA_FEATURE_KEY } },
+      select: { id: true, featureValue: true },
+    })
+    if (existing?.featureValue === featureValue) continue
+    if (existing) {
+      await prisma.packageFeature.update({
+        where: { id: existing.id },
+        data: { featureValue },
+      })
+    } else {
+      await prisma.packageFeature.create({
+        data: { packageId: pkg.id, featureKey: CANVA_FEATURE_KEY, featureValue },
+      })
+    }
+    seededCanva += 1
+  }
+  if (seededCanva) {
+    logger.info(`Synced Canva package flag on ${seededCanva} package(s) (allow_canva; Free=0, others=1)`)
   }
 
   const PUSH_FEATURE_KEY = 'allow_push_notification'
