@@ -2366,22 +2366,32 @@ const upsertAboutMe = async (
 
   let row
   try {
-    row = await prisma.aboutMe.upsert({
+    const data = {
+      title,
+      description: description ?? null,
+      featuredMediaUrl: featuredMediaUrl ?? null,
+      status: status ?? '1',
+    }
+    const existing = await prisma.aboutMe.findFirst({
       where: { profileId },
-      create: {
-        profileId,
-        title,
-        description: description ?? null,
-        featuredMediaUrl: featuredMediaUrl ?? null,
-        status: status ?? '1',
-      },
-      update: {
-        title,
-        ...(description !== undefined ? { description } : {}),
-        ...(featuredMediaUrl !== undefined ? { featuredMediaUrl } : {}),
-        ...(status !== undefined ? { status } : {}),
-      },
+      orderBy: { updatedAt: 'desc' },
     })
+    row = existing
+      ? await prisma.aboutMe.update({
+          where: { id: existing.id },
+          data: {
+            title,
+            ...(description !== undefined ? { description } : {}),
+            ...(featuredMediaUrl !== undefined ? { featuredMediaUrl } : {}),
+            ...(status !== undefined ? { status } : {}),
+          },
+        })
+      : await prisma.aboutMe.create({
+          data: {
+            profileId,
+            ...data,
+          },
+        })
   } catch (error) {
     if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
     const fallback = await upsertAboutMeSettingsFallback(profileId, {

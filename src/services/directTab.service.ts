@@ -497,22 +497,21 @@ const createTabItem = async (profileId: string, tabKey: string, userId: string, 
     if (tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const model: any = tab.storage === 'about_me' ? prisma.aboutMe : singletonModel(tab.storage)
-      const row = await model.upsert({
+      // Prefer find + update/create over upsert: some live DBs are missing the
+      // profileId unique index, and Prisma upsert then fails with Postgres 42P10.
+      const data = {
+        title: str(input.title) || tab.label,
+        description: str(input.description),
+        featuredMediaUrl: str(input.featuredImage),
+        status: statusOf(input.status),
+      }
+      const existing = await model.findFirst({
         where: { profileId },
-        create: {
-          profileId,
-          title: str(input.title) || tab.label,
-          description: str(input.description),
-          featuredMediaUrl: str(input.featuredImage),
-          status: statusOf(input.status),
-        },
-        update: {
-          title: str(input.title) || tab.label,
-          description: str(input.description),
-          featuredMediaUrl: str(input.featuredImage),
-          status: statusOf(input.status),
-        },
+        orderBy: { updatedAt: 'desc' },
       })
+      const row = existing
+        ? await model.update({ where: { id: existing.id }, data })
+        : await model.create({ data: { profileId, ...data } })
       return serializeDedicatedRow(tab, row)
     }
     const model =
