@@ -34,35 +34,36 @@ function assertNotFound(fn: () => void) {
 }
 
 describe('CRM package entitlement', () => {
-  it('locks CRM when allow_crm is missing', () => {
+  it('includes CRM on every package (mandatory, not plan-gated)', () => {
     const access = entitlementsFromFeatures(flags({ allow_seo: '1' }), true)
-    assert.equal(access.allow_crm, false)
+    assert.equal(access.allow_crm, true)
     assert.equal(access.allow_seo, true)
   })
 
-  it('includes CRM only when the package flag is on', () => {
+  it('keeps CRM on even when the package flag row is off', () => {
     const locked = entitlementsFromFeatures(flags({ allow_crm: '0' }), true)
     const open = entitlementsFromFeatures(flags({ allow_crm: '1' }), true)
-    assert.equal(locked.allow_crm, false)
+    assert.equal(locked.allow_crm, true)
     assert.equal(open.allow_crm, true)
   })
 
-  it('does not backfill missing CRM flags as enabled', () => {
-    assert.equal(defaultAllowFlagValue('allow_crm'), '0')
+  it('backfills CRM flags as enabled', () => {
+    assert.equal(defaultAllowFlagValue('allow_crm'), '1')
     assert.equal(defaultAllowFlagValue('allow_seo'), '1')
   })
 
-  it('keeps Free CRM off even when other missing allow_* default on', () => {
+  it('keeps Free CRM on with other Free locks', () => {
     const result = buildEffectiveEntitlements({
       role: 'vcard-owner',
       pkg: { id: 'pkg-free', slug: 'free', name: 'Free' },
       features: flags({ max_cards: '1', allow_canva: '0' }),
       subscription: { id: 'sub-free', quantity: 1, endsAt: null },
     })
-    assert.equal(result.access.allow_crm, false)
+    assert.equal(result.access.allow_crm, true)
+    assert.equal(result.access.allow_canva, false)
   })
 
-  it('honors allow_crm on Professional', () => {
+  it('keeps CRM on for Professional', () => {
     const result = buildEffectiveEntitlements({
       role: 'vcard-owner',
       pkg: { id: 'pkg-pro', slug: 'professional', name: 'Professional' },

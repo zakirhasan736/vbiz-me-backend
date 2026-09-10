@@ -163,6 +163,8 @@ const saveGuestUser = catchAsyncError(async (req, res) => {
     {
       ip: req.ip,
       userAgent: req.get('user-agent') || undefined,
+      cfCity: req.get('cf-ipcity') || req.get('x-vercel-ip-city') || null,
+      cfCountry: req.get('cf-ipcountry') || req.get('x-vercel-ip-country') || null,
     }
   )
   sendPublicResponse(res, { success: true, data })

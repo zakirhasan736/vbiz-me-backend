@@ -21,7 +21,6 @@ import {
 import { prisma } from '../utils/prisma'
 import { mapGuestSave, mergeAdminMeta, type AdminLeadRow } from './adminLeads.service'
 import crmEventService from './crmEvent.service'
-import { assertUserPackageAccess } from './entitlement.service'
 import {
   countOpenForActor as countOpenWorkNotesForActor,
   countOverdueForActor as countOverdueWorkNotesForActor,
@@ -37,6 +36,131 @@ export type CrmLeadRow = AdminLeadRow & {
   notesCount: number
   schedulesCount: number
   eventsCount: number
+export type CrmLeadCardRef = {
+  leadId: string
+  profileId: string
+  slug: string
+  name: string
+  submittedAt: string
+  origin: CrmLeadOrigin
+}
+
+export type CrmLeadRow = AdminLeadRow & {
+  notesCount: number
+  /** Cards this person (email) appears on — unique by profile. */
+  cards?: CrmLeadCardRef[]
+  /** All guest-save row ids under this grouped lead. */
+  leadIds?: string[]
+}
+
+function normalizeLeadEmail(email: string | null | undefined): string {
+  return typeof email === 'string' ? email.trim().toLowerCase() : ''
+}
+
+/** One person per email; same email on many cards → one row with `cards`. No email → one row per save. */
+function groupCrmLeadsByEmail(rows: Array<AdminLeadRow & { notesCount: number }>): CrmLeadRow[] {
+  const buckets = new Map<string, Array<AdminLeadRow & { notesCount: number }>>()
+  const order: string[] = []
+
+  for (const row of rows) {
+    const email = normalizeLeadEmail(row.email)
+    const key = email || `id:${row.id}`
+    const bucket = buckets.get(key)
+    if (bucket) bucket.push(row)
+    else {
+      buckets.set(key, [row])
+      order.push(key)
+    }
+  }
+
+  return order.map((key) => {
+    const list = buckets.get(key) || []
+    const primary = list[0]
+    const cardsByProfile = new Map<string, CrmLeadCardRef>()
+    for (const row of list) {
+      if (cardsByProfile.has(row.vCardId)) continue
+      cardsByProfile.set(row.vCardId, {
+        leadId: row.id,
+        profileId: row.vCardId,
+        slug: row.vCardSlug,
+        name: row.vCardName,
+        submittedAt: row.submittedAt,
+        origin: row.origin,
+      })
+    }
+    const cards = [...cardsByProfile.values()]
+    const notesCount = list.reduce((sum, row) => sum + (row.notesCount || 0), 0)
+    return {
+      ...primary,
+      notesCount,
+      cards,
+      leadIds: list.map((row) => row.id),
+      // Prefer primary card fields from the newest unique card set when only one card.
+      vCardId: cards[0]?.profileId || primary.vCardId,
+      vCardSlug: cards[0]?.slug || primary.vCardSlug,
+      vCardName: cards[0]?.name || primary.vCardName,
+    }
+  })
+}
+
+export async function listCrmLeads(
+  actor: CrmActor,
+  query: { q?: string; profileId?: string; origin?: CrmLeadOrigin; skip?: number; limit?: number }
+) {
+  const access = await resolveCrmAccess(actor)
+  const skip = Math.max(0, query.skip ?? 0)
+  const limit = Math.min(100, Math.max(1, query.limit ?? 10))
+
+  if (access.profileIds !== null && access.profileIds.length === 0) {
+    return { items: [] as CrmLeadRow[], total: 0, skip, limit }
+  }
+
+  const tokens = searchTokens(query.q)
+  const where: Prisma.GuestUserDataWhereInput = {
+    ...scopedProfileFilter(access.profileIds, query.profileId),
+    ...guestSaveOriginWhere(query.origin),
+    ...(tokens.length
+      ? {
+          AND: tokens.map((token) => {
+            const search = { contains: token, mode: 'insensitive' as const }
+            return {
+              OR: [
+                { fullName: search },
+                { email: search },
+                { phone: search },
+                { profile: { is: profileIdentitySearch(token) } },
+              ],
+            }
+          }),
+        }
+      : {}),
+  }
+
+  // Search/filter across all matching saves, then group by email and paginate groups.
+  const rows = await prisma.guestUserData.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    include: {
+      profile: profileInclude,
+      _count: { select: { leadNotes: true } },
+    },
+  })
+
+  const grouped = groupCrmLeadsByEmail(
+    rows.map((row) => ({
+      ...mapGuestSave(row),
+      notesCount: row._count.leadNotes,
+    }))
+  )
+  const total = grouped.length
+  const items = grouped.slice(skip, skip + limit)
+
+  return {
+    items,
+    total,
+    skip,
+    limit,
+  }
 }
 
 export async function resolveCrmAccess(actor: CrmActor): Promise<CrmAccessContext> {
@@ -47,13 +171,7 @@ export async function resolveCrmAccess(actor: CrmActor): Promise<CrmAccessContex
     return { kind, profileIds: null }
   }
 
-  await assertUserPackageAccess(
-    actor.id,
-    actor.role,
-    'allow_crm',
-    'CRM isn’t on your current plan. Upgrade to Professional, Professional Concierge, or Corporate to use it.'
-  )
-
+  // CRM is available to every owner back office (single, corporate, linked member) — not package-gated.
   const where = crmProfileWhere(actor.id, kind)
   const profiles = await prisma.profile.findMany({
     where: where ?? undefined,
@@ -269,6 +387,61 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
   const notes = typeof body.notes === 'string' ? body.notes : undefined
   const email = typeof body.email === 'string' ? body.email.trim() : ''
   const phone = typeof body.phone === 'string' ? body.phone.trim() : ''
+  const normalizedEmail = normalizeLeadEmail(email)
+
+  // Same email on the same card → update existing instead of creating a duplicate.
+  if (normalizedEmail) {
+    const existing = await prisma.guestUserData.findFirst({
+      where: {
+        profileId,
+        email: { equals: normalizedEmail, mode: 'insensitive' },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        profile: profileInclude,
+        _count: { select: { leadNotes: true } },
+      },
+    })
+    if (existing) {
+      const updated = await prisma.guestUserData.update({
+        where: { id: existing.id },
+        data: {
+          fullName,
+          firstName,
+          lastName: lastName || null,
+          email: normalizedEmail,
+          phone: phone || existing.phone,
+          ...(notes
+            ? { meta: buildCrmExternalLeadMeta(notes) }
+            : existing.meta != null
+              ? { meta: existing.meta as Prisma.InputJsonValue }
+              : {}),
+        },
+        include: {
+          profile: profileInclude,
+          _count: { select: { leadNotes: true } },
+        },
+      })
+      const mapped = {
+        ...mapGuestSave(updated),
+        notesCount: updated._count.leadNotes,
+      }
+      return {
+        ...mapped,
+        cards: [
+          {
+            leadId: mapped.id,
+            profileId: mapped.vCardId,
+            slug: mapped.vCardSlug,
+            name: mapped.vCardName,
+            submittedAt: mapped.submittedAt,
+            origin: mapped.origin,
+          },
+        ],
+        leadIds: [mapped.id],
+      }
+    }
+  }
 
   const row = await prisma.guestUserData.create({
     data: {
@@ -276,7 +449,7 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
       fullName,
       firstName,
       lastName: lastName || null,
-      email: email || null,
+      email: normalizedEmail || null,
       phone: phone || null,
       meta: buildCrmExternalLeadMeta(notes),
     },
@@ -284,6 +457,21 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
   })
 
   return { ...mapGuestSave(row), notesCount: 0, schedulesCount: 0, eventsCount: 0 }
+  const mapped = { ...mapGuestSave(row), notesCount: 0 }
+  return {
+    ...mapped,
+    cards: [
+      {
+        leadId: mapped.id,
+        profileId: mapped.vCardId,
+        slug: mapped.vCardSlug,
+        name: mapped.vCardName,
+        submittedAt: mapped.submittedAt,
+        origin: mapped.origin,
+      },
+    ],
+    leadIds: [mapped.id],
+  }
 }
 
 async function loadScopedGuest(actor: CrmActor, id: string) {
