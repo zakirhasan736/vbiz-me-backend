@@ -16,7 +16,7 @@ const ASSISTANT_SETTING_KEY = 'aiAssistance_checkbox'
  * keeps michaelangelo-casanova-2 AI Assistance enabled by default, forces
  * push notification on for every package (allow_push_notification=1), and
  * enables Canva on every package except Free (allow_canva=1 / free=0), and
- * syncs CRM onto Professional / Concierge / Corporate (allow_crm).
+ * syncs CRM onto every package (allow_crm=1; not plan-gated).
  */
 const seedPackages = async (): Promise<void> => {
   const retired = await prisma.package.findMany({
@@ -89,7 +89,7 @@ const seedPackages = async (): Promise<void> => {
     logger.info(`AI Assistance premium rollout: locked ${rolled.count} package flag(s)`)
   }
 
-  // CRM: Professional / Concierge / Corporate on; Free and others off (force-sync like Canva).
+  // CRM: included on every package (not plan-gated).
   const CRM_FEATURE_KEY = 'allow_crm'
   let seededCrm = 0
   for (const pkg of packages) {
@@ -112,7 +112,7 @@ const seedPackages = async (): Promise<void> => {
     seededCrm += 1
   }
   if (seededCrm) {
-    logger.info(`Synced CRM package flag on ${seededCrm} package(s) (allow_crm; Pro/Concierge/Corporate=1)`)
+    logger.info(`Synced CRM package flag on ${seededCrm} package(s) (allow_crm=1 for all plans)`)
   }
 
   // Canva: all paid packages on; Free only stays locked.

@@ -21,7 +21,6 @@ import {
 import { prisma } from '../utils/prisma'
 import { mapGuestSave, mergeAdminMeta, type AdminLeadRow } from './adminLeads.service'
 import crmEventService from './crmEvent.service'
-import { assertUserPackageAccess } from './entitlement.service'
 import {
   countOpenForActor as countOpenWorkNotesForActor,
   countOverdueForActor as countOverdueWorkNotesForActor,
@@ -168,13 +167,7 @@ export async function resolveCrmAccess(actor: CrmActor): Promise<CrmAccessContex
     return { kind, profileIds: null }
   }
 
-  await assertUserPackageAccess(
-    actor.id,
-    actor.role,
-    'allow_crm',
-    'CRM isn’t on your current plan. Upgrade to Professional, Professional Concierge, or Corporate to use it.'
-  )
-
+  // CRM is available to every owner back office (single, corporate, linked member) — not package-gated.
   const where = crmProfileWhere(actor.id, kind)
   const profiles = await prisma.profile.findMany({
     where: where ?? undefined,

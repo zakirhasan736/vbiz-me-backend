@@ -26,32 +26,32 @@ describe('Canva catalog flag', () => {
 })
 
 describe('CRM catalog flag', () => {
-  it('unlocks Professional, Concierge, and Corporate only', () => {
-    assert.equal(catalogAllowCrmValue('free'), '0')
+  it('includes CRM on every package slug', () => {
+    assert.equal(catalogAllowCrmValue('free'), '1')
     assert.equal(catalogAllowCrmValue('professional'), '1')
     assert.equal(catalogAllowCrmValue('professional-concierge'), '1')
     assert.equal(catalogAllowCrmValue('corporate'), '1')
-    assert.equal(catalogAllowCrmValue(null), '0')
-    assert.equal(defaultAllowFlagValue('allow_crm'), '0')
+    assert.equal(catalogAllowCrmValue(null), '1')
+    assert.equal(defaultAllowFlagValue('allow_crm'), '1')
   })
 })
 
 describe('linked corporate member package inheritance', () => {
-  it('inherits CRM and Canva from the company plan while keeping Free locks otherwise', () => {
+  it('inherits Canva from the company plan and always keeps CRM on', () => {
     const member = entitlementsFromFeatures(flags({ allow_canva: '0', allow_crm: '0' }), true)
     const parent = entitlementsFromFeatures(flags({ allow_canva: '1', allow_crm: '1', allow_seo: '1' }), true)
     const merged = mergeInheritedPackageAccess(member, parent)
     assert.equal(merged.allow_crm, true)
     assert.equal(merged.allow_canva, true)
     assert.equal(merged.allow_seo, true)
-    assert.equal(member.allow_crm, false)
+    assert.equal(member.allow_crm, true)
   })
 
-  it('does not unlock CRM when the company plan has it off', () => {
+  it('keeps CRM on even when the company plan flag row is off', () => {
     const member = entitlementsFromFeatures(flags({ allow_crm: '0' }), true)
     const parent = entitlementsFromFeatures(flags({ allow_crm: '0', allow_canva: '1' }), true)
     const merged = mergeInheritedPackageAccess(member, parent)
-    assert.equal(merged.allow_crm, false)
+    assert.equal(merged.allow_crm, true)
     assert.equal(merged.allow_canva, true)
   })
 
@@ -78,7 +78,7 @@ describe('central entitlement service', () => {
     assert.equal(result.limits.maxCards, 1)
     assert.equal(result.access.allow_canva, false)
     assert.equal(result.access.allow_seo, true)
-    assert.equal(result.access.allow_crm, false)
+    assert.equal(result.access.allow_crm, true)
     assert.equal(result.limits.maxCards, 1)
   })
 
