@@ -1,3 +1,4 @@
+import { SEO_IMAGE_SETTING_KEY } from '../services/seoMetadata.service'
 import { readAboutMeFeaturedMediaUrl } from './aboutMeMediaFocus'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from './mediaUrl'
 import { prisma } from './prisma'
@@ -53,6 +54,10 @@ export async function resolveProfileSharePreviewImageUrl(
     profileMedia?.is_video === true ||
     VIDEO_MEDIA_RE.test(profileMedia?.url || '') ||
     VIDEO_MEDIA_RE.test(profileMedia?.video_url || '')
+
+  // Owner SEO image first, then avatar / profile / About Me fallbacks.
+  pushStillShareCandidate(seen, candidates, settings[SEO_IMAGE_SETTING_KEY], legacyId)
+  pushStillShareCandidate(seen, candidates, settings[SHARE_PREVIEW_IMAGE_SETTING_KEY], legacyId)
 
   if (profileMediaIsVideo) {
     pushStillShareCandidate(seen, candidates, profileMedia?.fallback_url, legacyId)
