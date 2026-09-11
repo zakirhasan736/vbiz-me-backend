@@ -2165,8 +2165,8 @@ const saveGuestUser = async (
   const email = String(input.email || '').trim()
   const profileId = String(input.profile_id || '').trim()
 
-  if (!fullName || !phone || !email || !profileId) {
-    throw new AppError(400, 'full_name, phone, email, and profile_id are required')
+  if (!profileId) {
+    throw new AppError(400, 'profile_id is required')
   }
 
   const profile = await prisma.profile.findFirst({ where: { id: profileId, ...publicReadableWhere() } })
@@ -2217,21 +2217,27 @@ const saveGuestUser = async (
     : null
   const existingByEmail =
     existingByGuest ||
-    (await prisma.guestUserData.findFirst({
-      where: {
-        profileId: profile.id,
-        email: { equals: email, mode: 'insensitive' },
-      },
-      orderBy: { createdAt: 'desc' },
-    }))
+    (email
+      ? await prisma.guestUserData.findFirst({
+          where: {
+            profileId: profile.id,
+            email: { equals: email, mode: 'insensitive' },
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+      : null)
+
+  const guestFields = {
+    fullName: fullName || null,
+    phone: phone || null,
+    email: email || null,
+  }
 
   if (existingByEmail) {
     const updated = await prisma.guestUserData.update({
       where: { id: existingByEmail.id },
       data: {
-        fullName,
-        phone,
-        email,
+        ...guestFields,
         meta,
       },
     })
@@ -2252,9 +2258,7 @@ const saveGuestUser = async (
   const row = await prisma.guestUserData.create({
     data: {
       profileId: profile.id,
-      fullName,
-      phone,
-      email,
+      ...guestFields,
       meta,
       firstName: null,
       lastName: null,
