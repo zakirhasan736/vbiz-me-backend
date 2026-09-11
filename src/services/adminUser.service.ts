@@ -503,15 +503,19 @@ function buildWhere(query: ListAdminUsersQuery): Prisma.UserWhereInput {
 }
 
 const list = async (query: ListAdminUsersQuery, actor?: ActorContext): Promise<AdminUsersListPage> => {
-  // Existing corporate team cards: create login users (card email + default password)
-  // so they appear in this directory and can use single-card backoffice.
+  // Existing corporate team cards across ALL corporate accounts:
+  // create login users (card email + default password) so they appear here
+  // and can use single-card backoffice. Do not abort the users list if this fails.
   if (actor?.actorId) {
     try {
-      await ensureAllCorporateMemberLogins({
+      const report = await ensureAllCorporateMemberLogins({
         actorUserId: actor.actorId,
         apply: true,
         resetPasswords: false,
       })
+      if (report.totals.fixed + report.totals.linked > 0) {
+        logger.info('Corporate team member logins provisioned during admin users list', report.totals)
+      }
     } catch (error) {
       logger.error('Failed to ensure corporate team member logins before admin users list', error)
     }

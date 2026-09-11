@@ -4,6 +4,7 @@ import AppError from '../error/AppError'
 import subscriptionService from '../services/subscription.service'
 import authUtils from './auth.utils'
 import { CORPORATE_MEMBER_DEFAULT_PASSWORD, corporateMemberCardOwnership } from './duplicateCard'
+import logger from './logger'
 import { prisma } from './prisma'
 
 export type ProvisionCorporateMemberInput = {
@@ -465,7 +466,7 @@ export async function resetOwnerDefaultPasswords(options: { apply?: boolean }): 
   }
 }
 
-/** Find every corporate-owner account (active), plus any parent ids used on cards. */
+/** Find every corporate-owner account, plus package-corporate parents and card company parents. */
 export async function listAllCorporateOwnerIds(): Promise<string[]> {
   const ids = new Set<string>()
 
@@ -473,12 +474,26 @@ export async function listAllCorporateOwnerIds(): Promise<string[]> {
     where: {
       deletedAt: null,
       role: PrismaUserRole.CORPORATE_OWNER,
-      isActive: true,
     },
     select: { id: true },
     orderBy: { createdAt: 'asc' },
   })
   for (const row of rows) ids.add(row.id)
+
+  // Users on an active corporate package (role may still be vcard-owner in edge cases).
+  const packageCorps = await prisma.user.findMany({
+    where: {
+      deletedAt: null,
+      subscriptions: {
+        some: {
+          package: { ownerMode: 'CORPORATE' },
+          OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }],
+        },
+      },
+    },
+    select: { id: true },
+  })
+  for (const row of packageCorps) ids.add(row.id)
 
   // Cards already stamped with companyUserId (covers parents even if role drifted).
   const companyParents = await prisma.profile.findMany({
@@ -508,6 +523,7 @@ export async function listAllCorporateOwnerIds(): Promise<string[]> {
 
 /**
  * Audit/fix member logins for every corporate account.
+ * Continues past individual corporate failures so one bad account cannot block the rest.
  */
 export async function ensureAllCorporateMemberLogins(options: {
   actorUserId: string
@@ -529,7 +545,7 @@ export async function ensureAllCorporateMemberLogins(options: {
   }
 }> {
   const corpIds = await listAllCorporateOwnerIds()
-  const results = []
+  const results: Awaited<ReturnType<typeof ensureCorporateMemberLoginsForParent>>[] = []
   const totals = {
     corporates: corpIds.length,
     ready: 0,
@@ -542,20 +558,28 @@ export async function ensureAllCorporateMemberLogins(options: {
   }
 
   for (const corporateUserId of corpIds) {
-    const report = await ensureCorporateMemberLoginsForParent({
-      corporateUserId,
-      actorUserId: options.actorUserId,
-      apply: options.apply,
-      resetPasswords: options.resetPasswords,
-    })
-    results.push(report)
-    totals.ready += report.summary.ready
-    totals.needsUser += report.summary.needsUser
-    totals.fixed += report.summary.fixed
-    totals.linked += report.summary.linked
-    totals.passwordReset += report.summary.passwordReset
-    totals.errors += report.summary.errors
-    totals.skipped += report.summary.skipped
+    try {
+      const report = await ensureCorporateMemberLoginsForParent({
+        corporateUserId,
+        actorUserId: options.actorUserId,
+        apply: options.apply,
+        resetPasswords: options.resetPasswords,
+      })
+      results.push(report)
+      totals.ready += report.summary.ready
+      totals.needsUser += report.summary.needsUser
+      totals.fixed += report.summary.fixed
+      totals.linked += report.summary.linked
+      totals.passwordReset += report.summary.passwordReset
+      totals.errors += report.summary.errors
+      totals.skipped += report.summary.skipped
+    } catch (error) {
+      totals.errors += 1
+      logger.error('ensureCorporateMemberLoginsForParent failed for corporate', {
+        corporateUserId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   return {
