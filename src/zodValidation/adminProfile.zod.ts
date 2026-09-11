@@ -32,10 +32,23 @@ const sendProfileEmail = z.object({
 })
 
 const ensureCorporateMemberLoginsBody = z.object({
-  /** Corporate user id, or search text (e.g. jacky / cba email). */
+  /** Specific corporate user id. */
   corporateUserId: z.string().trim().min(1).optional(),
+  /** Search text (e.g. jacky / cba). */
   q: z.string().trim().min(2).max(200).optional(),
+  /**
+   * Process every corporate-owner account.
+   * Defaults to true when corporateUserId and q are both omitted.
+   */
+  all: z.boolean().optional(),
   apply: z.boolean().optional().default(false),
+  /** Also set default password on already-linked members. Defaults to true when apply is true. */
+  resetPasswords: z.boolean().optional(),
+  /**
+   * Reset default password for all single owners, corporate owners, and
+   * corporate-linked members (never admins).
+   */
+  resetAllOwnerPasswords: z.boolean().optional().default(false),
 })
 
 const AdminProfileZodSchema = {

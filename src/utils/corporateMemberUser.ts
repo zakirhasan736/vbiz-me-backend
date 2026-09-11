@@ -1,4 +1,4 @@
-import { AccountStatus, AuthProvider } from '../../generated/prisma/enums'
+import { AccountStatus, AuthProvider, UserRole as PrismaUserRole } from '../../generated/prisma/enums'
 import { toApiRole, toPrismaRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import subscriptionService from '../services/subscription.service'
@@ -20,6 +20,8 @@ export type ProvisionCorporateMemberInput = {
    * reuse that user instead of creating a new one (link card under corporate).
    */
   linkExistingMember?: boolean
+  /** When linking an existing member, also set password to the default. */
+  resetPasswordOnLink?: boolean
 }
 
 export type ProvisionedCorporateMember = {
@@ -28,6 +30,21 @@ export type ProvisionedCorporateMember = {
   /** True when this call created the user (caller may roll back on failure). */
   created: boolean
   linkedExisting: boolean
+  passwordReset: boolean
+}
+
+async function setUserDefaultPassword(userId: string, password = CORPORATE_MEMBER_DEFAULT_PASSWORD): Promise<void> {
+  const hashedPassword = await authUtils.hashPassword(password.trim())
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      password: hashedPassword,
+      provider: AuthProvider.LOCAL,
+      isVerified: true,
+      isActive: true,
+      accountStatus: AccountStatus.ACTIVE,
+    },
+  })
 }
 
 /**
@@ -68,11 +85,17 @@ export async function provisionCorporateMemberUser(
       } catch {
         // Keep linking even if starter sub already exists / cannot be recreated.
       }
+      let passwordReset = false
+      if (input.resetPasswordOnLink !== false) {
+        await setUserDefaultPassword(existingUser.id, password)
+        passwordReset = true
+      }
       return {
         memberUserId: existingUser.id,
         ownership: corporateMemberCardOwnership(input.corporateUserId, existingUser.id),
         created: false,
         linkedExisting: true,
+        passwordReset,
       }
     }
     throw new AppError(400, 'Email already registered')
@@ -107,6 +130,7 @@ export async function provisionCorporateMemberUser(
     ownership: corporateMemberCardOwnership(input.corporateUserId, memberUser.id),
     created: true,
     linkedExisting: false,
+    passwordReset: false,
   }
 }
 
@@ -137,7 +161,7 @@ export type CorporateMemberLoginCardReport = {
   name: string
   email: string
   slug: string | null
-  status: 'ready' | 'needs_user' | 'corporate_own' | 'no_email' | 'fixed' | 'linked' | 'error'
+  status: 'ready' | 'needs_user' | 'corporate_own' | 'no_email' | 'fixed' | 'linked' | 'password_reset' | 'error'
   message?: string
   memberUserId?: string | null
   ownerEmail?: string | null
@@ -150,10 +174,20 @@ export async function ensureCorporateMemberLoginsForParent(options: {
   corporateUserId: string
   actorUserId: string
   apply?: boolean
+  /** When applying, also set default password on already-linked member users. */
+  resetPasswords?: boolean
 }): Promise<{
   corporate: { id: string; name: string | null; email: string; companyName: string | null }
   cards: CorporateMemberLoginCardReport[]
-  summary: { ready: number; needsUser: number; fixed: number; linked: number; errors: number; skipped: number }
+  summary: {
+    ready: number
+    needsUser: number
+    fixed: number
+    linked: number
+    passwordReset: number
+    errors: number
+    skipped: number
+  }
 }> {
   const corporate = await prisma.user.findFirst({
     where: { id: options.corporateUserId, deletedAt: null },
@@ -180,7 +214,15 @@ export async function ensureCorporateMemberLoginsForParent(options: {
   })
 
   const reports: CorporateMemberLoginCardReport[] = []
-  const summary = { ready: 0, needsUser: 0, fixed: 0, linked: 0, errors: 0, skipped: 0 }
+  const summary = {
+    ready: 0,
+    needsUser: 0,
+    fixed: 0,
+    linked: 0,
+    passwordReset: 0,
+    errors: 0,
+    skipped: 0,
+  }
 
   for (const card of cards) {
     const email = (card.email || '').trim()
@@ -200,13 +242,38 @@ export async function ensureCorporateMemberLoginsForParent(options: {
     }
 
     if (email.toLowerCase() === corporate.email.trim().toLowerCase()) {
+      if (options.apply && !card.companyUserId) {
+        await prisma.profile.update({
+          where: { id: card.id },
+          data: { companyUserId: corporate.id },
+        })
+      }
       summary.skipped += 1
-      reports.push({ ...base, status: 'corporate_own', message: 'Uses corporate account email' })
+      reports.push({ ...base, status: 'corporate_own', message: 'Uses corporate account email (corporate backoffice)' })
       continue
     }
 
     const memberReady = Boolean(card.userId && card.userId !== corporate.id && card.companyUserId === corporate.id)
     if (memberReady) {
+      if (options.apply && options.resetPasswords && card.userId) {
+        try {
+          await setUserDefaultPassword(card.userId)
+          summary.passwordReset += 1
+          reports.push({
+            ...base,
+            status: 'password_reset',
+            message: `Member password set to default (${CORPORATE_MEMBER_DEFAULT_PASSWORD})`,
+          })
+        } catch (error) {
+          summary.errors += 1
+          reports.push({
+            ...base,
+            status: 'error',
+            message: error instanceof Error ? error.message : String(error),
+          })
+        }
+        continue
+      }
       summary.ready += 1
       reports.push({ ...base, status: 'ready', message: 'Member login already linked' })
       continue
@@ -231,6 +298,7 @@ export async function ensureCorporateMemberLoginsForParent(options: {
         createdById: options.actorUserId,
         corporateUserId: corporate.id,
         linkExistingMember: true,
+        resetPasswordOnLink: true,
       })
       await prisma.profile.update({
         where: { id: card.id },
@@ -242,11 +310,12 @@ export async function ensureCorporateMemberLoginsForParent(options: {
       })
       if (provisioned.linkedExisting) {
         summary.linked += 1
+        if (provisioned.passwordReset) summary.passwordReset += 1
         reports.push({
           ...base,
           status: 'linked',
           memberUserId: provisioned.memberUserId,
-          message: 'Linked existing user account to this card',
+          message: `Linked existing user; password set to default (${CORPORATE_MEMBER_DEFAULT_PASSWORD})`,
         })
       } else {
         summary.fixed += 1
@@ -254,7 +323,7 @@ export async function ensureCorporateMemberLoginsForParent(options: {
           ...base,
           status: 'fixed',
           memberUserId: provisioned.memberUserId,
-          message: `Created member login with default password`,
+          message: `Created member login with default password (${CORPORATE_MEMBER_DEFAULT_PASSWORD})`,
         })
       }
     } catch (error) {
@@ -276,5 +345,154 @@ export async function ensureCorporateMemberLoginsForParent(options: {
     },
     cards: reports,
     summary,
+  }
+}
+
+export type OwnerPasswordResetReport = {
+  userId: string
+  email: string
+  name: string | null
+  role: string
+  status: 'reset' | 'skipped' | 'error'
+  message?: string
+}
+
+/**
+ * Set default password for all single-card owners, corporate owners, and corporate-linked members.
+ * Never touches admin / super-admin accounts.
+ */
+export async function resetOwnerDefaultPasswords(options: { apply?: boolean }): Promise<{
+  password: string
+  summary: { reset: number; skipped: number; errors: number; total: number }
+  users: OwnerPasswordResetReport[]
+}> {
+  const owners = await prisma.user.findMany({
+    where: {
+      deletedAt: null,
+      role: { in: [PrismaUserRole.VCARD_OWNER, PrismaUserRole.CORPORATE_OWNER] },
+    },
+    select: { id: true, email: true, name: true, role: true, provider: true },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  const users: OwnerPasswordResetReport[] = []
+  const summary = { reset: 0, skipped: 0, errors: 0, total: owners.length }
+
+  for (const owner of owners) {
+    const role = toApiRole(owner.role)
+    if (!options.apply) {
+      summary.skipped += 1
+      users.push({
+        userId: owner.id,
+        email: owner.email,
+        name: owner.name,
+        role,
+        status: 'skipped',
+        message: `Would set password to ${CORPORATE_MEMBER_DEFAULT_PASSWORD}`,
+      })
+      continue
+    }
+    try {
+      await setUserDefaultPassword(owner.id)
+      summary.reset += 1
+      users.push({
+        userId: owner.id,
+        email: owner.email,
+        name: owner.name,
+        role,
+        status: 'reset',
+        message: 'Password set to default',
+      })
+    } catch (error) {
+      summary.errors += 1
+      users.push({
+        userId: owner.id,
+        email: owner.email,
+        name: owner.name,
+        role,
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return {
+    password: CORPORATE_MEMBER_DEFAULT_PASSWORD,
+    summary,
+    users,
+  }
+}
+
+/** Find every corporate-owner account (active). */
+export async function listAllCorporateOwnerIds(): Promise<string[]> {
+  const rows = await prisma.user.findMany({
+    where: {
+      deletedAt: null,
+      role: PrismaUserRole.CORPORATE_OWNER,
+      isActive: true,
+    },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  return rows.map((row) => row.id)
+}
+
+/**
+ * Audit/fix member logins for every corporate account.
+ */
+export async function ensureAllCorporateMemberLogins(options: {
+  actorUserId: string
+  apply?: boolean
+  resetPasswords?: boolean
+}): Promise<{
+  apply: boolean
+  resetPasswords: boolean
+  results: Awaited<ReturnType<typeof ensureCorporateMemberLoginsForParent>>[]
+  totals: {
+    corporates: number
+    ready: number
+    needsUser: number
+    fixed: number
+    linked: number
+    passwordReset: number
+    errors: number
+    skipped: number
+  }
+}> {
+  const corpIds = await listAllCorporateOwnerIds()
+  const results = []
+  const totals = {
+    corporates: corpIds.length,
+    ready: 0,
+    needsUser: 0,
+    fixed: 0,
+    linked: 0,
+    passwordReset: 0,
+    errors: 0,
+    skipped: 0,
+  }
+
+  for (const corporateUserId of corpIds) {
+    const report = await ensureCorporateMemberLoginsForParent({
+      corporateUserId,
+      actorUserId: options.actorUserId,
+      apply: options.apply,
+      resetPasswords: options.resetPasswords,
+    })
+    results.push(report)
+    totals.ready += report.summary.ready
+    totals.needsUser += report.summary.needsUser
+    totals.fixed += report.summary.fixed
+    totals.linked += report.summary.linked
+    totals.passwordReset += report.summary.passwordReset
+    totals.errors += report.summary.errors
+    totals.skipped += report.summary.skipped
+  }
+
+  return {
+    apply: Boolean(options.apply),
+    resetPasswords: Boolean(options.resetPasswords),
+    results,
+    totals,
   }
 }
