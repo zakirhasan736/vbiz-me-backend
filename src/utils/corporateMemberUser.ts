@@ -300,14 +300,21 @@ export async function ensureCorporateMemberLoginsForParent(options: {
         linkExistingMember: true,
         resetPasswordOnLink: true,
       })
-      await prisma.profile.update({
-        where: { id: card.id },
-        data: {
-          userId: provisioned.ownership.userId,
-          companyUserId: provisioned.ownership.companyUserId,
-          createdById: provisioned.ownership.createdById,
-        },
-      })
+      try {
+        await prisma.profile.update({
+          where: { id: card.id },
+          data: {
+            userId: provisioned.ownership.userId,
+            companyUserId: provisioned.ownership.companyUserId,
+            createdById: provisioned.ownership.createdById,
+          },
+        })
+      } catch (error) {
+        if (provisioned.created) {
+          await prisma.user.delete({ where: { id: provisioned.memberUserId } }).catch(() => undefined)
+        }
+        throw error
+      }
       if (provisioned.linkedExisting) {
         summary.linked += 1
         if (provisioned.passwordReset) summary.passwordReset += 1
@@ -423,8 +430,10 @@ export async function resetOwnerDefaultPasswords(options: { apply?: boolean }): 
   }
 }
 
-/** Find every corporate-owner account (active). */
+/** Find every corporate-owner account (active), plus any parent ids used on cards. */
 export async function listAllCorporateOwnerIds(): Promise<string[]> {
+  const ids = new Set<string>()
+
   const rows = await prisma.user.findMany({
     where: {
       deletedAt: null,
@@ -434,7 +443,32 @@ export async function listAllCorporateOwnerIds(): Promise<string[]> {
     select: { id: true },
     orderBy: { createdAt: 'asc' },
   })
-  return rows.map((row) => row.id)
+  for (const row of rows) ids.add(row.id)
+
+  // Cards already stamped with companyUserId (covers parents even if role drifted).
+  const companyParents = await prisma.profile.findMany({
+    where: { companyUserId: { not: null } },
+    select: { companyUserId: true },
+    distinct: ['companyUserId'],
+  })
+  for (const row of companyParents) {
+    if (row.companyUserId) ids.add(row.companyUserId)
+  }
+
+  // Profiles owned by a corporate-owner but missing companyUserId still count as corporate team cards.
+  const ownedByCorporate = await prisma.profile.findMany({
+    where: {
+      userId: { not: null },
+      user: { role: PrismaUserRole.CORPORATE_OWNER, deletedAt: null },
+    },
+    select: { userId: true },
+    distinct: ['userId'],
+  })
+  for (const row of ownedByCorporate) {
+    if (row.userId) ids.add(row.userId)
+  }
+
+  return [...ids]
 }
 
 /**
