@@ -76,7 +76,9 @@ const ensureCorporateMemberLogins = catchAsyncError(async (req, res) => {
   sendResponse(res, {
     success: true,
     statusCode: 200,
-    message: body.apply ? 'Corporate member logins updated' : 'Corporate member login audit',
+    message: body.apply
+      ? 'Corporate member logins / owner passwords updated'
+      : 'Corporate member login audit (dry-run)',
     data,
   })
 })

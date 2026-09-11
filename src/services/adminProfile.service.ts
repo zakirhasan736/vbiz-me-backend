@@ -4,7 +4,12 @@ import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
-import { ensureCorporateMemberLoginsForParent } from '../utils/corporateMemberUser'
+import {
+  ensureAllCorporateMemberLogins,
+  ensureCorporateMemberLoginsForParent,
+  resetOwnerDefaultPasswords,
+} from '../utils/corporateMemberUser'
+import { CORPORATE_MEMBER_DEFAULT_PASSWORD } from '../utils/duplicateCard'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
@@ -387,74 +392,110 @@ const sendProfileEmail = async (
 
 const ensureCorporateMemberLogins = async (
   actor: { id: string },
-  input: { corporateUserId?: string; q?: string; apply?: boolean }
+  input: {
+    corporateUserId?: string
+    q?: string
+    all?: boolean
+    apply?: boolean
+    resetPasswords?: boolean
+    resetAllOwnerPasswords?: boolean
+  }
 ) => {
-  const corpIds = new Set<string>()
-  if (input.corporateUserId?.trim()) {
-    corpIds.add(input.corporateUserId.trim())
-  }
+  const apply = Boolean(input.apply)
+  const resetPasswords = input.resetPasswords ?? apply
+  const hasFilter = Boolean(input.corporateUserId?.trim() || input.q?.trim())
+  const processAll = input.all === true || (!hasFilter && input.all !== false)
 
-  const q = input.q?.trim()
-  if (q) {
-    const users = await prisma.user.findMany({
-      where: {
-        deletedAt: null,
-        OR: [
-          { name: { contains: q, mode: 'insensitive' } },
-          { email: { contains: q, mode: 'insensitive' } },
-          { companyName: { contains: q, mode: 'insensitive' } },
-        ],
-      },
-      select: { id: true, role: true },
-      take: 40,
+  let memberLogins:
+    | Awaited<ReturnType<typeof ensureAllCorporateMemberLogins>>
+    | {
+        apply: boolean
+        resetPasswords: boolean
+        results: Awaited<ReturnType<typeof ensureCorporateMemberLoginsForParent>>[]
+      }
+
+  if (processAll) {
+    memberLogins = await ensureAllCorporateMemberLogins({
+      actorUserId: actor.id,
+      apply,
+      resetPasswords,
     })
-    for (const u of users) {
-      if (toApiRole(u.role) === 'corporate-owner') corpIds.add(u.id)
+  } else {
+    const corpIds = new Set<string>()
+    if (input.corporateUserId?.trim()) {
+      corpIds.add(input.corporateUserId.trim())
     }
 
-    const profiles = await prisma.profile.findMany({
-      where: {
-        OR: [
-          { name: { contains: q, mode: 'insensitive' } },
-          { email: { contains: q, mode: 'insensitive' } },
-          { companyName: { contains: q, mode: 'insensitive' } },
-        ],
-      },
-      select: {
-        userId: true,
-        companyUserId: true,
-        user: { select: { role: true } },
-        companyUser: { select: { role: true } },
-      },
-      take: 50,
-    })
-    for (const p of profiles) {
-      if (p.companyUserId && p.companyUser && toApiRole(p.companyUser.role) === 'corporate-owner') {
-        corpIds.add(p.companyUserId)
-      }
-      if (p.userId && p.user && toApiRole(p.user.role) === 'corporate-owner') {
-        corpIds.add(p.userId)
-      }
-    }
-  }
-
-  if (!corpIds.size) {
-    throw new AppError(404, 'No corporate account matched. Pass corporateUserId or q (e.g. jacky / cba).')
-  }
-
-  const results = []
-  for (const corporateUserId of corpIds) {
-    results.push(
-      await ensureCorporateMemberLoginsForParent({
-        corporateUserId,
-        actorUserId: actor.id,
-        apply: Boolean(input.apply),
+    const q = input.q?.trim()
+    if (q) {
+      const users = await prisma.user.findMany({
+        where: {
+          deletedAt: null,
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { email: { contains: q, mode: 'insensitive' } },
+            { companyName: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true, role: true },
+        take: 40,
       })
-    )
-  }
-  return { apply: Boolean(input.apply), results }
-}
+      for (const u of users) {
+        if (toApiRole(u.role) === 'corporate-owner') corpIds.add(u.id)
+      }
 
+      const profiles = await prisma.profile.findMany({
+        where: {
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { email: { contains: q, mode: 'insensitive' } },
+            { companyName: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        select: {
+          userId: true,
+          companyUserId: true,
+          user: { select: { role: true } },
+          companyUser: { select: { role: true } },
+        },
+        take: 50,
+      })
+      for (const p of profiles) {
+        if (p.companyUserId && p.companyUser && toApiRole(p.companyUser.role) === 'corporate-owner') {
+          corpIds.add(p.companyUserId)
+        }
+        if (p.userId && p.user && toApiRole(p.user.role) === 'corporate-owner') {
+          corpIds.add(p.userId)
+        }
+      }
+    }
+
+    if (!corpIds.size) {
+      throw new AppError(404, 'No corporate account matched. Pass corporateUserId, q, or all: true.')
+    }
+
+    const results = []
+    for (const corporateUserId of corpIds) {
+      results.push(
+        await ensureCorporateMemberLoginsForParent({
+          corporateUserId,
+          actorUserId: actor.id,
+          apply,
+          resetPasswords,
+        })
+      )
+    }
+    memberLogins = { apply, resetPasswords, results }
+  }
+
+  const ownerPasswords = input.resetAllOwnerPasswords ? await resetOwnerDefaultPasswords({ apply }) : null
+
+  return {
+    memberLogins,
+    ownerPasswords,
+    defaultPassword: CORPORATE_MEMBER_DEFAULT_PASSWORD,
+  }
+}
 const adminProfileService = {
   list,
   getFilterOptions,

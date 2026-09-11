@@ -55,6 +55,13 @@ export type AdminUserRow = {
   role: string
   companyName: string | null
   registeredCards: number
+  /** Set when this account is a corporate team-card member login. */
+  linkedCorporate: {
+    id: string
+    name: string | null
+    email: string
+    companyName: string | null
+  } | null
   ownerMode: OwnerMode | null
   packageId: string | null
   packageName: string | null
@@ -149,6 +156,15 @@ function adminUserRowSelect() {
     isVerified: true,
     createdAt: true,
     _count: { select: { profiles: true } },
+    profiles: {
+      where: { companyUserId: { not: null } },
+      select: {
+        companyUserId: true,
+        companyUser: { select: { id: true, name: true, email: true, companyName: true } },
+      },
+      take: 5,
+      orderBy: { createdAt: 'asc' as const },
+    },
     subscriptions: activeSubscriptionSelect(),
     featureOverrides: { select: { featureKey: true, featureValue: true } },
   } satisfies Prisma.UserSelect
@@ -216,6 +232,18 @@ function mapRow(user: AdminUserRecord): AdminUserRow {
         })
   const recurringInvoiceCents = monthlyCents == null ? null : resolveRecurringInvoiceCents(monthlyCents)
 
+  const linkedProfile = (user.profiles || []).find(
+    (row) => row.companyUserId && row.companyUserId !== user.id && row.companyUser
+  )
+  const linkedCorporate = linkedProfile?.companyUser
+    ? {
+        id: linkedProfile.companyUser.id,
+        name: linkedProfile.companyUser.name,
+        email: linkedProfile.companyUser.email,
+        companyName: linkedProfile.companyUser.companyName,
+      }
+    : null
+
   return {
     id: user.id,
     name: user.name,
@@ -223,6 +251,7 @@ function mapRow(user: AdminUserRecord): AdminUserRow {
     role: apiRole,
     companyName: user.companyName,
     registeredCards: user._count.profiles,
+    linkedCorporate,
     ownerMode: entitlements.ownerMode,
     packageId: subscription?.package?.id ?? null,
     packageName: subscription?.package?.name ?? null,

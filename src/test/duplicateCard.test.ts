@@ -126,6 +126,12 @@ describe('cardNeedsCorporateMemberLogin', () => {
   })
 })
 
+describe('CORPORATE_MEMBER_DEFAULT_PASSWORD', () => {
+  it('matches the product default popup password', () => {
+    assert.equal(CORPORATE_MEMBER_DEFAULT_PASSWORD, 'Secret@vbizme123//')
+  })
+})
+
 describe('memberDuplicatedIdentityFields', () => {
   it('applies member personal identity and keeps other identity fields blank', () => {
     assert.deepEqual(

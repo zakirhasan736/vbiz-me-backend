@@ -1,12 +1,21 @@
 /**
- * Audit / fix corporate team-card member logins.
+ * Audit / fix corporate team-card member logins for ALL corporate accounts.
+ * Optionally reset default passwords for single + corporate + linked owners.
  *
  * Usage:
- *   npx tsx scripts/check-corporate-member-logins.ts jacky cba
- *   npx tsx scripts/check-corporate-member-logins.ts jacky cba --apply
+ *   npx tsx scripts/check-corporate-member-logins.ts
+ *   npx tsx scripts/check-corporate-member-logins.ts --apply
+ *   npx tsx scripts/check-corporate-member-logins.ts --apply --reset-owner-passwords
+ *   npx tsx scripts/check-corporate-member-logins.ts jacky --apply
  */
 import { toApiRole } from '../src/constants/userRole'
-import { ensureCorporateMemberLoginsForParent } from '../src/utils/corporateMemberUser'
+import {
+  ensureAllCorporateMemberLogins,
+  ensureCorporateMemberLoginsForParent,
+  listAllCorporateOwnerIds,
+  resetOwnerDefaultPasswords,
+} from '../src/utils/corporateMemberUser'
+import { CORPORATE_MEMBER_DEFAULT_PASSWORD } from '../src/utils/duplicateCard'
 import { prisma } from '../src/utils/prisma'
 
 async function findCorporateIds(terms: string[]): Promise<string[]> {
@@ -27,8 +36,7 @@ async function findCorporateIds(terms: string[]): Promise<string[]> {
       take: 40,
     })
     for (const u of users) {
-      const role = toApiRole(u.role)
-      if (role === 'corporate-owner') ids.add(u.id)
+      if (toApiRole(u.role) === 'corporate-owner') ids.add(u.id)
     }
 
     const profiles = await prisma.profile.findMany({
@@ -42,8 +50,8 @@ async function findCorporateIds(terms: string[]): Promise<string[]> {
       select: {
         userId: true,
         companyUserId: true,
-        user: { select: { id: true, role: true } },
-        companyUser: { select: { id: true, role: true } },
+        user: { select: { role: true } },
+        companyUser: { select: { role: true } },
       },
       take: 50,
     })
@@ -62,36 +70,76 @@ async function findCorporateIds(terms: string[]): Promise<string[]> {
 async function main() {
   const args = process.argv.slice(2)
   const apply = args.includes('--apply')
-  const terms = args.filter((a) => a !== '--apply')
-  const searchTerms = terms.length ? terms : ['jacky', 'cba']
+  const resetOwnerPasswords = args.includes('--reset-owner-passwords')
+  const terms = args.filter((a) => !a.startsWith('--'))
 
-  console.log(`Search: ${searchTerms.join(', ')} | mode=${apply ? 'APPLY' : 'DRY-RUN'}`)
+  console.log(
+    `mode=${apply ? 'APPLY' : 'DRY-RUN'} | defaultPassword=${CORPORATE_MEMBER_DEFAULT_PASSWORD} | resetOwnerPasswords=${resetOwnerPasswords}`
+  )
 
-  const corpIds = await findCorporateIds(searchTerms)
-  if (!corpIds.length) {
-    console.log('No corporate accounts matched Jacky/CBA (or search terms).')
-    return
+  if (!terms.length) {
+    const all = await ensureAllCorporateMemberLogins({
+      actorUserId: (await listAllCorporateOwnerIds())[0] || 'system',
+      apply,
+      resetPasswords: apply,
+    })
+    // Prefer a real actor when applying: use first corporate id or first admin if needed
+    console.log('\nALL CORPORATES totals', all.totals)
+    for (const report of all.results) {
+      console.log(
+        `\n=== ${report.corporate.name} <${report.corporate.email}> ${report.corporate.companyName || ''} ===`
+      )
+      console.log('summary', report.summary)
+      for (const card of report.cards) {
+        if (card.status === 'ready' && !apply) continue
+        console.log(
+          JSON.stringify({
+            status: card.status,
+            name: card.name,
+            email: card.email,
+            slug: card.slug,
+            message: card.message,
+          })
+        )
+      }
+    }
+  } else {
+    const corpIds = await findCorporateIds(terms)
+    if (!corpIds.length) {
+      console.log('No corporate accounts matched:', terms.join(', '))
+      return
+    }
+    for (const corpId of corpIds) {
+      const report = await ensureCorporateMemberLoginsForParent({
+        corporateUserId: corpId,
+        actorUserId: corpId,
+        apply,
+        resetPasswords: apply,
+      })
+      console.log('\n===', report.corporate.name, `<${report.corporate.email}>`, report.corporate.companyName, '===')
+      console.log('summary', report.summary)
+      for (const card of report.cards) {
+        console.log(
+          JSON.stringify({
+            status: card.status,
+            name: card.name,
+            email: card.email,
+            slug: card.slug,
+            message: card.message,
+          })
+        )
+      }
+    }
   }
 
-  for (const corpId of corpIds) {
-    const report = await ensureCorporateMemberLoginsForParent({
-      corporateUserId: corpId,
-      actorUserId: corpId,
-      apply,
-    })
-    console.log('\n===', report.corporate.name, `<${report.corporate.email}>`, report.corporate.companyName, '===')
-    console.log('summary', report.summary)
-    for (const card of report.cards) {
-      console.log(
-        JSON.stringify({
-          status: card.status,
-          name: card.name,
-          email: card.email,
-          slug: card.slug,
-          ownerEmail: card.ownerEmail,
-          message: card.message,
-        })
-      )
+  if (resetOwnerPasswords) {
+    const ownerReport = await resetOwnerDefaultPasswords({ apply })
+    console.log('\nOWNER PASSWORD RESET', ownerReport.summary)
+    console.log(`password=${ownerReport.password}`)
+    if (ownerReport.summary.errors) {
+      for (const u of ownerReport.users.filter((row) => row.status === 'error')) {
+        console.log(JSON.stringify(u))
+      }
     }
   }
 }
