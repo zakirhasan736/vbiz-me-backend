@@ -38,7 +38,11 @@ import {
   normalizeCardStatusName,
   resolveInitialCardLifecycle,
 } from '../utils/cardStatus'
-import { cardNeedsCorporateMemberLogin, provisionCorporateMemberUser } from '../utils/corporateMemberUser'
+import {
+  cardNeedsCorporateMemberLogin,
+  ensureCorporateMemberLoginsForParent,
+  provisionCorporateMemberUser,
+} from '../utils/corporateMemberUser'
 import { guestSaveDashboardVisibleWhere } from '../utils/crmLeadOrigin'
 import {
   DASHBOARD_ALL_CHART_DAYS,
@@ -806,6 +810,22 @@ const buildListFiltersWhere = async (
 }
 
 const listForUser = async (userId: string, role: string, scope?: ProfileListScope) => {
+  // Corporate team directory: auto-create missing member logins for linked cards.
+  try {
+    const entitlements =
+      role === 'corporate-owner' ? { ownerMode: 'corporate' as const } : await getEffectiveEntitlements(userId, role)
+    if (role === 'corporate-owner' || entitlements.ownerMode === 'corporate') {
+      await ensureCorporateMemberLoginsForParent({
+        corporateUserId: userId,
+        actorUserId: userId,
+        apply: true,
+        resetPasswords: false,
+      })
+    }
+  } catch (error) {
+    logger.error('Failed to ensure corporate team member logins before card list', error)
+  }
+
   const profiles = await prisma.profile.findMany({
     where: await resolveOwnershipWhere(userId, role, scope),
     include: listInclude,

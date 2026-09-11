@@ -69,33 +69,68 @@ export async function provisionCorporateMemberUser(
     where: { email },
     select: { id: true, deletedAt: true, role: true, isActive: true, accountStatus: true },
   })
-  if (existingUser && !existingUser.deletedAt) {
+  if (existingUser) {
     if (existingUser.id === input.corporateUserId) {
       throw new AppError(400, 'Card email matches the corporate account; use a different member email for login')
     }
-    const apiRole = toApiRole(existingUser.role)
-    if (
-      input.linkExistingMember &&
-      apiRole === 'vcard-owner' &&
-      existingUser.isActive &&
-      existingUser.accountStatus === AccountStatus.ACTIVE
-    ) {
+
+    // Restore soft-deleted owner accounts and reuse them as team members.
+    if (existingUser.deletedAt) {
+      const hashedPassword = await authUtils.hashPassword(password)
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          name,
+          password: hashedPassword,
+          role: toPrismaRole('vcard-owner'),
+          provider: AuthProvider.LOCAL,
+          isVerified: true,
+          isActive: true,
+          accountStatus: AccountStatus.ACTIVE,
+          deletedAt: null,
+          companyName: input.companyName?.trim() || null,
+          createdById: input.createdById,
+        },
+      })
       try {
         await subscriptionService.ensureOwnerStarterSubscription(existingUser.id, 'vcard-owner')
       } catch {
-        // Keep linking even if starter sub already exists / cannot be recreated.
-      }
-      let passwordReset = false
-      if (input.resetPasswordOnLink !== false) {
-        await setUserDefaultPassword(existingUser.id, password)
-        passwordReset = true
+        // Keep linking even if starter sub already exists.
       }
       return {
         memberUserId: existingUser.id,
         ownership: corporateMemberCardOwnership(input.corporateUserId, existingUser.id),
         created: false,
         linkedExisting: true,
-        passwordReset,
+        passwordReset: true,
+      }
+    }
+
+    const apiRole = toApiRole(existingUser.role)
+    if (input.linkExistingMember && apiRole === 'vcard-owner') {
+      const hashedPassword = input.resetPasswordOnLink !== false ? await authUtils.hashPassword(password) : null
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          isActive: true,
+          accountStatus: AccountStatus.ACTIVE,
+          isVerified: true,
+          provider: AuthProvider.LOCAL,
+          ...(hashedPassword ? { password: hashedPassword } : {}),
+          ...(name ? { name } : {}),
+        },
+      })
+      try {
+        await subscriptionService.ensureOwnerStarterSubscription(existingUser.id, 'vcard-owner')
+      } catch {
+        // Keep linking even if starter sub already exists / cannot be recreated.
+      }
+      return {
+        memberUserId: existingUser.id,
+        ownership: corporateMemberCardOwnership(input.corporateUserId, existingUser.id),
+        created: false,
+        linkedExisting: true,
+        passwordReset: Boolean(hashedPassword),
       }
     }
     throw new AppError(400, 'Email already registered')

@@ -17,7 +17,11 @@ const list = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   assertUsersAccess(req.user)
   const query = AdminUserZodSchema.listAdminUsersQuery.parse(req.query)
-  const data = await adminUserService.list(query)
+  const data = await adminUserService.list(query, {
+    actorId: req.user.id,
+    actorEmail: req.user.email,
+    actorName: req.user.email,
+  })
   sendResponse(res, {
     success: true,
     statusCode: 200,

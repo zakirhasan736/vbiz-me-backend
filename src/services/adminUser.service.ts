@@ -20,6 +20,7 @@ import {
   parseAccountLockSnapshot,
   type AccountLockSnapshot,
 } from '../utils/cardStatus'
+import { ensureAllCorporateMemberLogins } from '../utils/corporateMemberUser'
 import { buildEffectiveEntitlements } from '../utils/effectiveEntitlements'
 import { resolveTrialEndsAt } from '../utils/freePeriod'
 import logger from '../utils/logger'
@@ -501,7 +502,21 @@ function buildWhere(query: ListAdminUsersQuery): Prisma.UserWhereInput {
   return where
 }
 
-const list = async (query: ListAdminUsersQuery): Promise<AdminUsersListPage> => {
+const list = async (query: ListAdminUsersQuery, actor?: ActorContext): Promise<AdminUsersListPage> => {
+  // Existing corporate team cards: create login users (card email + default password)
+  // so they appear in this directory and can use single-card backoffice.
+  if (actor?.actorId) {
+    try {
+      await ensureAllCorporateMemberLogins({
+        actorUserId: actor.actorId,
+        apply: true,
+        resetPasswords: false,
+      })
+    } catch (error) {
+      logger.error('Failed to ensure corporate team member logins before admin users list', error)
+    }
+  }
+
   const where = buildWhere(query)
   const [total, rows] = await Promise.all([
     prisma.user.count({ where }),
