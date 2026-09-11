@@ -17,5 +17,10 @@ router.post(
   validSchema(AdminProfileZodSchema.sendProfileEmail),
   adminProfileController.sendProfileEmail
 )
+router.post(
+  '/corporate-member-logins/ensure',
+  validSchema(AdminProfileZodSchema.ensureCorporateMemberLoginsBody),
+  adminProfileController.ensureCorporateMemberLogins
+)
 
 export default router

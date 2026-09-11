@@ -31,10 +31,18 @@ const sendProfileEmail = z.object({
   message: z.string().trim().min(1, 'Message is required').max(10_000),
 })
 
+const ensureCorporateMemberLoginsBody = z.object({
+  /** Corporate user id, or search text (e.g. jacky / cba email). */
+  corporateUserId: z.string().trim().min(1).optional(),
+  q: z.string().trim().min(2).max(200).optional(),
+  apply: z.boolean().optional().default(false),
+})
+
 const AdminProfileZodSchema = {
   listAdminProfilesQuery,
   exportAdminProfilesQuery,
   sendProfileEmail,
+  ensureCorporateMemberLoginsBody,
 }
 
 export type ListAdminProfilesQuery = z.infer<typeof listAdminProfilesQuery>
