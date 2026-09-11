@@ -76,6 +76,56 @@ describe('corporateMemberCardOwnership', () => {
   })
 })
 
+describe('cardNeedsCorporateMemberLogin', () => {
+  it('needs login when corporate still owns the card and email differs', async () => {
+    const { cardNeedsCorporateMemberLogin } = await import('../utils/corporateMemberUser')
+    assert.equal(
+      cardNeedsCorporateMemberLogin(
+        { userId: 'corp-1', companyUserId: 'corp-1', email: 'jacky@company.com' },
+        'corp-1',
+        'corp@company.com'
+      ),
+      true
+    )
+    assert.equal(
+      cardNeedsCorporateMemberLogin(
+        { userId: 'corp-1', companyUserId: null, email: 'jacky@company.com' },
+        'corp-1',
+        'corp@company.com'
+      ),
+      true
+    )
+  })
+
+  it('does not need login for corporate own email or already-linked members', async () => {
+    const { cardNeedsCorporateMemberLogin } = await import('../utils/corporateMemberUser')
+    assert.equal(
+      cardNeedsCorporateMemberLogin(
+        { userId: 'corp-1', companyUserId: 'corp-1', email: 'corp@company.com' },
+        'corp-1',
+        'corp@company.com'
+      ),
+      false
+    )
+    assert.equal(
+      cardNeedsCorporateMemberLogin(
+        { userId: 'member-9', companyUserId: 'corp-1', email: 'jacky@company.com' },
+        'corp-1',
+        'corp@company.com'
+      ),
+      false
+    )
+    assert.equal(
+      cardNeedsCorporateMemberLogin(
+        { userId: 'corp-1', companyUserId: 'corp-1', email: '' },
+        'corp-1',
+        'corp@company.com'
+      ),
+      false
+    )
+  })
+})
+
 describe('memberDuplicatedIdentityFields', () => {
   it('applies member personal identity and keeps other identity fields blank', () => {
     assert.deepEqual(

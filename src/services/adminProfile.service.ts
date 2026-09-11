@@ -4,6 +4,7 @@ import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
+import { ensureCorporateMemberLoginsForParent } from '../utils/corporateMemberUser'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
@@ -384,11 +385,82 @@ const sendProfileEmail = async (
   return { recipient }
 }
 
+const ensureCorporateMemberLogins = async (
+  actor: { id: string },
+  input: { corporateUserId?: string; q?: string; apply?: boolean }
+) => {
+  const corpIds = new Set<string>()
+  if (input.corporateUserId?.trim()) {
+    corpIds.add(input.corporateUserId.trim())
+  }
+
+  const q = input.q?.trim()
+  if (q) {
+    const users = await prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+          { companyName: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, role: true },
+      take: 40,
+    })
+    for (const u of users) {
+      if (toApiRole(u.role) === 'corporate-owner') corpIds.add(u.id)
+    }
+
+    const profiles = await prisma.profile.findMany({
+      where: {
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+          { companyName: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      select: {
+        userId: true,
+        companyUserId: true,
+        user: { select: { role: true } },
+        companyUser: { select: { role: true } },
+      },
+      take: 50,
+    })
+    for (const p of profiles) {
+      if (p.companyUserId && p.companyUser && toApiRole(p.companyUser.role) === 'corporate-owner') {
+        corpIds.add(p.companyUserId)
+      }
+      if (p.userId && p.user && toApiRole(p.user.role) === 'corporate-owner') {
+        corpIds.add(p.userId)
+      }
+    }
+  }
+
+  if (!corpIds.size) {
+    throw new AppError(404, 'No corporate account matched. Pass corporateUserId or q (e.g. jacky / cba).')
+  }
+
+  const results = []
+  for (const corporateUserId of corpIds) {
+    results.push(
+      await ensureCorporateMemberLoginsForParent({
+        corporateUserId,
+        actorUserId: actor.id,
+        apply: Boolean(input.apply),
+      })
+    )
+  }
+  return { apply: Boolean(input.apply), results }
+}
+
 const adminProfileService = {
   list,
   getFilterOptions,
   exportCsv,
   sendProfileEmail,
+  ensureCorporateMemberLogins,
 }
 
 export default adminProfileService

@@ -68,12 +68,26 @@ const sendProfileEmail = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Email delivered', data })
 })
 
+const ensureCorporateMemberLogins = catchAsyncError(async (req, res) => {
+  if (!req.user?.id) throw new AppError(403, 'Unauthorized')
+  assertVcardsAccess(req.user)
+  const body = AdminProfileZodSchema.ensureCorporateMemberLoginsBody.parse(req.body ?? {})
+  const data = await adminProfileService.ensureCorporateMemberLogins({ id: req.user.id }, body)
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: body.apply ? 'Corporate member logins updated' : 'Corporate member login audit',
+    data,
+  })
+})
+
 const adminProfileController = {
   list,
   filters,
   exportCsv,
   listPortfolioMembers,
   sendProfileEmail,
+  ensureCorporateMemberLogins,
 }
 
 export default adminProfileController
