@@ -131,6 +131,13 @@ export async function getEffectiveEntitlements(userId: string, role?: string | n
     ...own,
     // Keep single back office / card-scoped CRM; unlock company allow_* features.
     access: mergeInheritedPackageAccess(own.access, parent.access),
+    // Shared corporate seat pool for every linked team member under that company.
+    limits: {
+      ...own.limits,
+      maxCards: parent.limits.maxCards,
+      packageMaxCards: parent.limits.packageMaxCards,
+    },
+    cardCapacity: parent.cardCapacity,
   }
 }
 

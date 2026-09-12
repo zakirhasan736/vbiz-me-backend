@@ -104,6 +104,7 @@ import announcementService from './announcement.service'
 import {
   assertCatalogFeatureGate,
   assertCountWithinPackageLimit,
+  findLinkedCorporateParentUserId,
   getEffectiveEntitlements,
 } from './entitlement.service'
 import pushService from './push.service'
@@ -711,11 +712,21 @@ const resolveOwnershipWhere = async (
 }
 
 const getCardCapacity = async (userId: string, role: string): Promise<CardCapacity> => {
-  const where = await resolveOwnershipWhere(userId, role)
   if (isStaff(role) || isAdminRole(role)) {
+    const where = await resolveOwnershipWhere(userId, role)
     const used = await prisma.profile.count({ where })
     return { limit: null, used, remaining: null, canCreate: true }
   }
+
+  // Every linked team-member login shares that corporate owner's seat pool (used + limit).
+  if (role === 'vcard-owner') {
+    const parentId = await findLinkedCorporateParentUserId(userId)
+    if (parentId) {
+      return getCardCapacity(parentId, 'corporate-owner')
+    }
+  }
+
+  const where = await resolveOwnershipWhere(userId, role)
 
   if (role === 'corporate-owner' || role === 'vcard-owner') {
     await subscriptionService.ensureOwnerStarterSubscription(userId, role)

@@ -20,6 +20,7 @@ import {
   parseAccountLockSnapshot,
   type AccountLockSnapshot,
 } from '../utils/cardStatus'
+import { tallyCorporatePoolCards } from '../utils/corporateCardPool'
 import { ensureAllCorporateMemberLogins } from '../utils/corporateMemberUser'
 import { buildEffectiveEntitlements } from '../utils/effectiveEntitlements'
 import { resolveTrialEndsAt } from '../utils/freePeriod'
@@ -172,6 +173,102 @@ function adminUserRowSelect() {
 }
 
 type AdminUserRecord = Prisma.UserGetPayload<{ select: ReturnType<typeof adminUserRowSelect> }>
+
+/** Distinct cards in a corporate seat pool (owner userId or companyUserId). */
+async function countCardsForAccountIds(accountIds: string[]): Promise<Map<string, number>> {
+  const ids = [...new Set(accountIds.map((id) => id.trim()).filter(Boolean))]
+  if (!ids.length) return new Map()
+
+  const profiles = await prisma.profile.findMany({
+    where: {
+      OR: [{ userId: { in: ids } }, { companyUserId: { in: ids } }],
+    },
+    select: { id: true, userId: true, companyUserId: true },
+  })
+
+  return tallyCorporatePoolCards(ids, profiles)
+}
+
+/**
+ * Every corporate owner and every linked team-member login share that company's seat pool.
+ * Admin Users shows the same used/limit (e.g. 2/10) for the owner and all members under them.
+ */
+async function applyCorporateCardPoolToAdminUsers(items: AdminUserRow[]): Promise<void> {
+  if (!items.length) return
+
+  const poolOwnerIds = new Set<string>()
+  for (const item of items) {
+    if (item.role === 'corporate-owner' || item.ownerMode === 'corporate') poolOwnerIds.add(item.id)
+    if (item.linkedCorporate?.id) poolOwnerIds.add(item.linkedCorporate.id)
+  }
+  if (!poolOwnerIds.size) return
+
+  const counts = await countCardsForAccountIds([...poolOwnerIds])
+
+  const parentMeta = new Map<
+    string,
+    {
+      cardLimit: number | null
+      packageCardLimit: number | null
+      packageId: string | null
+      packageName: string | null
+    }
+  >()
+  for (const item of items) {
+    if (item.role === 'corporate-owner' || item.ownerMode === 'corporate') {
+      parentMeta.set(item.id, {
+        cardLimit: item.cardLimit,
+        packageCardLimit: item.packageCardLimit,
+        packageId: item.packageId,
+        packageName: item.packageName,
+      })
+    }
+  }
+
+  const missingParentIds = [...poolOwnerIds].filter((id) => !parentMeta.has(id))
+  if (missingParentIds.length) {
+    const parents = await prisma.user.findMany({
+      where: { id: { in: missingParentIds }, deletedAt: null },
+      select: adminUserRowSelect(),
+    })
+    for (const parent of parents) {
+      const row = mapRow(parent)
+      parentMeta.set(row.id, {
+        cardLimit: row.cardLimit,
+        packageCardLimit: row.packageCardLimit,
+        packageId: row.packageId,
+        packageName: row.packageName,
+      })
+    }
+  }
+
+  for (const item of items) {
+    const isCorporateOwner = item.role === 'corporate-owner' || item.ownerMode === 'corporate'
+    const poolId = isCorporateOwner ? item.id : item.linkedCorporate?.id || null
+    if (!poolId) continue
+
+    const used = counts.get(poolId)
+    if (typeof used === 'number') item.registeredCards = used
+
+    // Linked team members always display the parent corporate package seats.
+    if (item.linkedCorporate) {
+      const parent = parentMeta.get(poolId)
+      if (!parent) continue
+      item.cardLimit = parent.cardLimit
+      item.packageCardLimit = parent.packageCardLimit
+      if (parent.packageId) {
+        item.packageId = parent.packageId
+        item.packageName = parent.packageName
+      }
+    }
+  }
+}
+
+async function mapRowWithCorporatePool(user: AdminUserRecord): Promise<AdminUserRow> {
+  const row = mapRow(user)
+  await applyCorporateCardPoolToAdminUsers([row])
+  return row
+}
 
 function mapRow(user: AdminUserRecord): AdminUserRow {
   const apiRole = toApiRole(user.role)
@@ -533,8 +630,11 @@ const list = async (query: ListAdminUsersQuery, actor?: ActorContext): Promise<A
     }),
   ])
 
+  const items = rows.map(mapRow)
+  await applyCorporateCardPoolToAdminUsers(items)
+
   return {
-    items: rows.map(mapRow),
+    items,
     total,
     skip: query.skip,
     limit: query.limit,
@@ -689,7 +789,7 @@ const create = async (body: CreateAdminUserBody, actor: ActorContext): Promise<A
     select: adminUserRowSelect(),
   })
   return {
-    ...mapRow(withSubscription || user),
+    ...(await mapRowWithCorporatePool(withSubscription || user)),
     paymentLinkUrl,
   }
 }
@@ -918,10 +1018,15 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
       where: { id, deletedAt: null },
       select: adminUserRowSelect(),
     })
-    if (refreshed) return mapRow(refreshed)
+    if (refreshed) return mapRowWithCorporatePool(refreshed)
   }
 
-  return mapRow(user)
+  const fallback = await prisma.user.findFirst({
+    where: { id, deletedAt: null },
+    select: adminUserRowSelect(),
+  })
+  if (!fallback) throw new AppError(404, 'User not found')
+  return mapRowWithCorporatePool(fallback)
 }
 
 const setStatus = async (id: string, body: SetAdminUserStatusBody, actor: ActorContext): Promise<AdminUserRow> => {
@@ -971,7 +1076,7 @@ const setStatus = async (id: string, body: SetAdminUserStatusBody, actor: ActorC
     meta: { userId: user.id, accountStatus: nextStatus },
   })
 
-  return mapRow(user)
+  return mapRowWithCorporatePool(user)
 }
 
 const remove = async (id: string, actor: ActorContext): Promise<null> => {
@@ -1044,7 +1149,7 @@ const createPaymentLink = async (id: string, actor: ActorContext): Promise<Admin
   })
 
   return {
-    ...mapRow(existing),
+    ...(await mapRowWithCorporatePool(existing)),
     paymentLinkUrl: link.url,
   }
 }
