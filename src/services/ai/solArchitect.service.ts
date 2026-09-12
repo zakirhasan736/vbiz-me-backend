@@ -69,10 +69,10 @@ Return JSON:
   "tabReasons": [{ "navId": "services", "reason": "short why" }]
 }
 
-First understand the business thoroughly from ALL provided sources (full website crawl, OCR/documents, and owner-typed notes):
-1. What is this business and who is the owner/professional?
-2. Industry, services/products, target customers, buying journey, conversion opportunities.
-3. Geography/service area, branding/tone, differentiators, social presence, contact, media.
+First understand the business thoroughly from ALL provided sources (website crawl or seller/storefront page, OCR/documents, and owner-typed notes):
+1. What is this business and who is the owner/professional? For seller/vendor storefronts, prefer the seller's name over the marketplace brand.
+2. Industry, services/products, target customers, buying journey, conversion opportunities. Map catalog/product lines into services and products.
+3. Geography/service area, branding/tone, differentiators, social presence, contact, media. Use authentic product packaging images from IMAGES: when present.
 4. Verified reviews, projects, experience, certifications — only if present in sources.
 5. Real blog/news articles and portfolio/project pages from the crawl — copy titles, excerpts, URLs, and images. Likely FAQ topics and SEO opportunities from verified facts.
 6. Which EXISTING catalog tabs fit, which fields can be filled now, what must be asked of the owner, and what is required for a 90–100% ready card.

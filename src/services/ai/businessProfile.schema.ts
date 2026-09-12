@@ -225,6 +225,7 @@ export const MASTER_PROFILE_JSON_INSTRUCTION = `Return ONLY JSON for a Master Bu
 - Preserve source hints when obvious (website vs document vs owner-typed notes).
 - Owner-provided / pasted business text is high-trust. OCR document text is high-trust for contact and offerings.
 - Read every crawled page. If the site has blog/news/article pages, put real posts in blogs[]. If it has portfolio/project pages, put them in portfolio[]. Keep titles, excerpts, URLs, and image URLs when present. Do not invent extra articles.
+- If sources say SELLER / VENDOR / STOREFRONT MODE: treat the URL as that person's seller page. Prefer seller/owner identity over the parent marketplace brand. Put catalog items into services[] and products[], and authentic product photos into portfolio[] using IMAGES: URLs when present.
 
 Shape:
 {

@@ -45,7 +45,13 @@ import { autoFillSelectedFields, capGeneratedSkills, topUpGeneratedList } from '
 const running = new Set<string>()
 const pendingWork = new Map<
   string,
-  { websiteUrl: string; businessText: string; files: UploadedPart[]; existingCard?: unknown }
+  {
+    websiteUrl: string
+    businessText: string
+    files: UploadedPart[]
+    existingCard?: unknown
+    crawlMode?: string
+  }
 >()
 
 export function computeSourceHash(input: {
@@ -54,6 +60,7 @@ export function computeSourceHash(input: {
   files: UploadedPart[]
   profileId?: string
   builderMode?: string
+  crawlMode?: string
 }) {
   const digest = createHash('sha256')
   digest.update(input.websiteUrl)
@@ -63,6 +70,8 @@ export function computeSourceHash(input: {
   digest.update(input.profileId || '')
   digest.update('\n')
   digest.update(input.builderMode || 'create')
+  digest.update('\n')
+  digest.update(input.crawlMode || '')
   for (const sha of input.files.map((file) => hashBuffer(file.buffer)).sort()) {
     digest.update(sha)
   }
@@ -71,7 +80,7 @@ export function computeSourceHash(input: {
 
 function productErrorMessage(code: BuilderErrorCode, fallback: string) {
   if (code === 'WEBSITE_FETCH_FAILED') {
-    return "I couldn't read that website. Your current card is safe. Try the URL again, paste the information, or upload a document."
+    return "I couldn't read that website or seller page. Your current card is safe. Try the URL again, paste the seller/product details, or upload a document."
   }
   if (code === 'DOCUMENT_READ_FAILED' || code === 'OCR_FAILED') {
     return "I couldn't finish reading that document. Try uploading it again or use another file."
@@ -218,6 +227,7 @@ export async function startCardJob(input: {
   sessionId?: string
   profileId?: string
   builderMode?: 'create' | 'update'
+  crawlMode?: string
   requestId?: string
 }) {
   const requestId = newRequestId(input.requestId)
@@ -226,6 +236,7 @@ export async function startCardJob(input: {
   const businessText = (input.businessText || '').trim()
   const files = input.files || []
   const websiteUrl = input.websiteUrl?.trim() ? normalizeWebsiteUrl(input.websiteUrl, requestId) : ''
+  const crawlMode = String(input.crawlMode || '').trim()
 
   if (builderMode === 'update') {
     if (!profileId) {
@@ -253,7 +264,7 @@ export async function startCardJob(input: {
     })
   }
 
-  const sourceHash = computeSourceHash({ websiteUrl, businessText, files, profileId, builderMode })
+  const sourceHash = computeSourceHash({ websiteUrl, businessText, files, profileId, builderMode, crawlMode })
   if (input.sessionId) {
     const existing = await loadCardSession(input.sessionId)
     if (existing && existing.userId === input.userId && existing.sourceHash === sourceHash) {
@@ -272,7 +283,13 @@ export async function startCardJob(input: {
           errorStage: null,
           requestId,
         })
-        pendingWork.set(resumed.id, { websiteUrl, businessText, files, existingCard: input.existingCard })
+        pendingWork.set(resumed.id, {
+          websiteUrl,
+          businessText,
+          files,
+          existingCard: input.existingCard,
+          crawlMode,
+        })
         queueWorker(resumed.id, { architectureOnly: true })
         return publicJob(resumed)
       }
@@ -282,7 +299,13 @@ export async function startCardJob(input: {
         existing.status === 'ARCHITECTING' ||
         existing.status === 'MAPPING_FIELDS'
       ) {
-        pendingWork.set(existing.id, { websiteUrl, businessText, files, existingCard: input.existingCard })
+        pendingWork.set(existing.id, {
+          websiteUrl,
+          businessText,
+          files,
+          existingCard: input.existingCard,
+          crawlMode,
+        })
         queueWorker(existing.id)
         return publicJob(existing)
       }
@@ -343,7 +366,7 @@ export async function startCardJob(input: {
   })
   await persistCardSession(session)
 
-  pendingWork.set(session.id, { websiteUrl, businessText, files, existingCard: input.existingCard })
+  pendingWork.set(session.id, { websiteUrl, businessText, files, existingCard: input.existingCard, crawlMode })
   queueWorker(session.id)
   logBuilderEvent('AI_BUILDER_STAGE', {
     requestId,
@@ -396,6 +419,7 @@ async function runExtractAndArchitecture(jobId: string) {
           websiteUrl,
           businessText,
           files,
+          crawlMode: work?.crawlMode,
         })
 
     const hasOtherSource =
@@ -505,7 +529,8 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
     })
     const profile = seedProfileFromCrawledPages(
       applyExistingCardToProfile(architecture.masterBusinessProfile, cardSnapshot),
-      session.normalized.website.pages
+      session.normalized.website.pages,
+      session.normalized.website.crawlMode || 'full'
     )
     await save(session, {
       status: 'MAPPING_FIELDS',

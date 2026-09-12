@@ -47,6 +47,8 @@ export function decideRecommendedTabs(profile: MasterBusinessProfile): Recommend
   }
 
   if ((profile.services || []).length) add('services', 'Services were found in the source material.', 'high')
+  if ((profile.products || []).length)
+    add('services', 'Product catalog lines were found for this seller/storefront.', 'high')
   if ((profile.portfolio || []).length) add('gallery', 'Project or portfolio items were found.', 'high')
   if ((profile.blogs || []).length) add('blog', 'Blog or news articles were found on the website.', 'high')
   if ((profile.verifiedReviews || []).length || (profile.existingTestimonials || []).length) {

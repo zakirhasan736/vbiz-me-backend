@@ -178,6 +178,7 @@ export async function extractBusinessSources(input: {
   files?: UploadedPart[]
   userId?: string
   sessionId?: string
+  crawlMode?: string
 }) {
   const websiteUrl = (input.websiteUrl || '').trim()
   const businessText = (input.businessText || '').trim()
@@ -187,7 +188,12 @@ export async function extractBusinessSources(input: {
     throw new AppError(400, 'Provide a website URL, business text, and/or document uploads.')
   }
 
-  const normalized = await normalizeSources({ websiteUrl, businessText, files })
+  const normalized = await normalizeSources({
+    websiteUrl,
+    businessText,
+    files,
+    crawlMode: input.crawlMode,
+  })
   const session = putCardSession({
     id: input.sessionId || undefined,
     userId: input.userId,
@@ -217,6 +223,7 @@ export async function analyzeBusinessSources(input: {
   files?: UploadedPart[]
   userId?: string
   sessionId?: string
+  crawlMode?: string
 }) {
   ensureOpenAiConfigured()
 
@@ -237,6 +244,7 @@ export async function analyzeBusinessSources(input: {
       files,
       userId: input.userId,
       sessionId,
+      crawlMode: input.crawlMode,
     })
     sessionId = extracted.sessionId
     normalized = getCardSession(sessionId)?.normalized

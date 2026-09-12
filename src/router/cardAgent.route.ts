@@ -65,6 +65,7 @@ router.post(
       files,
       userId: req.user?.id,
       sessionId: String(req.body?.sessionId || ''),
+      crawlMode: String(req.body?.crawlMode || req.body?.websiteKind || ''),
     })
     sendResponse(res, {
       success: true,
@@ -91,6 +92,7 @@ router.post(
       files,
       userId: req.user?.id,
       sessionId: String(req.body?.sessionId || ''),
+      crawlMode: String(req.body?.crawlMode || req.body?.websiteKind || ''),
     })
     sendResponse(res, {
       success: true,
@@ -209,6 +211,7 @@ router.post(
       sessionId: String(req.body?.sessionId || ''),
       profileId: String(req.body?.profileId || req.body?.cardId || '').trim(),
       builderMode: String(req.body?.builderMode || '') === 'update' ? 'update' : 'create',
+      crawlMode: String(req.body?.crawlMode || req.body?.websiteKind || '').trim(),
       requestId: getRequestId(req),
     })
     sendResponse(res, { success: true, statusCode: 202, message: 'Card job started', data })

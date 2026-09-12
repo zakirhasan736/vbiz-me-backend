@@ -310,6 +310,25 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(seeded.portfolio?.[0]?.title, 'Kitchen remodel')
   })
 
+  it('storefront mode seeds product images and maps products into services', () => {
+    const seeded = seedProfileFromCrawledPages(
+      profile({ blogs: [], portfolio: [], services: [], products: ['Glister', 'Nutrilite'] }),
+      [
+        {
+          url: 'https://www.amway.com/en_US/myshop/demo',
+          category: 'products',
+          title: 'Mark & Tracy MyShop',
+          text: 'Independent Amway sellers offering Nutrilite and Glister.',
+          imageUrls: ['https://cdn.amway.test/glister.jpg'],
+        },
+      ],
+      'storefront'
+    )
+    assert.equal(seeded.portfolio?.[0]?.imageUrl, 'https://cdn.amway.test/glister.jpg')
+    assert.equal(seeded.services?.[0]?.title, 'Glister')
+    assert.equal(seeded.services?.[1]?.title, 'Nutrilite')
+  })
+
   it('plumbing company gets trade tabs', () => {
     const tabs = decideRecommendedTabs(profile({ industry: 'plumbing contractor', licenses: ['HIC.123'] }))
     const ids = tabs.map((t) => t.navId)

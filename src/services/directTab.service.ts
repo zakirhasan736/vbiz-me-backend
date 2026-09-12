@@ -10,6 +10,7 @@ import AppError from '../error/AppError'
 import { listGalleriesForProfile } from '../utils/galleryMedia'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
+import { resolveStoredProductPricing } from '../utils/productPricing'
 import profileService from './profile.service'
 
 type BlogInput = {
@@ -206,6 +207,8 @@ type DirectRow = {
   author?: string | null
   text?: string | null
   rating?: number
+  price?: string | null
+  offerPrice?: string | null
   status: string | number
   sortOrder?: number
   metas?: unknown
@@ -216,12 +219,34 @@ type DirectRow = {
   updatedAt: Date
 }
 
+const productPricingFromInput = (input: TabItemInput) => {
+  const result = resolveStoredProductPricing({
+    metas:
+      input.metas && typeof input.metas === 'object' && !Array.isArray(input.metas)
+        ? (input.metas as Record<string, unknown>)
+        : {},
+  })
+  return {
+    price: result.price || null,
+    offerPrice: result.offerPrice || null,
+    metas: result.metas,
+  }
+}
+
 const serializeDedicatedRow = (tab: TabRegistryEntry, row: DirectRow) => {
   const metas =
     row.metas && typeof row.metas === 'object' && !Array.isArray(row.metas)
       ? { ...(row.metas as Record<string, unknown>) }
       : {}
   if (row.rating != null) metas.rating = row.rating
+  if (tab.storage === 'product') {
+    const pricing = resolveStoredProductPricing({
+      price: row.price,
+      offerPrice: row.offerPrice,
+      metas,
+    })
+    Object.assign(metas, pricing.metas)
+  }
   return serializeTabItem({
     id: row.id,
     profileId: row.profileId,
@@ -297,12 +322,31 @@ const listCreateData = (tab: TabRegistryEntry, input: TabItemInput) => {
   if (tab.storage === 'faq' || tab.storage === 'mission_statement') {
     return { ...omitMetas(data), legacyPostTypeId: tab.legacyPostTypeId }
   }
+  if (tab.storage === 'product') {
+    const pricing = productPricingFromInput(input)
+    return {
+      ...data,
+      price: pricing.price,
+      offerPrice: pricing.offerPrice,
+      metas: pricing.metas as Prisma.InputJsonValue,
+      legacyPostTypeId: tab.legacyPostTypeId,
+    }
+  }
   return { ...data, legacyPostTypeId: tab.legacyPostTypeId }
 }
 
 const listUpdateData = (tab: TabRegistryEntry, input: TabItemInput) => {
   const data = genericUpdateData(input)
   if (tab.storage === 'faq' || tab.storage === 'mission_statement') return omitMetas(data)
+  if (tab.storage === 'product' && input.metas !== undefined) {
+    const pricing = productPricingFromInput(input)
+    return {
+      ...data,
+      price: pricing.price,
+      offerPrice: pricing.offerPrice,
+      metas: pricing.metas as Prisma.InputJsonValue,
+    }
+  }
   return data
 }
 
@@ -545,8 +589,26 @@ const createTabItem = async (profileId: string, tabKey: string, userId: string, 
                 imageUrl: str(input.featuredImage),
               }
             : listCreateData(tab, input)
-    const row = await model.create({ data: { profileId, sortOrder, ...data } })
-    return serializeDedicatedRow(tab, row)
+    try {
+      const row = await model.create({ data: { profileId, sortOrder, ...data } })
+      return serializeDedicatedRow(tab, row)
+    } catch (createError) {
+      // Pre-migration DBs may lack Product.price / offerPrice; still persist metas.
+      if (
+        tab.storage === 'product' &&
+        isPrismaColumnMismatch(createError) &&
+        data &&
+        typeof data === 'object' &&
+        ('price' in data || 'offerPrice' in data)
+      ) {
+        const { price: _price, offerPrice: _offerPrice, ...withoutPriceCols } = data as Record<string, unknown>
+        void _price
+        void _offerPrice
+        const row = await model.create({ data: { profileId, sortOrder, ...withoutPriceCols } })
+        return serializeDedicatedRow(tab, row)
+      }
+      throw createError
+    }
   } catch (error) {
     if (!isSchemaGap(error)) throw error
     return createGenericTabItem(tab, profileId, input)
@@ -609,14 +671,35 @@ const updateTabItem = async (
               : listUpdateData(tab, input)
     // Singleton tables (WhyChooseUs / AboutMe) have no sortOrder column.
     const supportsSortOrder = tab.storage !== 'about_me' && !isSingletonSectionStorage(tab.storage)
-    const row = await model.update({
-      where: { id: itemId },
-      data: {
-        ...base,
-        ...(supportsSortOrder && typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
-      },
-    })
-    return serializeDedicatedRow(tab, row)
+    const updatePayload = {
+      ...base,
+      ...(supportsSortOrder && typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
+    }
+    try {
+      const row = await model.update({
+        where: { id: itemId },
+        data: updatePayload,
+      })
+      return serializeDedicatedRow(tab, row)
+    } catch (updateError) {
+      if (
+        tab.storage === 'product' &&
+        isPrismaColumnMismatch(updateError) &&
+        updatePayload &&
+        typeof updatePayload === 'object' &&
+        ('price' in updatePayload || 'offerPrice' in updatePayload)
+      ) {
+        const { price: _price, offerPrice: _offerPrice, ...withoutPriceCols } = updatePayload as Record<string, unknown>
+        void _price
+        void _offerPrice
+        const row = await model.update({
+          where: { id: itemId },
+          data: withoutPriceCols,
+        })
+        return serializeDedicatedRow(tab, row)
+      }
+      throw updateError
+    }
   } catch (error) {
     if (error instanceof AppError) throw error
     if (!isSchemaGap(error)) throw error

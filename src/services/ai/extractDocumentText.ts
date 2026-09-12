@@ -3,6 +3,7 @@ import mammoth from 'mammoth'
 import AppError from '../../error/AppError'
 import { cacheGet, cacheKey, cacheSet } from './extractionCache'
 import { MAX_FILES, MAX_UPLOAD_BYTES } from './openai.client'
+import type { WebsiteCrawlMode } from './websiteCrawlMode'
 
 export type WebsitePageCategory =
   | 'home'
@@ -31,6 +32,10 @@ export type CrawledWebsitePage = {
 export const PAGE_FETCH_TIMEOUT_MS = 20_000
 export const DEFAULT_CRAWL_MAX_PAGES = 40
 export const FOCUSED_CRAWL_MAX_PAGES = 48
+export const STOREFRONT_CRAWL_MAX_PAGES = 10
+
+const BROWSER_LIKE_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 export type ExtractedSource = {
   label: string
@@ -239,8 +244,10 @@ async function fetchHtml(url: string, timeoutMs = PAGE_FETCH_TIMEOUT_MS): Promis
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'vBizCardAgent/1.0 (+https://vbiz.me)',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent': BROWSER_LIKE_UA,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
       },
       redirect: 'follow',
     })
@@ -281,7 +288,7 @@ export function extractPageTitle(html: string): string {
   return cleanText(og || title || '').slice(0, 180)
 }
 
-export function extractPageImageUrls(html: string, baseUrl: string): string[] {
+export function extractPageImageUrls(html: string, baseUrl: string, limit = 8): string[] {
   const raw: string[] = []
   const og =
     html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
@@ -289,9 +296,15 @@ export function extractPageImageUrls(html: string, baseUrl: string): string[] {
   if (og) raw.push(og)
   const twitter = html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
   if (twitter) raw.push(twitter)
-  for (const match of html.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)) {
+  for (const match of html.matchAll(
+    /<(?:img|source)\b[^>]*(?:src|data-src|data-lazy-src|data-original)=["']([^"']+)["'][^>]*>/gi
+  )) {
     raw.push(match[1])
-    if (raw.length >= 16) break
+    if (raw.length >= 48) break
+  }
+  for (const match of html.matchAll(/["'](https?:\/\/[^"']+\.(?:jpe?g|png|webp)(?:\?[^"']*)?)["']/gi)) {
+    raw.push(match[1])
+    if (raw.length >= 64) break
   }
   const seen = new Set<string>()
   const abs: string[] = []
@@ -302,8 +315,10 @@ export function extractPageImageUrls(html: string, baseUrl: string): string[] {
       const path = parsed.pathname.toLowerCase()
       const looksImage =
         /\.(?:jpe?g|png|webp|gif)(?:\?|$)/i.test(path) ||
-        /\/(?:uploads|wp-content|cdn|images?|media|assets)\//i.test(path)
+        /\/(?:uploads|wp-content|cdn|images?|media|assets|product|catalog|amway)\//i.test(path) ||
+        /cloudfront|scene7|akamai|shopify|amway/i.test(parsed.hostname)
       if (!looksImage) continue
+      if (/sprite|icon|logo|favicon|pixel|1x1|blank|placeholder/i.test(path)) continue
       const next = parsed.toString()
       if (seen.has(next)) continue
       seen.add(next)
@@ -312,7 +327,7 @@ export function extractPageImageUrls(html: string, baseUrl: string): string[] {
       /* ignore */
     }
   }
-  return abs.slice(0, 8)
+  return abs.slice(0, Math.max(1, limit))
 }
 
 function collectJsonStrings(value: unknown, out: string[] = [], seen = new Set<unknown>()): string[] {
@@ -538,38 +553,45 @@ type FetchedPage = {
   imageUrls: string[]
 }
 
-/** Crawl homepage + inner pages (services, portfolio, blog, faq, reviews…) including sitemap URLs. */
+/** Crawl homepage + inner pages (services, portfolio, blog, faq, reviews…) including sitemap URLs.
+ * Storefront mode stays on the provided seller/vendor URL (+ a few product links), no site-root sitemap.
+ */
 export async function crawlWebsiteDeep(
   url: string,
-  focus?: string
-): Promise<{ pages: CrawledWebsitePage[]; combined: string }> {
+  focus?: string,
+  options?: { mode?: WebsiteCrawlMode }
+): Promise<{ pages: CrawledWebsitePage[]; combined: string; mode: WebsiteCrawlMode }> {
+  const mode: WebsiteCrawlMode = options?.mode === 'storefront' ? 'storefront' : 'full'
   const home = url.startsWith('http') ? url : `https://${url}`
-  const cacheId = cacheKey(['crawl-v2', home, focus || ''])
-  const cached = cacheGet<{ pages: CrawledWebsitePage[]; combined: string }>(cacheId)
+  const cacheId = cacheKey(['crawl-v3', home, focus || '', mode])
+  const cached = cacheGet<{ pages: CrawledWebsitePage[]; combined: string; mode: WebsiteCrawlMode }>(cacheId)
   if (cached) return cached
 
+  const imageLimit = mode === 'storefront' ? 24 : 8
   const homeHtml = await fetchHtml(home)
   const homeText = htmlToText(homeHtml)
+  const homeCategory = mode === 'storefront' ? ('products' as WebsitePageCategory) : classifyWebsitePage(home, homeText)
   const pages: CrawledWebsitePage[] = [
     {
       url: home,
-      text: truncate(homeText, 16000),
-      category: classifyWebsitePage(home, homeText),
+      text: truncate(homeText, mode === 'storefront' ? 20000 : 16000),
+      category: homeCategory,
       title: extractPageTitle(homeHtml),
-      imageUrls: extractPageImageUrls(homeHtml, home),
+      imageUrls: extractPageImageUrls(homeHtml, home, imageLimit),
     },
   ]
   const visited = new Set<string>([home])
-  const maxPages = focus ? FOCUSED_CRAWL_MAX_PAGES : DEFAULT_CRAWL_MAX_PAGES
+  const maxPages =
+    mode === 'storefront' ? STOREFRONT_CRAWL_MAX_PAGES : focus ? FOCUSED_CRAWL_MAX_PAGES : DEFAULT_CRAWL_MAX_PAGES
 
   async function fetchPage(link: string): Promise<FetchedPage> {
     const html = await fetchHtml(link)
     return {
       url: link,
       html,
-      text: truncate(htmlToText(html), focus ? 14000 : 12000),
+      text: truncate(htmlToText(html), focus || mode === 'storefront' ? 14000 : 12000),
       title: extractPageTitle(html),
-      imageUrls: extractPageImageUrls(html, link),
+      imageUrls: extractPageImageUrls(html, link, imageLimit),
     }
   }
 
@@ -580,50 +602,83 @@ export async function crawlWebsiteDeep(
   }
 
   function acceptPage(page: FetchedPage) {
-    if (page.text.length <= 80 && !page.title) return
+    if (page.text.length <= 80 && !page.title && !(page.imageUrls || []).length) return
     pages.push({
       url: page.url,
       text: page.text,
-      category: classifyWebsitePage(page.url, `${page.title} ${page.text}`),
+      category:
+        mode === 'storefront'
+          ? classifyWebsitePage(page.url, `${page.title} ${page.text}`) || 'products'
+          : classifyWebsitePage(page.url, `${page.title} ${page.text}`),
       title: page.title,
       imageUrls: page.imageUrls,
     })
   }
 
-  const sitemapPromise = discoverSitemapUrls(home)
-  const firstLinks = extractSameOriginLinks(homeHtml, home, focus, focus ? 20 : 16).filter(remember)
-  const firstResults = await fetchSettledInChunks(firstLinks, 8, fetchPage)
-  const childLinks: string[] = []
-  for (const result of firstResults) {
-    if (result.status !== 'fulfilled') continue
-    const page = result.value as FetchedPage
-    acceptPage(page)
-    childLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 12))
-  }
+  // Storefront: only follow a few product/service links from this seller page — never site-root sitemap.
+  const firstLinkLimit = mode === 'storefront' ? 8 : focus ? 20 : 16
+  const firstLinks = extractSameOriginLinks(
+    homeHtml,
+    home,
+    mode === 'storefront' ? 'services' : focus,
+    firstLinkLimit
+  ).filter(remember)
 
-  const sitemapCandidates = (await sitemapPromise).filter((link) => !visited.has(link))
-  const childCandidates = childLinks.filter((link) => !visited.has(link))
-  const secondLinks = [...sitemapCandidates, ...childCandidates]
-    .filter((link, index, all) => all.indexOf(link) === index)
-    .slice(0, Math.max(0, maxPages - pages.length))
-  for (const link of secondLinks) visited.add(link)
-  if (secondLinks.length) {
-    const secondResults = await fetchSettledInChunks(secondLinks, 8, fetchPage)
-    for (const result of secondResults) {
+  if (mode === 'storefront') {
+    if (firstLinks.length) {
+      const firstResults = await fetchSettledInChunks(firstLinks.slice(0, maxPages - 1), 4, fetchPage)
+      for (const result of firstResults) {
+        if (result.status !== 'fulfilled') continue
+        acceptPage(result.value as FetchedPage)
+      }
+    }
+  } else {
+    const sitemapPromise = discoverSitemapUrls(home)
+    const firstResults = await fetchSettledInChunks(firstLinks, 8, fetchPage)
+    const childLinks: string[] = []
+    for (const result of firstResults) {
       if (result.status !== 'fulfilled') continue
-      acceptPage(result.value as FetchedPage)
+      const page = result.value as FetchedPage
+      acceptPage(page)
+      childLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 12))
+    }
+
+    const sitemapCandidates = (await sitemapPromise).filter((link) => !visited.has(link))
+    const childCandidates = childLinks.filter((link) => !visited.has(link))
+    const secondLinks = [...sitemapCandidates, ...childCandidates]
+      .filter((link, index, all) => all.indexOf(link) === index)
+      .slice(0, Math.max(0, maxPages - pages.length))
+    for (const link of secondLinks) visited.add(link)
+    if (secondLinks.length) {
+      const secondResults = await fetchSettledInChunks(secondLinks, 8, fetchPage)
+      for (const result of secondResults) {
+        if (result.status !== 'fulfilled') continue
+        acceptPage(result.value as FetchedPage)
+      }
     }
   }
 
-  const combined = pages
-    .map((p, i) => {
-      const media = p.imageUrls?.length ? `\nIMAGES: ${p.imageUrls.slice(0, 3).join(' | ')}` : ''
-      const title = p.title ? `\nTITLE: ${p.title}` : ''
-      return `=== PAGE ${i + 1} [${p.category.toUpperCase()}]: ${p.url} ===${title}${media}\n${p.text}`
-    })
-    .join('\n\n')
+  const combinedPrefix =
+    mode === 'storefront'
+      ? `CRAWL MODE: storefront (seller/vendor page — focus on this URL, not the full marketplace)\n`
+      : ''
+  const combined =
+    combinedPrefix +
+    pages
+      .map((p, i) => {
+        const media = p.imageUrls?.length
+          ? `\nIMAGES: ${p.imageUrls.slice(0, mode === 'storefront' ? 8 : 3).join(' | ')}`
+          : ''
+        const title = p.title ? `\nTITLE: ${p.title}` : ''
+        return `=== PAGE ${i + 1} [${p.category.toUpperCase()}]: ${p.url} ===${title}${media}\n${p.text}`
+      })
+      .join('\n\n')
 
-  const result = { pages, combined: truncate(combined, focus ? 120000 : 110000) }
+  const result = {
+    pages,
+    combined: truncate(combined, mode === 'storefront' ? 90000 : focus ? 120000 : 110000),
+    mode,
+  }
   cacheSet(cacheId, result)
   return result
 }

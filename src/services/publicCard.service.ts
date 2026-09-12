@@ -28,6 +28,7 @@ import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUr
 import { formatProfileLocation, hasProfileLocationParts } from '../utils/personalAddress'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
+import { resolveStoredProductPricing } from '../utils/productPricing'
 import { collectSaveContactPhotoCandidates, resolveSaveContactPhotoUrls } from '../utils/saveContactPhoto'
 import { resolveProfileSharePreviewImageUrl, SHARE_PREVIEW_IMAGE_SETTING_KEY } from '../utils/sharePreviewImage'
 import profileService from './profile.service'
@@ -1404,10 +1405,16 @@ const getDynamicSection = async (
                 urlFromField && urlFromField !== featuredFromField
                   ? mediaAsset(`${p.id}-url`, p.title, urlFromField)
                   : null
-              const metas =
+              const metasRaw =
                 p.metas && typeof p.metas === 'object' && !Array.isArray(p.metas)
                   ? (p.metas as Record<string, string>)
                   : {}
+              const pricing = resolveStoredProductPricing({
+                price: (p as { price?: string | null }).price,
+                offerPrice: (p as { offerPrice?: string | null }).offerPrice,
+                metas: metasRaw,
+              })
+              const metas = pricing.metas
               const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
               const year = typeof metas.year === 'string' ? metas.year.trim() : ''
               const metaGeneralInfoUrl = typeof metas.general_info_url === 'string' ? metas.general_info_url.trim() : ''
@@ -1422,6 +1429,8 @@ const getDynamicSection = async (
                 status: p.status === '0' ? 0 : 1,
                 issuer,
                 year,
+                price: pricing.price,
+                offerPrice: pricing.offerPrice,
                 featured_image: featuredImage,
                 general_info_url: publicHref,
                 url: publicHref,
@@ -1800,10 +1809,12 @@ const getDynamicSection = async (
           items: tabRows.map((p) => {
             const featuredFromField = abs(p.featuredImage, null, 7, 'Featured Image')
             const asset = mediaAsset(p.id, p.title, featuredFromField)
-            const metas =
+            const metasRaw =
               p.metas && typeof p.metas === 'object' && !Array.isArray(p.metas)
                 ? (p.metas as Record<string, string>)
                 : {}
+            const pricing = resolveStoredProductPricing({ metas: metasRaw })
+            const metas = pricing.metas
             return {
               id: p.id,
               title: p.title,
@@ -1811,6 +1822,8 @@ const getDynamicSection = async (
               status: p.status === '0' ? 0 : 1,
               issuer: typeof metas.issuer === 'string' ? metas.issuer.trim() : '',
               year: typeof metas.year === 'string' ? metas.year.trim() : '',
+              price: pricing.price,
+              offerPrice: pricing.offerPrice,
               featured_image: asset,
               general_info_url: p.url,
               review_link: { url: p.url || '', has_link: Boolean(p.url) },
@@ -1871,7 +1884,9 @@ const getDynamicSection = async (
           return url ? { id: a.id, doc_name: a.docName, url, extension: a.extension } : null
         })
         .filter(Boolean) as { id: string; doc_name: string | null; url: string; extension: string | null }[]
-      const metas = Object.fromEntries(p.metas.map((m) => [m.metaKey, m.metaValue ?? '']))
+      const metasRaw = Object.fromEntries(p.metas.map((m) => [m.metaKey, m.metaValue ?? '']))
+      const pricing = resolveStoredProductPricing({ metas: metasRaw })
+      const metas = pricing.metas
       const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
       const year = typeof metas.year === 'string' ? metas.year.trim() : ''
 
@@ -1882,6 +1897,8 @@ const getDynamicSection = async (
         status: p.status,
         issuer,
         year,
+        price: pricing.price,
+        offerPrice: pricing.offerPrice,
         featured_image: featuredFromField
           ? [{ id: p.id, doc_name: p.title, url: featuredFromField }]
           : attachmentImages.map(({ id, doc_name, url }) => ({ id, doc_name, url })),

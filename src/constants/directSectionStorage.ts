@@ -12,6 +12,8 @@ export type DirectSectionRow = {
   status: string
   sortOrder: number
   metas?: unknown
+  price?: string | null
+  offerPrice?: string | null
   createdAt: Date
 }
 

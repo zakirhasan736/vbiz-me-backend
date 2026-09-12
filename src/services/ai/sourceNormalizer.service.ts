@@ -8,6 +8,7 @@ import {
   type WebsitePageCategory,
 } from './extractDocumentText'
 import { normalizeWebsiteUrl } from './sourceUrl'
+import { detectWebsiteCrawlMode, STOREFRONT_SOURCE_PREAMBLE, type WebsiteCrawlMode } from './websiteCrawlMode'
 
 export type NormalizedDocument = {
   id: string
@@ -26,6 +27,7 @@ export type NormalizedSourceData = {
     pages: Array<{ url: string; category: WebsitePageCategory; text: string; title?: string; imageUrls?: string[] }>
     scrapeFailed?: boolean
     scrapeError?: string
+    crawlMode?: WebsiteCrawlMode
   }
   documents: NormalizedDocument[]
   ocrResults: NormalizedDocument[]
@@ -74,7 +76,8 @@ function excerptForCard(text: string, max = 700): string {
 /** If SOL missed real site articles/projects, copy them onto the card from the crawl. */
 export function seedProfileFromCrawledPages(
   profile: MasterBusinessProfile,
-  pages: NormalizedSourceData['website']['pages']
+  pages: NormalizedSourceData['website']['pages'],
+  crawlMode: WebsiteCrawlMode = 'full'
 ): MasterBusinessProfile {
   const next = { ...profile }
   if (!(next.blogs || []).length) {
@@ -104,6 +107,34 @@ export function seedProfileFromCrawledPages(
       .filter((item) => item.title.trim())
     if (projects.length) next.portfolio = projects
   }
+
+  // Seller/storefront: turn product-page images into portfolio tiles when SOL left portfolio empty.
+  if (crawlMode === 'storefront' && !(next.portfolio || []).length) {
+    const productTiles = pages
+      .flatMap((page) =>
+        (page.imageUrls || []).slice(0, 4).map((imageUrl, index) => ({
+          title: (page.title || `Product ${index + 1}`).slice(0, 180),
+          description: excerptForCard(page.text, 280),
+          url: page.url,
+          imageUrl,
+        }))
+      )
+      .filter((item) => item.imageUrl)
+      .slice(0, 12)
+    if (productTiles.length) next.portfolio = productTiles
+  }
+
+  // Map catalog names into services when services are empty but products exist.
+  if (!(next.services || []).length && (next.products || []).length) {
+    next.services = (next.products || []).slice(0, 12).map((title) => ({
+      title: String(title).slice(0, 180),
+      description: '',
+      url: '',
+      source: 'website',
+      sourceUrl: pages[0]?.url || '',
+    }))
+  }
+
   return next
 }
 
@@ -171,19 +202,21 @@ export async function normalizeSources(input: {
   businessText?: string
   files?: UploadedPart[]
   sectionFocus?: string
+  crawlMode?: string | null
 }): Promise<NormalizedSourceData> {
   const rawUrl = (input.websiteUrl || '').trim()
   const websiteUrl = rawUrl ? normalizeWebsiteUrl(rawUrl) : ''
+  const crawlMode = detectWebsiteCrawlMode(websiteUrl || rawUrl, input.crawlMode)
   const { userInstructions, manualText } = splitInstructions(input.businessText || '')
   const warnings: string[] = []
   const documents: NormalizedDocument[] = []
   const ocrResults: NormalizedDocument[] = []
   const images: Array<{ mimeType: string; base64: string }> = []
   const textParts: string[] = []
-  const website: NormalizedSourceData['website'] = { url: websiteUrl, pages: [] }
+  const website: NormalizedSourceData['website'] = { url: websiteUrl, pages: [], crawlMode }
 
   const websiteTask = websiteUrl
-    ? crawlWebsiteDeep(websiteUrl, input.sectionFocus).then(
+    ? crawlWebsiteDeep(websiteUrl, input.sectionFocus, { mode: crawlMode }).then(
         (crawled) => ({ ok: true as const, crawled }),
         (error) => ({
           ok: false as const,
@@ -198,15 +231,26 @@ export async function normalizeSources(input: {
 
   if (websiteResult?.ok) {
     const crawled = websiteResult.crawled
-    const imageCandidates = crawled.pages.flatMap((page) =>
-      page.category === 'blog' || page.category === 'portfolio' ? page.imageUrls || [] : []
-    )
+    const imageCandidates = crawled.pages.flatMap((page) => {
+      if (crawlMode === 'storefront') return page.imageUrls || []
+      return page.category === 'blog' || page.category === 'portfolio' || page.category === 'products'
+        ? page.imageUrls || []
+        : []
+    })
     const mirrored = await mirrorRemoteImages(imageCandidates)
     website.pages = crawled.pages.map((page) => ({
       ...page,
       imageUrls: (page.imageUrls || []).map((url) => mirrored.get(url) || url),
     }))
-    textParts.push(`WEBSITE URL: ${websiteUrl}\nCRAWLED ${website.pages.length} PAGE(S):\n${crawled.combined}`)
+    website.crawlMode = crawled.mode || crawlMode
+    if (crawlMode === 'storefront') {
+      textParts.push(STOREFRONT_SOURCE_PREAMBLE)
+      textParts.push(
+        `WEBSITE URL (seller/vendor storefront): ${websiteUrl}\nCRAWLED ${website.pages.length} PAGE(S) IN STOREFRONT MODE:\n${crawled.combined}`
+      )
+    } else {
+      textParts.push(`WEBSITE URL: ${websiteUrl}\nCRAWLED ${website.pages.length} PAGE(S):\n${crawled.combined}`)
+    }
     const articles = articleBlock(website.pages, 'blog')
     const projects = articleBlock(website.pages, 'portfolio')
     if (articles) textParts.push(articles)
@@ -214,8 +258,16 @@ export async function normalizeSources(input: {
   } else if (websiteResult && !websiteResult.ok) {
     website.scrapeFailed = true
     website.scrapeError = 'WEBSITE_FETCH_FAILED'
-    warnings.push('The website could not be read. Other sources will still be used.')
-    textParts.push(`WEBSITE URL: ${websiteUrl}\n(Could not crawl the public pages.)`)
+    warnings.push(
+      crawlMode === 'storefront'
+        ? 'That seller/storefront page could not be read (many marketplace shops block automated access). Paste the seller’s name, products, and notes below, or add official product-page URLs in notes.'
+        : 'The website could not be read. Other sources will still be used.'
+    )
+    textParts.push(
+      crawlMode === 'storefront'
+        ? `WEBSITE URL (seller/vendor storefront): ${websiteUrl}\n(Could not read this storefront page. Prefer owner-typed seller/product notes.)`
+        : `WEBSITE URL: ${websiteUrl}\n(Could not crawl the public pages.)`
+    )
   }
 
   if (userInstructions) textParts.push(`USER INSTRUCTIONS (high-trust owner direction):\n${userInstructions}`)

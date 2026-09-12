@@ -75,12 +75,21 @@ export function profileToBlueprintFacts(
     education: profile.education || [],
     experience: profile.experience || [],
     skills: profile.skills || [],
-    services: (profile.services || []).map((s) => ({
-      type: mapServiceType(s.title, s.description) as CardBlueprint['services'][number]['type'],
-      title: s.title,
-      description: s.description || '',
-      url: s.url || '',
-    })),
+    services: (() => {
+      const fromServices = (profile.services || []).map((s) => ({
+        type: mapServiceType(s.title, s.description) as CardBlueprint['services'][number]['type'],
+        title: s.title,
+        description: s.description || '',
+        url: s.url || '',
+      }))
+      if (fromServices.length) return fromServices
+      return (profile.products || []).slice(0, 12).map((title) => ({
+        type: 'Other' as CardBlueprint['services'][number]['type'],
+        title: String(title),
+        description: '',
+        url: '',
+      }))
+    })(),
     portfolio: profile.portfolio || [],
     reviews: realReviews.map((r) => ({
       author: r.author || 'Client',

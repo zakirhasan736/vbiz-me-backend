@@ -1081,6 +1081,10 @@ model Product {
   description   String?
   url           String?
   featuredImage String?
+  /// Regular / seller list price (UI may strike through when offerPrice is set).
+  price         String?
+  /// Active sale / offer price shown on the public card.
+  offerPrice    String?
   status        String    @default("1")
   sortOrder     Int       @default(0)
   metas         Json?
