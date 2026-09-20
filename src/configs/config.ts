@@ -112,6 +112,8 @@ const allowedCorsOrigins = Array.from(
       'https://app.vbizme.com',
       'https://www.vbizme.com',
       'https://vbizme.com',
+      'https://vbiz.me',
+      'https://www.vbiz.me',
       'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:5173',

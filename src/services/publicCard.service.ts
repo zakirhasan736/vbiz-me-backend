@@ -2245,9 +2245,9 @@ const saveGuestUser = async (
       : null)
 
   const guestFields = {
-    fullName: fullName || null,
-    phone: phone || null,
-    email: email || null,
+    fullName: fullName || existingByEmail?.fullName?.trim() || 'Visitor',
+    phone: phone || existingByEmail?.phone || null,
+    email: email || existingByEmail?.email || null,
   }
 
   if (existingByEmail) {
