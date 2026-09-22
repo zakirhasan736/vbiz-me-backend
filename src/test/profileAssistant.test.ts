@@ -5,6 +5,7 @@ import {
   assertPublicAssistantGate,
   boundKnowledgeContext,
   buildTabFillSystemPrompt,
+  isAssistantEnabled,
   parseAssistantEnabled,
   parseSupportedTabScope,
   publicLiveTokenShape,
@@ -18,6 +19,15 @@ test('assistant enabled parsing supports legacy checkbox values', () => {
   for (const value of [false, 0, '0', 'false', '', null, undefined]) {
     assert.equal(parseAssistantEnabled(value), false)
   }
+})
+
+test('default AI Assistance slug stays on until the owner saves an explicit off', () => {
+  assert.equal(isAssistantEnabled(undefined, undefined, 'michaelangelo-casanova-2'), true)
+  assert.equal(isAssistantEnabled(undefined, '', 'Michaelangelo-Casanova-2'), true)
+  assert.equal(isAssistantEnabled(true, '0', 'michaelangelo-casanova-2'), true)
+  assert.equal(isAssistantEnabled(false, '0', 'michaelangelo-casanova-2'), false)
+  assert.equal(isAssistantEnabled(false, null, 'michaelangelo-casanova-2'), false)
+  assert.equal(isAssistantEnabled(undefined, undefined, 'other-card'), false)
 })
 
 test('public assistant token gate requires public readability and either enabled source', () => {

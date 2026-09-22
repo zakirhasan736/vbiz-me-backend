@@ -37,9 +37,17 @@ export function parseAssistantEnabled(value: unknown): boolean {
   )
 }
 
+function hasExplicitAssistantFlag(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string' && value.trim() === '') return false
+  return true
+}
+
 export function isAssistantEnabled(configEnabled: unknown, legacySettingValue: unknown, slug?: string | null): boolean {
-  if (isDefaultAiAssistanceSlug(slug)) return true
-  return parseAssistantEnabled(configEnabled) || parseAssistantEnabled(legacySettingValue)
+  const configSet = hasExplicitAssistantFlag(configEnabled)
+  const legacySet = hasExplicitAssistantFlag(legacySettingValue)
+  if (!configSet && !legacySet) return isDefaultAiAssistanceSlug(slug)
+  return (configSet && parseAssistantEnabled(configEnabled)) || (legacySet && parseAssistantEnabled(legacySettingValue))
 }
 
 export function assertPublicAssistantGate(

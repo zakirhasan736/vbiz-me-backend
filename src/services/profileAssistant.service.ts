@@ -48,18 +48,18 @@ async function loadAssistantExtras(profileId: string) {
   return { assistantConfig, assistantKnowledge }
 }
 
-async function legacyEnabled(profileId: string): Promise<boolean> {
+async function legacySettingValue(profileId: string): Promise<string | null> {
   const setting = await prisma.setting.findUnique({
     where: { profileId_key: { profileId, key: ASSISTANT_SETTING_KEY } },
     select: { value: true },
   })
-  return parseAssistantEnabled(setting?.value)
+  return setting?.value ?? null
 }
 
 export async function getConfig(profileId: string) {
   const [stored, legacy, profile] = await Promise.all([
     safePrismaQuery(() => prisma.profileAssistantConfig.findUnique({ where: { profileId } }), null),
-    legacyEnabled(profileId),
+    legacySettingValue(profileId),
     prisma.profile.findUnique({ where: { id: profileId }, select: { slug: true } }),
   ])
   return {

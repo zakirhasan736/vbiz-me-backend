@@ -13,7 +13,7 @@ const ASSISTANT_SETTING_KEY = 'aiAssistance_checkbox'
  * so Corporate owners are never silently attached to Free.
  *
  * Also locks AI Assistance as a paid add-on on every package (allow_ai_assistance=0),
- * keeps michaelangelo-casanova-2 AI Assistance enabled by default, forces
+ * seeds michaelangelo-casanova-2 AI Assistance on only when that card has no saved choice, forces
  * push notification on for every package (allow_push_notification=1), and
  * enables Canva on every package except Free (allow_canva=1 / free=0), and
  * syncs CRM onto every package (allow_crm=1; not plan-gated).
@@ -224,17 +224,27 @@ const seedPackages = async (): Promise<void> => {
     select: { id: true },
   })
   if (defaultCard) {
-    await prisma.setting.upsert({
+    const existingSetting = await prisma.setting.findUnique({
       where: { profileId_key: { profileId: defaultCard.id, key: ASSISTANT_SETTING_KEY } },
-      create: { profileId: defaultCard.id, key: ASSISTANT_SETTING_KEY, value: '1' },
-      update: { value: '1' },
+      select: { id: true },
     })
-    await prisma.profileAssistantConfig.upsert({
+    const existingConfig = await prisma.profileAssistantConfig.findUnique({
       where: { profileId: defaultCard.id },
-      create: { profileId: defaultCard.id, enabled: true },
-      update: { enabled: true },
+      select: { profileId: true },
     })
-    logger.info(`Ensured AI Assistance enabled for /v/${DEFAULT_AI_ASSISTANCE_SLUG}`)
+    if (!existingSetting) {
+      await prisma.setting.create({
+        data: { profileId: defaultCard.id, key: ASSISTANT_SETTING_KEY, value: '1' },
+      })
+    }
+    if (!existingConfig) {
+      await prisma.profileAssistantConfig.create({
+        data: { profileId: defaultCard.id, enabled: true },
+      })
+    }
+    if (!existingSetting || !existingConfig) {
+      logger.info(`Seeded default AI Assistance for /v/${DEFAULT_AI_ASSISTANCE_SLUG}`)
+    }
   }
 }
 
