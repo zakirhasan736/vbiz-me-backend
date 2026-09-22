@@ -52,6 +52,20 @@ test('protected resources reject unauthenticated requests with 403', async () =>
   assert.equal(response.body.message, 'Unauthorized')
 })
 
+test('public track-event rejects an empty payload', async () => {
+  const response = await request(app).post('/api/v1/public/track-event').send({})
+
+  assert.equal(response.status, 400)
+  assert.equal(response.body.success, false)
+})
+
+test('public push subscribe rejects an empty payload', async () => {
+  const response = await request(app).post('/api/v1/public/push/subscribe').send({})
+
+  assert.equal(response.status, 400)
+  assert.equal(response.body.success, false)
+})
+
 test('public note reads require a visitor scope', async () => {
   const response = await request(app).get('/api/v1/public/notes?profile_id=profile-1')
 

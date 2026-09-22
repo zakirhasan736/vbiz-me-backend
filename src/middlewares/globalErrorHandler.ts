@@ -7,6 +7,7 @@ import handleZodError from '../error/zodError'
 import { IErrorSources } from '../interfaces/error.interface'
 import logger from '../utils/logger'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaTypeMismatch } from '../utils/prismaErrors'
+import { captureSentryException } from '../utils/sentry'
 
 const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   let message = error.message || 'Something went wrong!'
@@ -88,6 +89,12 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
 
   if (statusCode >= 500) {
     logger.error(logLine, logPayload)
+    captureSentryException(message, {
+      method: req.method,
+      url: req.originalUrl,
+      statusCode,
+      requestId,
+    })
   } else if (!isAnonymousAuthorCheck) {
     logger.warn(logLine, logPayload)
   }
