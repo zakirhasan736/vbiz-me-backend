@@ -43,6 +43,11 @@ import {
   ensureCorporateMemberLoginsForParent,
   provisionCorporateMemberUser,
 } from '../utils/corporateMemberUser'
+import {
+  resolveCorporateParentUserId,
+  safeSyncCorporateSiblingSharedContent,
+  shouldFanOutCollection,
+} from '../utils/corporateSiblingSync'
 import { guestSaveDashboardVisibleWhere } from '../utils/crmLeadOrigin'
 import {
   DASHBOARD_ALL_CHART_DAYS,
@@ -1978,42 +1983,6 @@ const duplicate = async (
   return duplicated
 }
 
-/** Resolve the corporate account that should own capacity for a duplicated team card. */
-const resolveCorporateParentUserId = async (
-  source: {
-    userId?: unknown
-    companyUserId?: unknown
-  },
-  actorUserId: string,
-  actorRole: string
-): Promise<string | null> => {
-  const candidateIds = [
-    typeof source.companyUserId === 'string' ? source.companyUserId : '',
-    typeof source.userId === 'string' ? source.userId : '',
-  ].filter(Boolean)
-
-  for (const candidateId of candidateIds) {
-    const user = await prisma.user.findFirst({
-      where: { id: candidateId, deletedAt: null },
-      select: { id: true, role: true },
-    })
-    if (!user) continue
-    const apiRole = toApiRole(user.role)
-    if (apiRole === 'corporate-owner') return user.id
-    const entitlements = await getEffectiveEntitlements(user.id, apiRole)
-    if (entitlements.ownerMode === 'corporate') return user.id
-  }
-
-  if (!isStaff(actorRole) && !isAdminRole(actorRole)) {
-    const actorEntitlements = await getEffectiveEntitlements(actorUserId, actorRole)
-    if (actorEntitlements.ownerMode === 'corporate' || actorRole === 'corporate-owner') {
-      return actorUserId
-    }
-  }
-
-  return null
-}
-
 const update = async (
   profileId: string,
   userId: string,
@@ -2302,6 +2271,10 @@ const update = async (
     if (nextCustomTabs != null && existingMap.get('custom_tabs_json') !== nextCustomTabs) {
       await syncCustomTabsJson(profileId, nextCustomTabs)
     }
+    const sharedChangedKeys = changedEntries.map(([key]) => key)
+    if (sharedChangedKeys.length) {
+      await safeSyncCorporateSiblingSharedContent(profileId, { type: 'settings', keys: sharedChangedKeys })
+    }
   }
 
   if (profileSettings) {
@@ -2486,6 +2459,9 @@ const replaceCollection = async <T extends Record<string, unknown>>(
       }
     }
   })
+  if (shouldFanOutCollection(kind)) {
+    await safeSyncCorporateSiblingSharedContent(profileId, { type: 'collection', kind })
+  }
   const owned = await getOwnedLite(profileId, userId, role)
   const preferenceType = pushService.preferenceKeyForCollection(kind)
   if (preferenceType) {
@@ -2698,6 +2674,7 @@ const upsertAboutMe = async (
       title: 'About Me updated',
       body: `${businessName} updated their About Me section.`,
     })
+    await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' })
     return fallback
   }
 
@@ -2714,6 +2691,7 @@ const upsertAboutMe = async (
 
   await upsertAboutMeMediaFocusY(prisma, profileId, input.featuredMediaFocusY)
   const focusY = await readAboutMeMediaFocusY(prisma, profileId)
+  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' })
   return serializeAboutMe(row, focusY)
 }
 
@@ -2731,6 +2709,7 @@ const deleteAboutMe = async (profileId: string, userId: string, role: string) =>
       key: { in: [ABOUT_ME_TITLE_KEY, ABOUT_ME_MEDIA_KEY, ABOUT_ME_STATUS_KEY, ABOUT_ME_MEDIA_FOCUS_Y_KEY] },
     },
   })
+  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' })
   return { deleted: true as const }
 }
 
@@ -2841,6 +2820,7 @@ const createPost = async (
     body: `${businessName} published a new update.`,
   })
 
+  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'posts', postTypeId: created.postTypeId })
   return created
 }
 
@@ -2917,6 +2897,7 @@ const updatePost = async (
     body: `${businessName} updated a post.`,
   })
 
+  await safeSyncCorporateSiblingSharedContent(post.profileId, { type: 'posts', postTypeId: updatedPost.postTypeId })
   return updatedPost
 }
 
@@ -2925,6 +2906,7 @@ const deletePost = async (postId: string, userId: string, role: string) => {
   if (!post) throw new AppError(404, 'Post not found')
   await getOwnedForWrite(post.profileId, userId, role)
   await prisma.post.update({ where: { id: postId }, data: { deletedAt: new Date(), status: '0' } })
+  await safeSyncCorporateSiblingSharedContent(post.profileId, { type: 'posts', postTypeId: post.postTypeId })
   return { id: postId, deleted: true }
 }
 

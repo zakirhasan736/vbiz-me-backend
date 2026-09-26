@@ -7,6 +7,7 @@ import {
 } from '../constants/directSectionStorage'
 import { getTabByKey, TAB_REGISTRY, type TabRegistryEntry } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
+import { safeSyncCorporateSiblingSharedContent } from '../utils/corporateSiblingSync'
 import { listGalleriesForProfile } from '../utils/galleryMedia'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
@@ -160,6 +161,7 @@ const createBlog = async (profileId: string, userId: string, role: string, input
       sortOrder: typeof input.sortOrder === 'number' ? input.sortOrder : (max._max.sortOrder ?? -1) + 1,
     },
   })
+  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'storage', storage: 'blog', tabKey: 'blogs' })
   return serializeBlog(row)
 }
 
@@ -178,6 +180,7 @@ const updateBlog = async (profileId: string, blogId: string, userId: string, rol
       ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
     },
   })
+  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'storage', storage: 'blog', tabKey: 'blogs' })
   return serializeBlog(row)
 }
 
@@ -189,6 +192,7 @@ const deleteBlog = async (profileId: string, blogId: string, userId: string, rol
     where: { id: blogId },
     data: { deletedAt: new Date(), status: '0' },
   })
+  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'storage', storage: 'blog', tabKey: 'blogs' })
   return { deleted: true as const }
 }
 
@@ -770,6 +774,18 @@ const findTabKeyByPublicSectionName = (name: string): string | null => {
   return null
 }
 
+const afterDirectTabWrite = async <T>(profileId: string, tabKey: string, result: T): Promise<T> => {
+  const tab = getTabByKey(tabKey)
+  if (tab && tab.storage !== 'blog') {
+    await safeSyncCorporateSiblingSharedContent(profileId, {
+      type: 'storage',
+      storage: tab.storage,
+      tabKey: tab.key,
+    })
+  }
+  return result
+}
+
 const directTabService = {
   listBlogs,
   createBlog,
@@ -777,9 +793,18 @@ const directTabService = {
   deleteBlog,
   listTabItems,
   listEditorSections,
-  createTabItem,
-  updateTabItem,
-  deleteTabItem,
+  createTabItem: async (profileId: string, tabKey: string, userId: string, role: string, input: TabItemInput) =>
+    afterDirectTabWrite(profileId, tabKey, await createTabItem(profileId, tabKey, userId, role, input)),
+  updateTabItem: async (
+    profileId: string,
+    tabKey: string,
+    itemId: string,
+    userId: string,
+    role: string,
+    input: TabItemInput
+  ) => afterDirectTabWrite(profileId, tabKey, await updateTabItem(profileId, tabKey, itemId, userId, role, input)),
+  deleteTabItem: async (profileId: string, tabKey: string, itemId: string, userId: string, role: string) =>
+    afterDirectTabWrite(profileId, tabKey, await deleteTabItem(profileId, tabKey, itemId, userId, role)),
   listPublicBlogs,
   listPublicTabItems,
   findTabKeyByPublicSectionName,
