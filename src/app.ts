@@ -61,8 +61,17 @@ app.post(
   })
 )
 
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ limit: '10mb', extended: true }))
+const jsonParser = express.json({ limit: '10mb' })
+const urlencodedParser = express.urlencoded({ limit: '10mb', extended: true })
+
+/** Express 5 JSON/urlencoded parsers must not touch multipart — they truncate the stream and multer fails with "Unexpected end of form". */
+app.use((req, res, next) => {
+  if (req.is('multipart/form-data')) return next()
+  jsonParser(req, res, (err) => {
+    if (err) return next(err)
+    urlencodedParser(req, res, next)
+  })
+})
 
 app.use('/api/v1', router)
 

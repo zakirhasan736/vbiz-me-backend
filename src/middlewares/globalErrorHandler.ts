@@ -1,7 +1,11 @@
 import { ErrorRequestHandler, Request } from 'express'
 import multer from 'multer'
 import { ZodError } from 'zod'
-import { MEDIA_UPLOAD_TOO_LARGE_MESSAGE } from '../constants/mediaUpload'
+import {
+  isMultipartTruncatedError,
+  MEDIA_UPLOAD_INTERRUPTED_MESSAGE,
+  MEDIA_UPLOAD_TOO_LARGE_MESSAGE,
+} from '../constants/mediaUpload'
 import AppError from '../error/AppError'
 import handleZodError from '../error/zodError'
 import { IErrorSources } from '../interfaces/error.interface'
@@ -32,15 +36,19 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
         message: error.message,
       },
     ]
-  } else if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
+  } else if (error instanceof multer.MulterError || isMultipartTruncatedError(error)) {
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
       statusCode = 413
       message = MEDIA_UPLOAD_TOO_LARGE_MESSAGE
+      errorMessages = [{ path: 'file', message }]
+    } else if (isMultipartTruncatedError(error)) {
+      statusCode = 400
+      message = MEDIA_UPLOAD_INTERRUPTED_MESSAGE
       errorMessages = [{ path: 'file', message }]
     } else {
       statusCode = 400
       message = error.message
-      errorMessages = [{ path: error.field || 'file', message }]
+      errorMessages = [{ path: (error instanceof multer.MulterError && error.field) || 'file', message }]
     }
   } else if (
     error?.status === 413 ||

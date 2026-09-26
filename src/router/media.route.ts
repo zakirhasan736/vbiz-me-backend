@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, type NextFunction, type Request, type Response } from 'express'
 import multer from 'multer'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
@@ -31,9 +31,16 @@ function isSameBuilderAttachmentType(typeName: string | null | undefined, canoni
 router.use(authMiddleware.isAuthenticateUser)
 router.use(authMiddleware.requireNotSuspended)
 
+function parseSingleUpload(req: Request, res: Response, next: NextFunction) {
+  upload.single('file')(req, res, (err) => {
+    if (err) return next(err)
+    next()
+  })
+}
+
 router.post(
   '/upload',
-  upload.single('file'),
+  parseSingleUpload,
   catchAsyncError(async (req, res) => {
     if (!req.file) throw new AppError(400, 'file is required')
     validateAttachmentUpload(req.file, req.body.attachmentType as string | undefined)

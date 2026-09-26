@@ -2,6 +2,15 @@
 export const MEDIA_UPLOAD_TOO_LARGE_MESSAGE =
   'Upload was rejected. The file may be too large for the server or network proxy.'
 
+export const MEDIA_UPLOAD_INTERRUPTED_MESSAGE =
+  'Upload was interrupted before the file finished sending. Please try again.'
+
+export function isMultipartTruncatedError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return /unexpected end of form|unexpected end of request|multipart.*truncated|premature close/i.test(message)
+}
+
 export const MEDIA_ATTACHMENT_POLICIES = {
   'Profile Image/Video': {
     label: 'Avatar media',

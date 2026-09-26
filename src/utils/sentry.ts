@@ -65,6 +65,7 @@ export async function deliverSentryEvent(input: {
 /** Fire-and-forget. Tests and a missing DSN never call Sentry. */
 export function captureSentryException(message: string, extra?: Record<string, unknown>) {
   if (process.env.NODE_ENV === 'test') return
+  if (/unexpected end of form|entity too large|payload too large/i.test(message || '')) return
   const dsn = process.env.SENTRY_DSN
   if (!dsn) return
   void deliverSentryEvent({ dsn, message, extra })
