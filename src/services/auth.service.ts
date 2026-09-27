@@ -290,7 +290,8 @@ const updateUser = async (
     data.name = body.name
   }
   if (body.avatar !== undefined) {
-    data.avatar = body.avatar
+    const nextAvatar = typeof body.avatar === 'string' ? body.avatar.trim() : ''
+    data.avatar = nextAvatar || null
   }
 
   const updated = await prisma.$transaction(async (tx) => {

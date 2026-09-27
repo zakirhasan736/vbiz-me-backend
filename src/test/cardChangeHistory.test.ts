@@ -9,6 +9,7 @@ import {
   snapshotExpiresAt,
   summarizeCollectionChange,
 } from '../utils/cardChangeHistory'
+import { toGalleryWriteData } from '../utils/galleryMedia'
 
 describe('card change history helpers', () => {
   it('labels admin, corporate owner, team member, and card owner', () => {
@@ -64,6 +65,21 @@ describe('card change history helpers', () => {
   it('prints a country name with the IP for the history footprint', () => {
     assert.equal(countryNameFromCode('US'), 'United States')
     assert.equal(formatChangeLocation('172.59.13.230', 'US'), 'United States (US) · 172.59.13.230')
+  })
+
+  it('maps snapshot imageUrl onto Gallery featuredImage and drops imageUrl', () => {
+    const data = toGalleryWriteData({
+      title: 'CBNA 33-3',
+      description: '',
+      imageUrl: 'https://cdn.example.com/gallery.jpg',
+      featuredImage: 'https://cdn.example.com/gallery.jpg',
+      url: '',
+      status: '1',
+    })
+    assert.equal(data.featuredImage, 'https://cdn.example.com/gallery.jpg')
+    assert.equal('imageUrl' in data, false)
+    assert.equal(data.attachmentUrl, null)
+    assert.equal(data.attachmentName, null)
   })
 
   it('allows restore only while the 72-hour snapshot is still present', () => {

@@ -119,10 +119,11 @@ const COLLECTION_RESTORE_MAP: Record<string, (item: Record<string, unknown>) => 
   portfolios: (item) => ({
     title: item.title,
     description: item.description,
-    imageUrl: item.imageUrl ?? item.featuredImage,
     featuredImage: item.featuredImage ?? item.imageUrl,
     url: item.url,
-    status: item.status ?? 1,
+    status: item.status ?? '1',
+    attachmentUrl: null,
+    attachmentName: null,
   }),
   reviews: (item) => ({
     author: item.author,

@@ -19,7 +19,7 @@ export type IUpdateUserBody = {
   password?: string
   currentPassword?: string
   name?: string
-  avatar?: string
+  avatar?: string | null
 }
 
 export type IAuthUser = {

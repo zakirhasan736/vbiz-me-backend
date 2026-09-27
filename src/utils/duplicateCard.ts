@@ -120,6 +120,13 @@ export function isSharedDuplicateProfileField(key: string): boolean {
   return SHARED_DUPLICATE_PROFILE_FIELD_SET.has(key)
 }
 
+/** Live corporate sync must not overwrite another linked card's portrait. Duplicate-card clone may still copy it. */
+export const PERSONAL_LIVE_SYNC_PROFILE_FIELDS = new Set(['avatar'])
+
+export function isCorporateLiveSyncProfileField(key: string): boolean {
+  return isSharedDuplicateProfileField(key) && !PERSONAL_LIVE_SYNC_PROFILE_FIELDS.has(key)
+}
+
 /** Clone marker only — never overwrite another card's source pointer. */
 export const PERSONAL_IDENTITY_SETTING_KEYS = new Set(['duplicated_from'])
 

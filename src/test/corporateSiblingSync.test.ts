@@ -8,6 +8,7 @@ import {
   isPersonalStorage,
   isSharedSettingKey,
   isSparseSharedSettingValue,
+  mergeDisplaySettingsKeepingPersonalMedia,
   remapSharedSettingIds,
   shouldCopySharedSetting,
   shouldFanOutCollection,
@@ -17,24 +18,45 @@ import {
 } from '../utils/corporateSiblingSync'
 
 describe('isSharedSettingKey', () => {
-  it('shares home media, social extras, and SEO; keeps identity and About Me personal', () => {
+  it('shares business tabs and SEO; keeps identity, portrait, and About Me personal', () => {
     assert.equal(isSharedSettingKey('tab_section_meta_json'), true)
     assert.equal(isSharedSettingKey('tab_label_overrides_json'), true)
     assert.equal(isSharedSettingKey('custom_tabs_json'), true)
     assert.equal(isSharedSettingKey('display_settings_json'), true)
     assert.equal(isSharedSettingKey('about_me_title'), false)
     assert.equal(isSharedSettingKey('about_me_featured_media_url'), false)
-    assert.equal(isSharedSettingKey('profile_media_url'), true)
+    assert.equal(isSharedSettingKey('profile_media_url'), false)
     assert.equal(isSharedSettingKey('background_media_url'), true)
     assert.equal(isSharedSettingKey('extra_fields_json'), true)
     assert.equal(isSharedSettingKey('seo_meta_title'), true)
     assert.equal(isSharedSettingKey('seo_image_url'), true)
     assert.equal(isSharedSettingKey('game_ids_json'), true)
     assert.equal(isSharedSettingKey('my_info_json'), true)
-    assert.equal(isSharedSettingKey('avatar'), true)
-    assert.equal(isSharedSettingKey('avatar_url'), true)
+    assert.equal(isSharedSettingKey('avatar'), false)
+    assert.equal(isSharedSettingKey('avatar_url'), false)
     assert.equal(isSharedSettingKey('duplicated_from'), false)
     assert.equal(isSharedSettingKey(''), false)
+  })
+})
+
+describe('mergeDisplaySettingsKeepingPersonalMedia', () => {
+  it('keeps the sibling Profile Image/Video when shared display settings copy', () => {
+    const source = JSON.stringify({
+      fields: {
+        'Profile Image/Video': { customValue: 'https://cdn.example.com/julia.jpg' },
+        'Background Video/Image': { customValue: 'https://cdn.example.com/office.jpg' },
+      },
+    })
+    const target = JSON.stringify({
+      fields: {
+        'Profile Image/Video': { customValue: 'https://cdn.example.com/mila.jpg' },
+      },
+    })
+    const merged = JSON.parse(mergeDisplaySettingsKeepingPersonalMedia(source, target)) as {
+      fields: Record<string, { customValue?: string }>
+    }
+    assert.equal(merged.fields['Profile Image/Video']?.customValue, 'https://cdn.example.com/mila.jpg')
+    assert.equal(merged.fields['Background Video/Image']?.customValue, 'https://cdn.example.com/office.jpg')
   })
 })
 

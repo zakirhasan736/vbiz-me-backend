@@ -78,7 +78,7 @@ import {
   cloneRecord,
   corporateMemberCardOwnership,
   duplicatedCardOwnership,
-  isSharedDuplicateProfileField,
+  isCorporateLiveSyncProfileField,
   memberDuplicatedIdentityFields,
   omitCloneKeys,
   remapDuplicatedCardSettings,
@@ -87,7 +87,7 @@ import {
   unknownPrismaCreateArgs,
   unknownPrismaSelectFields,
 } from '../utils/duplicateCard'
-import { fillMissingGalleryMedia, listGalleriesForProfile } from '../utils/galleryMedia'
+import { fillMissingGalleryMedia, listGalleriesForProfile, toGalleryWriteData } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
 import { catalogGateForWallpaperChange, catalogGatesForSettingChange } from '../utils/mediaFeatureGates'
@@ -588,7 +588,7 @@ const listInclude = {
   attachments: {
     include: { attachmentType: true },
     orderBy: { updatedAt: 'desc' as const },
-    take: 12,
+    take: 40,
   },
   _count: { select: { services: true, portfolios: true, posts: true } },
 } satisfies Prisma.ProfileInclude
@@ -1524,8 +1524,9 @@ const clonePrimaryProfileCollections = async (
       cloned.sortOrder = 0
     }
     try {
+      const payload = model === 'gallery' ? toGalleryWriteData(cloned) : cloned
       const created = (await createClonedRow(delegate, {
-        ...cloned,
+        ...payload,
         profileId: targetProfileId,
       })) as { id?: string }
       const sourceId = typeof row.id === 'string' ? row.id : ''
@@ -2267,7 +2268,7 @@ const update = async (
   }
 
   const sharedProfileChangedKeys = SHARED_DUPLICATE_PROFILE_FIELDS.filter((key) => {
-    if (!(key in raw) || !isSharedDuplicateProfileField(key)) return false
+    if (!(key in raw) || !isCorporateLiveSyncProfileField(key)) return false
     return !sameProfileFieldValue(raw[key], (currentProfile as Record<string, unknown>)[key])
   })
   if (sharedProfileChangedKeys.length) {
@@ -2504,11 +2505,12 @@ const replaceCollection = async <T extends Record<string, unknown>>(
     // Prefer per-row `create` over `createMany` so Prisma applies `@default(cuid())`
     // and `@updatedAt` (createMany skips those client-side defaults).
     for (let index = 0; index < items.length; index += 1) {
+      const mapped = mapItem(items[index])
       await model.create({
         data: {
           profileId,
           sortOrder: index,
-          ...mapItem(items[index]),
+          ...(kind === 'portfolios' ? toGalleryWriteData(mapped) : mapped),
         },
       })
     }

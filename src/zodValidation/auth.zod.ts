@@ -40,7 +40,7 @@ const update = z
     password: strongPassword.optional(),
     currentPassword: z.string().min(1).optional(),
     name: z.string().min(1, 'Name cannot be empty').optional(),
-    avatar: z.string().url('Avatar must be a valid URL').optional(),
+    avatar: z.union([z.string().url('Avatar must be a valid URL'), z.literal(''), z.null()]).optional(),
   })
   .refine((data) => Boolean(data.password || data.name !== undefined || data.avatar !== undefined), {
     message: 'At least one field to update is required (password, name, or avatar)',

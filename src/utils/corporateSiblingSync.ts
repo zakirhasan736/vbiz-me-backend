@@ -5,7 +5,7 @@ import { isStaffRole, toApiRole } from '../constants/userRole'
 import { getEffectiveEntitlements } from '../services/entitlement.service'
 import {
   cloneRecord,
-  isSharedDuplicateProfileField,
+  isCorporateLiveSyncProfileField,
   isSharedProfileFieldValuePresent,
   mergeMyInfoKeepingPersonalContacts,
   omitCloneKeys,
@@ -16,6 +16,7 @@ import {
   unknownPrismaCreateArgs,
   unknownPrismaSelectFields,
 } from './duplicateCard'
+import { toGalleryWriteData } from './galleryMedia'
 import logger from './logger'
 import { prisma } from './prisma'
 import {
@@ -33,8 +34,20 @@ export const PERSONAL_COLLECTION_KINDS = new Set<string>()
 /** About Me stays unique on each linked card. */
 export const PERSONAL_STORAGES = new Set(['about_me'])
 
+/** Each linked card keeps its own portrait / profile video. */
+export const PERSONAL_PROFILE_MEDIA_SETTING_KEYS = [
+  'profile_media_url',
+  'profile_image',
+  'profile_image_url',
+  'avatar',
+  'avatar_url',
+] as const
+
+const PERSONAL_DISPLAY_MEDIA_FIELDS = ['Profile Image/Video'] as const
+
 const PERSONAL_SETTING_KEYS = new Set([
   ...PERSONAL_IDENTITY_SETTING_KEYS,
+  ...PERSONAL_PROFILE_MEDIA_SETTING_KEYS,
   'about_me_title',
   'about_me_featured_media_url',
   'about_me_status',
@@ -196,6 +209,48 @@ export function remapSharedSettingIds(value: string, idMap: Map<string, string>)
     next = next.split(from).join(to)
   }
   return next
+}
+
+/** Copy shared display chrome; keep each sibling's own Profile Image/Video. */
+export function mergeDisplaySettingsKeepingPersonalMedia(
+  sourceJson: string,
+  targetJson: string | null | undefined
+): string {
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(sourceJson) as Record<string, unknown>
+  } catch {
+    return sourceJson
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return sourceJson
+
+  const sourceFields =
+    parsed.fields && typeof parsed.fields === 'object' && !Array.isArray(parsed.fields)
+      ? { ...(parsed.fields as Record<string, unknown>) }
+      : {}
+
+  let targetFields: Record<string, unknown> = {}
+  if (targetJson?.trim()) {
+    try {
+      const target = JSON.parse(targetJson) as Record<string, unknown>
+      if (target?.fields && typeof target.fields === 'object' && !Array.isArray(target.fields)) {
+        targetFields = target.fields as Record<string, unknown>
+      }
+    } catch {
+      targetFields = {}
+    }
+  }
+
+  for (const field of PERSONAL_DISPLAY_MEDIA_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(targetFields, field)) {
+      sourceFields[field] = targetFields[field]
+    } else {
+      delete sourceFields[field]
+    }
+  }
+
+  parsed.fields = sourceFields
+  return JSON.stringify(parsed)
 }
 
 const isStaffActor = (role: string) => isStaffRole(role) || role === 'admin' || role === 'super-admin'
@@ -409,7 +464,8 @@ const replaceModelRows = async (
     }
     if ('sortOrder' in row && cloned.sortOrder === undefined) cloned.sortOrder = 0
     try {
-      await createClonedRow(delegate, { ...cloned, profileId: targetProfileId })
+      const payload = model === 'gallery' ? toGalleryWriteData(cloned) : cloned
+      await createClonedRow(delegate, { ...payload, profileId: targetProfileId })
     } catch (error) {
       logger.error(`corporate sibling sync failed for ${model}`, error)
     }
@@ -619,6 +675,13 @@ const copySharedSettings = async (
       key === 'display_settings_json' || key === 'tab_section_meta_json' || key === 'tab_label_overrides_json'
         ? remapSharedSettingIds(raw as string, idMap)
         : (raw as string)
+    if (key === 'display_settings_json') {
+      const existing = await prisma.setting.findFirst({
+        where: { profileId: targetProfileId, key: 'display_settings_json' },
+        select: { value: true },
+      })
+      value = mergeDisplaySettingsKeepingPersonalMedia(value, existing?.value)
+    }
     if (key === 'my_info_json') {
       const existing = await prisma.setting.findFirst({
         where: { profileId: targetProfileId, key: 'my_info_json' },
@@ -642,7 +705,7 @@ const copySharedProfileFields = async (
   keys: string[] | undefined,
   options: SharedSyncOptions = {}
 ) => {
-  const fieldKeys = (keys?.length ? keys : [...SHARED_DUPLICATE_PROFILE_FIELDS]).filter(isSharedDuplicateProfileField)
+  const fieldKeys = (keys?.length ? keys : [...SHARED_DUPLICATE_PROFILE_FIELDS]).filter(isCorporateLiveSyncProfileField)
   if (!fieldKeys.length) return
 
   const select = Object.fromEntries(fieldKeys.map((key) => [key, true]))
@@ -841,7 +904,7 @@ export async function syncCorporateSiblingSharedContent(
   }
   if (scope.type === 'profileFields') {
     const keys = (scope.keys?.length ? scope.keys : [...SHARED_DUPLICATE_PROFILE_FIELDS]).filter(
-      isSharedDuplicateProfileField
+      isCorporateLiveSyncProfileField
     )
     if (!keys.length) return { siblingCount: 0 }
     scope = { ...scope, keys }

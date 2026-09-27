@@ -7,6 +7,7 @@ import {
   corporateMemberCardOwnership,
   DUPLICATED_IDENTITY_PROFILE_FIELDS,
   duplicatedCardOwnership,
+  isCorporateLiveSyncProfileField,
   isSharedDuplicateProfileField,
   memberDuplicatedIdentityFields,
   mergeMyInfoKeepingPersonalContacts,
@@ -29,6 +30,8 @@ describe('duplicate vs linked-card identity contract', () => {
     assert.equal(isSharedDuplicateProfileField('companyName'), true)
     assert.equal(isSharedDuplicateProfileField('whatsapp'), true)
     assert.equal(isSharedDuplicateProfileField('avatar'), true)
+    assert.equal(isCorporateLiveSyncProfileField('avatar'), false)
+    assert.equal(isCorporateLiveSyncProfileField('companyName'), true)
     assert.equal(isSharedDuplicateProfileField('website'), true)
     assert.equal(isSharedDuplicateProfileField('about'), false)
     assert.equal(isSharedDuplicateProfileField('name'), false)

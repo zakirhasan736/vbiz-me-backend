@@ -93,6 +93,22 @@ export function galleryHasMedia(rows: Array<{ featuredImage?: string | null }>):
   return rows.some((row) => Boolean(mediaUrl(row.featuredImage)))
 }
 
+/** Gallery has `featuredImage` only — history/editor snapshots still send `imageUrl`. */
+export function toGalleryWriteData(mapped: Record<string, unknown>): Record<string, unknown> {
+  const featured =
+    mediaUrl(typeof mapped.featuredImage === 'string' ? mapped.featuredImage : null) ||
+    mediaUrl(typeof mapped.imageUrl === 'string' ? mapped.imageUrl : null)
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(mapped)) {
+    if (key === 'imageUrl') continue
+    next[key] = value
+  }
+  next.featuredImage = featured
+  next.attachmentUrl = null
+  next.attachmentName = null
+  return next
+}
+
 export type LiveGalleryRow = {
   id: string
   profileId: string
