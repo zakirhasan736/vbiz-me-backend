@@ -549,20 +549,12 @@ const remove = async (id: string, actor: Actor) => {
 }
 
 const clearLive = async (actor: Actor) => {
-  // Public cards show any active banner with showPublic=1 (global or specific).
-  // Admin "live" UI historically only listed targetType=all, so Clear must also
-  // archive specific public banners — otherwise admin looks empty while cards still show.
+  // Clear only the one platform-wide banner. Single-card TeamNotice banners stay.
   const active = await prisma.announcement.findMany({
-    where: { status: 'active' },
-    select: { id: true, meta: true, targetType: true },
+    where: { status: 'active', targetType: 'all' },
+    select: { id: true, meta: true },
   })
-  const announcementIds = active
-    .filter((row) => {
-      if (isInboxOnly(row.meta)) return false
-      if (row.targetType === 'all') return true
-      return isShowPublic(row.meta)
-    })
-    .map((row) => row.id)
+  const announcementIds = active.filter((row) => !isInboxOnly(row.meta)).map((row) => row.id)
 
   if (announcementIds.length) {
     await prisma.announcement.updateMany({
@@ -571,43 +563,19 @@ const clearLive = async (actor: Actor) => {
     })
   }
 
-  // PublicAnnouncementBanner prefers admin-origin team notices over announcements.
-  // Archive those too so Clear removes every admin-driven public notice strip.
-  const staffAuthors = await prisma.user.findMany({
-    where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } },
-    select: { id: true },
-  })
-  const staffIds = staffAuthors.map((user) => user.id)
-
-  let teamNoticeCount = 0
-  if (staffIds.length) {
-    const teamResult = await prisma.teamNotice.updateMany({
-      where: {
-        status: 'active',
-        audience: 'all',
-        ownerId: { in: staffIds },
-      },
-      data: { status: 'archived' },
-    })
-    teamNoticeCount = teamResult.count
-  }
-
-  const clearedCount = announcementIds.length + teamNoticeCount
-
   await writeAuditLog({
     action: 'Global Banner Cleared',
-    details: `Archived ${announcementIds.length} announcement banner(s) and ${teamNoticeCount} admin team notice(s)`,
+    details: `Archived ${announcementIds.length} global announcement banner(s)`,
     type: 'status',
     actor: actor.name || actor.email,
     actorId: actor.id,
     meta: {
-      clearedCount,
+      clearedCount: announcementIds.length,
       announcementCount: announcementIds.length,
-      teamNoticeCount,
     },
   })
 
-  return { clearedCount }
+  return { clearedCount: announcementIds.length }
 }
 
 const getActiveForUser = async (user: { email: string; role?: string }) => {
@@ -647,18 +615,10 @@ const getActiveForPublicCard = async (profileId: string, viewer?: PublicViewerId
 
   const profile = await prisma.profile.findUnique({
     where: { id },
-    select: {
-      id: true,
-      email: true,
-      user: { select: { email: true } },
-      companyUser: { select: { email: true } },
-    },
+    select: { id: true },
   })
   if (!profile) return null
 
-  const emails = [profile.email, profile.user?.email, profile.companyUser?.email]
-    .map((value) => (value ?? '').trim().toLowerCase())
-    .filter(Boolean)
   const now = new Date()
 
   const candidates = await prisma.announcement.findMany({
@@ -673,15 +633,11 @@ const getActiveForPublicCard = async (profileId: string, viewer?: PublicViewerId
     take: 40,
   })
 
-  const publicRows = candidates.filter((row) => isShowPublic(row.meta) && !isInboxOnly(row.meta))
-  const matchesOwnerEmails = (row: AnnouncementRow) =>
-    row.targetType === 'specific' &&
-    emails.some((email) => row.targetEmails.map((value) => value.toLowerCase()).includes(email))
+  const publicRows = candidates.filter(
+    (row) => row.targetType === 'all' && isShowPublic(row.meta) && !isInboxOnly(row.meta)
+  )
 
-  const bannerRow =
-    publicRows.find((row) => profileIdFromMeta(row.meta) === id) ??
-    publicRows.find(matchesOwnerEmails) ??
-    publicRows.find((row) => row.targetType === 'all')
+  const bannerRow = publicRows[0]
   if (!bannerRow) return null
   if (await isAnnouncementSuppressed('global', bannerRow.id, id, viewer)) return null
   return serializeAnnouncement(bannerRow)

@@ -613,15 +613,20 @@ const listOpenRequests = async (actor: Actor, query: ListOpenRequestsQuery) => {
     profileIds = profilesOwned.map((p) => p.id)
   }
 
-  const rows = await prisma.oneOnOneRequest.findMany({
-    where: {
-      ...(query.status ? { status: query.status } : { status: { in: ['open', 'awaiting_guest', 'scheduled'] } }),
-      ...(isStaff ? {} : { profileId: { in: profileIds } }),
-    },
-    orderBy: { createdAt: 'desc' },
-    take: query.limit,
-    skip: query.skip,
-  })
+  const where = {
+    ...(query.status ? { status: query.status } : { status: { in: ['open', 'awaiting_guest', 'scheduled'] } }),
+    ...(isStaff ? {} : { profileId: { in: profileIds } }),
+  }
+
+  const [total, rows] = await Promise.all([
+    prisma.oneOnOneRequest.count({ where }),
+    prisma.oneOnOneRequest.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: query.limit,
+      skip: query.skip,
+    }),
+  ])
 
   const requestIds = rows.map((r) => r.id)
   const meetings = await prisma.oneOnOneMeeting.findMany({
@@ -639,7 +644,7 @@ const listOpenRequests = async (actor: Actor, query: ListOpenRequestsQuery) => {
 
   return {
     items: rows.map((row) => serializeRequest(row, meetingByRequest[row.id] ?? null, slotsByRequest[row.id] ?? [])),
-    total: rows.length,
+    total,
     skip: query.skip,
     limit: query.limit,
   }
