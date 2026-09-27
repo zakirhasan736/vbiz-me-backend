@@ -1,13 +1,16 @@
 import { Router } from 'express'
+import cardChangeHistoryController from '../controller/cardChangeHistory.controller'
 import customTabController from '../controller/customTab.controller'
 import directTabController from '../controller/directTab.controller'
 import profileController from '../controller/profile.controller'
 import authMiddleware from '../middlewares/authValidation'
+import { bindCardChangeContext } from '../utils/cardChangeHistory'
 import profileAssistantRoute from './profileAssistant.route'
 
 const router = Router()
 
 router.use(authMiddleware.isAuthenticateUser)
+router.use(bindCardChangeContext)
 router.use(authMiddleware.requireNotSuspended)
 
 router.get('/dashboard/stats', profileController.dashboard)
@@ -76,6 +79,13 @@ router.delete(
   '/:id/custom-tabs/:tabId/items/:itemId',
   authMiddleware.requireVcardMutable,
   customTabController.deleteItem
+)
+
+router.get('/:id/change-history', cardChangeHistoryController.list)
+router.post(
+  '/:id/change-history/:historyId/restore',
+  authMiddleware.requireVcardMutable,
+  cardChangeHistoryController.restore
 )
 
 router.get('/:id/posts', profileController.listPosts)

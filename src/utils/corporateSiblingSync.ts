@@ -74,6 +74,48 @@ export type SharedSyncScope =
   | { type: 'customTabs' }
   | { type: 'settings'; keys: string[] }
 
+export type SharedSyncOptions = {
+  /** When false, an empty source list does not wipe siblings (stale/no-op save). */
+  allowEmpty?: boolean
+  /** Setting keys that already had a real value on the source card before this write. */
+  settingHadValue?: Record<string, boolean>
+}
+
+const JSON_SHARED_SETTING_KEYS = new Set([
+  'custom_tabs_json',
+  'display_settings_json',
+  'tab_section_meta_json',
+  'tab_label_overrides_json',
+])
+
+export function isSparseSharedSettingValue(key: string, value: string | null | undefined): boolean {
+  if (value == null || !String(value).trim()) return true
+  if (!JSON_SHARED_SETTING_KEYS.has(key)) return false
+  try {
+    const parsed = JSON.parse(String(value)) as unknown
+    if (parsed == null) return true
+    if (Array.isArray(parsed)) return parsed.length === 0
+    if (typeof parsed === 'object') return Object.keys(parsed as Record<string, unknown>).length === 0
+    return false
+  } catch {
+    return !String(value).trim()
+  }
+}
+
+export function shouldReplaceSiblingRows(sourceLiveCount: number, allowEmpty: boolean): boolean {
+  return sourceLiveCount > 0 || allowEmpty
+}
+
+export function shouldCopySharedSetting(args: {
+  key: string
+  sourceValue: string | undefined
+  sourceHadValueBeforeWrite: boolean
+}): boolean {
+  if (args.sourceValue === undefined) return false
+  if (isSparseSharedSettingValue(args.key, args.sourceValue) && !args.sourceHadValueBeforeWrite) return false
+  return true
+}
+
 export function isCorporateSiblingSyncRunning(): boolean {
   return syncLock.getStore() === true
 }
@@ -101,6 +143,23 @@ export function corporateSiblingProfileWhere(parentUserId: string): {
   OR: Array<{ userId: string } | { companyUserId: string }>
 } {
   return { OR: [{ userId: parentUserId }, { companyUserId: parentUserId }] }
+}
+
+/** True only for cards in this corporation — never another company's team. */
+export function cardBelongsToCorporation(
+  parentUserId: string,
+  card: { userId?: string | null; companyUserId?: string | null },
+  foreignCorporateOwnerIds: Iterable<string> = []
+): boolean {
+  const parentId = parentUserId.trim()
+  if (!parentId) return false
+  const userId = typeof card.userId === 'string' ? card.userId.trim() : ''
+  const companyId = typeof card.companyUserId === 'string' ? card.companyUserId.trim() : ''
+  if (companyId === parentId) return true
+  if (userId !== parentId) return false
+  if (!companyId || companyId === parentId) return true
+  const foreign = foreignCorporateOwnerIds instanceof Set ? foreignCorporateOwnerIds : new Set(foreignCorporateOwnerIds)
+  return !foreign.has(companyId)
 }
 
 type CustomTabMatch = { id: string; key: string; label: string }
@@ -148,6 +207,7 @@ export async function resolveCorporateParentUserIdFromProfile(source: {
     })
     if (!user) continue
     const apiRole = toApiRole(user.role)
+    if (isStaffRole(apiRole)) continue
     if (apiRole === 'corporate-owner') return user.id
     const entitlements = await getEffectiveEntitlements(user.id, apiRole)
     if (entitlements.ownerMode === 'corporate') return user.id
@@ -178,6 +238,28 @@ export async function resolveCorporateParentUserId(
   return null
 }
 
+const listForeignCorporateOwnerIds = async (parentId: string, companyUserIds: string[]): Promise<Set<string>> => {
+  const unique = [...new Set(companyUserIds.map((id) => id.trim()).filter((id) => id && id !== parentId))]
+  if (!unique.length) return new Set()
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: unique }, deletedAt: null },
+    select: { id: true, role: true },
+  })
+  const foreign = new Set<string>()
+  for (const user of users) {
+    const apiRole = toApiRole(user.role)
+    if (isStaffRole(apiRole)) continue
+    if (apiRole === 'corporate-owner') {
+      foreign.add(user.id)
+      continue
+    }
+    const entitlements = await getEffectiveEntitlements(user.id, apiRole)
+    if (entitlements.ownerMode === 'corporate') foreign.add(user.id)
+  }
+  return foreign
+}
+
 export async function listCorporateSiblingProfileIds(sourceProfileId: string): Promise<string[]> {
   const source = await prisma.profile.findUnique({
     where: { id: sourceProfileId },
@@ -188,14 +270,20 @@ export async function listCorporateSiblingProfileIds(sourceProfileId: string): P
   const parentId = await resolveCorporateParentUserIdFromProfile(source)
   if (!parentId) return []
 
-  const siblings = await prisma.profile.findMany({
+  const candidates = await prisma.profile.findMany({
     where: {
       id: { not: source.id },
       ...corporateSiblingProfileWhere(parentId),
     },
-    select: { id: true },
+    select: { id: true, userId: true, companyUserId: true },
   })
-  return siblings.map((row) => row.id)
+  const foreignCorporateOwnerIds = await listForeignCorporateOwnerIds(
+    parentId,
+    candidates.map((row) => row.companyUserId || '')
+  )
+  return candidates
+    .filter((row) => cardBelongsToCorporation(parentId, row, foreignCorporateOwnerIds))
+    .map((row) => row.id)
 }
 
 const findManyCloneRows = async (
@@ -269,7 +357,8 @@ const replaceModelRows = async (
   sourceProfileId: string,
   targetProfileId: string,
   model: string,
-  extraWhere: Record<string, unknown> = {}
+  extraWhere: Record<string, unknown> = {},
+  options: SharedSyncOptions = {}
 ) => {
   const client = prisma as unknown as Record<string, ListDelegate>
   const delegate = client[model]
@@ -289,6 +378,9 @@ const replaceModelRows = async (
     }
   }
 
+  const liveRows = rows.filter((row) => !row.deletedAt)
+  if (!shouldReplaceSiblingRows(liveRows.length, options.allowEmpty === true)) return
+
   try {
     await delegate.deleteMany({ where: targetWhere })
   } catch (error) {
@@ -300,8 +392,7 @@ const replaceModelRows = async (
     throw error
   }
 
-  for (const row of rows) {
-    if (row.deletedAt) continue
+  for (const row of liveRows) {
     const cloned = cloneRecord(row)
     if ('status' in row && cloned.status === undefined) {
       cloned.status = typeof row.status === 'number' ? 1 : '1'
@@ -315,7 +406,12 @@ const replaceModelRows = async (
   }
 }
 
-const replacePosts = async (sourceProfileId: string, targetProfileId: string, postTypeId?: string | null) => {
+const replacePosts = async (
+  sourceProfileId: string,
+  targetProfileId: string,
+  postTypeId?: string | null,
+  options: SharedSyncOptions = {}
+) => {
   const sourceWhere = {
     profileId: sourceProfileId,
     deletedAt: null,
@@ -331,6 +427,7 @@ const replacePosts = async (sourceProfileId: string, targetProfileId: string, po
     include: { metas: true },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
   })
+  if (!shouldReplaceSiblingRows(sourcePosts.length, options.allowEmpty === true)) return
 
   await prisma.post.deleteMany({ where: targetWhere })
 
@@ -355,14 +452,14 @@ const replacePosts = async (sourceProfileId: string, targetProfileId: string, po
   }
 }
 
-const replaceAboutMe = async (sourceProfileId: string, targetProfileId: string) => {
-  await replaceModelRows(sourceProfileId, targetProfileId, 'aboutMe')
-  await copySharedSettings(sourceProfileId, targetProfileId, [
-    'about_me_title',
-    'about_me_featured_media_url',
-    'about_me_status',
-    'about_me_featured_media_focus_y',
-  ])
+const replaceAboutMe = async (sourceProfileId: string, targetProfileId: string, options: SharedSyncOptions = {}) => {
+  await replaceModelRows(sourceProfileId, targetProfileId, 'aboutMe', {}, options)
+  await copySharedSettings(
+    sourceProfileId,
+    targetProfileId,
+    ['about_me_title', 'about_me_featured_media_url', 'about_me_status', 'about_me_featured_media_focus_y'],
+    options
+  )
 }
 
 const buildCustomTabIdMap = async (sourceProfileId: string, targetProfileId: string): Promise<Map<string, string>> => {
@@ -387,12 +484,17 @@ const buildCustomTabIdMap = async (sourceProfileId: string, targetProfileId: str
   return idMap
 }
 
-const replaceCustomTabs = async (sourceProfileId: string, targetProfileId: string): Promise<Map<string, string>> => {
+const replaceCustomTabs = async (
+  sourceProfileId: string,
+  targetProfileId: string,
+  options: SharedSyncOptions = {}
+): Promise<Map<string, string>> => {
   const sourceTabs = await prisma.customTab.findMany({
     where: { profileId: sourceProfileId },
     include: { items: { orderBy: { sortOrder: 'asc' } } },
     orderBy: { sortOrder: 'asc' },
   })
+  if (!shouldReplaceSiblingRows(sourceTabs.length, options.allowEmpty === true)) return new Map()
   const targetTabs = await prisma.customTab.findMany({
     where: { profileId: targetProfileId },
     orderBy: { sortOrder: 'asc' },
@@ -467,7 +569,12 @@ const replaceCustomTabs = async (sourceProfileId: string, targetProfileId: strin
   return idMap
 }
 
-const copySharedSettings = async (sourceProfileId: string, targetProfileId: string, keys: string[]) => {
+const copySharedSettings = async (
+  sourceProfileId: string,
+  targetProfileId: string,
+  keys: string[],
+  options: SharedSyncOptions = {}
+) => {
   const sharedKeys = keys.filter(isSharedSettingKey)
   if (!sharedKeys.length) return
 
@@ -489,14 +596,19 @@ const copySharedSettings = async (sourceProfileId: string, targetProfileId: stri
   for (const key of sharedKeys) {
     if (key === 'custom_tabs_json') continue
     const raw = sourceMap.get(key)
-    if (raw === undefined) {
-      await prisma.setting.deleteMany({ where: { profileId: targetProfileId, key } })
+    if (
+      !shouldCopySharedSetting({
+        key,
+        sourceValue: raw,
+        sourceHadValueBeforeWrite: options.settingHadValue?.[key] === true,
+      })
+    ) {
       continue
     }
     const value =
       key === 'display_settings_json' || key === 'tab_section_meta_json' || key === 'tab_label_overrides_json'
-        ? remapSharedSettingIds(raw, idMap)
-        : raw
+        ? remapSharedSettingIds(raw as string, idMap)
+        : (raw as string)
     await prisma.setting.upsert({
       where: { profileId_key: { profileId: targetProfileId, key } },
       create: { profileId: targetProfileId, key, value },
@@ -505,10 +617,46 @@ const copySharedSettings = async (sourceProfileId: string, targetProfileId: stri
   }
 }
 
-const applyScopeToSibling = async (sourceProfileId: string, siblingId: string, scope: SharedSyncScope) => {
+const applyCustomTabsJson = async (sourceProfileId: string, siblingId: string, options: SharedSyncOptions = {}) => {
+  const sourceJson = await prisma.setting.findFirst({
+    where: { profileId: sourceProfileId, key: 'custom_tabs_json' },
+    select: { value: true },
+  })
+  const allowEmpty =
+    options.allowEmpty === true ||
+    (options.settingHadValue?.custom_tabs_json === true &&
+      isSparseSharedSettingValue('custom_tabs_json', sourceJson?.value))
+  const idMap = await replaceCustomTabs(sourceProfileId, siblingId, { ...options, allowEmpty })
+  if (
+    !shouldCopySharedSetting({
+      key: 'custom_tabs_json',
+      sourceValue: sourceJson?.value ?? undefined,
+      sourceHadValueBeforeWrite: options.settingHadValue?.custom_tabs_json === true,
+    })
+  ) {
+    return
+  }
+  if (sourceJson?.value == null) return
+  await prisma.setting.upsert({
+    where: { profileId_key: { profileId: siblingId, key: 'custom_tabs_json' } },
+    create: {
+      profileId: siblingId,
+      key: 'custom_tabs_json',
+      value: remapSharedSettingIds(sourceJson.value, idMap),
+    },
+    update: { value: remapSharedSettingIds(sourceJson.value, idMap) },
+  })
+}
+
+const applyScopeToSibling = async (
+  sourceProfileId: string,
+  siblingId: string,
+  scope: SharedSyncScope,
+  options: SharedSyncOptions = {}
+) => {
   if (scope.type === 'collection') {
     for (const model of COLLECTION_MODELS[scope.kind] || []) {
-      await replaceModelRows(sourceProfileId, siblingId, model)
+      await replaceModelRows(sourceProfileId, siblingId, model, {}, options)
     }
     return
   }
@@ -516,78 +664,49 @@ const applyScopeToSibling = async (sourceProfileId: string, siblingId: string, s
   if (scope.type === 'storage') {
     const models = STORAGE_EXTRA_MODELS[scope.storage] || [storageToPrismaModel(scope.storage)]
     for (const model of models) {
-      await replaceModelRows(sourceProfileId, siblingId, model)
+      await replaceModelRows(sourceProfileId, siblingId, model, {}, options)
     }
     if (scope.tabKey) {
-      await replaceModelRows(sourceProfileId, siblingId, 'tabItem', { tabKey: scope.tabKey })
+      await replaceModelRows(sourceProfileId, siblingId, 'tabItem', { tabKey: scope.tabKey }, options)
     }
     if (scope.storage === 'about_me') {
-      await copySharedSettings(sourceProfileId, siblingId, [
-        'about_me_title',
-        'about_me_featured_media_url',
-        'about_me_status',
-        'about_me_featured_media_focus_y',
-      ])
+      await copySharedSettings(
+        sourceProfileId,
+        siblingId,
+        ['about_me_title', 'about_me_featured_media_url', 'about_me_status', 'about_me_featured_media_focus_y'],
+        options
+      )
     }
     return
   }
 
   if (scope.type === 'posts') {
-    await replacePosts(sourceProfileId, siblingId, scope.postTypeId)
+    await replacePosts(sourceProfileId, siblingId, scope.postTypeId, options)
     return
   }
 
   if (scope.type === 'aboutMe') {
-    await replaceAboutMe(sourceProfileId, siblingId)
+    await replaceAboutMe(sourceProfileId, siblingId, options)
     return
   }
 
   if (scope.type === 'customTabs') {
-    const idMap = await replaceCustomTabs(sourceProfileId, siblingId)
-    const sourceJson = await prisma.setting.findFirst({
-      where: { profileId: sourceProfileId, key: 'custom_tabs_json' },
-      select: { value: true },
-    })
-    if (sourceJson?.value != null) {
-      await prisma.setting.upsert({
-        where: { profileId_key: { profileId: siblingId, key: 'custom_tabs_json' } },
-        create: {
-          profileId: siblingId,
-          key: 'custom_tabs_json',
-          value: remapSharedSettingIds(sourceJson.value, idMap),
-        },
-        update: { value: remapSharedSettingIds(sourceJson.value, idMap) },
-      })
-    }
+    await applyCustomTabsJson(sourceProfileId, siblingId, options)
     return
   }
 
   if (scope.type === 'settings') {
     if (scope.keys.includes('custom_tabs_json')) {
-      const idMap = await replaceCustomTabs(sourceProfileId, siblingId)
-      const sourceJson = await prisma.setting.findFirst({
-        where: { profileId: sourceProfileId, key: 'custom_tabs_json' },
-        select: { value: true },
-      })
-      if (sourceJson?.value != null) {
-        await prisma.setting.upsert({
-          where: { profileId_key: { profileId: siblingId, key: 'custom_tabs_json' } },
-          create: {
-            profileId: siblingId,
-            key: 'custom_tabs_json',
-            value: remapSharedSettingIds(sourceJson.value, idMap),
-          },
-          update: { value: remapSharedSettingIds(sourceJson.value, idMap) },
-        })
-      }
+      await applyCustomTabsJson(sourceProfileId, siblingId, options)
     }
-    await copySharedSettings(sourceProfileId, siblingId, scope.keys)
+    await copySharedSettings(sourceProfileId, siblingId, scope.keys, options)
   }
 }
 
 export async function syncCorporateSiblingSharedContent(
   sourceProfileId: string,
-  scope: SharedSyncScope
+  scope: SharedSyncScope,
+  options: SharedSyncOptions = {}
 ): Promise<{ siblingCount: number }> {
   if (isCorporateSiblingSyncRunning()) return { siblingCount: 0 }
   if (scope.type === 'collection' && !shouldFanOutCollection(scope.kind)) return { siblingCount: 0 }
@@ -600,10 +719,15 @@ export async function syncCorporateSiblingSharedContent(
   const siblingIds = await listCorporateSiblingProfileIds(sourceProfileId)
   if (!siblingIds.length) return { siblingCount: 0 }
 
+  const resolvedOptions: SharedSyncOptions = {
+    allowEmpty: options.allowEmpty === true,
+    settingHadValue: options.settingHadValue,
+  }
+
   await syncLock.run(true, async () => {
     for (const siblingId of siblingIds) {
       try {
-        await applyScopeToSibling(sourceProfileId, siblingId, scope)
+        await applyScopeToSibling(sourceProfileId, siblingId, scope, resolvedOptions)
       } catch (error) {
         logger.error('corporate sibling shared-tab sync failed', {
           sourceProfileId,
@@ -620,10 +744,15 @@ export async function syncCorporateSiblingSharedContent(
 
 export async function safeSyncCorporateSiblingSharedContent(
   sourceProfileId: string,
-  scope: SharedSyncScope
+  scope: SharedSyncScope,
+  options: SharedSyncOptions = {}
 ): Promise<void> {
+  const resolved: SharedSyncOptions = {
+    ...options,
+    allowEmpty: options.allowEmpty ?? (scope.type !== 'collection' && scope.type !== 'settings'),
+  }
   try {
-    await syncCorporateSiblingSharedContent(sourceProfileId, scope)
+    await syncCorporateSiblingSharedContent(sourceProfileId, scope, resolved)
   } catch (error) {
     logger.error('corporate sibling shared-tab sync failed', { sourceProfileId, scope, error })
   }

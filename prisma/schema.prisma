@@ -83,6 +83,7 @@ model User {
   oneOnOneCardOwners   OneOnOneRequest[]     @relation("OneOnOneCardOwner")
   oneOnOneMeetingOwners OneOnOneMeeting[]    @relation("OneOnOneMeetingOwner")
   auditLogs            AuditLog[]            @relation("AuditLogActor")
+  cardChangeHistories  CardChangeHistory[]   @relation("CardChangeHistoryActor")
   supportTickets       SupportTicket[]       @relation("SupportTicketCreatedBy")
   announcements        Announcement[]        @relation("AnnouncementCreatedBy")
   teamNotices          TeamNotice[]          @relation("TeamNoticeOwner")
@@ -376,6 +377,7 @@ model Profile {
   workNotes           WorkNote[]
   oneOnOneRequests    OneOnOneRequest[]
   auditLogs           AuditLog[]
+  changeHistories     CardChangeHistory[]
   birthdayWishLogs    BirthdayWishLog[]
   aiGenerationLogs    AiGenerationLog[]
   assistantConfig     ProfileAssistantConfig?
@@ -1827,6 +1829,30 @@ model OneOnOneMeeting {
   @@index([cardId])
   @@index([status])
   @@index([createdByUserId])
+}
+
+model CardChangeHistory {
+  id                String    @id @default(cuid())
+  profileId         String
+  profile           Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  area              String
+  areaLabel         String
+  action            String
+  summary           String
+  actorId           String?
+  actorUser         User?     @relation("CardChangeHistoryActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorName         String
+  actorRoleLabel    String
+  device            String?
+  location          String?
+  userAgent         String?
+  snapshot          Json?
+  snapshotExpiresAt DateTime?
+  restoredAt        DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([profileId, createdAt])
+  @@index([snapshotExpiresAt])
 }
 
 model AuditLog {

@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  cardBelongsToCorporation,
   corporateSiblingProfileWhere,
   isCorporateSiblingSyncRunning,
   isPersonalCollectionKind,
   isSharedSettingKey,
+  isSparseSharedSettingValue,
   remapSharedSettingIds,
+  shouldCopySharedSetting,
   shouldFanOutCollection,
+  shouldReplaceSiblingRows,
   storageToPrismaModel,
   takeMatchingCustomTab,
 } from '../utils/corporateSiblingSync'
@@ -61,6 +65,21 @@ describe('corporateSiblingProfileWhere', () => {
   })
 })
 
+describe('cardBelongsToCorporation', () => {
+  it('keeps only cards in that corporation and rejects another company', () => {
+    assert.equal(cardBelongsToCorporation('corp-a', { userId: 'corp-a', companyUserId: 'corp-a' }), true)
+    assert.equal(cardBelongsToCorporation('corp-a', { userId: 'jacky', companyUserId: 'corp-a' }), true)
+    assert.equal(cardBelongsToCorporation('corp-a', { userId: 'corp-a', companyUserId: null }), true)
+    assert.equal(cardBelongsToCorporation('corp-a', { userId: 'jacky', companyUserId: 'corp-b' }), false)
+    assert.equal(cardBelongsToCorporation('corp-a', { userId: 'corp-b', companyUserId: 'corp-b' }), false)
+    assert.equal(
+      cardBelongsToCorporation('corp-a', { userId: 'corp-a', companyUserId: 'corp-b' }, new Set(['corp-b'])),
+      false
+    )
+    assert.equal(cardBelongsToCorporation('corp-a', { userId: 'corp-a', companyUserId: 'admin-1' }), true)
+  })
+})
+
 describe('takeMatchingCustomTab', () => {
   it('matches by key first, then label, and never consumes a leftover remapped id', () => {
     const unused = [
@@ -98,5 +117,47 @@ describe('remapSharedSettingIds', () => {
 describe('isCorporateSiblingSyncRunning', () => {
   it('is idle outside a fan-out so a single card is a no-op later', () => {
     assert.equal(isCorporateSiblingSyncRunning(), false)
+  })
+})
+
+describe('empty / stale fan-out guards', () => {
+  it('treats empty tab-name JSON as sparse so it cannot wipe sibling labels', () => {
+    assert.equal(isSparseSharedSettingValue('tab_label_overrides_json', '{}'), true)
+    assert.equal(isSparseSharedSettingValue('tab_label_overrides_json', ''), true)
+    assert.equal(isSparseSharedSettingValue('custom_tabs_json', '[]'), true)
+    assert.equal(isSparseSharedSettingValue('tab_label_overrides_json', '{"services":"Our Services"}'), false)
+  })
+
+  it('does not copy empty tab settings unless this card already had a real value', () => {
+    assert.equal(
+      shouldCopySharedSetting({
+        key: 'tab_label_overrides_json',
+        sourceValue: '{}',
+        sourceHadValueBeforeWrite: false,
+      }),
+      false
+    )
+    assert.equal(
+      shouldCopySharedSetting({
+        key: 'tab_label_overrides_json',
+        sourceValue: '{"services":"Services"}',
+        sourceHadValueBeforeWrite: false,
+      }),
+      true
+    )
+    assert.equal(
+      shouldCopySharedSetting({
+        key: 'tab_label_overrides_json',
+        sourceValue: '{}',
+        sourceHadValueBeforeWrite: true,
+      }),
+      true
+    )
+  })
+
+  it('does not wipe sibling lists from an empty no-op save', () => {
+    assert.equal(shouldReplaceSiblingRows(0, false), false)
+    assert.equal(shouldReplaceSiblingRows(3, false), true)
+    assert.equal(shouldReplaceSiblingRows(0, true), true)
   })
 })

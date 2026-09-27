@@ -6,6 +6,7 @@ import seedLandingDemoCards from './bootstrap/seedLandingDemoCards'
 import seedPackages from './bootstrap/seedPackages'
 import { startBillingTrialCron } from './bootstrap/startBillingTrialCron'
 import { startBirthdayWishCron } from './bootstrap/startBirthdayWishCron'
+import { startCardChangeHistoryCron } from './bootstrap/startCardChangeHistoryCron'
 import { startCrmReminderCron } from './bootstrap/startCrmReminderCron'
 import config from './configs/config'
 import logger from './utils/logger'
@@ -27,6 +28,7 @@ const main = async () => {
     startBirthdayWishCron()
     startBillingTrialCron()
     startCrmReminderCron()
+    startCardChangeHistoryCron()
 
     httpServer.listen(config.PORT, () => {
       logger.info(`🔗 Database connected && server running on port ${config.PORT}`)

@@ -12,6 +12,7 @@ import { listGalleriesForProfile } from '../utils/galleryMedia'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
 import { resolveStoredProductPricing } from '../utils/productPricing'
+import { recordCardChange } from '../utils/recordCardChange'
 import profileService from './profile.service'
 
 type BlogInput = {
@@ -783,6 +784,13 @@ const afterDirectTabWrite = async <T>(profileId: string, tabKey: string, result:
       tabKey: tab.key,
     })
   }
+  await recordCardChange({
+    profileId,
+    area: tabKey,
+    action: 'update',
+    summary: `Updated ${tab?.label || tabKey}`,
+    snapshot: null,
+  })
   return result
 }
 

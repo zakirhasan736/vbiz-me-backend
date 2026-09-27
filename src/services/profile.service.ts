@@ -44,6 +44,7 @@ import {
   provisionCorporateMemberUser,
 } from '../utils/corporateMemberUser'
 import {
+  isSparseSharedSettingValue,
   resolveCorporateParentUserId,
   safeSyncCorporateSiblingSharedContent,
   shouldFanOutCollection,
@@ -105,6 +106,7 @@ import {
 } from '../utils/prismaErrors'
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
+import { recordCardChange, recordCollectionChange } from '../utils/recordCardChange'
 import announcementService from './announcement.service'
 import {
   assertCatalogFeatureGate,
@@ -2273,7 +2275,28 @@ const update = async (
     }
     const sharedChangedKeys = changedEntries.map(([key]) => key)
     if (sharedChangedKeys.length) {
-      await safeSyncCorporateSiblingSharedContent(profileId, { type: 'settings', keys: sharedChangedKeys })
+      const settingHadValue = Object.fromEntries(
+        sharedChangedKeys.map((key) => [key, !isSparseSharedSettingValue(key, existingMap.get(key))])
+      )
+      await safeSyncCorporateSiblingSharedContent(
+        profileId,
+        { type: 'settings', keys: sharedChangedKeys },
+        { settingHadValue }
+      )
+    }
+    if (changedEntries.length) {
+      const area = changedEntries.some(([key]) => key === 'tab_label_overrides_json') ? 'tabLabels' : 'settings'
+      await recordCardChange({
+        profileId,
+        area,
+        action: 'update',
+        summary: `Updated ${changedEntries.length} ${changedEntries.length === 1 ? 'setting' : 'settings'}`,
+        snapshot: {
+          version: 1,
+          kind: 'settings',
+          settings: Object.fromEntries(changedEntries.map(([key]) => [key, existingMap.get(key) ?? null])),
+        },
+      })
     }
   }
 
@@ -2417,6 +2440,15 @@ const replaceCollection = async <T extends Record<string, unknown>>(
     }
   }
   const delegate = COLLECTION_DELEGATE[kind]
+  const collectionClient = prisma as unknown as Record<
+    string,
+    {
+      count?: (args: { where: { profileId: string } }) => Promise<number>
+      findMany?: (args: { where: { profileId: string } }) => Promise<Array<Record<string, unknown>>>
+    }
+  >
+  const beforeItems = (await collectionClient[delegate]?.findMany?.({ where: { profileId } }).catch(() => [])) ?? []
+  const beforeCount = beforeItems.length
   await prisma.$transaction(async (tx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (tx as any)[delegate]
@@ -2460,8 +2492,18 @@ const replaceCollection = async <T extends Record<string, unknown>>(
     }
   })
   if (shouldFanOutCollection(kind)) {
-    await safeSyncCorporateSiblingSharedContent(profileId, { type: 'collection', kind })
+    await safeSyncCorporateSiblingSharedContent(
+      profileId,
+      { type: 'collection', kind },
+      { allowEmpty: beforeCount > 0 && items.length === 0 }
+    )
   }
+  await recordCollectionChange({
+    profileId,
+    kind,
+    beforeItems,
+    afterCount: items.length,
+  })
   const owned = await getOwnedLite(profileId, userId, role)
   const preferenceType = pushService.preferenceKeyForCollection(kind)
   if (preferenceType) {
@@ -2612,6 +2654,14 @@ const upsertAboutMe = async (
   }
 ) => {
   await getOwnedForWrite(profileId, userId, role)
+  const previousAbout = await prisma.aboutMe.findFirst({ where: { profileId } }).catch(() => null)
+  await recordCardChange({
+    profileId,
+    area: 'aboutMe',
+    action: previousAbout ? 'update' : 'add',
+    summary: previousAbout ? 'Updated About Me' : 'Added About Me',
+    snapshot: { version: 1, kind: 'aboutMe', aboutMe: previousAbout },
+  })
   // Title is the public headline under fixed "About Me" chrome — empty is allowed.
   const title = typeof input.title === 'string' ? input.title.trim() : ''
   const description =
@@ -2697,6 +2747,16 @@ const upsertAboutMe = async (
 
 const deleteAboutMe = async (profileId: string, userId: string, role: string) => {
   await getOwnedForWrite(profileId, userId, role)
+  const previousAbout = await prisma.aboutMe.findFirst({ where: { profileId } }).catch(() => null)
+  if (previousAbout) {
+    await recordCardChange({
+      profileId,
+      area: 'aboutMe',
+      action: 'delete',
+      summary: 'Removed About Me',
+      snapshot: { version: 1, kind: 'aboutMe', aboutMe: previousAbout },
+    })
+  }
   try {
     await prisma.aboutMe.deleteMany({ where: { profileId } })
   } catch (error) {
