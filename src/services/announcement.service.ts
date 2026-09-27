@@ -266,17 +266,12 @@ const list = async (query: ListAnnouncementsQuery) => {
   const where: Prisma.AnnouncementWhereInput = {
     ...(query.status ? { status: query.status } : {}),
     ...(query.kind ? { kind: query.kind } : {}),
-    // System birthday wishes are owner-inbox only — hide from admin announcements UI.
-    NOT: { meta: { path: ['kind'], equals: 'birthday' } },
   }
 
   const [total, activeCount, rows] = await Promise.all([
     prisma.announcement.count({ where }),
     prisma.announcement.count({
-      where: {
-        status: 'active',
-        NOT: { meta: { path: ['kind'], equals: 'birthday' } },
-      },
+      where: { status: 'active' },
     }),
     prisma.announcement.findMany({
       where,
@@ -287,7 +282,7 @@ const list = async (query: ListAnnouncementsQuery) => {
   ])
 
   return {
-    items: rows.map(serializeAnnouncement),
+    items: rows.filter((row) => !isBirthdayNotice(row.meta)).map(serializeAnnouncement),
     total,
     skip: query.skip,
     limit: query.limit,

@@ -2736,13 +2736,21 @@ const upsertAboutMe = async (
       where: { profileId },
       orderBy: { updatedAt: 'desc' },
     })
+    const nextDescription =
+      description !== undefined && !String(description || '').trim() && existing?.description?.trim()
+        ? existing.description
+        : description
+    const nextMedia =
+      featuredMediaUrl !== undefined && !featuredMediaUrl && existing?.featuredMediaUrl?.trim()
+        ? existing.featuredMediaUrl
+        : featuredMediaUrl
     row = existing
       ? await prisma.aboutMe.update({
           where: { id: existing.id },
           data: {
-            title,
-            ...(description !== undefined ? { description } : {}),
-            ...(featuredMediaUrl !== undefined ? { featuredMediaUrl } : {}),
+            title: title || existing.title,
+            ...(nextDescription !== undefined ? { description: nextDescription } : {}),
+            ...(nextMedia !== undefined ? { featuredMediaUrl: nextMedia } : {}),
             ...(status !== undefined ? { status } : {}),
           },
         })
