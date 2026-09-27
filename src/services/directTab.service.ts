@@ -789,7 +789,7 @@ const findTabKeyByPublicSectionName = (name: string): string | null => {
 
 const afterDirectTabWrite = async <T>(profileId: string, tabKey: string, result: T): Promise<T> => {
   const tab = getTabByKey(tabKey)
-  if (tab && tab.storage !== 'blog') {
+  if (tab && tab.storage !== 'blog' && tab.storage !== 'about_me' && tab.key !== 'about_me') {
     await safeSyncCorporateSiblingSharedContent(
       profileId,
       {

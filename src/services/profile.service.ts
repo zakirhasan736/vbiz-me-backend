@@ -83,6 +83,7 @@ import {
   omitCloneKeys,
   remapDuplicatedCardSettings,
   settingsMapFromRows,
+  stripAboutMeSettings,
   unknownPrismaCreateArgs,
   unknownPrismaSelectFields,
 } from '../utils/duplicateCard'
@@ -1416,7 +1417,8 @@ const create = async (
 const clonePrimaryProfileCollections = async (
   sourceProfileId: string,
   targetProfileId: string,
-  customTabIdMap?: Map<string, string>
+  customTabIdMap?: Map<string, string>,
+  options?: { skipAboutMe?: boolean }
 ) => {
   const listModels = SHARED_DUPLICATE_LIST_MODELS
 
@@ -1575,17 +1577,19 @@ const clonePrimaryProfileCollections = async (
         }
       }
 
-      const aboutMe = await tx.aboutMe.findUnique({ where: { profileId: sourceProfileId } })
-      if (aboutMe) {
-        await tx.aboutMe.create({
-          data: {
-            profileId: targetProfileId,
-            title: aboutMe.title,
-            description: aboutMe.description,
-            featuredMediaUrl: aboutMe.featuredMediaUrl,
-            status: aboutMe.status,
-          },
-        })
+      if (!options?.skipAboutMe) {
+        const aboutMe = await tx.aboutMe.findUnique({ where: { profileId: sourceProfileId } })
+        if (aboutMe) {
+          await tx.aboutMe.create({
+            data: {
+              profileId: targetProfileId,
+              title: aboutMe.title,
+              description: aboutMe.description,
+              featuredMediaUrl: aboutMe.featuredMediaUrl,
+              status: aboutMe.status,
+            },
+          })
+        }
       }
 
       const whyChooseUs = await tx.whyChooseUs.findUnique({ where: { profileId: sourceProfileId } }).catch(() => null)
@@ -1835,7 +1839,8 @@ const duplicate = async (
   }
 
   const customTabIdMap = new Map<string, string>()
-  const settings = remapDuplicatedCardSettings(settingsMapFromRows(source.settings), profileId, customTabIdMap)
+  const remappedSettings = remapDuplicatedCardSettings(settingsMapFromRows(source.settings), profileId, customTabIdMap)
+  const settings = corporateParentId ? stripAboutMeSettings(remappedSettings) : remappedSettings
   const ownership =
     memberUserId && corporateParentId
       ? corporateMemberCardOwnership(corporateParentId, memberUserId)
@@ -1874,7 +1879,7 @@ const duplicate = async (
       city: source.city || undefined,
       state: source.state || undefined,
       zipCode: source.zipCode || undefined,
-      about: source.about || undefined,
+      about: corporateParentId ? undefined : source.about || undefined,
       prof: source.prof || undefined,
       template: source.template,
       themeConfig: source.themeConfig || undefined,
@@ -1932,7 +1937,9 @@ const duplicate = async (
         ...(memberDesignation ? { designation: memberDesignation } : {}),
       },
     })
-    await clonePrimaryProfileCollections(profileId, created.id, customTabIdMap)
+    await clonePrimaryProfileCollections(profileId, created.id, customTabIdMap, {
+      skipAboutMe: Boolean(corporateParentId),
+    })
     if (corporateParentId) {
       await safeSyncCorporateSiblingSharedContent(profileId, { type: 'fullShared' }, { allowEmpty: false })
     }
@@ -2762,7 +2769,6 @@ const upsertAboutMe = async (
       title: 'About Me updated',
       body: `${businessName} updated their About Me section.`,
     })
-    await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' }, { allowEmpty: false })
     return fallback
   }
 
@@ -2779,7 +2785,6 @@ const upsertAboutMe = async (
 
   await upsertAboutMeMediaFocusY(prisma, profileId, input.featuredMediaFocusY)
   const focusY = await readAboutMeMediaFocusY(prisma, profileId)
-  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' }, { allowEmpty: false })
   return serializeAboutMe(row, focusY)
 }
 
@@ -2807,7 +2812,6 @@ const deleteAboutMe = async (profileId: string, userId: string, role: string) =>
       key: { in: [ABOUT_ME_TITLE_KEY, ABOUT_ME_MEDIA_KEY, ABOUT_ME_STATUS_KEY, ABOUT_ME_MEDIA_FOCUS_Y_KEY] },
     },
   })
-  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' }, { allowEmpty: true })
   return { deleted: true as const }
 }
 

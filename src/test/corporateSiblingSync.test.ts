@@ -17,13 +17,13 @@ import {
 } from '../utils/corporateSiblingSync'
 
 describe('isSharedSettingKey', () => {
-  it('shares home media, social extras, SEO, and About Me; keeps identity keys personal', () => {
+  it('shares home media, social extras, and SEO; keeps identity and About Me personal', () => {
     assert.equal(isSharedSettingKey('tab_section_meta_json'), true)
     assert.equal(isSharedSettingKey('tab_label_overrides_json'), true)
     assert.equal(isSharedSettingKey('custom_tabs_json'), true)
     assert.equal(isSharedSettingKey('display_settings_json'), true)
-    assert.equal(isSharedSettingKey('about_me_title'), true)
-    assert.equal(isSharedSettingKey('about_me_featured_media_url'), true)
+    assert.equal(isSharedSettingKey('about_me_title'), false)
+    assert.equal(isSharedSettingKey('about_me_featured_media_url'), false)
     assert.equal(isSharedSettingKey('profile_media_url'), true)
     assert.equal(isSharedSettingKey('background_media_url'), true)
     assert.equal(isSharedSettingKey('extra_fields_json'), true)
@@ -50,7 +50,7 @@ describe('collection fan-out rules', () => {
     assert.equal(isPersonalCollectionKind('socialLinks'), false)
     assert.equal(isPersonalCollectionKind('addresses'), false)
     assert.equal(isPersonalCollectionKind('services'), false)
-    assert.equal(isPersonalStorage('about_me'), false)
+    assert.equal(isPersonalStorage('about_me'), true)
     assert.equal(isPersonalStorage('faq'), false)
   })
 })

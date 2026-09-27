@@ -15,6 +15,7 @@ import {
   remapDuplicatedCardSettings,
   settingsMapFromRows,
   SHARED_DUPLICATE_LIST_MODELS,
+  stripAboutMeSettings,
   unknownPrismaCreateArgs,
   unknownPrismaSelectFields,
 } from '../utils/duplicateCard'
@@ -29,6 +30,7 @@ describe('duplicate vs linked-card identity contract', () => {
     assert.equal(isSharedDuplicateProfileField('whatsapp'), true)
     assert.equal(isSharedDuplicateProfileField('avatar'), true)
     assert.equal(isSharedDuplicateProfileField('website'), true)
+    assert.equal(isSharedDuplicateProfileField('about'), false)
     assert.equal(isSharedDuplicateProfileField('name'), false)
     assert.equal(isSharedDuplicateProfileField('email'), false)
     assert.equal(isSharedDuplicateProfileField('phone'), false)
@@ -63,6 +65,17 @@ describe('duplicate vs linked-card identity contract', () => {
     assert.equal(parsed.whatsapp, '+1 202 555 0101')
     assert.equal(parsed.phone, 'sibling-phone')
     assert.equal(parsed.email, 'sibling@corp.com')
+  })
+
+  it('strips About Me settings so a linked duplicate does not inherit that tab', () => {
+    const stripped = stripAboutMeSettings({
+      about_me_title: 'Source bio',
+      about_me_featured_media_url: 'https://cdn.example.com/about.jpg',
+      extra_fields_json: '[]',
+    })
+    assert.equal(stripped.about_me_title, undefined)
+    assert.equal(stripped.about_me_featured_media_url, undefined)
+    assert.equal(stripped.extra_fields_json, '[]')
   })
 })
 

@@ -91,7 +91,6 @@ export const SHARED_DUPLICATE_PROFILE_FIELDS = [
   'city',
   'state',
   'zipCode',
-  'about',
   'prof',
   'whatsapp',
   'countryCode',
@@ -123,6 +122,23 @@ export function isSharedDuplicateProfileField(key: string): boolean {
 
 /** Clone marker only — never overwrite another card's source pointer. */
 export const PERSONAL_IDENTITY_SETTING_KEYS = new Set(['duplicated_from'])
+
+/** About Me tab settings — unique per linked card. */
+export const ABOUT_ME_SETTING_KEYS = [
+  'about_me_title',
+  'about_me_featured_media_url',
+  'about_me_status',
+  'about_me_featured_media_focus_y',
+] as const
+
+export function stripAboutMeSettings(settings: Record<string, string>): Record<string, string> {
+  const next = { ...settings }
+  for (const key of ABOUT_ME_SETTING_KEYS) delete next[key]
+  for (const key of Object.keys(next)) {
+    if (key.startsWith('about_me_')) delete next[key]
+  }
+  return next
+}
 
 /** My Info contact values that stay on the card owner. WhatsApp and chrome copy. */
 export const MY_INFO_PERSONAL_CONTACT_KEYS = ['phone', 'email'] as const

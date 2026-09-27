@@ -30,12 +30,18 @@ const syncLock = new AsyncLocalStorage<boolean>()
 /** Duplicate-card identity only — no list tabs stay personal. */
 export const PERSONAL_COLLECTION_KINDS = new Set<string>()
 
-/** No direct-tab storage is personal — About Me and other tabs fan out. */
-export const PERSONAL_STORAGES = new Set<string>()
+/** About Me stays unique on each linked card. */
+export const PERSONAL_STORAGES = new Set(['about_me'])
 
-const PERSONAL_SETTING_KEYS = PERSONAL_IDENTITY_SETTING_KEYS
+const PERSONAL_SETTING_KEYS = new Set([
+  ...PERSONAL_IDENTITY_SETTING_KEYS,
+  'about_me_title',
+  'about_me_featured_media_url',
+  'about_me_status',
+  'about_me_featured_media_focus_y',
+])
 
-const PERSONAL_SETTING_PREFIXES: string[] = []
+const PERSONAL_SETTING_PREFIXES = ['about_me_']
 
 const COLLECTION_MODELS: Record<string, string[]> = {
   education: ['education'],
@@ -815,7 +821,6 @@ const applyScopeToSibling = async (
     for (const model of SHARED_DUPLICATE_LIST_MODELS) {
       await replaceModelRows(sourceProfileId, siblingId, model, {}, options)
     }
-    await replaceAboutMe(sourceProfileId, siblingId, options)
     await replacePosts(sourceProfileId, siblingId, null, options)
   }
 }
@@ -826,6 +831,7 @@ export async function syncCorporateSiblingSharedContent(
   options: SharedSyncOptions = {}
 ): Promise<{ siblingCount: number }> {
   if (isCorporateSiblingSyncRunning()) return { siblingCount: 0 }
+  if (scope.type === 'aboutMe') return { siblingCount: 0 }
   if (scope.type === 'storage' && isPersonalStorage(scope.storage)) return { siblingCount: 0 }
   if (scope.type === 'collection' && !shouldFanOutCollection(scope.kind)) return { siblingCount: 0 }
   if (scope.type === 'settings') {
