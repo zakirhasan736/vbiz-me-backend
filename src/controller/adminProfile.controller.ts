@@ -83,6 +83,19 @@ const ensureCorporateMemberLogins = catchAsyncError(async (req, res) => {
   })
 })
 
+const linkCorporateCards = catchAsyncError(async (req, res) => {
+  if (!req.user?.id) throw new AppError(403, 'Unauthorized')
+  assertVcardsAccess(req.user)
+  const body = AdminProfileZodSchema.linkCorporateCardsBody.parse(req.body ?? {})
+  const data = await adminProfileService.linkCorporateCards({ id: req.user.id }, body)
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: body.apply ? 'Corporate cards linked' : 'Corporate card link preview (dry-run)',
+    data,
+  })
+})
+
 const adminProfileController = {
   list,
   filters,
@@ -90,6 +103,7 @@ const adminProfileController = {
   listPortfolioMembers,
   sendProfileEmail,
   ensureCorporateMemberLogins,
+  linkCorporateCards,
 }
 
 export default adminProfileController

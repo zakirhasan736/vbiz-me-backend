@@ -2,6 +2,7 @@ import type { Prisma } from '../../generated/prisma/client'
 import { toApiRole } from '../constants/userRole'
 import {
   areaLabelFor,
+  countryNameFromCode,
   formatChangeLocation,
   getCardChangeActor,
   parseDeviceLabel,
@@ -10,8 +11,18 @@ import {
   summarizeCollectionChange,
   type CardChangeSnapshot,
 } from './cardChangeHistory'
+import { collectCardHealth, formatCardHealth, type CardHealthCounts } from './cardHealth'
 import logger from './logger'
 import { prisma } from './prisma'
+
+export type CardChangeMeta = {
+  health?: CardHealthCounts
+  healthLabel?: string
+  actorEmail?: string
+  ip?: string
+  country?: string
+  countryName?: string
+}
 
 export async function recordCardChange(input: {
   profileId: string
@@ -34,29 +45,48 @@ export async function recordCardChange(input: {
       }),
     ])
     const actorName = user?.name?.trim() || user?.email || actor.email || 'Unknown user'
+    const actorEmail = user?.email?.trim() || actor.email || ''
     const actorRoleLabel = resolveActorRoleLabel({
       actorRole: actor.role || (user?.role ? toApiRole(user.role) : 'vcard-owner'),
       actorUserId: actor.userId,
       profileUserId: profile?.userId,
       profileCompanyUserId: profile?.companyUserId,
     })
-    await prisma.cardChangeHistory.create({
-      data: {
-        profileId: input.profileId,
-        area: input.area,
-        areaLabel: areaLabelFor(input.area),
-        action: input.action,
-        summary: input.summary,
-        actorId: actor.userId,
-        actorName,
-        actorRoleLabel,
-        device: parseDeviceLabel(actor.userAgent),
-        location: formatChangeLocation(actor.ip, actor.country),
-        userAgent: actor.userAgent || null,
-        snapshot: input.snapshot ? (input.snapshot as Prisma.InputJsonValue) : undefined,
-        snapshotExpiresAt: input.snapshot ? snapshotExpiresAt() : null,
-      },
-    })
+    const health = await collectCardHealth(input.profileId)
+    const meta: CardChangeMeta = {
+      health,
+      healthLabel: formatCardHealth(health),
+      actorEmail: actorEmail || undefined,
+      ip: actor.ip,
+      country: actor.country,
+      countryName: countryNameFromCode(actor.country) || undefined,
+    }
+    const snapshotPayload = input.snapshot
+      ? ({ ...input.snapshot, health, footprint: meta } as Prisma.InputJsonValue)
+      : undefined
+    const data = {
+      profileId: input.profileId,
+      area: input.area,
+      areaLabel: areaLabelFor(input.area),
+      action: input.action,
+      summary: input.summary,
+      actorId: actor.userId,
+      actorName,
+      actorRoleLabel,
+      device: parseDeviceLabel(actor.userAgent),
+      location: formatChangeLocation(actor.ip, actor.country),
+      userAgent: actor.userAgent || null,
+      snapshot: snapshotPayload,
+      snapshotExpiresAt: input.snapshot ? snapshotExpiresAt() : null,
+      meta: meta as Prisma.InputJsonValue,
+    }
+    try {
+      await prisma.cardChangeHistory.create({ data })
+    } catch {
+      const withoutMeta = { ...data }
+      delete (withoutMeta as { meta?: unknown }).meta
+      await prisma.cardChangeHistory.create({ data: withoutMeta })
+    }
   } catch (error) {
     logger.warn('card change history record failed', error)
   }

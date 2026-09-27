@@ -7,6 +7,7 @@ import authUtils from '../utils/auth.utils'
 import {
   ensureAllCorporateMemberLogins,
   ensureCorporateMemberLoginsForParent,
+  linkCardsToCorporateAccount,
   resetOwnerDefaultPasswords,
 } from '../utils/corporateMemberUser'
 import { CORPORATE_MEMBER_DEFAULT_PASSWORD } from '../utils/duplicateCard'
@@ -496,12 +497,26 @@ const ensureCorporateMemberLogins = async (
     defaultPassword: CORPORATE_MEMBER_DEFAULT_PASSWORD,
   }
 }
+const linkCorporateCards = async (
+  actor: { id: string },
+  input: { corporateEmail: string; slugs: string[]; apply?: boolean; promoteToCorporateOwner?: boolean }
+) => {
+  return linkCardsToCorporateAccount({
+    corporateEmail: input.corporateEmail,
+    slugs: input.slugs,
+    actorUserId: actor.id,
+    apply: input.apply,
+    promoteToCorporateOwner: input.promoteToCorporateOwner,
+  })
+}
+
 const adminProfileService = {
   list,
   getFilterOptions,
   exportCsv,
   sendProfileEmail,
   ensureCorporateMemberLogins,
+  linkCorporateCards,
 }
 
 export default adminProfileService

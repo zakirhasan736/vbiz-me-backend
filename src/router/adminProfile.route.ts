@@ -22,5 +22,10 @@ router.post(
   validSchema(AdminProfileZodSchema.ensureCorporateMemberLoginsBody),
   adminProfileController.ensureCorporateMemberLogins
 )
+router.post(
+  '/corporate-cards/link',
+  validSchema(AdminProfileZodSchema.linkCorporateCardsBody),
+  adminProfileController.linkCorporateCards
+)
 
 export default router

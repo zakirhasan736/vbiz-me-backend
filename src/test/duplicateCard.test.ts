@@ -8,6 +8,7 @@ import {
   duplicatedCardOwnership,
   memberDuplicatedIdentityFields,
   omitCloneKeys,
+  relinkExistingCardToCorporate,
   remapDuplicatedCardSettings,
   settingsMapFromRows,
   unknownPrismaCreateArgs,
@@ -73,6 +74,32 @@ describe('corporateMemberCardOwnership', () => {
       companyUserId: 'corp-1',
       createdById: 'corp-1',
     })
+  })
+})
+
+describe('relinkExistingCardToCorporate', () => {
+  it('keeps the corporate owner on a same-email card and re-parents away from admin', () => {
+    assert.deepEqual(
+      relinkExistingCardToCorporate({
+        corporateUserId: 'casa-1',
+        corporateEmail: 'mcasanova@vbizme.com',
+        cardEmail: 'mcasanova@vbizme.com',
+        currentUserId: 'admin-1',
+      }),
+      { userId: 'casa-1', companyUserId: 'casa-1' }
+    )
+  })
+
+  it('keeps a distinct team-member login and only changes the corporate parent', () => {
+    assert.deepEqual(
+      relinkExistingCardToCorporate({
+        corporateUserId: 'casa-1',
+        corporateEmail: 'mcasanova@vbizme.com',
+        cardEmail: 'julia@vbizme.com',
+        currentUserId: 'julia-1',
+      }),
+      { userId: 'julia-1', companyUserId: 'casa-1' }
+    )
   })
 })
 

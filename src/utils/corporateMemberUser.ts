@@ -3,7 +3,11 @@ import { toApiRole, toPrismaRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import subscriptionService from '../services/subscription.service'
 import authUtils from './auth.utils'
-import { CORPORATE_MEMBER_DEFAULT_PASSWORD, corporateMemberCardOwnership } from './duplicateCard'
+import {
+  CORPORATE_MEMBER_DEFAULT_PASSWORD,
+  corporateMemberCardOwnership,
+  relinkExistingCardToCorporate,
+} from './duplicateCard'
 import logger from './logger'
 import { prisma } from './prisma'
 
@@ -587,5 +591,164 @@ export async function ensureAllCorporateMemberLogins(options: {
     resetPasswords: Boolean(options.resetPasswords),
     results,
     totals,
+  }
+}
+
+export type LinkedCorporateCardReport = {
+  profileId: string
+  slug: string | null
+  name: string
+  email: string
+  status: 'already_linked' | 'linked' | 'missing' | 'error'
+  message: string
+  ownerEmail?: string | null
+  linkedToEmail?: string | null
+}
+
+/**
+ * Attach existing cards to one corporate parent so shared tabs sync together.
+ * Same-email cards become the corporate owner card. Distinct emails stay team-member logins.
+ */
+export async function linkCardsToCorporateAccount(options: {
+  corporateEmail: string
+  slugs: string[]
+  actorUserId: string
+  apply?: boolean
+  promoteToCorporateOwner?: boolean
+}): Promise<{
+  apply: boolean
+  corporate: { id: string; name: string | null; email: string; role: string }
+  cards: LinkedCorporateCardReport[]
+  summary: { linked: number; alreadyLinked: number; missing: number; errors: number }
+}> {
+  const corporateEmail = options.corporateEmail.trim().toLowerCase()
+  const slugs = [...new Set(options.slugs.map((slug) => slug.trim()).filter(Boolean))]
+  if (!corporateEmail) throw new AppError(400, 'Corporate account email is required')
+  if (!slugs.length) throw new AppError(400, 'At least one card slug is required')
+
+  const corporate = await prisma.user.findFirst({
+    where: { email: { equals: corporateEmail, mode: 'insensitive' }, deletedAt: null },
+    select: { id: true, name: true, email: true, role: true },
+  })
+  if (!corporate) throw new AppError(404, `Corporate account not found: ${corporateEmail}`)
+
+  if (options.apply && options.promoteToCorporateOwner !== false && toApiRole(corporate.role) !== 'corporate-owner') {
+    await prisma.user.update({
+      where: { id: corporate.id },
+      data: { role: toPrismaRole('corporate-owner') },
+    })
+    corporate.role = toPrismaRole('corporate-owner')
+  }
+
+  const cards = await prisma.profile.findMany({
+    where: { slug: { in: slugs, mode: 'insensitive' } },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      email: true,
+      userId: true,
+      companyUserId: true,
+      user: { select: { email: true } },
+      companyUser: { select: { email: true } },
+    },
+  })
+  const bySlug = new Map(cards.map((card) => [(card.slug || '').trim().toLowerCase(), card]))
+  const reports: LinkedCorporateCardReport[] = []
+  const summary = { linked: 0, alreadyLinked: 0, missing: 0, errors: 0 }
+
+  for (const slug of slugs) {
+    const card = bySlug.get(slug.toLowerCase())
+    if (!card) {
+      summary.missing += 1
+      reports.push({
+        profileId: '',
+        slug,
+        name: slug,
+        email: '',
+        status: 'missing',
+        message: 'Card slug not found',
+      })
+      continue
+    }
+
+    const next = relinkExistingCardToCorporate({
+      corporateUserId: corporate.id,
+      corporateEmail: corporate.email,
+      cardEmail: card.email,
+      currentUserId: card.userId,
+    })
+    const already = card.userId === next.userId && card.companyUserId === next.companyUserId
+    const base = {
+      profileId: card.id,
+      slug: card.slug,
+      name: card.name,
+      email: card.email || '',
+      ownerEmail: card.user?.email || null,
+      linkedToEmail: card.companyUser?.email || null,
+    }
+
+    if (already) {
+      summary.alreadyLinked += 1
+      reports.push({ ...base, status: 'already_linked', message: 'Already linked to this corporate account' })
+      continue
+    }
+
+    if (!options.apply) {
+      summary.linked += 1
+      reports.push({
+        ...base,
+        status: 'linked',
+        message: `Would set company parent to ${corporate.email} (user ${next.userId === corporate.id ? 'corporate owner' : 'team member'})`,
+      })
+      continue
+    }
+
+    try {
+      await prisma.profile.update({
+        where: { id: card.id },
+        data: { userId: next.userId, companyUserId: next.companyUserId },
+      })
+      summary.linked += 1
+      reports.push({
+        ...base,
+        linkedToEmail: corporate.email,
+        status: 'linked',
+        message:
+          next.userId === corporate.id
+            ? `Linked as corporate owner card under ${corporate.email}`
+            : `Linked as corporate team member under ${corporate.email}`,
+      })
+    } catch (error) {
+      summary.errors += 1
+      reports.push({
+        ...base,
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  if (options.apply) {
+    await ensureCorporateMemberLoginsForParent({
+      corporateUserId: corporate.id,
+      actorUserId: options.actorUserId,
+      apply: true,
+      resetPasswords: false,
+    }).catch((error) => {
+      logger.error('ensureCorporateMemberLoginsForParent after link failed', error)
+    })
+  }
+
+  return {
+    apply: Boolean(options.apply),
+    corporate: {
+      id: corporate.id,
+      name: corporate.name,
+      email: corporate.email,
+      role: toApiRole(corporate.role),
+    },
+    cards: reports,
+    summary,
   }
 }

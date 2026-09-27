@@ -21,26 +21,22 @@ import {
 
 const syncLock = new AsyncLocalStorage<boolean>()
 
-export const PERSONAL_COLLECTION_KINDS = new Set(['socialLinks', 'addresses'])
+/** Street/contact address stays on the card owner. Social links are shared. */
+export const PERSONAL_COLLECTION_KINDS = new Set(['addresses'])
+
+/** No direct-tab storage is personal — About Me and other tabs fan out. */
+export const PERSONAL_STORAGES = new Set<string>()
 
 const PERSONAL_SETTING_KEYS = new Set([
-  'profile_media_url',
-  'background_media_url',
   'avatar',
   'avatar_url',
   'profile_image',
   'profile_image_url',
-  'seo_meta_title',
-  'seo_meta_description',
-  'seo_meta_keywords_json',
-  'seo_image_url',
-  'seo_favicon_url',
-  'extra_fields_json',
   'my_info_json',
   'duplicated_from',
 ])
 
-const PERSONAL_SETTING_PREFIXES = ['seo_']
+const PERSONAL_SETTING_PREFIXES: string[] = []
 
 const COLLECTION_MODELS: Record<string, string[]> = {
   education: ['education'],
@@ -49,6 +45,7 @@ const COLLECTION_MODELS: Record<string, string[]> = {
   portfolios: ['gallery', 'portfolio'],
   reviews: ['review'],
   skillTags: ['skillTag'],
+  socialLinks: ['socialLink'],
 }
 
 const STORAGE_EXTRA_MODELS: Record<string, string[]> = {
@@ -122,6 +119,10 @@ export function isCorporateSiblingSyncRunning(): boolean {
 
 export function isPersonalCollectionKind(kind: string): boolean {
   return PERSONAL_COLLECTION_KINDS.has(kind)
+}
+
+export function isPersonalStorage(storage: string): boolean {
+  return PERSONAL_STORAGES.has(storage.trim())
 }
 
 export function shouldFanOutCollection(kind: string): boolean {
@@ -622,10 +623,7 @@ const applyCustomTabsJson = async (sourceProfileId: string, siblingId: string, o
     where: { profileId: sourceProfileId, key: 'custom_tabs_json' },
     select: { value: true },
   })
-  const allowEmpty =
-    options.allowEmpty === true ||
-    (options.settingHadValue?.custom_tabs_json === true &&
-      isSparseSharedSettingValue('custom_tabs_json', sourceJson?.value))
+  const allowEmpty = options.allowEmpty === true
   const idMap = await replaceCustomTabs(sourceProfileId, siblingId, { ...options, allowEmpty })
   if (
     !shouldCopySharedSetting({
@@ -709,6 +707,7 @@ export async function syncCorporateSiblingSharedContent(
   options: SharedSyncOptions = {}
 ): Promise<{ siblingCount: number }> {
   if (isCorporateSiblingSyncRunning()) return { siblingCount: 0 }
+  if (scope.type === 'storage' && isPersonalStorage(scope.storage)) return { siblingCount: 0 }
   if (scope.type === 'collection' && !shouldFanOutCollection(scope.kind)) return { siblingCount: 0 }
   if (scope.type === 'settings') {
     const keys = scope.keys.filter(isSharedSettingKey)
@@ -749,7 +748,7 @@ export async function safeSyncCorporateSiblingSharedContent(
 ): Promise<void> {
   const resolved: SharedSyncOptions = {
     ...options,
-    allowEmpty: options.allowEmpty ?? (scope.type !== 'collection' && scope.type !== 'settings'),
+    allowEmpty: options.allowEmpty === true,
   }
   try {
     await syncCorporateSiblingSharedContent(sourceProfileId, scope, resolved)

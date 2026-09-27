@@ -78,8 +78,68 @@ export function parseDeviceLabel(userAgent?: string | null): string {
   return `${browser} on ${os}`
 }
 
+const COUNTRY_NAMES: Record<string, string> = {
+  US: 'United States',
+  CA: 'Canada',
+  GB: 'United Kingdom',
+  AU: 'Australia',
+  BD: 'Bangladesh',
+  IN: 'India',
+  PK: 'Pakistan',
+  AE: 'United Arab Emirates',
+  SA: 'Saudi Arabia',
+  SG: 'Singapore',
+  MY: 'Malaysia',
+  PH: 'Philippines',
+  ID: 'Indonesia',
+  TH: 'Thailand',
+  VN: 'Vietnam',
+  JP: 'Japan',
+  KR: 'South Korea',
+  CN: 'China',
+  HK: 'Hong Kong',
+  TW: 'Taiwan',
+  DE: 'Germany',
+  FR: 'France',
+  ES: 'Spain',
+  IT: 'Italy',
+  NL: 'Netherlands',
+  BE: 'Belgium',
+  CH: 'Switzerland',
+  SE: 'Sweden',
+  NO: 'Norway',
+  DK: 'Denmark',
+  FI: 'Finland',
+  IE: 'Ireland',
+  PT: 'Portugal',
+  PL: 'Poland',
+  BR: 'Brazil',
+  MX: 'Mexico',
+  AR: 'Argentina',
+  CL: 'Chile',
+  CO: 'Colombia',
+  ZA: 'South Africa',
+  NG: 'Nigeria',
+  KE: 'Kenya',
+  EG: 'Egypt',
+  TR: 'Turkey',
+  IL: 'Israel',
+  NZ: 'New Zealand',
+  RU: 'Russia',
+  UA: 'Ukraine',
+}
+
+export function countryNameFromCode(country?: string | null): string {
+  const code = country?.trim().toUpperCase() || ''
+  if (!code || code === 'XX' || code === 'T1') return ''
+  return COUNTRY_NAMES[code] || code
+}
+
 export function formatChangeLocation(ip?: string | null, country?: string | null): string {
-  const parts = [country?.trim(), ip?.trim()].filter(Boolean)
+  const code = country?.trim().toUpperCase() || ''
+  const countryName = countryNameFromCode(code)
+  const countryLabel = countryName && code && countryName !== code ? `${countryName} (${code})` : countryName || code
+  const parts = [countryLabel, ip?.trim()].filter(Boolean)
   return parts.join(' · ') || 'Unknown location'
 }
 
@@ -115,6 +175,10 @@ export const AREA_LABELS: Record<string, string> = {
   posts: 'Posts',
   blogs: 'Blogs',
   customTabs: 'Custom tabs',
+  faqs: 'FAQ',
+  faq: 'FAQ',
+  gallery: 'Gallery',
+  photos: 'Photos',
 }
 
 export function areaLabelFor(area: string): string {
@@ -144,7 +208,10 @@ export function summarizeCollectionChange(
       summary: `Removed ${removed} ${removed === 1 ? 'item' : 'items'} (${beforeCount} → ${afterCount})`,
     }
   }
-  return { action: 'update', summary: `Updated list (${afterCount} ${afterCount === 1 ? 'item' : 'items'})` }
+  return {
+    action: 'update',
+    summary: `Updated list (${beforeCount} → ${afterCount} ${afterCount === 1 ? 'item' : 'items'})`,
+  }
 }
 
 export function snapshotExpiresAt(from = new Date()): Date {

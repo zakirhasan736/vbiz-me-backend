@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  countryNameFromCode,
+  formatChangeLocation,
   isSnapshotRestorable,
   parseDeviceLabel,
   resolveActorRoleLabel,
@@ -56,7 +58,12 @@ describe('card change history helpers', () => {
   it('summarizes add, delete, and update of list items', () => {
     assert.deepEqual(summarizeCollectionChange(2, 4), { action: 'add', summary: 'Added 2 items (2 → 4)' })
     assert.deepEqual(summarizeCollectionChange(3, 1), { action: 'delete', summary: 'Removed 2 items (3 → 1)' })
-    assert.deepEqual(summarizeCollectionChange(2, 2), { action: 'update', summary: 'Updated list (2 items)' })
+    assert.deepEqual(summarizeCollectionChange(2, 2), { action: 'update', summary: 'Updated list (2 → 2 items)' })
+  })
+
+  it('prints a country name with the IP for the history footprint', () => {
+    assert.equal(countryNameFromCode('US'), 'United States')
+    assert.equal(formatChangeLocation('172.59.13.230', 'US'), 'United States (US) · 172.59.13.230')
   })
 
   it('allows restore only while the 72-hour snapshot is still present', () => {

@@ -128,6 +128,29 @@ export function corporateMemberCardOwnership(
   }
 }
 
+/** Re-parent an existing card under a corporate account without stealing a distinct member login. */
+export function relinkExistingCardToCorporate(input: {
+  corporateUserId: string
+  corporateEmail?: string | null
+  cardEmail?: string | null
+  currentUserId?: string | null
+}): {
+  userId: string
+  companyUserId: string
+} {
+  const corpId = input.corporateUserId.trim()
+  const cardEmail = (input.cardEmail || '').trim().toLowerCase()
+  const corpEmail = (input.corporateEmail || '').trim().toLowerCase()
+  const currentUserId = input.currentUserId?.trim() || ''
+  if (cardEmail && corpEmail && cardEmail === corpEmail) {
+    return { userId: corpId, companyUserId: corpId }
+  }
+  if (currentUserId && currentUserId !== corpId) {
+    return { userId: currentUserId, companyUserId: corpId }
+  }
+  return { userId: currentUserId || corpId, companyUserId: corpId }
+}
+
 /** Identity for a newly provisioned corporate member card (not a blank clone). */
 export function memberDuplicatedIdentityFields(input: {
   name: string

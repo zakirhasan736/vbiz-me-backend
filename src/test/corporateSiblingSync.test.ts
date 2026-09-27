@@ -5,6 +5,7 @@ import {
   corporateSiblingProfileWhere,
   isCorporateSiblingSyncRunning,
   isPersonalCollectionKind,
+  isPersonalStorage,
   isSharedSettingKey,
   isSparseSharedSettingValue,
   remapSharedSettingIds,
@@ -16,34 +17,41 @@ import {
 } from '../utils/corporateSiblingSync'
 
 describe('isSharedSettingKey', () => {
-  it('keeps shared tab settings and rejects personal / SEO / identity keys', () => {
+  it('shares home media, social extras, SEO, and About Me; keeps identity keys personal', () => {
     assert.equal(isSharedSettingKey('tab_section_meta_json'), true)
     assert.equal(isSharedSettingKey('tab_label_overrides_json'), true)
     assert.equal(isSharedSettingKey('custom_tabs_json'), true)
     assert.equal(isSharedSettingKey('display_settings_json'), true)
     assert.equal(isSharedSettingKey('about_me_title'), true)
-    assert.equal(isSharedSettingKey('profile_media_url'), false)
-    assert.equal(isSharedSettingKey('background_media_url'), false)
-    assert.equal(isSharedSettingKey('extra_fields_json'), false)
+    assert.equal(isSharedSettingKey('about_me_featured_media_url'), true)
+    assert.equal(isSharedSettingKey('profile_media_url'), true)
+    assert.equal(isSharedSettingKey('background_media_url'), true)
+    assert.equal(isSharedSettingKey('extra_fields_json'), true)
+    assert.equal(isSharedSettingKey('seo_meta_title'), true)
+    assert.equal(isSharedSettingKey('seo_image_url'), true)
+    assert.equal(isSharedSettingKey('game_ids_json'), true)
     assert.equal(isSharedSettingKey('my_info_json'), false)
-    assert.equal(isSharedSettingKey('seo_meta_title'), false)
-    assert.equal(isSharedSettingKey('seo_image_url'), false)
+    assert.equal(isSharedSettingKey('avatar'), false)
+    assert.equal(isSharedSettingKey('avatar_url'), false)
     assert.equal(isSharedSettingKey('duplicated_from'), false)
     assert.equal(isSharedSettingKey(''), false)
   })
 })
 
 describe('collection fan-out rules', () => {
-  it('syncs shared list tabs and skips personal identity collections', () => {
+  it('syncs shared list tabs including socials and skips personal addresses', () => {
     assert.equal(shouldFanOutCollection('services'), true)
     assert.equal(shouldFanOutCollection('reviews'), true)
     assert.equal(shouldFanOutCollection('portfolios'), true)
     assert.equal(shouldFanOutCollection('education'), true)
     assert.equal(shouldFanOutCollection('skillTags'), true)
-    assert.equal(shouldFanOutCollection('socialLinks'), false)
+    assert.equal(shouldFanOutCollection('socialLinks'), true)
     assert.equal(shouldFanOutCollection('addresses'), false)
-    assert.equal(isPersonalCollectionKind('socialLinks'), true)
+    assert.equal(isPersonalCollectionKind('socialLinks'), false)
+    assert.equal(isPersonalCollectionKind('addresses'), true)
     assert.equal(isPersonalCollectionKind('services'), false)
+    assert.equal(isPersonalStorage('about_me'), false)
+    assert.equal(isPersonalStorage('faq'), false)
   })
 })
 

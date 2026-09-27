@@ -162,7 +162,11 @@ const createBlog = async (profileId: string, userId: string, role: string, input
       sortOrder: typeof input.sortOrder === 'number' ? input.sortOrder : (max._max.sortOrder ?? -1) + 1,
     },
   })
-  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'storage', storage: 'blog', tabKey: 'blogs' })
+  await safeSyncCorporateSiblingSharedContent(
+    profileId,
+    { type: 'storage', storage: 'blog', tabKey: 'blogs' },
+    { allowEmpty: false }
+  )
   return serializeBlog(row)
 }
 
@@ -181,7 +185,11 @@ const updateBlog = async (profileId: string, blogId: string, userId: string, rol
       ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
     },
   })
-  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'storage', storage: 'blog', tabKey: 'blogs' })
+  await safeSyncCorporateSiblingSharedContent(
+    profileId,
+    { type: 'storage', storage: 'blog', tabKey: 'blogs' },
+    { allowEmpty: false }
+  )
   return serializeBlog(row)
 }
 
@@ -193,7 +201,11 @@ const deleteBlog = async (profileId: string, blogId: string, userId: string, rol
     where: { id: blogId },
     data: { deletedAt: new Date(), status: '0' },
   })
-  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'storage', storage: 'blog', tabKey: 'blogs' })
+  await safeSyncCorporateSiblingSharedContent(
+    profileId,
+    { type: 'storage', storage: 'blog', tabKey: 'blogs' },
+    { allowEmpty: false }
+  )
   return { deleted: true as const }
 }
 
@@ -778,11 +790,15 @@ const findTabKeyByPublicSectionName = (name: string): string | null => {
 const afterDirectTabWrite = async <T>(profileId: string, tabKey: string, result: T): Promise<T> => {
   const tab = getTabByKey(tabKey)
   if (tab && tab.storage !== 'blog') {
-    await safeSyncCorporateSiblingSharedContent(profileId, {
-      type: 'storage',
-      storage: tab.storage,
-      tabKey: tab.key,
-    })
+    await safeSyncCorporateSiblingSharedContent(
+      profileId,
+      {
+        type: 'storage',
+        storage: tab.storage,
+        tabKey: tab.key,
+      },
+      { allowEmpty: false }
+    )
   }
   await recordCardChange({
     profileId,

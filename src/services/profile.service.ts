@@ -2724,7 +2724,7 @@ const upsertAboutMe = async (
       title: 'About Me updated',
       body: `${businessName} updated their About Me section.`,
     })
-    await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' })
+    await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' }, { allowEmpty: false })
     return fallback
   }
 
@@ -2741,7 +2741,7 @@ const upsertAboutMe = async (
 
   await upsertAboutMeMediaFocusY(prisma, profileId, input.featuredMediaFocusY)
   const focusY = await readAboutMeMediaFocusY(prisma, profileId)
-  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' })
+  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' }, { allowEmpty: false })
   return serializeAboutMe(row, focusY)
 }
 
@@ -2769,7 +2769,7 @@ const deleteAboutMe = async (profileId: string, userId: string, role: string) =>
       key: { in: [ABOUT_ME_TITLE_KEY, ABOUT_ME_MEDIA_KEY, ABOUT_ME_STATUS_KEY, ABOUT_ME_MEDIA_FOCUS_Y_KEY] },
     },
   })
-  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' })
+  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'aboutMe' }, { allowEmpty: true })
   return { deleted: true as const }
 }
 
@@ -2880,7 +2880,11 @@ const createPost = async (
     body: `${businessName} published a new update.`,
   })
 
-  await safeSyncCorporateSiblingSharedContent(profileId, { type: 'posts', postTypeId: created.postTypeId })
+  await safeSyncCorporateSiblingSharedContent(
+    profileId,
+    { type: 'posts', postTypeId: created.postTypeId },
+    { allowEmpty: false }
+  )
   return created
 }
 
@@ -2957,7 +2961,11 @@ const updatePost = async (
     body: `${businessName} updated a post.`,
   })
 
-  await safeSyncCorporateSiblingSharedContent(post.profileId, { type: 'posts', postTypeId: updatedPost.postTypeId })
+  await safeSyncCorporateSiblingSharedContent(
+    post.profileId,
+    { type: 'posts', postTypeId: updatedPost.postTypeId },
+    { allowEmpty: false }
+  )
   return updatedPost
 }
 
@@ -2966,7 +2974,11 @@ const deletePost = async (postId: string, userId: string, role: string) => {
   if (!post) throw new AppError(404, 'Post not found')
   await getOwnedForWrite(post.profileId, userId, role)
   await prisma.post.update({ where: { id: postId }, data: { deletedAt: new Date(), status: '0' } })
-  await safeSyncCorporateSiblingSharedContent(post.profileId, { type: 'posts', postTypeId: post.postTypeId })
+  await safeSyncCorporateSiblingSharedContent(
+    post.profileId,
+    { type: 'posts', postTypeId: post.postTypeId },
+    { allowEmpty: false }
+  )
   return { id: postId, deleted: true }
 }
 

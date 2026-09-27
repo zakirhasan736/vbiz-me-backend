@@ -8,6 +8,7 @@ import {
   attachmentTypeNameMatches,
   isSingletonBuilderAttachmentType,
 } from '../utils/attachmentTypeMatch'
+import { bindCardChangeContext } from '../utils/cardChangeHistory'
 import catchAsyncError from '../utils/catchAsyncError'
 import { prisma } from '../utils/prisma'
 import s3Utils from '../utils/s3'
@@ -29,6 +30,7 @@ function isSameBuilderAttachmentType(typeName: string | null | undefined, canoni
 }
 
 router.use(authMiddleware.isAuthenticateUser)
+router.use(bindCardChangeContext)
 router.use(authMiddleware.requireNotSuspended)
 
 function parseSingleUpload(req: Request, res: Response, next: NextFunction) {

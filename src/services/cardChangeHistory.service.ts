@@ -1,11 +1,18 @@
 import { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { areaLabelFor, isSnapshotRestorable, type CardChangeSnapshot } from '../utils/cardChangeHistory'
+import { formatCardHealth, type CardHealthCounts } from '../utils/cardHealth'
 import { prisma } from '../utils/prisma'
+import type { CardChangeMeta } from '../utils/recordCardChange'
 import { recordCardChange, recordCollectionChange } from '../utils/recordCardChange'
 import profileService from './profile.service'
 
 const MAX_LIST = 200
+
+function readMeta(value: Prisma.JsonValue | null | undefined): CardChangeMeta {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as CardChangeMeta
+}
 
 const serializeHistory = (row: {
   id: string
@@ -19,10 +26,21 @@ const serializeHistory = (row: {
   location: string | null
   snapshot: Prisma.JsonValue | null
   snapshotExpiresAt: Date | null
+  meta?: Prisma.JsonValue | null
   restoredAt: Date | null
   createdAt: Date
 }) => {
   const canRestore = isSnapshotRestorable(row.snapshot, row.snapshotExpiresAt)
+  const fromRow = readMeta(row.meta)
+  const fromSnapshot =
+    row.snapshot && typeof row.snapshot === 'object' && !Array.isArray(row.snapshot)
+      ? readMeta((row.snapshot as { footprint?: Prisma.JsonValue; health?: CardHealthCounts }).footprint ?? null)
+      : {}
+  const snapshotHealth =
+    row.snapshot && typeof row.snapshot === 'object' && !Array.isArray(row.snapshot)
+      ? (row.snapshot as { health?: CardHealthCounts }).health
+      : undefined
+  const health = fromRow.health || snapshotHealth || fromSnapshot.health
   return {
     id: row.id,
     area: row.area,
@@ -31,8 +49,14 @@ const serializeHistory = (row: {
     summary: row.summary,
     actorName: row.actorName,
     actorRoleLabel: row.actorRoleLabel,
+    actorEmail: fromRow.actorEmail || fromSnapshot.actorEmail || '',
     device: row.device || 'Unknown device',
     location: row.location || 'Unknown location',
+    ip: fromRow.ip || fromSnapshot.ip || '',
+    country: fromRow.country || fromSnapshot.country || '',
+    countryName: fromRow.countryName || fromSnapshot.countryName || '',
+    health: health || null,
+    healthLabel: fromRow.healthLabel || formatCardHealth(health) || '',
     canRestore,
     restoreExpired: Boolean(row.snapshotExpiresAt) && !canRestore,
     restoredAt: row.restoredAt?.toISOString() ?? null,
@@ -124,6 +148,9 @@ const restoreCollection = async (profileId: string, userId: string, role: string
   const rows = Array.isArray(items)
     ? items.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
     : []
+  if (rows.length === 0) {
+    throw new AppError(400, 'This snapshot would erase the current list. Restore is blocked to protect live card data.')
+  }
   await profileService.replaceCollection(profileId, userId, role, kind as never, rows, mapItem)
 }
 

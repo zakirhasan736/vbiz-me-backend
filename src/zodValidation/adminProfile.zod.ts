@@ -51,11 +51,19 @@ const ensureCorporateMemberLoginsBody = z.object({
   resetAllOwnerPasswords: z.boolean().optional().default(false),
 })
 
+const linkCorporateCardsBody = z.object({
+  corporateEmail: z.string().trim().email(),
+  slugs: z.array(z.string().trim().min(1)).min(1).max(40),
+  apply: z.boolean().optional().default(false),
+  promoteToCorporateOwner: z.boolean().optional().default(true),
+})
+
 const AdminProfileZodSchema = {
   listAdminProfilesQuery,
   exportAdminProfilesQuery,
   sendProfileEmail,
   ensureCorporateMemberLoginsBody,
+  linkCorporateCardsBody,
 }
 
 export type ListAdminProfilesQuery = z.infer<typeof listAdminProfilesQuery>
