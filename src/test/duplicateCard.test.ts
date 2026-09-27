@@ -5,15 +5,66 @@ import {
   cloneRecord,
   CORPORATE_MEMBER_DEFAULT_PASSWORD,
   corporateMemberCardOwnership,
+  DUPLICATED_IDENTITY_PROFILE_FIELDS,
   duplicatedCardOwnership,
+  isSharedDuplicateProfileField,
   memberDuplicatedIdentityFields,
+  mergeMyInfoKeepingPersonalContacts,
   omitCloneKeys,
   relinkExistingCardToCorporate,
   remapDuplicatedCardSettings,
   settingsMapFromRows,
+  SHARED_DUPLICATE_LIST_MODELS,
   unknownPrismaCreateArgs,
   unknownPrismaSelectFields,
 } from '../utils/duplicateCard'
+
+describe('duplicate vs linked-card identity contract', () => {
+  it('treats only owner identity as personal and copies the rest', () => {
+    assert.deepEqual(
+      [...DUPLICATED_IDENTITY_PROFILE_FIELDS],
+      ['name', 'lastName', 'slug', 'dob', 'email', 'phone', 'genderId']
+    )
+    assert.equal(isSharedDuplicateProfileField('companyName'), true)
+    assert.equal(isSharedDuplicateProfileField('whatsapp'), true)
+    assert.equal(isSharedDuplicateProfileField('avatar'), true)
+    assert.equal(isSharedDuplicateProfileField('website'), true)
+    assert.equal(isSharedDuplicateProfileField('name'), false)
+    assert.equal(isSharedDuplicateProfileField('email'), false)
+    assert.equal(isSharedDuplicateProfileField('phone'), false)
+    assert.equal(SHARED_DUPLICATE_LIST_MODELS.includes('socialLink'), true)
+    assert.equal(SHARED_DUPLICATE_LIST_MODELS.includes('address'), true)
+  })
+
+  it('copies shared My Info chrome and keeps each card phone and email', () => {
+    const merged = mergeMyInfoKeepingPersonalContacts(
+      JSON.stringify({
+        headline: 'Call the office',
+        showCall: false,
+        phone: 'source-phone',
+        email: 'source@corp.com',
+        whatsapp: '+1 202 555 0101',
+      }),
+      JSON.stringify({
+        headline: 'Old',
+        phone: 'sibling-phone',
+        email: 'sibling@corp.com',
+      })
+    )
+    const parsed = JSON.parse(merged || '{}') as {
+      headline: string
+      showCall: boolean
+      phone: string
+      email: string
+      whatsapp: string
+    }
+    assert.equal(parsed.headline, 'Call the office')
+    assert.equal(parsed.showCall, false)
+    assert.equal(parsed.whatsapp, '+1 202 555 0101')
+    assert.equal(parsed.phone, 'sibling-phone')
+    assert.equal(parsed.email, 'sibling@corp.com')
+  })
+})
 
 describe('blankDuplicatedIdentityFields', () => {
   it('clears only personal identity fields on a duplicated card', () => {

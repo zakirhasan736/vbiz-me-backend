@@ -5,8 +5,14 @@ import { isStaffRole, toApiRole } from '../constants/userRole'
 import { getEffectiveEntitlements } from '../services/entitlement.service'
 import {
   cloneRecord,
+  isSharedDuplicateProfileField,
+  isSharedProfileFieldValuePresent,
+  mergeMyInfoKeepingPersonalContacts,
   omitCloneKeys,
+  PERSONAL_IDENTITY_SETTING_KEYS,
   POST_STYLE_CLONE_SELECT,
+  SHARED_DUPLICATE_LIST_MODELS,
+  SHARED_DUPLICATE_PROFILE_FIELDS,
   unknownPrismaCreateArgs,
   unknownPrismaSelectFields,
 } from './duplicateCard'
@@ -21,20 +27,13 @@ import {
 
 const syncLock = new AsyncLocalStorage<boolean>()
 
-/** Street/contact address stays on the card owner. Social links are shared. */
-export const PERSONAL_COLLECTION_KINDS = new Set(['addresses'])
+/** Duplicate-card identity only — no list tabs stay personal. */
+export const PERSONAL_COLLECTION_KINDS = new Set<string>()
 
 /** No direct-tab storage is personal — About Me and other tabs fan out. */
 export const PERSONAL_STORAGES = new Set<string>()
 
-const PERSONAL_SETTING_KEYS = new Set([
-  'avatar',
-  'avatar_url',
-  'profile_image',
-  'profile_image_url',
-  'my_info_json',
-  'duplicated_from',
-])
+const PERSONAL_SETTING_KEYS = PERSONAL_IDENTITY_SETTING_KEYS
 
 const PERSONAL_SETTING_PREFIXES: string[] = []
 
@@ -46,6 +45,7 @@ const COLLECTION_MODELS: Record<string, string[]> = {
   reviews: ['review'],
   skillTags: ['skillTag'],
   socialLinks: ['socialLink'],
+  addresses: ['address'],
 }
 
 const STORAGE_EXTRA_MODELS: Record<string, string[]> = {
@@ -70,6 +70,9 @@ export type SharedSyncScope =
   | { type: 'aboutMe' }
   | { type: 'customTabs' }
   | { type: 'settings'; keys: string[] }
+  | { type: 'profileFields'; keys?: string[] }
+  | { type: 'profileSettings' }
+  | { type: 'fullShared' }
 
 export type SharedSyncOptions = {
   /** When false, an empty source list does not wipe siblings (stale/no-op save). */
@@ -606,14 +609,98 @@ const copySharedSettings = async (
     ) {
       continue
     }
-    const value =
+    let value =
       key === 'display_settings_json' || key === 'tab_section_meta_json' || key === 'tab_label_overrides_json'
         ? remapSharedSettingIds(raw as string, idMap)
         : (raw as string)
+    if (key === 'my_info_json') {
+      const existing = await prisma.setting.findFirst({
+        where: { profileId: targetProfileId, key: 'my_info_json' },
+        select: { value: true },
+      })
+      const merged = mergeMyInfoKeepingPersonalContacts(value, existing?.value)
+      if (merged === undefined) continue
+      value = merged
+    }
     await prisma.setting.upsert({
       where: { profileId_key: { profileId: targetProfileId, key } },
       create: { profileId: targetProfileId, key, value },
       update: { value },
+    })
+  }
+}
+
+const copySharedProfileFields = async (
+  sourceProfileId: string,
+  targetProfileId: string,
+  keys: string[] | undefined,
+  options: SharedSyncOptions = {}
+) => {
+  const fieldKeys = (keys?.length ? keys : [...SHARED_DUPLICATE_PROFILE_FIELDS]).filter(isSharedDuplicateProfileField)
+  if (!fieldKeys.length) return
+
+  const select = Object.fromEntries(fieldKeys.map((key) => [key, true]))
+  const source = await prisma.profile.findUnique({
+    where: { id: sourceProfileId },
+    select,
+  })
+  if (!source) return
+
+  const data: Record<string, unknown> = {}
+  const sourceRow = source as Record<string, unknown>
+  for (const key of fieldKeys) {
+    const value = sourceRow[key]
+    if (!isSharedProfileFieldValuePresent(value) && options.allowEmpty !== true) continue
+    data[key] = value ?? null
+  }
+  if (!Object.keys(data).length) return
+
+  await prisma.profile.update({
+    where: { id: targetProfileId },
+    data,
+  })
+}
+
+const copySharedProfileSettings = async (
+  sourceProfileId: string,
+  targetProfileId: string,
+  options: SharedSyncOptions = {}
+) => {
+  const source = await prisma.profileSetting.findUnique({
+    where: { profileId: sourceProfileId },
+  })
+  if (!source) return
+  const hasTheme =
+    source.themeConfig != null &&
+    typeof source.themeConfig === 'object' &&
+    Object.keys(source.themeConfig as Record<string, unknown>).length > 0
+  if (!hasTheme && !source.layoutStyle && !source.buttonStyle && !source.cornerStyle && options.allowEmpty !== true) {
+    if (!source.profileTemplate) return
+  }
+
+  await prisma.profileSetting.upsert({
+    where: { profileId: targetProfileId },
+    create: {
+      profileId: targetProfileId,
+      profileTemplate: source.profileTemplate || 'v3',
+      layoutStyle: source.layoutStyle,
+      buttonStyle: source.buttonStyle,
+      cornerStyle: source.cornerStyle,
+      themeConfig: source.themeConfig === null ? undefined : (source.themeConfig as Prisma.InputJsonValue),
+    },
+    update: {
+      profileTemplate: source.profileTemplate || 'v3',
+      layoutStyle: source.layoutStyle,
+      buttonStyle: source.buttonStyle,
+      cornerStyle: source.cornerStyle,
+      themeConfig: source.themeConfig === null ? undefined : (source.themeConfig as Prisma.InputJsonValue),
+    },
+  })
+
+  if (source.themeConfig !== undefined) {
+    await prisma.profile.update({
+      where: { id: targetProfileId },
+      data: { themeConfig: source.themeConfig === null ? undefined : (source.themeConfig as Prisma.InputJsonValue) },
     })
   }
 }
@@ -698,6 +785,38 @@ const applyScopeToSibling = async (
       await applyCustomTabsJson(sourceProfileId, siblingId, options)
     }
     await copySharedSettings(sourceProfileId, siblingId, scope.keys, options)
+    return
+  }
+
+  if (scope.type === 'profileFields') {
+    await copySharedProfileFields(sourceProfileId, siblingId, scope.keys, options)
+    return
+  }
+
+  if (scope.type === 'profileSettings') {
+    await copySharedProfileSettings(sourceProfileId, siblingId, options)
+    return
+  }
+
+  if (scope.type === 'fullShared') {
+    await copySharedProfileFields(sourceProfileId, siblingId, undefined, options)
+    await copySharedProfileSettings(sourceProfileId, siblingId, options)
+    const settingRows = await prisma.setting.findMany({
+      where: { profileId: sourceProfileId },
+      select: { key: true },
+    })
+    await applyCustomTabsJson(sourceProfileId, siblingId, options)
+    await copySharedSettings(
+      sourceProfileId,
+      siblingId,
+      settingRows.map((row) => row.key),
+      options
+    )
+    for (const model of SHARED_DUPLICATE_LIST_MODELS) {
+      await replaceModelRows(sourceProfileId, siblingId, model, {}, options)
+    }
+    await replaceAboutMe(sourceProfileId, siblingId, options)
+    await replacePosts(sourceProfileId, siblingId, null, options)
   }
 }
 
@@ -711,6 +830,13 @@ export async function syncCorporateSiblingSharedContent(
   if (scope.type === 'collection' && !shouldFanOutCollection(scope.kind)) return { siblingCount: 0 }
   if (scope.type === 'settings') {
     const keys = scope.keys.filter(isSharedSettingKey)
+    if (!keys.length) return { siblingCount: 0 }
+    scope = { ...scope, keys }
+  }
+  if (scope.type === 'profileFields') {
+    const keys = (scope.keys?.length ? scope.keys : [...SHARED_DUPLICATE_PROFILE_FIELDS]).filter(
+      isSharedDuplicateProfileField
+    )
     if (!keys.length) return { siblingCount: 0 }
     scope = { ...scope, keys }
   }

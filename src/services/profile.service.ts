@@ -72,10 +72,13 @@ import {
 import {
   CORPORATE_MEMBER_DEFAULT_PASSWORD,
   POST_STYLE_CLONE_SELECT,
+  SHARED_DUPLICATE_LIST_MODELS,
+  SHARED_DUPLICATE_PROFILE_FIELDS,
   blankDuplicatedIdentityFields,
   cloneRecord,
   corporateMemberCardOwnership,
   duplicatedCardOwnership,
+  isSharedDuplicateProfileField,
   memberDuplicatedIdentityFields,
   omitCloneKeys,
   remapDuplicatedCardSettings,
@@ -1415,49 +1418,7 @@ const clonePrimaryProfileCollections = async (
   targetProfileId: string,
   customTabIdMap?: Map<string, string>
 ) => {
-  const listModels = [
-    'education',
-    'experience',
-    'service',
-    'portfolio',
-    'review',
-    'skillTag',
-    'socialLink',
-    'blog',
-    'tabItem',
-    'gallery',
-    'video',
-    'bbbAccreditation',
-    'licensing',
-    'dcp',
-    'certificateLicense',
-    'faq',
-    'calendarSection',
-    'propertyListing',
-    'profileEvent',
-    'mediaPress',
-    'missionStatement',
-    'menuSection',
-    'announcementDirect',
-    'joinMyTeam',
-    'booking',
-    'additionalService',
-    'videoLink',
-    'inventory',
-    'homeSolar',
-    'resiliencyProduct',
-    'breakfast',
-    'lunch',
-    'dinner',
-    'product',
-    'salesPerson',
-    'teamMember',
-    'client',
-    'generalPost',
-    'insuranceLicense',
-    'videoExplainer',
-    'address',
-  ] as const
+  const listModels = SHARED_DUPLICATE_LIST_MODELS
 
   type ListDelegate = {
     findMany: (args: {
@@ -1972,6 +1933,9 @@ const duplicate = async (
       },
     })
     await clonePrimaryProfileCollections(profileId, created.id, customTabIdMap)
+    if (corporateParentId) {
+      await safeSyncCorporateSiblingSharedContent(profileId, { type: 'fullShared' }, { allowEmpty: false })
+    }
   } catch (error) {
     await prisma.profile.delete({ where: { id: created.id } }).catch(() => undefined)
     if (provisionedMemberUserId) {
@@ -1983,6 +1947,22 @@ const duplicate = async (
   const duplicated = await loadProfileDetail({ id: created.id })
   if (!duplicated) throw new AppError(404, 'Duplicated profile not found')
   return duplicated
+}
+
+const sameProfileFieldValue = (left: unknown, right: unknown): boolean => {
+  if (left instanceof Date || right instanceof Date) {
+    const toTime = (value: unknown) => {
+      if (value instanceof Date) return value.getTime()
+      if (value == null || value === '') return null
+      const time = new Date(String(value)).getTime()
+      return Number.isNaN(time) ? String(value) : time
+    }
+    return toTime(left) === toTime(right)
+  }
+  if ((left && typeof left === 'object') || (right && typeof right === 'object')) {
+    return JSON.stringify(left ?? null) === JSON.stringify(right ?? null)
+  }
+  return String(left ?? '') === String(right ?? '')
 }
 
 const update = async (
@@ -2063,6 +2043,31 @@ const update = async (
       userId: true,
       companyUserId: true,
       companyName: true,
+      designation: true,
+      website: true,
+      address: true,
+      city: true,
+      state: true,
+      zipCode: true,
+      about: true,
+      prof: true,
+      whatsapp: true,
+      countryCode: true,
+      facebook: true,
+      instagram: true,
+      twitter: true,
+      tiktok: true,
+      youtube: true,
+      rumble: true,
+      truth: true,
+      linkedin: true,
+      pinterest: true,
+      avatar: true,
+      colorCode: true,
+      template: true,
+      isEmploy: true,
+      professionId: true,
+      maritalStatusId: true,
     },
   })
   if (!currentProfile) throw new AppError(404, 'Profile not found')
@@ -2254,6 +2259,30 @@ const update = async (
     })
   }
 
+  const sharedProfileChangedKeys = SHARED_DUPLICATE_PROFILE_FIELDS.filter((key) => {
+    if (!(key in raw) || !isSharedDuplicateProfileField(key)) return false
+    return !sameProfileFieldValue(raw[key], (currentProfile as Record<string, unknown>)[key])
+  })
+  if (sharedProfileChangedKeys.length) {
+    await safeSyncCorporateSiblingSharedContent(
+      profileId,
+      { type: 'profileFields', keys: [...sharedProfileChangedKeys] },
+      { allowEmpty: true }
+    )
+  }
+  if (
+    sharedProfileChangedKeys.includes('address') ||
+    sharedProfileChangedKeys.includes('zipCode') ||
+    sharedProfileChangedKeys.includes('city') ||
+    sharedProfileChangedKeys.includes('state')
+  ) {
+    await safeSyncCorporateSiblingSharedContent(
+      profileId,
+      { type: 'collection', kind: 'addresses' },
+      { allowEmpty: true }
+    )
+  }
+
   if (normalizedSettings) {
     const existingMap = existingSettingsMap ?? new Map<string, string | null>()
     const changedEntries = Object.entries(normalizedSettings).filter(([key, value]) => existingMap.get(key) !== value)
@@ -2326,6 +2355,15 @@ const update = async (
         where: { id: profileId },
         data: { themeConfig: profileSettings.themeConfig as object },
       })
+    }
+    if (
+      profileSettings.themeConfig !== undefined ||
+      profileSettings.profileTemplate ||
+      profileSettings.layoutStyle !== undefined ||
+      profileSettings.buttonStyle !== undefined ||
+      profileSettings.cornerStyle !== undefined
+    ) {
+      await safeSyncCorporateSiblingSharedContent(profileId, { type: 'profileSettings' })
     }
   }
 

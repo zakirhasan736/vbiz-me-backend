@@ -69,6 +69,150 @@ export type DuplicatedIdentityFields = {
   genderId: null
 }
 
+/** Card-owner identity — unique on every linked / duplicated card. */
+export const DUPLICATED_IDENTITY_PROFILE_FIELDS = [
+  'name',
+  'lastName',
+  'slug',
+  'dob',
+  'email',
+  'phone',
+  'genderId',
+] as const
+
+export type DuplicatedIdentityProfileField = (typeof DUPLICATED_IDENTITY_PROFILE_FIELDS)[number]
+
+/** Shared company content that duplicate copies and linked corporate cards must keep in sync. */
+export const SHARED_DUPLICATE_PROFILE_FIELDS = [
+  'companyName',
+  'designation',
+  'website',
+  'address',
+  'city',
+  'state',
+  'zipCode',
+  'about',
+  'prof',
+  'whatsapp',
+  'countryCode',
+  'facebook',
+  'instagram',
+  'twitter',
+  'tiktok',
+  'youtube',
+  'rumble',
+  'truth',
+  'linkedin',
+  'pinterest',
+  'avatar',
+  'colorCode',
+  'template',
+  'themeConfig',
+  'isEmploy',
+  'professionId',
+  'maritalStatusId',
+] as const
+
+export type SharedDuplicateProfileField = (typeof SHARED_DUPLICATE_PROFILE_FIELDS)[number]
+
+export const SHARED_DUPLICATE_PROFILE_FIELD_SET = new Set<string>(SHARED_DUPLICATE_PROFILE_FIELDS)
+
+export function isSharedDuplicateProfileField(key: string): boolean {
+  return SHARED_DUPLICATE_PROFILE_FIELD_SET.has(key)
+}
+
+/** Clone marker only — never overwrite another card's source pointer. */
+export const PERSONAL_IDENTITY_SETTING_KEYS = new Set(['duplicated_from'])
+
+/** My Info contact values that stay on the card owner. WhatsApp and chrome copy. */
+export const MY_INFO_PERSONAL_CONTACT_KEYS = ['phone', 'email'] as const
+
+/** Tab / list models duplicate copies onto the new card (not identity). */
+export const SHARED_DUPLICATE_LIST_MODELS = [
+  'education',
+  'experience',
+  'service',
+  'portfolio',
+  'review',
+  'skillTag',
+  'socialLink',
+  'blog',
+  'tabItem',
+  'gallery',
+  'video',
+  'bbbAccreditation',
+  'licensing',
+  'dcp',
+  'certificateLicense',
+  'faq',
+  'calendarSection',
+  'propertyListing',
+  'profileEvent',
+  'mediaPress',
+  'missionStatement',
+  'menuSection',
+  'announcementDirect',
+  'joinMyTeam',
+  'booking',
+  'additionalService',
+  'videoLink',
+  'inventory',
+  'homeSolar',
+  'resiliencyProduct',
+  'breakfast',
+  'lunch',
+  'dinner',
+  'product',
+  'salesPerson',
+  'teamMember',
+  'client',
+  'generalPost',
+  'insuranceLicense',
+  'videoExplainer',
+  'address',
+] as const
+
+export function isSharedProfileFieldValuePresent(value: unknown): boolean {
+  if (value == null) return false
+  if (typeof value === 'string') return Boolean(value.trim())
+  if (typeof value === 'boolean' || typeof value === 'number') return true
+  if (value instanceof Date) return true
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0
+  return true
+}
+
+/** Copy shared My Info chrome; keep each card's own phone and email. */
+export function mergeMyInfoKeepingPersonalContacts(
+  sourceJson: string | null | undefined,
+  targetJson: string | null | undefined
+): string | undefined {
+  if (sourceJson == null) return undefined
+  try {
+    const parsed = JSON.parse(sourceJson) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return sourceJson
+    const next = { ...(parsed as Record<string, unknown>) }
+    let phone = ''
+    let email = ''
+    if (targetJson?.trim()) {
+      try {
+        const target = JSON.parse(targetJson) as unknown
+        if (target && typeof target === 'object' && !Array.isArray(target)) {
+          const row = target as Record<string, unknown>
+          phone = typeof row.phone === 'string' ? row.phone : ''
+          email = typeof row.email === 'string' ? row.email : ''
+        }
+      } catch {
+        // Keep blank contacts when the sibling JSON is unreadable.
+      }
+    }
+    next.phone = phone
+    next.email = email
+    return JSON.stringify(next)
+  } catch {
+    return sourceJson
+  }
+}
+
 export function blankDuplicatedIdentityFields(): DuplicatedIdentityFields {
   return {
     name: '',
@@ -214,18 +358,8 @@ export const POST_STYLE_CLONE_SELECT = {
 } as const
 
 function stripDuplicatedMyInfoContacts(settings: Record<string, string>): void {
-  const raw = settings.my_info_json
-  if (!raw?.trim()) return
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
-    const next = parsed as Record<string, unknown>
-    next.phone = ''
-    next.email = ''
-    settings.my_info_json = JSON.stringify(next)
-  } catch {
-    // Keep original JSON if it is not parseable.
-  }
+  const merged = mergeMyInfoKeepingPersonalContacts(settings.my_info_json, null)
+  if (merged !== undefined) settings.my_info_json = merged
 }
 
 function newCustomTabId(): string {
