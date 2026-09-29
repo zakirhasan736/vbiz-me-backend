@@ -15,7 +15,7 @@ const ASSISTANT_SETTING_KEY = 'aiAssistance_checkbox'
  * Also locks AI Assistance as a paid add-on on every package (allow_ai_assistance=0),
  * seeds michaelangelo-casanova-2 AI Assistance on only when that card has no saved choice, forces
  * push notification on for every package (allow_push_notification=1), and
- * enables Canva on every package except Free (allow_canva=1 / free=0), and
+ * enables Canva on every package (allow_canva=1; not plan-gated), and
  * syncs CRM onto every package (allow_crm=1; not plan-gated).
  */
 const seedPackages = async (): Promise<void> => {
@@ -115,7 +115,7 @@ const seedPackages = async (): Promise<void> => {
     logger.info(`Synced CRM package flag on ${seededCrm} package(s) (allow_crm=1 for all plans)`)
   }
 
-  // Canva: all paid packages on; Free only stays locked.
+  // Canva: included on every package (not plan-gated).
   const CANVA_FEATURE_KEY = 'allow_canva'
   let seededCanva = 0
   for (const pkg of packages) {
@@ -138,7 +138,7 @@ const seedPackages = async (): Promise<void> => {
     seededCanva += 1
   }
   if (seededCanva) {
-    logger.info(`Synced Canva package flag on ${seededCanva} package(s) (allow_canva; Free=0, others=1)`)
+    logger.info(`Synced Canva package flag on ${seededCanva} package(s) (allow_canva=1 for all plans)`)
   }
 
   const PUSH_FEATURE_KEY = 'allow_push_notification'

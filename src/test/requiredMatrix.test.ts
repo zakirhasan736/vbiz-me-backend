@@ -186,7 +186,7 @@ describe('required matrix: PACKAGES', () => {
     assert.equal(result.ownerMode, 'single')
     assert.equal(result.backOffice, 'single')
     assert.equal(result.limits.maxCards, 1)
-    assert.equal(result.access.allow_canva, false)
+    assert.equal(result.access.allow_canva, true)
     assert.match(profileRoute, /\/entitlements/)
   })
 
@@ -315,21 +315,22 @@ describe('required matrix: CORPORATE', () => {
     assert.equal(result.overrides.length, 0)
   })
 
-  it('Corporate override replaces global value', () => {
+  it('Corporate override replaces global value except mandatory Canva', () => {
     const result = buildEffectiveEntitlements({
       role: 'corporate-owner',
       pkg,
-      features: flags({ allow_canva: '1' }),
+      features: flags({ allow_canva: '1', allow_seo: '1' }),
       subscription: { id: 'sub', quantity: 15, endsAt: null },
-      overrides: flags({ allow_canva: '0' }),
+      overrides: flags({ allow_canva: '0', allow_seo: '0' }),
     })
-    assert.equal(result.access.allow_canva, false)
+    assert.equal(result.access.allow_canva, true)
+    assert.equal(result.access.allow_seo, false)
   })
 
-  it('keeps push notification on for every package even when the flag is off', () => {
+  it('keeps push notification and Canva on for every package even when the flag is off', () => {
     const free = entitlementsFromFeatures(flags({ allow_push_notification: '0', allow_canva: '0' }))
     assert.equal(free.allow_push_notification, true)
-    assert.equal(free.allow_canva, false)
+    assert.equal(free.allow_canva, true)
 
     const locked = buildEffectiveEntitlements({
       role: 'vcard-owner',
@@ -395,9 +396,9 @@ describe('required matrix: CORPORATE', () => {
 })
 
 describe('required matrix: SECURITY', () => {
-  it('Backend rejects unavailable feature even if frontend is bypassed', () => {
+  it('Backend keeps mandatory Canva available even when package flag is off', () => {
     const access = entitlementsFromFeatures(flags({ allow_canva: '0' }))
-    assert.equal(access.allow_canva, false)
+    assert.equal(access.allow_canva, true)
   })
 
   it('Numeric limits enforced', () => {
@@ -417,12 +418,13 @@ describe('required matrix: SECURITY', () => {
     const unpaid = buildEffectiveEntitlements({
       role: 'vcard-owner',
       pkg: { id: 'pro', slug: 'professional', name: 'Professional' },
-      features: flags({ allow_canva: '1' }),
+      features: flags({ allow_canva: '1', allow_seo: '1' }),
       subscription: { id: 'sub', endsAt: null, provider: 'stripe', stripeStatus: 'incomplete' },
     })
     assert.equal(unpaid.subscriptionActive, false)
     assert.equal(unpaid.subscriptionStatus, 'pending_payment')
-    assert.equal(unpaid.access.allow_canva, false)
+    assert.equal(unpaid.access.allow_canva, true)
+    assert.equal(unpaid.access.allow_seo, false)
   })
 })
 

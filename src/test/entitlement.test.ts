@@ -14,9 +14,9 @@ const flags = (rows: Record<string, string>) =>
   Object.entries(rows).map(([featureKey, featureValue]) => ({ featureKey, featureValue }))
 
 describe('Canva catalog flag', () => {
-  it('locks Free and unlocks every other package slug', () => {
-    assert.equal(catalogAllowCanvaValue('free'), '0')
-    assert.equal(catalogAllowCanvaValue('FREE'), '0')
+  it('includes Canva on every package slug', () => {
+    assert.equal(catalogAllowCanvaValue('free'), '1')
+    assert.equal(catalogAllowCanvaValue('FREE'), '1')
     assert.equal(catalogAllowCanvaValue('professional'), '1')
     assert.equal(catalogAllowCanvaValue('professional-concierge'), '1')
     assert.equal(catalogAllowCanvaValue('corporate'), '1')
@@ -37,7 +37,7 @@ describe('CRM catalog flag', () => {
 })
 
 describe('linked corporate member package inheritance', () => {
-  it('inherits Canva from the company plan and always keeps CRM on', () => {
+  it('inherits Canva from the company plan and always keeps CRM and Canva on', () => {
     const member = entitlementsFromFeatures(flags({ allow_canva: '0', allow_crm: '0' }), true)
     const parent = entitlementsFromFeatures(flags({ allow_canva: '1', allow_crm: '1', allow_seo: '1' }), true)
     const merged = mergeInheritedPackageAccess(member, parent)
@@ -45,11 +45,12 @@ describe('linked corporate member package inheritance', () => {
     assert.equal(merged.allow_canva, true)
     assert.equal(merged.allow_seo, true)
     assert.equal(member.allow_crm, true)
+    assert.equal(member.allow_canva, true)
   })
 
-  it('keeps CRM on even when the company plan flag row is off', () => {
+  it('keeps CRM and Canva on even when the company plan flag row is off', () => {
     const member = entitlementsFromFeatures(flags({ allow_crm: '0' }), true)
-    const parent = entitlementsFromFeatures(flags({ allow_crm: '0', allow_canva: '1' }), true)
+    const parent = entitlementsFromFeatures(flags({ allow_crm: '0', allow_canva: '0' }), true)
     const merged = mergeInheritedPackageAccess(member, parent)
     assert.equal(merged.allow_crm, true)
     assert.equal(merged.allow_canva, true)
@@ -76,7 +77,7 @@ describe('central entitlement service', () => {
     assert.equal(result.subscriptionStatus, 'active')
     assert.equal(result.subscriptionActive, true)
     assert.equal(result.limits.maxCards, 1)
-    assert.equal(result.access.allow_canva, false)
+    assert.equal(result.access.allow_canva, true)
     assert.equal(result.access.allow_seo, true)
     assert.equal(result.access.allow_crm, true)
     assert.equal(result.limits.maxCards, 1)
@@ -86,15 +87,16 @@ describe('central entitlement service', () => {
     const result = buildEffectiveEntitlements({
       role: 'corporate-owner',
       pkg: { id: 'pkg-free', slug: 'free', name: 'Free' },
-      features: flags({ max_cards: '1', allow_canva: '0' }),
+      features: flags({ max_cards: '1', allow_canva: '0', allow_seo: '0' }),
       subscription: { id: 'sub-free', quantity: 40, endsAt: null },
-      overrides: flags({ max_cards: '40', allow_canva: '1' }),
+      overrides: flags({ max_cards: '40', allow_seo: '1' }),
     })
     assert.equal(result.ownerMode, 'single')
     assert.equal(result.limits.maxCards, 1)
     assert.equal(result.access.allow_canva, true)
+    assert.equal(result.access.allow_seo, true)
     assert.equal(result.overrides.length, 1)
-    assert.equal(result.overrides[0]?.featureKey, 'allow_canva')
+    assert.equal(result.overrides[0]?.featureKey, 'allow_seo')
   })
 
   it('resolves Professional catalog entitlements as Single', () => {
@@ -185,18 +187,18 @@ describe('central entitlement service', () => {
     assert.equal(result.overrides.length, 0)
   })
 
-  it('replaces Corporate package features with account overrides', () => {
+  it('replaces Corporate package features with account overrides but keeps Canva mandatory', () => {
     const result = buildEffectiveEntitlements({
       role: 'corporate-owner',
       pkg: { id: 'pkg-corp', slug: 'corporate', name: 'Corporate' },
       features: flags({ allow_canva: '1', allow_seo: '1', max_file_size_mb: '10' }),
       subscription: { id: 'sub-corp', quantity: 15, endsAt: null },
-      overrides: flags({ allow_canva: '0', max_file_size_mb: '50' }),
+      overrides: flags({ allow_canva: '0', allow_seo: '0', max_file_size_mb: '50' }),
     })
-    assert.equal(result.access.allow_canva, false)
-    assert.equal(result.access.allow_seo, true)
+    assert.equal(result.access.allow_canva, true)
+    assert.equal(result.access.allow_seo, false)
     assert.equal(result.limits.maxFileSizeMb, 50)
-    assert.equal(result.overrides.length, 2)
+    assert.equal(result.overrides.length, 3)
   })
 
   it('restores Corporate package features when overrides are removed', () => {
@@ -206,7 +208,7 @@ describe('central entitlement service', () => {
       pkg: { id: 'pkg-corp', slug: 'corporate', name: 'Corporate' },
       features: catalog,
       subscription: { id: 'sub-corp', quantity: 15, endsAt: null },
-      overrides: flags({ allow_canva: '0', max_file_size_mb: '50' }),
+      overrides: flags({ allow_seo: '0', max_file_size_mb: '50' }),
     })
     const restored = buildEffectiveEntitlements({
       role: 'corporate-owner',
@@ -215,7 +217,7 @@ describe('central entitlement service', () => {
       subscription: { id: 'sub-corp', quantity: 15, endsAt: null },
       overrides: [],
     })
-    assert.equal(overridden.access.allow_canva, false)
+    assert.equal(overridden.access.allow_canva, true)
     assert.equal(overridden.limits.maxFileSizeMb, 50)
     assert.equal(restored.access.allow_canva, true)
     assert.equal(restored.limits.maxFileSizeMb, 10)
@@ -233,7 +235,7 @@ describe('central entitlement service', () => {
     assert.equal(result.subscriptionStatus, 'pending_payment')
     assert.equal(result.packageSlug, 'professional')
     assert.equal(result.backOffice, 'single')
-    assert.equal(result.access.allow_canva, false)
+    assert.equal(result.access.allow_canva, true)
     assert.equal(result.source, 'subscription')
     assert.equal(result.limits.maxCards, 3)
   })
@@ -264,13 +266,14 @@ describe('central entitlement service', () => {
     const result = buildEffectiveEntitlements({
       role: 'corporate-owner',
       pkg: { id: 'pkg-corp', slug: 'corporate', name: 'Corporate', ownerMode: 'corporate' },
-      features: flags({ max_cards: '25', allow_canva: '1' }),
+      features: flags({ max_cards: '25', allow_canva: '1', allow_seo: '1' }),
       subscription: { id: 'sub-corp', quantity: 10, endsAt: null, provider: 'admin', stripeStatus: 'active' },
-      overrides: flags({ max_cards: '99', allow_canva: '0' }),
+      overrides: flags({ max_cards: '99', allow_seo: '0' }),
       cardsUsed: 10,
     })
     assert.equal(result.limits.maxCards, 10)
-    assert.equal(result.access.allow_canva, false)
+    assert.equal(result.access.allow_canva, true)
+    assert.equal(result.access.allow_seo, false)
     assert.deepEqual(result.cardCapacity, { limit: 10, used: 10, remaining: 0 })
   })
 
@@ -290,7 +293,7 @@ describe('central entitlement service', () => {
     })
     assert.equal(result.subscriptionStatus, 'pending_payment')
     assert.equal(result.subscriptionActive, false)
-    assert.equal(result.access.allow_canva, false)
+    assert.equal(result.access.allow_canva, true)
     assert.equal(result.limits.maxCards, 25)
     assert.deepEqual(result.cardCapacity, { limit: 25, used: 0, remaining: 25 })
   })

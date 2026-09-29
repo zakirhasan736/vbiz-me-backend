@@ -10,7 +10,7 @@ export const PACKAGE_ACCESS_FEATURES = [
 ] as const
 
 /** Always included for every card owner — not sellable or lockable by package. */
-export const MANDATORY_PACKAGE_ACCESS_KEYS = ['allow_push_notification', 'allow_crm'] as const
+export const MANDATORY_PACKAGE_ACCESS_KEYS = ['allow_push_notification', 'allow_crm', 'allow_canva'] as const
 
 export type PackageAccessKey = (typeof PACKAGE_ACCESS_FEATURES)[number]['key']
 export type MandatoryPackageAccessKey = (typeof MANDATORY_PACKAGE_ACCESS_KEYS)[number]
@@ -100,13 +100,10 @@ export function entitlementsFromFeatures(
   return applyMandatoryPackageAccess(map)
 }
 
-/** Catalog rule: Canva on every package except Free. */
-export function catalogAllowCanvaValue(slug?: string | null): '0' | '1' {
-  return String(slug || '')
-    .trim()
-    .toLowerCase() === 'free'
-    ? '0'
-    : '1'
+/** Catalog rule: Canva is included on every package (not plan-gated). */
+export function catalogAllowCanvaValue(_slug?: string | null): '0' | '1' {
+  void _slug
+  return '1'
 }
 
 /** Catalog rule: CRM is included on every package (not plan-gated). */

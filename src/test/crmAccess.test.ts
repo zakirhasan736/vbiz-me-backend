@@ -52,7 +52,7 @@ describe('CRM package entitlement', () => {
     assert.equal(defaultAllowFlagValue('allow_seo'), '1')
   })
 
-  it('keeps Free CRM on with other Free locks', () => {
+  it('keeps Free CRM and Canva on with other Free locks', () => {
     const result = buildEffectiveEntitlements({
       role: 'vcard-owner',
       pkg: { id: 'pkg-free', slug: 'free', name: 'Free' },
@@ -60,7 +60,7 @@ describe('CRM package entitlement', () => {
       subscription: { id: 'sub-free', quantity: 1, endsAt: null },
     })
     assert.equal(result.access.allow_crm, true)
-    assert.equal(result.access.allow_canva, false)
+    assert.equal(result.access.allow_canva, true)
   })
 
   it('keeps CRM on for Professional', () => {
