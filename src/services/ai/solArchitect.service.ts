@@ -6,6 +6,7 @@ import {
   type MasterBusinessProfile,
 } from './businessProfile.schema'
 import { TAB_CATALOG } from './cardBlueprint.schema'
+import { CARD_BUILDER_MISSION } from './cardBuilderMission'
 import { detectSourceConflicts } from './conflictDetection'
 import { selectModelForTask } from './modelRouter.service'
 import { chatJson } from './openai.client'
@@ -57,7 +58,11 @@ export async function runSolArchitect(input: {
   const result = await chatJson<unknown>({
     tier: route.tier,
     temperature: 0.2,
-    system: `You are the vBiz Me card architect. ${MASTER_PROFILE_JSON_INSTRUCTION}
+    system: `You are the vBiz Me card architect.
+
+${CARD_BUILDER_MISSION}
+
+${MASTER_PROFILE_JSON_INSTRUCTION}
 
 Also return recommendedNavIds using ONLY these ids:
 ${catalog}
@@ -76,6 +81,7 @@ First understand the business thoroughly from ALL provided sources (website craw
 4. Verified reviews, projects, experience, certifications — only if present in sources.
 5. Real blog/news articles and portfolio/project pages from the crawl — copy titles, excerpts, URLs, and images. Likely FAQ topics and SEO opportunities from verified facts.
 6. Which EXISTING catalog tabs fit, which fields can be filled now, what must be asked of the owner, and what is required for a 90–100% ready card.
+7. Draft whyChooseUs, suggestedCta, and brandVoice from verified strengths only so content generation can finish a marketing-ready card.
 
 Owner-typed notes and OCR text outrank weaker website guesses when they conflict.
 Never invent tabs. Never invent phones, emails, licenses, awards, reviews, projects, or years in business.

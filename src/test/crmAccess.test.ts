@@ -6,6 +6,7 @@ import AppError from '../error/AppError'
 import {
   buildCrmExternalLeadMeta,
   crmOriginFromMeta,
+  guestSaveCrmContactableWhere,
   guestSaveDashboardVisibleWhere,
   guestSaveExternalWhere,
   guestSaveOriginWhere,
@@ -171,5 +172,21 @@ describe('CRM external lead origin', () => {
     assert.deepEqual(guestSaveOriginWhere('guest'), guestSaveDashboardVisibleWhere())
     assert.deepEqual(guestSaveOriginWhere('crm_external'), guestSaveExternalWhere())
     assert.deepEqual(guestSaveOriginWhere(), {})
+  })
+
+  it('CRM contactable filter keeps email/phone/named leads and drops anonymous Visitors', () => {
+    assert.deepEqual(guestSaveCrmContactableWhere(), {
+      OR: [
+        { email: { not: null } },
+        { phone: { not: null } },
+        {
+          AND: [
+            { fullName: { not: null } },
+            { NOT: { fullName: { equals: 'Visitor', mode: 'insensitive' } } },
+            { NOT: { fullName: { equals: '' } } },
+          ],
+        },
+      ],
+    })
   })
 })

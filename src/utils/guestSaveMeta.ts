@@ -166,6 +166,8 @@ export function leadMetadataFromGuestMeta(meta: unknown): {
   timezone: string
   approximateLocation: string
   referrer: string
+  guestId: string
+  ip: string
 } {
   const m = asRecord(meta)
   const ua = str(m.userAgent)
@@ -191,5 +193,41 @@ export function leadMetadataFromGuestMeta(meta: unknown): {
     timezone,
     approximateLocation,
     referrer: str(m.referrer) || 'Direct / QR',
+    guestId: str(m.guestId),
+    ip: str(m.ip),
   }
+}
+
+/** Prefer richer / known values when upserting the same guest save. */
+export function mergeGuestSaveMeta(existing: unknown, incoming: Record<string, unknown>): Record<string, unknown> {
+  const prev = asRecord(existing)
+  const merged: Record<string, unknown> = { ...prev, ...incoming }
+  const preferPrevWhenWeak = [
+    'userAgent',
+    'device',
+    'browser',
+    'timezone',
+    'approximateLocation',
+    'language',
+    'platform',
+    'screen',
+    'ip',
+    'guestId',
+    'cfCity',
+    'cfCountry',
+    'referrer',
+  ]
+  for (const key of preferPrevWhenWeak) {
+    const next = str(incoming[key])
+    const old = str(prev[key])
+    const weak =
+      !next ||
+      next === 'Unknown' ||
+      next === 'Unknown device' ||
+      next === 'Unknown browser' ||
+      next === '—' ||
+      next.startsWith('Approx.')
+    if (weak && old) merged[key] = prev[key]
+  }
+  return merged
 }

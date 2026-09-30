@@ -18,20 +18,22 @@ import {
 } from '../utils/corporateSiblingSync'
 
 describe('isSharedSettingKey', () => {
-  it('shares business tabs and SEO; keeps identity, portrait, and About Me personal', () => {
+  it('shares only custom-tab chrome; keeps personal, socials, Card Settings, and About Me per card', () => {
     assert.equal(isSharedSettingKey('tab_section_meta_json'), true)
     assert.equal(isSharedSettingKey('tab_label_overrides_json'), true)
     assert.equal(isSharedSettingKey('custom_tabs_json'), true)
-    assert.equal(isSharedSettingKey('display_settings_json'), true)
+    assert.equal(isSharedSettingKey('display_settings_json'), false)
     assert.equal(isSharedSettingKey('about_me_title'), false)
     assert.equal(isSharedSettingKey('about_me_featured_media_url'), false)
     assert.equal(isSharedSettingKey('profile_media_url'), false)
-    assert.equal(isSharedSettingKey('background_media_url'), true)
-    assert.equal(isSharedSettingKey('extra_fields_json'), true)
-    assert.equal(isSharedSettingKey('seo_meta_title'), true)
-    assert.equal(isSharedSettingKey('seo_image_url'), true)
-    assert.equal(isSharedSettingKey('game_ids_json'), true)
-    assert.equal(isSharedSettingKey('my_info_json'), true)
+    assert.equal(isSharedSettingKey('background_media_url'), false)
+    assert.equal(isSharedSettingKey('extra_fields_json'), false)
+    assert.equal(isSharedSettingKey('seo_meta_title'), false)
+    assert.equal(isSharedSettingKey('seo_image_url'), false)
+    assert.equal(isSharedSettingKey('game_ids_json'), false)
+    assert.equal(isSharedSettingKey('my_info_json'), false)
+    assert.equal(isSharedSettingKey('theme_json'), false)
+    assert.equal(isSharedSettingKey('aiAssistance_checkbox'), false)
     assert.equal(isSharedSettingKey('avatar'), false)
     assert.equal(isSharedSettingKey('avatar_url'), false)
     assert.equal(isSharedSettingKey('duplicated_from'), false)
@@ -61,16 +63,16 @@ describe('mergeDisplaySettingsKeepingPersonalMedia', () => {
 })
 
 describe('collection fan-out rules', () => {
-  it('syncs shared list tabs including socials and addresses', () => {
+  it('syncs business list tabs; keeps socials and addresses unique per linked card', () => {
     assert.equal(shouldFanOutCollection('services'), true)
     assert.equal(shouldFanOutCollection('reviews'), true)
     assert.equal(shouldFanOutCollection('portfolios'), true)
     assert.equal(shouldFanOutCollection('education'), true)
     assert.equal(shouldFanOutCollection('skillTags'), true)
-    assert.equal(shouldFanOutCollection('socialLinks'), true)
-    assert.equal(shouldFanOutCollection('addresses'), true)
-    assert.equal(isPersonalCollectionKind('socialLinks'), false)
-    assert.equal(isPersonalCollectionKind('addresses'), false)
+    assert.equal(shouldFanOutCollection('socialLinks'), false)
+    assert.equal(shouldFanOutCollection('addresses'), false)
+    assert.equal(isPersonalCollectionKind('socialLinks'), true)
+    assert.equal(isPersonalCollectionKind('addresses'), true)
     assert.equal(isPersonalCollectionKind('services'), false)
     assert.equal(isPersonalStorage('about_me'), true)
     assert.equal(isPersonalStorage('faq'), false)

@@ -151,6 +151,14 @@ const getLandingDemoCards = catchAsyncError(async (_req, res) => {
 
 const saveGuestUser = catchAsyncError(async (req, res) => {
   const body = req.body as Record<string, unknown>
+  const forwardedIp =
+    String(req.get('x-vbiz-client-ip') || '')
+      .split(',')[0]
+      ?.trim() ||
+    String(req.get('x-forwarded-for') || '')
+      .split(',')[0]
+      ?.trim() ||
+    ''
   const data = await publicCardService.saveGuestUser(
     {
       full_name: body.full_name != null ? String(body.full_name) : undefined,
@@ -161,10 +169,10 @@ const saveGuestUser = catchAsyncError(async (req, res) => {
       meta: body.meta,
     },
     {
-      ip: req.ip,
-      userAgent: req.get('user-agent') || undefined,
-      cfCity: req.get('cf-ipcity') || req.get('x-vercel-ip-city') || null,
-      cfCountry: req.get('cf-ipcountry') || req.get('x-vercel-ip-country') || null,
+      ip: forwardedIp || req.ip,
+      userAgent: req.get('x-vbiz-client-ua') || req.get('user-agent') || undefined,
+      cfCity: req.get('x-vbiz-cf-city') || req.get('cf-ipcity') || req.get('x-vercel-ip-city') || null,
+      cfCountry: req.get('x-vbiz-cf-country') || req.get('cf-ipcountry') || req.get('x-vercel-ip-country') || null,
     }
   )
   sendPublicResponse(res, { success: true, data })

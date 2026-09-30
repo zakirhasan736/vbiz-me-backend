@@ -93,7 +93,10 @@ export function decideRecommendedTabs(profile: MasterBusinessProfile): Recommend
   }
 
   if (profile.businessDescription) add('profile', 'A public profile/about section fits this business.', 'medium')
-  add('faq', 'A short FAQ helps visitors act without extra research.', 'low')
+  add('faq', 'A short FAQ helps visitors act without extra research.', 'medium')
+  if ((profile.services || []).length || profile.businessDescription) {
+    add('services', 'Primary services should be listed with benefit-focused descriptions.', 'high')
+  }
 
   const enabled: RecommendedTab[] = []
   let order = 1

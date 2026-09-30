@@ -120,8 +120,38 @@ export function isSharedDuplicateProfileField(key: string): boolean {
   return SHARED_DUPLICATE_PROFILE_FIELD_SET.has(key)
 }
 
-/** Live corporate sync must not overwrite another linked card's portrait. Duplicate-card clone may still copy it. */
-export const PERSONAL_LIVE_SYNC_PROFILE_FIELDS = new Set(['avatar'])
+/**
+ * Live corporate sync must not overwrite these on another linked card.
+ * Duplicate-card clone may still seed them; linked-card edits stay per card.
+ * Includes Personal Information, Social handles, and Card Settings template/theme.
+ */
+export const PERSONAL_LIVE_SYNC_PROFILE_FIELDS = new Set([
+  'avatar',
+  'companyName',
+  'designation',
+  'website',
+  'address',
+  'city',
+  'state',
+  'zipCode',
+  'prof',
+  'whatsapp',
+  'countryCode',
+  'facebook',
+  'instagram',
+  'twitter',
+  'tiktok',
+  'youtube',
+  'rumble',
+  'truth',
+  'linkedin',
+  'pinterest',
+  'colorCode',
+  'template',
+  'themeConfig',
+  'professionId',
+  'maritalStatusId',
+])
 
 export function isCorporateLiveSyncProfileField(key: string): boolean {
   return isSharedDuplicateProfileField(key) && !PERSONAL_LIVE_SYNC_PROFILE_FIELDS.has(key)

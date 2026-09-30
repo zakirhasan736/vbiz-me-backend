@@ -8,6 +8,7 @@ import {
   type CardBlueprint,
   type FillSectionId,
 } from './cardBlueprint.schema'
+import { CARD_BUILDER_MISSION, CARD_BUILDER_MISSION_COMPACT } from './cardBuilderMission'
 import {
   LUNA_DOCUMENT_FILL_SECTIONS,
   selectFillSectionModel,
@@ -60,7 +61,10 @@ export function profileToBlueprintFacts(
       profession: profile.industry || profile.businessType || '',
       address: profile.address || '',
       website: profile.website || social.website || '',
-      about: profile.businessDescription || '',
+      about: [profile.businessDescription, profile.whyChooseUs]
+        .map((part) => (part || '').trim())
+        .filter(Boolean)
+        .join('\n\n'),
     },
     socialHandles: {
       facebook: social.facebook || undefined,
@@ -113,10 +117,15 @@ export function profileToBlueprintFacts(
 }
 
 const CONTENT_SYSTEM = `You write professional vBiz Me card copy from a Master Business Profile.
+
+${CARD_BUILDER_MISSION}
+
 Rules:
 - Creative language is allowed. Creative facts are not.
-- Only claim things present in the profile.
-- Do not invent licenses, years, phone numbers, or awards.
+- Only claim things present in the profile (or clearly labeled sample testimonials when no real reviews exist).
+- Do not invent licenses, years, phone numbers, awards, prices, or locations.
+- About: rewrite polished About + include a "Why Choose Us" section and a fitting CTA close when space allows.
+- Services: every service needs a clear title plus benefit-focused description (not generic filler).
 - FAQs: keep every FAQ found in sources. If none exist, generate up to 5 from business topics. If some exist but fewer than 5, fill only the remaining slots.
 - Return JSON matching the vCard blueprint shape.
 - Prefer real testimonials already in the profile for reviews. If none exist, write realistic example testimonials from business topics (not suggestedTestimonialTemplates copied as verified quotes).
@@ -134,7 +143,7 @@ export async function generateCardContent(input: {
     tier: writing.tier === 'vision' ? 'terra' : writing.tier,
     temperature: 0.5,
     system: CONTENT_SYSTEM,
-    user: `Write card content from this Master Business Profile. Merge with the factual skeleton. ${input.instruction || ''}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}\n\nFACT SKELETON:\n${JSON.stringify(input.factBlueprint).slice(0, 12000)}`,
+    user: `Write a nearly complete card from this Master Business Profile. Merge with the factual skeleton. Fill polishable marketing fields (About, Services, FAQs). ${input.instruction || ''}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}\n\nFACT SKELETON:\n${JSON.stringify(input.factBlueprint).slice(0, 12000)}`,
   })
   await logChatMeta('content_generation', result.meta, {
     userId: input.userId,
@@ -158,10 +167,14 @@ export async function generateSectionFromProfile(input: {
     input.section === 'reviews'
       ? 'If verifiedReviews or existingTestimonials have real quotes, include ALL of them with no maximum. If they are empty, write up to 5 realistic example testimonials grounded in business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent licenses, prices, awards, or claim unverified named customers as factual quotes. Never copy suggestedTestimonialTemplates as verified reviews.'
       : input.section === 'faqs'
-        ? 'Keep every FAQ found in the profile or sources. If none exist, generate up to 5 helpful FAQs from business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent prices, hours, guarantees, or certifications.'
+        ? 'Keep every FAQ found in the profile or sources. If none exist, generate up to 5 helpful, realistic FAQs from business topics (not meaningless filler). If some exist but fewer than 5, fill only the remaining slots. Do not invent prices, hours, guarantees, or certifications.'
         : input.section === 'blogs'
           ? 'Keep every article found in the profile or sources. If none exist, draft up to 5 evergreen educational posts from business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent news events, dates, or awards.'
-          : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
+          : input.section === 'personal'
+            ? 'For about: write polished About + Why Choose Us + a fitting CTA close when facts allow. Match brand voice to the industry. Do not invent contact facts.'
+            : input.section === 'services'
+              ? 'Every service needs a clear title and a benefit-focused professional description. Prefer primary services from the website. Do not invent prices or guarantees.'
+              : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
   const seoRule =
     input.section === 'seo'
       ? 'For SEO, write a concise business-specific title and description from verified facts. Return 5-10 high-intent keywords about this business. Do not include vBiz Me platform keywords; those are added automatically. Never invent numeric search-volume claims.'
@@ -174,7 +187,7 @@ export async function generateSectionFromProfile(input: {
   const result = await chatJson<unknown>({
     tier: input.tier || (writing.tier === 'vision' ? 'luna' : writing.tier),
     temperature: 0.5,
-    system: `Fill one vCard section from the Master Business Profile only. Return ONLY JSON matching: ${schemaHint}. ${reviewRule} For services.type use ONLY: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
+    system: `${CARD_BUILDER_MISSION_COMPACT}\n\nFill one vCard section from the Master Business Profile only. Return ONLY JSON matching: ${schemaHint}. ${reviewRule} For services.type use ONLY: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
     user: `Section: ${input.section}\nUser instruction: ${input.instruction || '(none)'}\nCurrent draft (partial):\n${(input.currentDraft || '').slice(0, 6000)}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}`,
   })
   await logChatMeta(`fill_${input.section}`, result.meta, {

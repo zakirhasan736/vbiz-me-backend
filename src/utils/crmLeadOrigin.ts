@@ -54,6 +54,26 @@ export function guestSaveOriginWhere(origin?: CrmLeadOrigin | null): Prisma.Gues
   return {}
 }
 
+/**
+ * CRM-only: exclude anonymous "Visitor" saves with no way to contact them.
+ * Backoffice / admin leads keep those rows via {@link guestSaveDashboardVisibleWhere}.
+ */
+export function guestSaveCrmContactableWhere(): Prisma.GuestUserDataWhereInput {
+  return {
+    OR: [
+      { email: { not: null } },
+      { phone: { not: null } },
+      {
+        AND: [
+          { fullName: { not: null } },
+          { NOT: { fullName: { equals: 'Visitor', mode: 'insensitive' } } },
+          { NOT: { fullName: { equals: '' } } },
+        ],
+      },
+    ],
+  }
+}
+
 export function buildCrmExternalLeadMeta(notes?: string | null): Prisma.InputJsonValue {
   const trimmed = notes?.trim()
   const meta: Prisma.JsonObject = {

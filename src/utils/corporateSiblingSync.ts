@@ -7,7 +7,6 @@ import {
   cloneRecord,
   isCorporateLiveSyncProfileField,
   isSharedProfileFieldValuePresent,
-  mergeMyInfoKeepingPersonalContacts,
   omitCloneKeys,
   PERSONAL_IDENTITY_SETTING_KEYS,
   POST_STYLE_CLONE_SELECT,
@@ -28,8 +27,11 @@ import {
 
 const syncLock = new AsyncLocalStorage<boolean>()
 
-/** Duplicate-card identity only — no list tabs stay personal. */
-export const PERSONAL_COLLECTION_KINDS = new Set<string>()
+/**
+ * List tabs unique per linked card (Personal / Socials).
+ * Business tabs (services, portfolio, etc.) still fan out.
+ */
+export const PERSONAL_COLLECTION_KINDS = new Set(['socialLinks', 'addresses'])
 
 /** About Me stays unique on each linked card. */
 export const PERSONAL_STORAGES = new Set(['about_me'])
@@ -45,16 +47,12 @@ export const PERSONAL_PROFILE_MEDIA_SETTING_KEYS = [
 
 const PERSONAL_DISPLAY_MEDIA_FIELDS = ['Profile Image/Video'] as const
 
-const PERSONAL_SETTING_KEYS = new Set([
-  ...PERSONAL_IDENTITY_SETTING_KEYS,
-  ...PERSONAL_PROFILE_MEDIA_SETTING_KEYS,
-  'about_me_title',
-  'about_me_featured_media_url',
-  'about_me_status',
-  'about_me_featured_media_focus_y',
-])
-
-const PERSONAL_SETTING_PREFIXES = ['about_me_']
+/**
+ * Only these Setting keys fan out across linked corporate cards.
+ * Everything else (Personal/My Info, Socials & Games, Card Settings General/Home/
+ * Social links/Integration/Template/SEO, About Me, portrait) stays per card.
+ */
+const SHARED_SETTING_KEYS = new Set(['custom_tabs_json', 'tab_section_meta_json', 'tab_label_overrides_json'])
 
 const COLLECTION_MODELS: Record<string, string[]> = {
   education: ['education'],
@@ -66,6 +64,8 @@ const COLLECTION_MODELS: Record<string, string[]> = {
   socialLinks: ['socialLink'],
   addresses: ['address'],
 }
+
+const PERSONAL_LIST_MODELS = new Set([...PERSONAL_COLLECTION_KINDS].flatMap((kind) => COLLECTION_MODELS[kind] || []))
 
 const STORAGE_EXTRA_MODELS: Record<string, string[]> = {
   gallery: ['gallery', 'portfolio'],
@@ -100,12 +100,7 @@ export type SharedSyncOptions = {
   settingHadValue?: Record<string, boolean>
 }
 
-const JSON_SHARED_SETTING_KEYS = new Set([
-  'custom_tabs_json',
-  'display_settings_json',
-  'tab_section_meta_json',
-  'tab_label_overrides_json',
-])
+const JSON_SHARED_SETTING_KEYS = new Set(['custom_tabs_json', 'tab_section_meta_json', 'tab_label_overrides_json'])
 
 export function isSparseSharedSettingValue(key: string, value: string | null | undefined): boolean {
   if (value == null || !String(value).trim()) return true
@@ -154,8 +149,8 @@ export function shouldFanOutCollection(kind: string): boolean {
 export function isSharedSettingKey(key: string): boolean {
   const trimmed = key.trim()
   if (!trimmed) return false
-  if (PERSONAL_SETTING_KEYS.has(trimmed)) return false
-  return !PERSONAL_SETTING_PREFIXES.some((prefix) => trimmed.startsWith(prefix))
+  if (PERSONAL_IDENTITY_SETTING_KEYS.has(trimmed)) return false
+  return SHARED_SETTING_KEYS.has(trimmed)
 }
 
 export function storageToPrismaModel(storage: string): string {
@@ -645,11 +640,7 @@ const copySharedSettings = async (
   if (!sharedKeys.length) return
 
   const needsIdMap = sharedKeys.some(
-    (key) =>
-      key === 'custom_tabs_json' ||
-      key === 'display_settings_json' ||
-      key === 'tab_section_meta_json' ||
-      key === 'tab_label_overrides_json'
+    (key) => key === 'custom_tabs_json' || key === 'tab_section_meta_json' || key === 'tab_label_overrides_json'
   )
   const idMap = needsIdMap ? await buildCustomTabIdMap(sourceProfileId, targetProfileId) : new Map<string, string>()
 
@@ -671,26 +662,10 @@ const copySharedSettings = async (
     ) {
       continue
     }
-    let value =
-      key === 'display_settings_json' || key === 'tab_section_meta_json' || key === 'tab_label_overrides_json'
+    const value =
+      key === 'tab_section_meta_json' || key === 'tab_label_overrides_json'
         ? remapSharedSettingIds(raw as string, idMap)
         : (raw as string)
-    if (key === 'display_settings_json') {
-      const existing = await prisma.setting.findFirst({
-        where: { profileId: targetProfileId, key: 'display_settings_json' },
-        select: { value: true },
-      })
-      value = mergeDisplaySettingsKeepingPersonalMedia(value, existing?.value)
-    }
-    if (key === 'my_info_json') {
-      const existing = await prisma.setting.findFirst({
-        where: { profileId: targetProfileId, key: 'my_info_json' },
-        select: { value: true },
-      })
-      const merged = mergeMyInfoKeepingPersonalContacts(value, existing?.value)
-      if (merged === undefined) continue
-      value = merged
-    }
     await prisma.setting.upsert({
       where: { profileId_key: { profileId: targetProfileId, key } },
       create: { profileId: targetProfileId, key, value },
@@ -868,8 +843,8 @@ const applyScopeToSibling = async (
   }
 
   if (scope.type === 'fullShared') {
+    // Business content only — personal info, socials, Card Settings, About Me stay on each card.
     await copySharedProfileFields(sourceProfileId, siblingId, undefined, options)
-    await copySharedProfileSettings(sourceProfileId, siblingId, options)
     const settingRows = await prisma.setting.findMany({
       where: { profileId: sourceProfileId },
       select: { key: true },
@@ -882,6 +857,7 @@ const applyScopeToSibling = async (
       options
     )
     for (const model of SHARED_DUPLICATE_LIST_MODELS) {
+      if (PERSONAL_LIST_MODELS.has(model)) continue
       await replaceModelRows(sourceProfileId, siblingId, model, {}, options)
     }
     await replacePosts(sourceProfileId, siblingId, null, options)
@@ -894,7 +870,9 @@ export async function syncCorporateSiblingSharedContent(
   options: SharedSyncOptions = {}
 ): Promise<{ siblingCount: number }> {
   if (isCorporateSiblingSyncRunning()) return { siblingCount: 0 }
+  // Per-card identity / Card Settings — never fan out across linked cards.
   if (scope.type === 'aboutMe') return { siblingCount: 0 }
+  if (scope.type === 'profileSettings') return { siblingCount: 0 }
   if (scope.type === 'storage' && isPersonalStorage(scope.storage)) return { siblingCount: 0 }
   if (scope.type === 'collection' && !shouldFanOutCollection(scope.kind)) return { siblingCount: 0 }
   if (scope.type === 'settings') {

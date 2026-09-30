@@ -4,6 +4,7 @@ import {
   masterBusinessProfileSchema,
   type MasterBusinessProfile,
 } from './businessProfile.schema'
+import { CARD_BUILDER_MISSION_COMPACT } from './cardBuilderMission'
 import { detectSourceConflicts } from './conflictDetection'
 import { assessComplexity, routeAiTier, type AiTier } from './modelRouter.service'
 import { chatJson } from './openai.client'
@@ -42,7 +43,7 @@ export async function analyzeMasterProfile(input: {
     const result = await chatJson<unknown>({
       tier,
       temperature: 0.2,
-      system: `You are a factual business analyst for vBiz Me digital cards. ${MASTER_PROFILE_JSON_INSTRUCTION}`,
+      system: `You are a factual business analyst for vBiz Me digital cards. ${CARD_BUILDER_MISSION_COMPACT} ${MASTER_PROFILE_JSON_INSTRUCTION}`,
       user: `${extra || ''}\nAnalyze these sources and extract a Master Business Profile.\n\n${sourcePrompt(input.normalized)}`,
       images: input.normalized.images.slice(0, 4),
     })

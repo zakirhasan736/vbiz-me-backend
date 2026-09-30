@@ -20,7 +20,8 @@ import { PUBLIC_ATTACHMENT_KIND_ALIASES, sameMediaUrl, scoreAttachmentTypeName }
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { CRM_LEAD_ORIGIN_GUEST } from '../utils/crmLeadOrigin'
 import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
-import { enrichGuestSaveMeta } from '../utils/guestSaveMeta'
+import { enrichGuestSaveMeta, mergeGuestSaveMeta } from '../utils/guestSaveMeta'
+import { resolveLiveAgentGreetingHostName } from '../utils/liveAgentGreeting'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
@@ -987,6 +988,8 @@ const getProfileAiData = async (profileId: string) => {
       portfolios: { where: { status: 1 }, orderBy: { sortOrder: 'asc' } },
       skillTags: { orderBy: { sortOrder: 'asc' } },
       socialLinks: { orderBy: { sortOrder: 'asc' } },
+      user: { select: { id: true, name: true, role: true } },
+      companyUser: { select: { id: true, name: true, role: true } },
     },
   })
   if (!profile) throw new AppError(404, 'Profile not found')
@@ -1010,9 +1013,18 @@ const getProfileAiData = async (profileId: string) => {
     return d.toISOString().slice(0, 10)
   }
 
+  const greetingHostName = resolveLiveAgentGreetingHostName({
+    cardName: profile.name,
+    lastName: profile.lastName,
+    user: profile.user,
+    companyUser: profile.companyUser,
+  })
+
   return {
+    profileId: profile.id,
     slug: profile.slug,
     ownerName: profile.name,
+    greetingHostName,
     title: profile.prof || profile.designation,
     profession: profile.profession?.name || profile.prof,
     company: profile.companyName,
@@ -2211,9 +2223,14 @@ const saveGuestUser = async (
     cfCity: requestMeta?.cfCity || null,
     cfCountry: requestMeta?.cfCountry || null,
   })
-  const meta = {
+  const deviceFingerprint =
+    !guestId && enriched.ip && enriched.userAgent
+      ? `fp:${String(enriched.ip).slice(0, 64)}|${String(enriched.userAgent).slice(0, 180)}`
+      : ''
+  const metaBase = {
     ...enriched,
     ...(guestId ? { guestId } : {}),
+    ...(deviceFingerprint ? { deviceFingerprint } : {}),
     // Stamp guest origin so dashboard/admin filters include this row (never CRM-external).
     crmOrigin: CRM_LEAD_ORIGIN_GUEST,
     profileId: profile.id,
@@ -2232,8 +2249,19 @@ const saveGuestUser = async (
         orderBy: { createdAt: 'desc' },
       })
     : null
-  const existingByEmail =
+  const existingByFingerprint =
     existingByGuest ||
+    (deviceFingerprint
+      ? await prisma.guestUserData.findFirst({
+          where: {
+            profileId: profile.id,
+            meta: { path: ['deviceFingerprint'], equals: deviceFingerprint },
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+      : null)
+  const existingByEmail =
+    existingByFingerprint ||
     (email
       ? await prisma.guestUserData.findFirst({
           where: {
@@ -2244,15 +2272,18 @@ const saveGuestUser = async (
         })
       : null)
 
+  const existing = existingByEmail
+  const meta = mergeGuestSaveMeta(existing?.meta, metaBase) as Prisma.InputJsonValue
+
   const guestFields = {
-    fullName: fullName || existingByEmail?.fullName?.trim() || 'Visitor',
-    phone: phone || existingByEmail?.phone || null,
-    email: email || existingByEmail?.email || null,
+    fullName: fullName || existing?.fullName?.trim() || 'Visitor',
+    phone: phone || existing?.phone || null,
+    email: email || existing?.email || null,
   }
 
-  if (existingByEmail) {
+  if (existing) {
     const updated = await prisma.guestUserData.update({
-      where: { id: existingByEmail.id },
+      where: { id: existing.id },
       data: {
         ...guestFields,
         meta,

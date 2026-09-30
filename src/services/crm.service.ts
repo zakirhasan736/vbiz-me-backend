@@ -3,6 +3,7 @@ import config from '../configs/config'
 import AppError from '../error/AppError'
 import {
   buildCrmExternalLeadMeta,
+  guestSaveCrmContactableWhere,
   guestSaveExternalWhere,
   guestSaveOriginWhere,
   type CrmLeadOrigin,
@@ -96,14 +97,24 @@ async function countLeadMeetingsAndEvents(leadIds: string[]): Promise<{
   return { meetings, events }
 }
 
-/** One person per email; same email on many cards → one row with `cards`. No email → one row per save. */
+/** One person per email/guest; same identity on many cards → one row with `cards`. */
+function leadIdentityKey(row: CrmLeadCountRow): string {
+  const email = normalizeLeadEmail(row.email)
+  if (email) return `email:${email}`
+  const guestId = row.metadata?.guestId?.trim()
+  if (guestId) return `guest:${guestId}`
+  const ip = row.metadata?.ip?.trim()
+  const ua = row.metadata?.userAgent?.trim()
+  if (ip && ua) return `fp:${ip}|${ua.slice(0, 120)}`
+  return `id:${row.id}`
+}
+
 function groupCrmLeadsByEmail(rows: CrmLeadCountRow[]): CrmLeadRow[] {
   const buckets = new Map<string, CrmLeadCountRow[]>()
   const order: string[] = []
 
   for (const row of rows) {
-    const email = normalizeLeadEmail(row.email)
-    const key = email || `id:${row.id}`
+    const key = leadIdentityKey(row)
     const bucket = buckets.get(key)
     if (bucket) bucket.push(row)
     else {
@@ -114,10 +125,11 @@ function groupCrmLeadsByEmail(rows: CrmLeadCountRow[]): CrmLeadRow[] {
 
   return order.map((key) => {
     const list = buckets.get(key) || []
-    const primary = list[0]
+    const primary = [...list].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0] || list[0]
     const cardsByProfile = new Map<string, CrmLeadCardRef>()
     for (const row of list) {
-      if (cardsByProfile.has(row.vCardId)) continue
+      const existing = cardsByProfile.get(row.vCardId)
+      if (existing && existing.submittedAt >= row.submittedAt) continue
       cardsByProfile.set(row.vCardId, {
         leadId: row.id,
         profileId: row.vCardId,
@@ -162,6 +174,8 @@ export async function listCrmLeads(
   const where: Prisma.GuestUserDataWhereInput = {
     ...scopedProfileFilter(access.profileIds, query.profileId),
     ...guestSaveOriginWhere(query.origin),
+    // Anonymous "Visitor" saves (no name/email/phone) stay on backoffice only.
+    ...guestSaveCrmContactableWhere(),
     ...(tokens.length
       ? {
           AND: tokens.map((token) => {
@@ -315,6 +329,7 @@ export async function getCrmDashboard(actor: CrmActor) {
 
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
   const profileFilter = access.profileIds === null ? {} : { profileId: { in: access.profileIds } }
+  const crmLeadFilter = { ...profileFilter, ...guestSaveCrmContactableWhere() }
 
   const [
     openLeads,
@@ -327,8 +342,8 @@ export async function getCrmDashboard(actor: CrmActor) {
     upcomingWorkNotes,
     overdueWorkNotes,
   ] = await Promise.all([
-    prisma.guestUserData.count({ where: profileFilter }),
-    prisma.guestUserData.count({ where: { ...profileFilter, createdAt: { gte: since } } }),
+    prisma.guestUserData.count({ where: crmLeadFilter }),
+    prisma.guestUserData.count({ where: { ...crmLeadFilter, createdAt: { gte: since } } }),
     prisma.guestUserData.count({ where: { ...profileFilter, ...guestSaveExternalWhere() } }),
     countWorkNotesForActor(actor, access),
     countOpenWorkNotesForActor(actor, access),
@@ -650,29 +665,21 @@ export async function searchSchedulePeople(
     }
   }
 
-  const guestWhere =
-    access.profileIds === null
-      ? q.length >= 2
-        ? {
-            OR: [
-              { fullName: { contains: q, mode: 'insensitive' as const } },
-              { email: { contains: q, mode: 'insensitive' as const } },
-              { phone: { contains: q, mode: 'insensitive' as const } },
-            ],
-          }
-        : {}
-      : {
-          profileId: { in: access.profileIds },
-          ...(q.length >= 2
-            ? {
-                OR: [
-                  { fullName: { contains: q, mode: 'insensitive' as const } },
-                  { email: { contains: q, mode: 'insensitive' as const } },
-                  { phone: { contains: q, mode: 'insensitive' as const } },
-                ],
-              }
-            : {}),
+  const guestSearch =
+    q.length >= 2
+      ? {
+          OR: [
+            { fullName: { contains: q, mode: 'insensitive' as const } },
+            { email: { contains: q, mode: 'insensitive' as const } },
+            { phone: { contains: q, mode: 'insensitive' as const } },
+          ],
         }
+      : {}
+  const guestWhere: Prisma.GuestUserDataWhereInput = {
+    ...(access.profileIds === null ? {} : { profileId: { in: access.profileIds } }),
+    ...guestSaveCrmContactableWhere(),
+    ...guestSearch,
+  }
 
   const guests = await prisma.guestUserData.findMany({
     where: guestWhere,

@@ -160,8 +160,13 @@ const FIELD_DEFS: FieldDef[] = [
     fieldLabel: 'About',
     aiGenerationAllowed: true,
     recommendedTier: 'TERRA',
-    prompt: 'A professional About section from verified business facts only.',
-    getValue: (p) => p.businessDescription,
+    prompt:
+      'Write a professional About section that explains who they are, what they do, who they help, and what makes them different. Rewrite website copy so it is polished and persuasive. Include a clear Why Choose Us block and a fitting call-to-action close when facts allow. Match brand voice to the industry. Never invent years, awards, licenses, prices, or locations.',
+    getValue: (p) =>
+      [p.businessDescription, p.whyChooseUs, p.suggestedCta ? `CTA: ${p.suggestedCta}` : '']
+        .map((part) => (part || '').trim())
+        .filter(Boolean)
+        .join('\n\n'),
     minChars: 80,
   },
   {
@@ -172,7 +177,8 @@ const FIELD_DEFS: FieldDef[] = [
     special: 'services',
     aiGenerationAllowed: true,
     recommendedTier: 'TERRA',
-    prompt: 'Service names must come from sources. Descriptions may be written from verified facts.',
+    prompt:
+      'Service names must come from sources. For each service write a clear title plus a professional benefit-focused description (what it is + why the customer cares). Avoid generic filler. Prefer authentic image URLs from sources when present.',
     getValue: (p) => p.services,
   },
   {
@@ -184,7 +190,7 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'LUNA',
     prompt:
-      'FAQs must be answerable from verified facts. Do not invent policies. Keep every FAQ found in sources. If none exist, generate up to 5 from business topics. If some exist but fewer than 5, fill only the remaining slots.',
+      'Generate relevant FAQs potential customers would realistically ask about this business, industry, and services. Include both question and helpful answer. Keep every FAQ found in sources. If none exist, generate up to 5 strong FAQs (not meaningless filler). If some exist but fewer than 5, fill only the remaining slots. Do not invent policies, prices, guarantees, or certifications.',
     getValue: () => [],
   },
   {

@@ -86,6 +86,9 @@ export const masterBusinessProfileSchema = z.object({
   industry: nullableString,
   businessType: nullableString,
   businessDescription: nullableString,
+  whyChooseUs: nullableString,
+  suggestedCta: nullableString,
+  brandVoice: nullableString,
   phone: nullableString,
   email: nullableString,
   website: nullableString,
@@ -226,6 +229,8 @@ export const MASTER_PROFILE_JSON_INSTRUCTION = `Return ONLY JSON for a Master Bu
 - Owner-provided / pasted business text is high-trust. OCR document text is high-trust for contact and offerings.
 - Read every crawled page. If the site has blog/news/article pages, put real posts in blogs[]. If it has portfolio/project pages, put them in portfolio[]. Keep titles, excerpts, URLs, and image URLs when present. Do not invent extra articles.
 - If sources say SELLER / VENDOR / STOREFRONT MODE: treat the URL as that person's seller page. Prefer seller/owner identity over the parent marketplace brand. Put catalog items into services[] and products[], and authentic product photos into portfolio[] using IMAGES: URLs when present.
+- Also prepare marketing fields when facts allow: businessDescription (polished About draft), whyChooseUs (customer-benefit differentiators from verified strengths only), suggestedCta (best-fit CTA phrase), brandVoice (short label like "professional trustworthy" or "confident approachable").
+- Completeness: populate every field you can support from sources. Do not leave polishable marketing fields empty when the business is clear.
 
 Shape:
 {
@@ -236,6 +241,9 @@ Shape:
   "industry": null,
   "businessType": null,
   "businessDescription": null,
+  "whyChooseUs": null,
+  "suggestedCta": null,
+  "brandVoice": null,
   "phone": null,
   "email": null,
   "website": null,

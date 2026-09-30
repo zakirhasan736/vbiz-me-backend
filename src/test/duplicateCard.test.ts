@@ -22,7 +22,7 @@ import {
 } from '../utils/duplicateCard'
 
 describe('duplicate vs linked-card identity contract', () => {
-  it('treats only owner identity as personal and copies the rest', () => {
+  it('keeps personal info and socials off live linked-card sync', () => {
     assert.deepEqual(
       [...DUPLICATED_IDENTITY_PROFILE_FIELDS],
       ['name', 'lastName', 'slug', 'dob', 'email', 'phone', 'genderId']
@@ -31,7 +31,11 @@ describe('duplicate vs linked-card identity contract', () => {
     assert.equal(isSharedDuplicateProfileField('whatsapp'), true)
     assert.equal(isSharedDuplicateProfileField('avatar'), true)
     assert.equal(isCorporateLiveSyncProfileField('avatar'), false)
-    assert.equal(isCorporateLiveSyncProfileField('companyName'), true)
+    assert.equal(isCorporateLiveSyncProfileField('companyName'), false)
+    assert.equal(isCorporateLiveSyncProfileField('whatsapp'), false)
+    assert.equal(isCorporateLiveSyncProfileField('facebook'), false)
+    assert.equal(isCorporateLiveSyncProfileField('template'), false)
+    assert.equal(isCorporateLiveSyncProfileField('isEmploy'), true)
     assert.equal(isSharedDuplicateProfileField('website'), true)
     assert.equal(isSharedDuplicateProfileField('about'), false)
     assert.equal(isSharedDuplicateProfileField('name'), false)

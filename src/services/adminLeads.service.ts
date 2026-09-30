@@ -15,6 +15,8 @@ export type LeadMetadata = {
   timezone: string
   approximateLocation: string
   referrer: string
+  guestId?: string
+  ip?: string
 }
 
 export type AdminLeadRow = {
@@ -69,6 +71,8 @@ const EMPTY_METADATA: LeadMetadata = {
   timezone: '',
   approximateLocation: '',
   referrer: '',
+  guestId: '',
+  ip: '',
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -139,13 +143,16 @@ export function mapGuestSave(row: {
 }): AdminLeadRow {
   const admin = readAdminMeta(row.meta)
   const owner = ownerFromProfile(row.profile)
+  const metaRec = asRecord(row.meta)
+  const submittedFromMeta =
+    typeof metaRec.submittedAt === 'string' && metaRec.submittedAt.trim() ? metaRec.submittedAt.trim() : ''
   return {
     id: row.id,
     fullName: row.fullName || 'Unnamed',
     phoneNumber: row.phone || '',
     email: row.email || '',
     privateNotes: admin.privateNotes,
-    submittedAt: row.createdAt.toISOString(),
+    submittedAt: submittedFromMeta || row.createdAt.toISOString(),
     vCardId: row.profileId,
     vCardSlug: row.profile.slug || '',
     vCardName: row.profile.name || '',
