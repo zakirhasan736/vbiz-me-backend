@@ -361,31 +361,54 @@ async function sendMeetingEmails(input: {
   }
 }
 
-function notifyOwnerPush(meeting: MeetingRow, _meetLabel: string, onlyBackoffice = false) {
-  // Backoffice-only schedules stay in the owner banner / inbox — no public-card subscriber push.
-  if (onlyBackoffice) return
-
-  const meetSuffix = meeting.meetLink ? ` Join link included.` : ''
-  const payload = {
+function meetingAlertPayload(meeting: MeetingRow) {
+  const meetSuffix = meeting.meetLink ? ' Open the notification to join.' : ''
+  return {
     title: `Upcoming session: ${meeting.type}`,
     body: `${meeting.type} on ${meeting.date} at ${meeting.time}.${meetSuffix}`,
-    type: 'event_updates' as const,
+    type: 'meeting_alert' as const,
     url: meeting.meetLink || undefined,
   }
+}
 
-  if (meeting.scope === 'global') {
-    return
-  }
-
+/** Card on the meeting, plus any account that matches the owner or guest email and already allowed push. */
+async function profileIdsForMeetingPush(meeting: MeetingRow, emails: string[]) {
+  const ids = new Set<string>()
   if (meeting.scope === 'group') {
-    for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) {
-      pushService.notifyProfileUpdate(profileId, payload)
-    }
-    return
+    for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) ids.add(profileId)
+  } else if (meeting.profileId) {
+    ids.add(meeting.profileId)
   }
 
-  if (!meeting.profileId) return
-  pushService.notifyProfileUpdate(meeting.profileId, payload)
+  const normalized = [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))]
+  if (!normalized.length) return [...ids]
+
+  const users = await prisma.user.findMany({
+    where: { email: { in: normalized } },
+    select: { id: true },
+  })
+  const userIds = users.map((user) => user.id)
+  const profiles = await prisma.profile.findMany({
+    where: {
+      OR: [
+        { email: { in: normalized } },
+        ...(userIds.length ? [{ userId: { in: userIds } }, { companyUserId: { in: userIds } }] : []),
+      ],
+    },
+    select: { id: true },
+  })
+  for (const profile of profiles) ids.add(profile.id)
+  return [...ids]
+}
+
+async function notifyOwnerPush(meeting: MeetingRow, emails: string[] = []) {
+  if (meeting.scope === 'global') return
+
+  const payload = meetingAlertPayload(meeting)
+  const profileIds = await profileIdsForMeetingPush(meeting, emails)
+  for (const profileId of profileIds) {
+    pushService.notifyProfileUpdate(profileId, payload)
+  }
 }
 
 async function resolveOwnerEmailsForMeeting(meeting: MeetingRow): Promise<{
@@ -433,7 +456,9 @@ async function notifyOwnerAnnouncement(
         meetLink: meeting.meetLink || '',
         category: 'event',
         meetingScope: meeting.scope,
-        ...(onlyBackoffice ? { onlyBackoffice: '1' } : { sendPush: '1' }),
+        ...(onlyBackoffice ? { onlyBackoffice: '1' } : {}),
+        // Device alerts are sent directly so a private card or a muted "events" toggle cannot drop them.
+        sendPush: '0',
       },
     })
   } catch (error) {
@@ -463,7 +488,7 @@ async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel
   const displayName = guest.name || ownerDisplayName
 
   await notifyOwnerAnnouncement(actor, meeting, receiverEmails, meetLabel, onlyBackoffice)
-  notifyOwnerPush(meeting, meetLabel, onlyBackoffice)
+  await notifyOwnerPush(meeting, receiverEmails)
   if (receiverEmails.length) {
     void sendMeetingEmails({
       meeting,

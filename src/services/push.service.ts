@@ -436,9 +436,12 @@ const buildProfilePayload = async (
     where: { id: profileId },
     select: { ...profileMediaSelect, isPublic: true },
   })
-  if (!profile?.isPublic || !profile.slug) return null
+  // Meeting alerts are operational. A private or unpublished card can still
+  // have devices that allowed notifications, and those devices must receive them.
+  const meetingAlert = partial.type === 'meeting_alert'
+  if (!profile || (!meetingAlert && (!profile.isPublic || !profile.slug))) return null
 
-  const businessName = profile.companyName || profile.name || profile.slug
+  const businessName = profile.companyName || profile.name || profile.slug || 'vBiz Me'
   const media = mediaFromProfile(profile)
   const icon = stillImageUrl(partial.icon) || media.icon
   const badge = stillImageUrl(partial.badge) || icon
@@ -449,7 +452,7 @@ const buildProfilePayload = async (
     title: partial.title,
     body: partial.body,
     type: partial.type,
-    slug: partial.slug || profile.slug,
+    slug: partial.slug || profile.slug || undefined,
     url: partial.url || (profile.slug ? buildFrontendPublicCardPath(profile.slug) : '/'),
     businessName: partial.businessName || businessName,
     icon,

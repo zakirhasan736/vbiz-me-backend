@@ -430,7 +430,7 @@ function notifyCardPush(
   pushService.notifyProfileUpdate(profileId, {
     title: payload.title,
     body: payload.body,
-    type: 'event_updates',
+    type: 'meeting_alert',
     url: payload.url || (slug ? buildFrontendPublicCardPath(slug) : undefined),
   })
 }
@@ -483,7 +483,7 @@ async function pushGuestMeetingNotification(opts: {
   pushService.notifyProfileUpdate(opts.guestProfileId, {
     title,
     body,
-    type: 'event_updates',
+    type: 'meeting_alert',
     url: opts.meetingUrl || undefined,
   })
   return { sent: true as const, reason: 'ok' as const }
