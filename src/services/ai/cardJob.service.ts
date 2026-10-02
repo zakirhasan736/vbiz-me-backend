@@ -26,7 +26,7 @@ import {
 } from './cardSession.store'
 import { buildCompletenessReport } from './completeness.service'
 import { generateSectionFromProfile } from './contentGenerator.service'
-import { hashBuffer, type UploadedPart } from './extractDocumentText'
+import { hashBuffer, isUnreadDocumentPlaceholder, type UploadedPart } from './extractDocumentText'
 import { applyUserFieldValue, generateFieldCopy, skipField, type FieldAction } from './fieldCompletion.service'
 import {
   applyExistingCardToProfile,
@@ -422,11 +422,12 @@ async function runExtractAndArchitecture(jobId: string) {
           crawlMode: work?.crawlMode,
         })
 
+    const readableDoc = (text: string) => Boolean(text.trim()) && !isUnreadDocumentPlaceholder(text)
     const hasOtherSource =
       Boolean(businessText) ||
       Boolean(existingCard) ||
-      normalized.documents.some((doc) => doc.text.trim()) ||
-      normalized.ocrResults.some((doc) => doc.text.trim())
+      normalized.documents.some((doc) => readableDoc(doc.text)) ||
+      normalized.ocrResults.some((doc) => readableDoc(doc.text))
     if (normalized.website.scrapeFailed && websiteUrl && !hasOtherSource) {
       throw builderError(
         422,
@@ -436,7 +437,7 @@ async function runExtractAndArchitecture(jobId: string) {
       )
     }
     const docsFailed = [...normalized.documents, ...normalized.ocrResults]
-    const docsHaveText = docsFailed.some((doc) => doc.text.trim())
+    const docsHaveText = docsFailed.some((doc) => readableDoc(doc.text))
     if (files.length && !docsHaveText && !websiteUrl && !businessText && !existingCard) {
       throw builderError(
         422,
@@ -1071,12 +1072,12 @@ export async function applyJob(input: {
     })
   }
 
+  const directTabService = (await import('../directTab.service')).default
   for (const faq of ready.blueprint.faqs || []) {
     const question = String(faq.question || '').trim()
     const answer = String(faq.answer || '').trim()
     if (!question && !answer) continue
-    await profileService.createPost(profileId, input.userId, input.role, {
-      postTypeName: 'Faq',
+    await directTabService.createTabItem(profileId, 'faqs', input.userId, input.role, {
       title: question || 'FAQ',
       description: answer,
       status: '1',
@@ -1086,14 +1087,12 @@ export async function applyJob(input: {
     const title = String(blog.title || '').trim()
     const description = String(blog.description || '').trim()
     if (!title && !description) continue
-    await profileService.createPost(profileId, input.userId, input.role, {
-      postTypeName: 'blog',
+    await directTabService.createTabItem(profileId, 'blogs', input.userId, input.role, {
       title: title || 'Article',
       description,
       url: String(blog.url || '').trim() || undefined,
       featuredImage: String(blog.imageUrl || '').trim() || undefined,
       status: '1',
-      metas: { category: String(blog.category || 'News') },
     })
   }
 

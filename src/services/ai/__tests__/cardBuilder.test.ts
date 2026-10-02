@@ -27,6 +27,7 @@ import { profileToBlueprintFacts } from '../contentGenerator.service'
 import {
   classifyWebsitePage,
   extractPageImageUrls,
+  extractTextFromBuffer,
   parseSitemapLocs,
   pdfTextLooksScanned,
   planCatalogReads,
@@ -95,6 +96,20 @@ describe('vBiz Me auto card builder', () => {
     assert.notEqual(complexity.complexity, 'very_complex')
     const route = routeAiTier({ confidence: 0.9, complexity: complexity.complexity })
     assert.equal(route.tier, 'luna')
+  })
+
+  it('4b. text PDF is read with pdf-parse v2 instead of failing the upload', async () => {
+    const buffer = Buffer.from(
+      'JVBERi0xLjEKJcKlwrHDqwoKMSAwIG9iagogIDw8IC9UeXBlIC9DYXRhbG9nCiAgICAgL1BhZ2VzIDIgMCBSCiAgPj4KZW5kb2JqCgoyIDAgb2JqCiAgPDwgL1R5cGUgL1BhZ2VzCiAgICAgL0tpZHMgWzMgMCBSXQogICAgIC9Db3VudCAxCiAgICAgL01lZGlhQm94IFswIDAgMzAwIDE0NF0KICA+PgplbmRvYmoKCjMgMCBvYmoKICA8PCAgL1R5cGUgL1BhZ2UKICAgICAgL1BhcmVudCAyIDAgUgogICAgICAvUmVzb3VyY2VzCiAgICAgICA8PCAvRm9udAogICAgICAgICAgIDw8IC9GMQogICAgICAgICAgICAgICA8PCAvVHlwZSAvRm9udAogICAgICAgICAgICAgICAgICAvU3VidHlwZSAvVHlwZTEKICAgICAgICAgICAgICAgICAgL0Jhc2VGb250IC9UaW1lcy1Sb21hbgogICAgICAgICAgICAgICA+PgogICAgICAgICAgID4+CiAgICAgICA+PgogICAgICAvQ29udGVudHMgNCAwIFIKICA+PgplbmRvYmoKCjQgMCBvYmoKICA8PCAvTGVuZ3RoIDU1ID4+CnN0cmVhbQpCVAo+IC9GMSAxOCBUZgogIDcyIDcyIFRkCiAgKEhlbGxvIFdvcmxkKSBUagpFVAplbmRzdHJlYW0KZW5kb2JqCgp4cmVmCjAgNQowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA2MyAwMDAwMCBuIAowMDAwMDAwMTI0IDAwMDAwIG4gCjAwMDAwMDAzMTYgMDAwMDAgbiAKdHJhaWxlcgogIDw8ICAvU2l6ZSA1CiAgICAgL1Jvb3QgMSAwIFIKICA+PgpzdGFydHhyZWYKNDA2CiUlRU9G',
+      'base64'
+    )
+    const extracted = await extractTextFromBuffer({
+      name: 'acme.pdf',
+      mimeType: 'application/pdf',
+      buffer,
+    })
+    assert.match(extracted.text, /Hello World/)
+    assert.notEqual(extracted.extractionMethod, 'empty')
   })
 
   it('4. scanned PDF / poor OCR escalates to Terra', () => {

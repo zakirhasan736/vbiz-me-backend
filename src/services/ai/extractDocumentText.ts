@@ -140,6 +140,27 @@ export function pdfTextLooksScanned(text: string, byteLength: number): boolean {
   return false
 }
 
+/** Placeholder left when native text is missing and vision OCR has not filled it yet. */
+export function isUnreadDocumentPlaceholder(text: string): boolean {
+  return /^\[(Scanned PDF attached|Image attached)\b/i.test(text.trim())
+}
+
+type PdfParseCtor = new (options: { data: Buffer }) => {
+  getText: (params?: { pageJoiner?: string }) => Promise<{ text?: string }>
+  destroy: () => Promise<void>
+}
+
+async function readPdfText(buffer: Buffer): Promise<string> {
+  const { PDFParse } = (await import('pdf-parse')) as { PDFParse: PdfParseCtor }
+  const parser = new PDFParse({ data: buffer })
+  try {
+    const parsed = await parser.getText({ pageJoiner: '' })
+    return parsed.text || ''
+  } finally {
+    await parser.destroy().catch(() => undefined)
+  }
+}
+
 export function assertUploadLimits(files: UploadedPart[]) {
   if (files.length > MAX_FILES) {
     throw new AppError(400, `Too many files (max ${MAX_FILES}).`)
@@ -190,11 +211,9 @@ export async function extractTextFromBuffer(file: UploadedPart): Promise<Extract
 
   if (mime === 'application/pdf' || name.endsWith('.pdf')) {
     try {
-      const pdfParseMod = await import('pdf-parse')
-      const pdfParse = (pdfParseMod as { default?: (b: Buffer) => Promise<{ text: string }> }).default || pdfParseMod
-      const parsed = await (pdfParse as (b: Buffer) => Promise<{ text: string }>)(file.buffer)
-      const text = truncate(parsed.text || '')
-      const scanned = pdfTextLooksScanned(parsed.text || '', file.buffer.byteLength)
+      const raw = await readPdfText(file.buffer)
+      const text = truncate(raw)
+      const scanned = pdfTextLooksScanned(raw, file.buffer.byteLength)
       const extracted: ExtractedSource = scanned
         ? {
             label: name,
@@ -202,7 +221,7 @@ export async function extractTextFromBuffer(file: UploadedPart): Promise<Extract
               text ||
               `[Scanned PDF attached: ${name}. Native text was too thin; vision OCR should be used if page images are available.]`,
             images: [],
-            extractionMethod: text.trim() && !scanned ? 'native' : 'ocr_needed',
+            extractionMethod: 'ocr_needed',
             warning:
               'This PDF looks scanned. Native text was limited, so the system will treat it as image-based content.',
             sha256,
@@ -215,7 +234,15 @@ export async function extractTextFromBuffer(file: UploadedPart): Promise<Extract
       if (/password|encrypt/i.test(message)) {
         throw new AppError(400, `“${name}” is password-protected. Upload an unlocked PDF or paste the text.`)
       }
-      throw new AppError(400, `Could not read PDF “${name}”. Try a text PDF, DOCX, or images.`)
+      const extracted: ExtractedSource = {
+        label: name,
+        text: `[Scanned PDF attached: ${name}. Native text could not be read; vision OCR should be used.]`,
+        images: [],
+        extractionMethod: 'ocr_needed',
+        warning: `Could not read “${name}” as text. The system will try to read it as a document image.`,
+        sha256,
+      }
+      return extracted
     }
   }
 

@@ -13,6 +13,7 @@ const FIELD_TO_SECTION: Partial<Record<string, FillSectionId>> = {
   blogs: 'blogs',
   reviews: 'reviews',
   skills: 'skills',
+  portfolio: 'portfolio',
 }
 
 const AUTO_FILL_KEYS = new Set(['about', 'designation', 'services', 'skills'])
@@ -160,9 +161,16 @@ function shouldAutoFill(
   includePermissioned?: { faq?: boolean; blog?: boolean; reviews?: boolean }
 ) {
   if (!selected.has(field.tabId)) return false
-  if (!field.aiGenerationAllowed) return false
   if (field.special === 'credentials') return false
-  if (field.special === 'portfolio' && field.status === 'EMPTY') return false
+  if (
+    field.special === 'portfolio' ||
+    field.fieldKey === 'portfolio' ||
+    field.special === 'services' ||
+    field.fieldKey === 'services'
+  ) {
+    return listLength(field.currentValue) < MAX_GENERATED_ITEMS
+  }
+  if (!field.aiGenerationAllowed) return false
   if (isListContentField(field)) {
     if (field.special === 'faq' && includePermissioned?.faq === false) return false
     if (field.special === 'blog' && includePermissioned?.blog === false) return false
@@ -170,7 +178,7 @@ function shouldAutoFill(
     return listLength(field.currentValue) < MAX_GENERATED_ITEMS
   }
   if (field.status !== 'EMPTY' && field.status !== 'PARTIAL') return false
-  return AUTO_FILL_KEYS.has(field.fieldKey) || field.special === 'services'
+  return AUTO_FILL_KEYS.has(field.fieldKey)
 }
 
 async function generateForField(input: {
@@ -186,7 +194,8 @@ async function generateForField(input: {
     section === 'reviews' ||
     section === 'services' ||
     section === 'skills' ||
-    section === 'personal'
+    section === 'personal' ||
+    section === 'portfolio'
   ) {
     const existingLen = listLength(input.field.currentValue)
     const remaining = Math.max(0, MAX_GENERATED_ITEMS - existingLen)
@@ -203,8 +212,10 @@ async function generateForField(input: {
             : section === 'personal'
               ? 'Write a professional About section from verified facts only.'
               : section === 'services'
-                ? 'Keep verified service titles. Write missing descriptions from verified facts. Do not invent prices.'
-                : 'Group skills from verified services and experience only.'
+                ? `Keep verified services. If fewer than ${MAX_GENERATED_ITEMS}, add realistic offerings this business would provide until there are ${MAX_GENERATED_ITEMS}. Each item needs a title and a benefit-focused description. Do not invent prices, guarantees, or certifications.`
+                : section === 'portfolio'
+                  ? `If fewer than ${MAX_GENERATED_ITEMS} portfolio items exist, draft representative project examples from this business until there are ${MAX_GENERATED_ITEMS}. Describe the kind of work, not fake client metrics, awards, or named case studies.`
+                  : 'Group skills from verified services and experience only.'
     const payload = await generateSectionFromProfile({
       section,
       profile: input.profile,
@@ -213,7 +224,13 @@ async function generateForField(input: {
       sessionId: input.sessionId,
     })
     const generated = extractSectionValue(section, payload)
-    if (section === 'faqs' || section === 'blogs' || section === 'reviews') {
+    if (
+      section === 'faqs' ||
+      section === 'blogs' ||
+      section === 'reviews' ||
+      section === 'services' ||
+      section === 'portfolio'
+    ) {
       return topUpGeneratedList(input.field.currentValue, generated)
     }
     return generated

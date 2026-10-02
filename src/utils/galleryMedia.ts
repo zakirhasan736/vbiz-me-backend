@@ -106,6 +106,7 @@ export function toGalleryWriteData(mapped: Record<string, unknown>): Record<stri
   next.featuredImage = featured
   next.attachmentUrl = null
   next.attachmentName = null
+  if (next.status != null) next.status = String(next.status)
   return next
 }
 

@@ -173,8 +173,10 @@ export async function generateSectionFromProfile(input: {
           : input.section === 'personal'
             ? 'For about: write polished About + Why Choose Us + a fitting CTA close when facts allow. Match brand voice to the industry. Do not invent contact facts.'
             : input.section === 'services'
-              ? 'Every service needs a clear title and a benefit-focused professional description. Prefer primary services from the website. Do not invent prices or guarantees.'
-              : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
+              ? 'Every service needs a clear title and a benefit-focused professional description. Keep services found in the sources. If fewer than 5 exist, add realistic offerings this business would provide until there are 5. Do not invent prices or guarantees.'
+              : input.section === 'portfolio'
+                ? 'Keep portfolio items found in the sources. If fewer than 5 exist, draft representative project examples from the business until there are 5. Do not invent client names, metrics, awards, or prices.'
+                : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
   const seoRule =
     input.section === 'seo'
       ? 'For SEO, write a concise business-specific title and description from verified facts. Return 5-10 high-intent keywords about this business. Do not include vBiz Me platform keywords; those are added automatically. Never invent numeric search-volume claims.'
