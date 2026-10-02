@@ -36,7 +36,7 @@ Nginx should proxy the API host → `http://127.0.0.1:5000` with:
 
 ## Production start command
 
-PM2 runs **`node dist/server.js`** (compiled). Deploy always runs `yarn build` in the release folder first.
+PM2 runs **`node --import tsx src/server.ts`** from `current` (ESM sources use extensionless imports; plain `node dist/` cannot resolve them). Deploy still runs `yarn build` in the release folder for typecheck, assets, and Prisma generate before migrate.
 
 ## GitHub secrets
 

@@ -2,7 +2,7 @@
   "name": "vbizme-backend",
   "version": "1.0.0",
   "description": "VBizMe backend API",
-  "main": "dist/server.js",
+  "main": "src/server.ts",
   "type": "module",
   "packageManager": "yarn@1.22.22",
   "imports": {
@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "tsx watch --env-file=.env src/server.ts",
     "build": "tsc && tsx src/copy.assets.ts",
-    "start": "node dist/server.js",
+    "start": "node --import tsx src/server.ts",
     "start:tsx": "tsx src/server.ts",
     "postinstall": "prisma generate",
     "generate": "prisma generate",

@@ -42,11 +42,13 @@ cp -f "${RELEASE_DIR}/ecosystem.config.cjs" "${DEPLOY_PATH}/ecosystem.config.cjs
 
 echo "==> PM2 reload (graceful)"
 cd "$DEPLOY_PATH"
-if pm2 describe vbiz-api >/dev/null 2>&1; then
-  pm2 reload ecosystem.config.cjs --update-env --env production
-else
-  pm2 start ecosystem.config.cjs --env production
+# Drop the short-lived name if a previous broken deploy created it.
+pm2 delete vbiz-api >/dev/null 2>&1 || true
+# Delete+start so cwd/script changes (legacy npm start → current/tsx) always apply.
+if pm2 describe vbizme-api >/dev/null 2>&1; then
+  pm2 delete vbizme-api >/dev/null 2>&1 || true
 fi
+pm2 start ecosystem.config.cjs --env production
 pm2 save
 
 echo "==> Health check ${HEALTH_URL}"

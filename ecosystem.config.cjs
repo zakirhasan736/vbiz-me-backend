@@ -3,14 +3,20 @@
  * Keep instances: 1 so cron jobs do not double-fire.
  *
  * Always start from the `current` symlink — never from a release being built.
+ *
+ * Runtime uses tsx because the TS ESM sources import without `.js` extensions;
+ * plain `node dist/...` cannot resolve those. `yarn build` still runs in deploy
+ * for typecheck / asset copy / migrate tooling.
  */
 module.exports = {
   apps: [
     {
-      name: 'vbiz-api',
+      // Keep the historical PM2 name so reload replaces the live process.
+      name: 'vbizme-api',
       cwd: '/var/www/vbiz-me-backend/current',
-      script: 'dist/server.js',
+      script: 'src/server.ts',
       interpreter: 'node',
+      interpreter_args: '--import tsx',
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,
