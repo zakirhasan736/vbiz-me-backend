@@ -509,7 +509,7 @@ describe('required matrix: STRIPE', () => {
       stripeOwnerRefs({
         metadata: { userId: 'owner-1', packageId: 'pkg-corp', subscriptionId: 'sub-pending' },
       }),
-      { userId: 'owner-1', packageId: 'pkg-corp', subscriptionId: 'sub-pending' }
+      { userId: 'owner-1', packageId: 'pkg-corp', subscriptionId: 'sub-pending', addon: '', profileId: '' }
     )
     const paid = decideStripeEvent({
       type: 'checkout.session.completed',

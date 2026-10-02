@@ -77,7 +77,7 @@ describe('profile persistence safeguards', () => {
     assert.match(adminProfileService, /profession: \{ name: \{ contains: token/)
     assert.match(adminProfileService, /companyUser:/)
     assert.match(adminProfileService, /createdBy:/)
-    assert.match(announcementService, /profileIdFromMeta\(row\.meta\) === id/)
+    assert.match(announcementService, /meta\.profileId === opts\.profileId/)
   })
 
   it('requires three-character admin searches and includes professional identity in lead matching', () => {

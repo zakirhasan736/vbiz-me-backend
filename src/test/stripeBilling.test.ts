@@ -101,7 +101,7 @@ describe('Stripe webhook decisions', () => {
         client_reference_id: 'user-1',
         metadata: { userId: 'user-1', packageId: 'pkg-1', subscriptionId: 'sub-1' },
       }),
-      { userId: 'user-1', packageId: 'pkg-1', subscriptionId: 'sub-1' }
+      { userId: 'user-1', packageId: 'pkg-1', subscriptionId: 'sub-1', addon: '', profileId: '' }
     )
   })
 
