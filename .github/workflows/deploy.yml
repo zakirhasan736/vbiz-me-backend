@@ -1,0 +1,91 @@
+# Zero-downtime production deploy.
+# Builds in a NEW release folder, runs migrations, flips `current`, PM2 reload.
+# Live API keeps serving the previous release while the new one builds.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to deploy (branch, tag, or SHA)'
+        required: false
+        default: main
+      skip_migrate:
+        description: 'Skip prisma migrate deploy (emergency only)'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: deploy-api-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy API (zero-downtime)
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    environment: production
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve release SHA
+        id: meta
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Trust host key
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          PORT="${DEPLOY_PORT:-22}"
+          ssh-keyscan -p "$PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload release + run remote deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH_API }}
+          RELEASE_SHA: ${{ steps.meta.outputs.sha }}
+          HEALTH_URL: ${{ secrets.API_HEALTH_URL }}
+          SKIP_MIGRATE: ${{ github.event.inputs.skip_migrate || 'false' }}
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          APP_PATH="${DEPLOY_PATH:-/var/www/vbiz-me-backend}"
+          CHECK_URL="${HEALTH_URL:-https://api.vbizme.com/api/v1/health}"
+          REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
+          RELEASE_DIR="${APP_PATH}/releases/${RELEASE_SHA}"
+
+          ssh -p "$PORT" "$REMOTE" "mkdir -p '${APP_PATH}/releases' '${APP_PATH}/shared'"
+
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude 'dist' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            -e "ssh -p ${PORT}" \
+            ./ "${REMOTE}:${RELEASE_DIR}/"
+
+          ssh -p "$PORT" "$REMOTE" \
+            "RELEASE_SHA='${RELEASE_SHA}' DEPLOY_PATH='${APP_PATH}' HEALTH_URL='${CHECK_URL}' SKIP_MIGRATE='${SKIP_MIGRATE}' bash -s" \
+            < deploy/remote-deploy.sh
