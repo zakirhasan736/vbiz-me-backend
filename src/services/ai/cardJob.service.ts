@@ -654,9 +654,8 @@ export async function generatePermissionedContent(input: {
   const fieldKey = section
   const field = session.fieldGraph.find((row) => row.fieldKey === fieldKey)
   const existing = Array.isArray(field?.currentValue) ? field.currentValue : []
-  const remaining = Math.max(0, 5 - existing.length)
-  if (remaining <= 0) {
-    const payload = { [section]: existing }
+  if (existing.length > 0) {
+    const payload = { [section]: existing.slice(0, 15) }
     return { ...publicJob(session), payload, generatedCount: existing.length }
   }
   const rawPayload = await generateSectionFromProfile({
@@ -664,11 +663,11 @@ export async function generatePermissionedContent(input: {
     profile: session.businessProfile,
     instruction:
       input.kind === 'faq'
-        ? `Create ${remaining} helpful FAQs from verified services and business facts. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas. Do not duplicate existing FAQs.`
+        ? 'The sources had no FAQs. Draft at most 5 helpful FAQs from the business you understood. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas.'
         : input.kind === 'blog'
-          ? `Draft ${remaining} evergreen educational articles. Do not invent news events, dates, awards, or statistics. Do not duplicate existing posts.`
+          ? 'The sources had no articles. Draft at most 5 evergreen posts. Do not invent news events, dates, awards, or statistics.'
           : input.kind === 'reviews'
-            ? `Write ${remaining} realistic example testimonials from business topics when no scraped reviews exist. Do not invent licenses, prices, or awards. Do not duplicate existing reviews.`
+            ? 'The sources had no reviews. Draft at most 5 realistic example testimonials from the business you understood. Do not invent licenses, prices, or awards.'
             : 'Create at most 5 concise skills from verified services, expertise, and experience. Group them using the editor shape { type, skills }.',
     userId: input.userId,
     sessionId: session.id,

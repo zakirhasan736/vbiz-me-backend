@@ -4,7 +4,11 @@ import { generateSectionFromProfile } from './contentGenerator.service'
 import { generateFieldCopy } from './fieldCompletion.service'
 import { mergeFieldDecision, type AiCardField } from './fieldGraph.service'
 
-const MAX_GENERATED_ITEMS = 5
+/** Items taken from a website, PDF, or photo. */
+export const SOURCE_LIST_CAP = 15
+/** Drafted only when the sourced list is empty. */
+export const MAX_DRAFT_WHEN_EMPTY = 5
+const MAX_GENERATED_ITEMS = MAX_DRAFT_WHEN_EMPTY
 
 const FIELD_TO_SECTION: Partial<Record<string, FillSectionId>> = {
   about: 'personal',
@@ -58,14 +62,14 @@ export function mergeUniqueLists(existing: unknown, incoming: unknown): unknown[
 }
 
 /**
- * Keep all sourced items. If fewer than `minFill`, add generated items until the minimum.
- * If sourced items already meet or exceed the minimum, generated items are ignored.
+ * Keep sourced items, up to 15. Draft at most 5 only when nothing was found.
+ * A short real list is not padded with extra AI items.
  */
-export function topUpGeneratedList(existing: unknown, generated: unknown, minFill = MAX_GENERATED_ITEMS): unknown[] {
-  const prior = mergeUniqueLists(existing, [])
-  if (prior.length >= minFill) return prior
-  const remaining = minFill - prior.length
-  return mergeUniqueLists(prior, capGeneratedList(generated, remaining))
+export function topUpGeneratedList(existing: unknown, generated: unknown, _minFill = MAX_DRAFT_WHEN_EMPTY): unknown[] {
+  const prior = mergeUniqueLists(existing, []).slice(0, SOURCE_LIST_CAP)
+  if (prior.length > 0) return prior
+  const drafted = capGeneratedList(generated, MAX_DRAFT_WHEN_EMPTY)
+  return Array.isArray(drafted) ? drafted : []
 }
 
 /** @deprecated Use mergeUniqueLists for sourced content or topUpGeneratedList for AI fill. */
@@ -139,8 +143,12 @@ export function applySectionPayloadToFields(
   for (const field of fields) {
     if (!matchKeys.includes(field.fieldKey)) continue
     const capped =
-      section === 'faqs' || section === 'blogs' || section === 'reviews'
-        ? mergeUniqueLists(field.currentValue, value)
+      section === 'faqs' ||
+      section === 'blogs' ||
+      section === 'reviews' ||
+      section === 'services' ||
+      section === 'portfolio'
+        ? topUpGeneratedList(field.currentValue, value)
         : section === 'skills'
           ? capGeneratedSkills(value)
           : value
@@ -168,14 +176,14 @@ function shouldAutoFill(
     field.special === 'services' ||
     field.fieldKey === 'services'
   ) {
-    return listLength(field.currentValue) < MAX_GENERATED_ITEMS
+    return listLength(field.currentValue) === 0
   }
   if (!field.aiGenerationAllowed) return false
   if (isListContentField(field)) {
     if (field.special === 'faq' && includePermissioned?.faq === false) return false
     if (field.special === 'blog' && includePermissioned?.blog === false) return false
     if (field.special === 'reviews' && includePermissioned?.reviews === false) return false
-    return listLength(field.currentValue) < MAX_GENERATED_ITEMS
+    return listLength(field.currentValue) === 0
   }
   if (field.status !== 'EMPTY' && field.status !== 'PARTIAL') return false
   return AUTO_FILL_KEYS.has(field.fieldKey)
@@ -198,23 +206,26 @@ async function generateForField(input: {
     section === 'portfolio'
   ) {
     const existingLen = listLength(input.field.currentValue)
-    const remaining = Math.max(0, MAX_GENERATED_ITEMS - existingLen)
-    if ((section === 'faqs' || section === 'blogs' || section === 'reviews') && remaining <= 0) {
-      return input.field.currentValue
-    }
+    const listSection =
+      section === 'faqs' ||
+      section === 'blogs' ||
+      section === 'reviews' ||
+      section === 'services' ||
+      section === 'portfolio'
+    if (listSection && existingLen > 0) return input.field.currentValue
     const instruction =
       section === 'faqs'
-        ? `Create ${remaining || MAX_GENERATED_ITEMS} helpful FAQs from verified services and business topics. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas. Do not duplicate existing FAQs.`
+        ? `The sources had no FAQs. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} helpful FAQs from the business you understood. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas.`
         : section === 'blogs'
-          ? `Draft ${remaining || MAX_GENERATED_ITEMS} evergreen educational articles from verified expertise. Do not invent news events, dates, or awards. Do not duplicate existing posts.`
+          ? `The sources had no articles. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} evergreen posts from the business you understood. Do not invent news events, dates, or awards.`
           : section === 'reviews'
-            ? `Write ${remaining || MAX_GENERATED_ITEMS} realistic example testimonials from business topics when no scraped reviews exist. Do not invent licenses, prices, or awards. Do not duplicate existing reviews.`
+            ? `The sources had no reviews. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} realistic example testimonials from the business you understood. Label them as examples. Do not invent licenses, prices, or awards.`
             : section === 'personal'
               ? 'Write a professional About section from verified facts only.'
               : section === 'services'
-                ? `Keep verified services. If fewer than ${MAX_GENERATED_ITEMS}, add realistic offerings this business would provide until there are ${MAX_GENERATED_ITEMS}. Each item needs a title and a benefit-focused description. Do not invent prices, guarantees, or certifications.`
+                ? `The sources had no services. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} realistic offerings this business would provide. Each item needs a title and a benefit-focused description. Do not invent prices, guarantees, or certifications.`
                 : section === 'portfolio'
-                  ? `If fewer than ${MAX_GENERATED_ITEMS} portfolio items exist, draft representative project examples from this business until there are ${MAX_GENERATED_ITEMS}. Describe the kind of work, not fake client metrics, awards, or named case studies.`
+                  ? `The sources had no portfolio items. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} representative project examples. Describe the kind of work, not fake client metrics, awards, or named case studies.`
                   : 'Group skills from verified services and experience only.'
     const payload = await generateSectionFromProfile({
       section,

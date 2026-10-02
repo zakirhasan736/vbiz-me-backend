@@ -84,7 +84,7 @@ export function buildArchitectureSource(normalized: NormalizedSourceData, budget
       `LARGE SITE DIGEST. ${pages.length} pages were opened from ${normalized.website.url || 'the website'}.`,
       'Main business pages are included in full. Long inventories were read by category, with one example each.',
       'Turn each category into a service or product line. Do not create one card entry per vehicle or SKU.',
-      'Caps: 12 services, 16 products, 8 portfolio items, 6 blogs, 10 team members.',
+      'Caps: 15 services, 15 portfolio items, 15 blogs, 15 reviews, 16 products, 10 team members.',
     ].join(' ')
   )
   if (normalized.website.catalogSummary) push(normalized.website.catalogSummary)
@@ -164,9 +164,9 @@ function prepareSolPayload(data: unknown): unknown {
   const root = asRecord(data) || {}
   const wrapped = asRecord(root.masterBusinessProfile)
   const profile: Record<string, unknown> = { ...(wrapped || root) }
-  profile.services = titledObjects(profile.services, 12)
-  profile.portfolio = titledObjects(profile.portfolio, 8)
-  profile.blogs = titledObjects(profile.blogs, 6)
+  profile.services = titledObjects(profile.services, 15)
+  profile.portfolio = titledObjects(profile.portfolio, 15)
+  profile.blogs = titledObjects(profile.blogs, 15)
   profile.products = plainStrings(profile.products, 16)
   profile.teamMembers = plainStrings(profile.teamMembers, 10)
   profile.credentials = plainStrings(profile.credentials, 12)
@@ -181,8 +181,8 @@ function prepareSolPayload(data: unknown): unknown {
   profile.education = objectList(profile.education, 8)
   profile.experience = objectList(profile.experience, 8)
   profile.skills = objectList(profile.skills, 8)
-  profile.verifiedReviews = objectList(profile.verifiedReviews, 8)
-  profile.existingTestimonials = objectList(profile.existingTestimonials, 8)
+  profile.verifiedReviews = objectList(profile.verifiedReviews, 15)
+  profile.existingTestimonials = objectList(profile.existingTestimonials, 15)
   profile.suggestedTestimonialTemplates = objectList(profile.suggestedTestimonialTemplates, 4).filter(
     (item) => typeof item.text === 'string' && item.text.trim()
   )
@@ -353,7 +353,7 @@ First understand the business thoroughly from ALL provided sources (website craw
 6. Which EXISTING catalog tabs fit, which fields can be filled now, what must be asked of the owner, and what is required for a 90–100% ready card.
 7. Draft whyChooseUs, suggestedCta, and brandVoice from verified strengths only so content generation can finish a marketing-ready card.
 
-Large sites: finish valid JSON. Keep at most 12 services, 16 products, 8 portfolio items, 6 blogs, and 10 team members.
+Large sites: finish valid JSON. Keep real services, FAQs, blogs, reviews, and portfolio items up to 15 each. Keep at most 16 products and 10 team members. Do not invent extra list items when the source already has some.
 If no website URL is present, the PDF, Word, text, and photo uploads are the full source. Understand that business from the files and still suggest the card: about, services, FAQs, why choose us, CTA, and contact details that the files actually contain.
 Owner-typed notes and OCR text outrank weaker website guesses when they conflict.
 Never invent tabs. Never invent phones, emails, licenses, awards, reviews, projects, or years in business.

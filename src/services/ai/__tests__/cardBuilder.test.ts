@@ -452,16 +452,36 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(about?.status, 'READY')
     const faq = fields.find((f) => f.fieldKey === 'faqs')
     assert.equal(faq?.status, 'EMPTY')
-    const filled = applySectionPayloadToFields(fields, 'faqs', {
+    const sourcedFields = fields.map((field) =>
+      field.fieldKey === 'faqs'
+        ? {
+            ...field,
+            currentValue: Array.from({ length: 12 }, (_, i) => ({ question: `Q${i}`, answer: `A${i}` })),
+          }
+        : field
+    )
+    const kept = applySectionPayloadToFields(sourcedFields, 'faqs', {
+      faqs: [{ question: 'Draft', answer: 'Should not replace real FAQs' }],
+    })
+    const keptFaq = kept.find((field) => field.fieldKey === 'faqs')
+    assert.equal(Array.isArray(keptFaq?.currentValue) ? keptFaq.currentValue.length : 0, 12)
+    const drafted = applySectionPayloadToFields(fields, 'faqs', {
       faqs: Array.from({ length: 7 }, (_, i) => ({ question: `Q${i}`, answer: `A${i}` })),
     })
-    const faqReady = filled.find((f) => f.fieldKey === 'faqs')
+    const faqReady = drafted.find((field) => field.fieldKey === 'faqs')
     assert.equal(faqReady?.status, 'READY')
-    assert.equal(Array.isArray(faqReady?.currentValue) ? faqReady?.currentValue.length : 0, 7)
+    assert.equal(Array.isArray(faqReady?.currentValue) ? faqReady.currentValue.length : 0, 5)
     const { mergeUniqueLists, topUpGeneratedList } = await import('../tabBuild.service')
     assert.equal(mergeUniqueLists([1, 2, 3, 4, 5, 6, 7], [8]).length, 8)
-    assert.equal(topUpGeneratedList(['a', 'b'], ['c', 'd', 'e', 'f']).length, 5)
-    assert.equal(topUpGeneratedList(['a', 'b', 'c', 'd', 'e', 'f'], ['g']).length, 6)
+    assert.equal(topUpGeneratedList(['a', 'b'], ['c', 'd', 'e', 'f']).length, 2)
+    assert.equal(topUpGeneratedList([], ['c', 'd', 'e', 'f', 'g', 'h']).length, 5)
+    assert.equal(
+      topUpGeneratedList(
+        Array.from({ length: 16 }, (_, i) => `s${i}`),
+        ['g']
+      ).length,
+      15
+    )
     assert.deepEqual(capGeneratedSkills([{ type: 'Core', skills: ['1', '2', '3', '4', '5', '6'] }]), [
       { type: 'Core', skills: ['1', '2', '3', '4', '5'] },
     ])

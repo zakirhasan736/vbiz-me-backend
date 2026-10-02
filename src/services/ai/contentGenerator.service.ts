@@ -165,17 +165,17 @@ export async function generateSectionFromProfile(input: {
   const schemaHint = FILL_SECTION_SCHEMA_HINTS[input.section]
   const reviewRule =
     input.section === 'reviews'
-      ? 'If verifiedReviews or existingTestimonials have real quotes, include ALL of them with no maximum. If they are empty, write up to 5 realistic example testimonials grounded in business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent licenses, prices, awards, or claim unverified named customers as factual quotes. Never copy suggestedTestimonialTemplates as verified reviews.'
+      ? 'If verifiedReviews or existingTestimonials have real quotes, return only those real quotes, up to 15. If they are empty, write at most 5 realistic example testimonials from the business. Do not add drafts when any real review exists. Do not invent licenses, prices, awards, or claim unverified named customers as factual quotes.'
       : input.section === 'faqs'
-        ? 'Keep every FAQ found in the profile or sources. If none exist, generate up to 5 helpful, realistic FAQs from business topics (not meaningless filler). If some exist but fewer than 5, fill only the remaining slots. Do not invent prices, hours, guarantees, or certifications.'
+        ? 'If the profile or sources contain FAQs, return only those, up to 15. If none exist, generate at most 5 helpful FAQs from the business. Do not add drafts when any real FAQ exists. Do not invent prices, hours, guarantees, or certifications.'
         : input.section === 'blogs'
-          ? 'Keep every article found in the profile or sources. If none exist, draft up to 5 evergreen educational posts from business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent news events, dates, or awards.'
+          ? 'If the profile or sources contain articles, return only those, up to 15. If none exist, draft at most 5 evergreen posts from the business. Do not add drafts when any real article exists. Do not invent news events, dates, or awards.'
           : input.section === 'personal'
             ? 'For about: write polished About + Why Choose Us + a fitting CTA close when facts allow. Match brand voice to the industry. Do not invent contact facts.'
             : input.section === 'services'
-              ? 'Every service needs a clear title and a benefit-focused professional description. Keep services found in the sources. If fewer than 5 exist, add realistic offerings this business would provide until there are 5. Do not invent prices or guarantees.'
+              ? 'If services were found, return only those, up to 15, each with a title and description. If none exist, draft at most 5 realistic offerings. Do not add drafts when any real service exists. Do not invent prices or guarantees.'
               : input.section === 'portfolio'
-                ? 'Keep portfolio items found in the sources. If fewer than 5 exist, draft representative project examples from the business until there are 5. Do not invent client names, metrics, awards, or prices.'
+                ? 'If portfolio items were found, return only those, up to 15. If none exist, draft at most 5 representative project examples. Do not add drafts when any real item exists. Do not invent client names, metrics, awards, or prices.'
                 : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
   const seoRule =
     input.section === 'seo'
