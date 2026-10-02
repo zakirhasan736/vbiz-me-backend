@@ -34,7 +34,7 @@ import { collectSaveContactPhotoCandidates, resolveSaveContactPhotoUrls } from '
 import { resolveProfileSharePreviewImageUrl, SHARE_PREVIEW_IMAGE_SETTING_KEY } from '../utils/sharePreviewImage'
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
-import { mediaFromProfile } from './push.service'
+import pushService, { mediaFromProfile } from './push.service'
 import { mergeSeoSettingsWithDefaults } from './seoMetadata.service'
 
 const RETURNING_SAVED_GUEST_EVENT = 'returning_saved_guest'
@@ -2469,6 +2469,12 @@ const saveContactCard = async (
     },
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
+  pushService.notifyProfileUpdate(profile.id, {
+    type: 'save_contact',
+    title: 'Contact saved',
+    body: `Someone saved ${profile.name?.trim() || 'your card'} to their phone.`,
+    url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
+  })
   // Do not emit dashboard:kpi save — that KPI tracks guest form submissions (GuestUserData), not VCF downloads.
 
   const frontendBase = (config.FRONTEND_URL || '').replace(/\/$/, '')
@@ -2622,6 +2628,13 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
       },
     }),
   ])
+
+  pushService.notifyProfileUpdate(profile.id, {
+    type: 'viewer_return',
+    title: `Returning contact · ${cardName}`,
+    body,
+    url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
+  })
 }
 
 const trackEvent = async (

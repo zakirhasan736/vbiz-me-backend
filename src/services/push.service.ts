@@ -7,6 +7,7 @@ import AppError from '../error/AppError'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
+import { cardChangeAlsoReachesSavers, skipsPublicProfileGate } from '../utils/pushAudience'
 
 export type PushPreferenceKey =
   | 'service_updates'
@@ -125,6 +126,7 @@ const snakeToPrismaData = (preferences: Partial<SnakeCasePreferences>): Preferen
 }
 
 const preferenceAllows = (prefs: PushNotificationPreference | null | undefined, type: string): boolean => {
+  if (type === 'meeting_alert' || type === 'viewer_return' || type === 'save_contact') return true
   const key = type as PushPreferenceKey
   const field = PREFERENCE_FIELD[key]
   if (!field) return true
@@ -430,16 +432,15 @@ const sendOne = async (sub: { id: string; endpoint: string; p256dh: string; auth
 const buildProfilePayload = async (
   profileId: string,
   partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
-    Partial<Pick<PushPayload, 'slug' | 'url' | 'businessName'>>
+    Partial<Pick<PushPayload, 'slug' | 'url' | 'businessName'>>,
+  options?: { allowPrivate?: boolean }
 ): Promise<PushPayload | null> => {
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: { ...profileMediaSelect, isPublic: true },
   })
-  // Meeting alerts are operational. A private or unpublished card can still
-  // have devices that allowed notifications, and those devices must receive them.
-  const meetingAlert = partial.type === 'meeting_alert'
-  if (!profile || (!meetingAlert && (!profile.isPublic || !profile.slug))) return null
+  const allowPrivate = options?.allowPrivate || skipsPublicProfileGate(partial.type)
+  if (!profile || (!allowPrivate && (!profile.isPublic || !profile.slug))) return null
 
   const businessName = profile.companyName || profile.name || profile.slug || 'vBiz Me'
   const media = mediaFromProfile(profile)
@@ -465,17 +466,61 @@ const buildProfilePayload = async (
   }
 }
 
+const normalizeEmails = (emails: string[]) => [
+  ...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean)),
+]
+
+/** Profiles owned by these emails that already have an active push device. */
+const profileIdsMatchingEmails = async (emails: string[]) => {
+  const normalized = normalizeEmails(emails)
+  if (!normalized.length) return [] as string[]
+
+  const users = await prisma.user.findMany({
+    where: { email: { in: normalized } },
+    select: { id: true },
+  })
+  const userIds = users.map((user) => user.id)
+  const profiles = await prisma.profile.findMany({
+    where: {
+      OR: [
+        { email: { in: normalized } },
+        ...(userIds.length ? [{ userId: { in: userIds } }, { companyUserId: { in: userIds } }] : []),
+      ],
+    },
+    select: {
+      id: true,
+      pushSubscriptions: { where: { isActive: true }, select: { id: true }, take: 1 },
+    },
+  })
+  return profiles.filter((profile) => profile.pushSubscriptions.length > 0).map((profile) => profile.id)
+}
+
+const saverEmailsForProfile = async (profileId: string) => {
+  const [guests, contacts] = await Promise.all([
+    prisma.guestUserData.findMany({
+      where: { profileId, email: { not: null } },
+      select: { email: true },
+    }),
+    prisma.contact.findMany({
+      where: { profileId, email: { not: null } },
+      select: { email: true },
+    }),
+  ])
+  return normalizeEmails([...guests, ...contacts].map((row) => row.email || ''))
+}
+
 const sendToProfile = async (
   profileId: string,
   partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
-    Partial<Pick<PushPayload, 'slug' | 'url' | 'businessName'>>
+    Partial<Pick<PushPayload, 'slug' | 'url' | 'businessName'>>,
+  options?: { includeSavers?: boolean; allowPrivate?: boolean }
 ) => {
   if (!config.VAPID.PUBLIC_KEY || !config.VAPID.PRIVATE_KEY) {
     logger.warn('Skipping push send: VAPID keys not configured')
     return { sent: 0, skipped: true as const }
   }
 
-  const payload = await buildProfilePayload(profileId, partial)
+  const payload = await buildProfilePayload(profileId, partial, { allowPrivate: options?.allowPrivate })
   if (!payload) return { sent: 0, skipped: true as const }
 
   const subscriptions = await prisma.pushSubscription.findMany({
@@ -488,6 +533,16 @@ const sendToProfile = async (
     if (!preferenceAllows(sub.preferences, payload.type)) continue
     const ok = await sendOne(sub, payload)
     if (ok) sent += 1
+  }
+
+  const includeSavers = options?.includeSavers !== false && cardChangeAlsoReachesSavers(payload.type)
+  if (includeSavers) {
+    const saverIds = await profileIdsMatchingEmails(await saverEmailsForProfile(profileId))
+    for (const saverProfileId of saverIds) {
+      if (saverProfileId === profileId) continue
+      const extra = await sendToProfile(saverProfileId, partial, { includeSavers: false, allowPrivate: true })
+      sent += extra.sent
+    }
   }
 
   return { sent, skipped: false as const }
@@ -583,6 +638,7 @@ const pushService = {
   sendTest,
   sendToProfile,
   notifyProfileUpdate,
+  profileIdsMatchingEmails,
   preferenceKeyForPostType,
   preferenceKeyForCollection,
   preferencesToSnake,

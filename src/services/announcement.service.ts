@@ -373,9 +373,8 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
 
           // If targeted to specific emails, resolve profiles by email
           if (targetType === 'specific' && targetEmails.length) {
-            for (const e of targetEmails) {
-              const p = await prisma.profile.findFirst({ where: { email: e }, select: { id: true } })
-              if (p) profileIds.add(p.id)
+            for (const matchedId of await pushService.profileIdsMatchingEmails(targetEmails)) {
+              profileIds.add(matchedId)
             }
           }
 
