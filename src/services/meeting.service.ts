@@ -18,6 +18,7 @@ import type {
 import announcementService from './announcement.service'
 import calendarIntegrationService from './calendarIntegration.service'
 import pushService from './push.service'
+import smsService from './sms.service'
 
 type Actor = { id: string; email: string; name?: string | null }
 
@@ -499,6 +500,15 @@ async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel
     })
   }
   await notifySenderAnnouncement(actor, meeting, meetLabel)
+  void smsService.notifyScheduleCreated({
+    guestUserDataId: meeting.guestUserDataId,
+    profileId: meeting.profileId,
+    groupProfileIds: meeting.groupProfileIds,
+    senderName: actor.name?.trim() || 'vBiz Me',
+    type: meeting.type,
+    date: meeting.date,
+    time: meeting.time,
+  })
 }
 
 async function notifySenderAnnouncement(actor: Actor, meeting: MeetingRow, meetLabel: string) {

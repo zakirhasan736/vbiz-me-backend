@@ -5,6 +5,7 @@ import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
 import { prisma } from '../utils/prisma'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
+import type { SmsTopic } from '../utils/smsMessage'
 import type {
   AnnouncementKind,
   AnnouncementStatus,
@@ -15,6 +16,7 @@ import type {
   UpdateAnnouncementInput,
 } from '../zodValidation/announcement.zod'
 import pushService from './push.service'
+import smsService from './sms.service'
 
 type Actor = { id: string; email: string; name?: string | null }
 
@@ -144,6 +146,38 @@ function wantsSendPush(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue 
   if ('sendPush' in m) return true
   const sendTo = m.sendTo
   return typeof sendTo === 'string' && sendTo.includes('push')
+}
+
+function smsTopicFromMeta(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): SmsTopic {
+  const kind = String(metaRecord(meta)?.kind || '')
+  if (kind === 'birthday') return 'Birthday'
+  if (kind === 'special_day') return 'Special day'
+  if (kind === 'special_message') return 'Special message'
+  return 'Notice'
+}
+
+function queueAnnouncementSms(row: {
+  status: string
+  title: string
+  body: string
+  targetType: string
+  targetEmails: string[]
+  meta: Prisma.JsonValue | null
+}) {
+  if (row.status !== 'active') return
+  if (isBirthdayNotice(row.meta)) return
+  const detail = `${row.title}. ${row.body}`.replace(/\s+/g, ' ').trim().slice(0, 180)
+  const topic = smsTopicFromMeta(row.meta)
+  if (row.targetType === 'specific') {
+    if (row.targetEmails.length) {
+      void smsService.notifyPhonesForEmails(row.targetEmails, topic, detail, '', '')
+    } else {
+      const profileId = profileIdFromMeta(row.meta)
+      if (profileId) void smsService.notifyProfilePhone(profileId, topic, detail)
+    }
+    return
+  }
+  if (row.targetType === 'all') void smsService.notifyGlobalCardPhones(detail, topic)
 }
 
 function isBirthdayNotice(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
@@ -358,6 +392,8 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
     meta: { announcementId: row.id, kind, type, status, targetType, profileId: profileId || '' },
   })
 
+  queueAnnouncementSms(row)
+
   // Background Web Push:
   // - showPublic + sendPush → subscribers / savers (public-facing)
   // - sendPush without showPublic → owner/target profiles only (inbox/banner companion)
@@ -520,6 +556,8 @@ const update = async (id: string, actor: Actor, input: UpdateAnnouncementInput) 
     actorId: actor.id,
     meta: { announcementId: row.id, status: row.status },
   })
+
+  if (existing.status !== 'active' && row.status === 'active') queueAnnouncementSms(row)
 
   return serializeAnnouncement(row)
 }

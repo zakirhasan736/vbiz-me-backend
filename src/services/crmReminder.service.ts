@@ -5,6 +5,7 @@ import { prisma } from '../utils/prisma'
 import announcementService from './announcement.service'
 import crmEventService from './crmEvent.service'
 import pushService from './push.service'
+import smsService from './sms.service'
 
 type SystemActor = {
   id: string
@@ -467,11 +468,78 @@ async function processCrmEventReminders() {
   }
 }
 
+async function claimScheduleSmsReminder(kind: 'meetingId' | 'crmEventId', id: string) {
+  const existing = await prisma.eventLog.findFirst({
+    where: {
+      eventType: 'schedule_sms_reminder',
+      payload: { path: [kind], equals: id },
+    },
+    select: { id: true },
+  })
+  if (existing) return false
+  await prisma.eventLog.create({
+    data: {
+      eventType: 'schedule_sms_reminder',
+      payload: { [kind]: id },
+    },
+  })
+  return true
+}
+
+/** SMS only. About 30 minutes before today's schedule, and up to 30 minutes after if the run was late. */
+async function processScheduleSmsReminders(leadMinutes: number) {
+  const now = new Date()
+  const windowMs = leadMinutes * 60 * 1000
+  const from = new Date(now.getTime() - windowMs)
+  const to = new Date(now.getTime() + windowMs)
+
+  const meetings = await prisma.meeting.findMany({
+    where: { status: 'Scheduled', startsAt: { gte: from, lte: to } },
+    take: 50,
+    select: {
+      id: true,
+      host: true,
+      type: true,
+      date: true,
+      time: true,
+      profileId: true,
+      groupProfileIds: true,
+      guestUserDataId: true,
+      createdById: true,
+    },
+  })
+  for (const meeting of meetings) {
+    if (!(await claimScheduleSmsReminder('meetingId', meeting.id))) continue
+    await smsService.notifyScheduleReminder(meeting)
+  }
+
+  const events = await prisma.crmEvent.findMany({
+    where: { status: 'Scheduled', startsAt: { gte: from, lte: to } },
+    take: 50,
+    select: {
+      id: true,
+      host: true,
+      type: true,
+      date: true,
+      time: true,
+      profileId: true,
+      groupProfileIds: true,
+      guestUserDataId: true,
+      createdById: true,
+    },
+  })
+  for (const event of events) {
+    if (!(await claimScheduleSmsReminder('crmEventId', event.id))) continue
+    await smsService.notifyScheduleReminder(event)
+  }
+}
+
 export async function runCrmReminders() {
   const leadMinutes = config.CRM_REMINDER_CRON.LEAD_MINUTES
   await processWorkNoteReminders(leadMinutes)
   await processMeetingReminders()
   await processCrmEventReminders()
+  await processScheduleSmsReminders(leadMinutes)
 }
 
 const crmReminderService = {

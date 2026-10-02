@@ -1,5 +1,5 @@
 import config from '../configs/config'
-import { buildFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
+import { buildFrontendPublicCardPath, buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
 import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import authUtils from '../utils/auth.utils'
@@ -16,6 +16,7 @@ import type {
 } from '../zodValidation/oneOnOne.zod'
 import calendarIntegrationService from './calendarIntegration.service'
 import pushService from './push.service'
+import smsService from './sms.service'
 
 type Actor = { id: string; email: string; name?: string | null; role?: string | null }
 
@@ -597,6 +598,11 @@ const createPublicRequest = async (input: CreatePublicRequestInput) => {
   })
 
   await sendEmailsSafe(stakeholders.emails, `New 1-on-1 request from ${guestName}`, emailHtml, '1-on-1 request owner')
+  void smsService.notifyProfilePhone(
+    profile.id,
+    '1-on-1',
+    `${guestName} requested a 1-on-1. Reply from your backoffice.`
+  )
 
   notifyCardPush(
     profile.id,
@@ -756,6 +762,15 @@ const scheduleMeetingFromRequest = async (actor: Actor, input: ScheduleMeetingIn
     }),
     '1-on-1 propose guest'
   )
+  smsService.sendTopicSms({
+    to: request.guestPhone,
+    topic: '1-on-1',
+    cardName: profile.name?.trim() || ownerName,
+    cardUrl: profile.slug
+      ? buildFrontendPublicCardUrl((config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, ''), profile.slug)
+      : (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, ''),
+    detail: `${ownerName} proposed times. Open the card to choose one.`,
+  })
 
   const guestProfileId = await findGuestPushProfile(request.guestEmail)
   await pushGuestMeetingNotification({
@@ -921,6 +936,11 @@ const confirmGuestSlot = async (requestId: string, input: ConfirmGuestSlotInput)
         : 'Sent to the card owner.',
     }),
     '1-on-1 confirm stakeholders'
+  )
+  void smsService.notifyProfilePhone(
+    profile.id,
+    '1-on-1',
+    `${request.guestName} confirmed ${dateLabel} at ${timeLabel}.`
   )
 
   await createStakeholderInboxNotice({

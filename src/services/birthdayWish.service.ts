@@ -5,7 +5,9 @@ import { isStaffRole, toApiRole } from '../constants/userRole'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
+import { birthdayPersonKey } from '../utils/smsMessage'
 import { profileOwnerAllowsPackageAccess } from './entitlement.service'
+import smsService from './sms.service'
 
 type OwnerCandidate = {
   id: string
@@ -18,7 +20,10 @@ type BirthdayProfile = {
   id: string
   name: string
   slug: string | null
+  phone: string | null
+  countryCode: string | null
   dob: Date
+  addresses?: { country: string | null }[]
   user: OwnerCandidate | null
   companyUser: OwnerCandidate | null
 }
@@ -76,6 +81,17 @@ function resolveNonStaffOwner(profile: BirthdayProfile): OwnerCandidate | null {
   if (isEligibleOwner(profile.user)) return profile.user
   if (isEligibleOwner(profile.companyUser)) return profile.companyUser
   return null
+}
+
+function personRegion(profile: BirthdayProfile) {
+  return profile.countryCode?.trim() || profile.addresses?.[0]?.country?.trim() || null
+}
+
+function featuredCard(group: BirthdayProfile[]) {
+  return [...group].sort((a, b) => {
+    if (Boolean(a.slug) !== Boolean(b.slug)) return a.slug ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })[0]
 }
 
 function cardPublicUrl(slug: string | null, profileId: string): string {
@@ -160,7 +176,10 @@ const runDailyBirthdayWishes = async (opts?: { timeZone?: string }): Promise<Bir
       id: true,
       name: true,
       slug: true,
+      phone: true,
+      countryCode: true,
       dob: true,
+      addresses: { orderBy: { isPrimary: 'desc' }, select: { country: true }, take: 1 },
       user: { select: ownerSelect },
       companyUser: { select: ownerSelect },
     },
@@ -168,56 +187,59 @@ const runDailyBirthdayWishes = async (opts?: { timeZone?: string }): Promise<Bir
 
   result.checked = profiles.length
 
+  const due: BirthdayProfile[] = []
   for (const profile of profiles) {
     if (!profile.dob) {
       result.skipped += 1
       continue
     }
-
     const { month, day } = dobMonthDay(profile.dob)
     if (month !== today.month || day !== today.day) continue
-
     result.matched += 1
+    if (!resolveNonStaffOwner(profile)) {
+      result.skipped += 1
+      continue
+    }
+    due.push(profile)
+  }
 
+  const existingLogs = due.length
+    ? await prisma.birthdayWishLog.findMany({
+        where: { year: today.year, profileId: { in: due.map((profile) => profile.id) } },
+        select: { profileId: true },
+      })
+    : []
+  const alreadyWished = new Set(existingLogs.map((row) => row.profileId))
+
+  const groups = new Map<string, BirthdayProfile[]>()
+  for (const profile of due) {
+    const { month, day } = dobMonthDay(profile.dob)
+    const key = birthdayPersonKey(profile.phone, personRegion(profile), month, day) ?? `card:${profile.id}`
+    const list = groups.get(key) ?? []
+    list.push(profile)
+    groups.set(key, list)
+  }
+
+  const deliverCard = async (profile: BirthdayProfile) => {
     const owner = resolveNonStaffOwner(profile)
     if (!owner) {
       result.skipped += 1
-      continue
+      return false
     }
-
-    const already = await prisma.birthdayWishLog.findUnique({
-      where: {
-        profileId_year: { profileId: profile.id, year: today.year },
-      },
-      select: { id: true },
-    })
-    if (already) {
-      result.skipped += 1
-      continue
-    }
-
     const cardName = profile.name.trim() || 'your card'
     const cardUrl = cardPublicUrl(profile.slug, profile.id)
-
     try {
-      // Claim the log first so concurrent runs cannot double-send.
       await prisma.birthdayWishLog.create({
         data: { profileId: profile.id, year: today.year },
       })
     } catch {
       result.skipped += 1
-      continue
+      return false
     }
-
     try {
       const allowEmail = await profileOwnerAllowsPackageAccess(profile.id, 'allow_email_notification')
       if (allowEmail) {
-        await sendBirthdayEmail({
-          owner,
-          cardName,
-          cardUrl,
-          wishDate,
-        })
+        await sendBirthdayEmail({ owner, cardName, cardUrl, wishDate })
       }
       await createOwnerInboxNotice({
         ownerEmail: owner.email,
@@ -226,14 +248,44 @@ const runDailyBirthdayWishes = async (opts?: { timeZone?: string }): Promise<Bir
         slug: profile.slug,
       })
       result.sent += 1
+      return true
     } catch (error) {
       result.errors += 1
       logger.error(`Birthday wish failed for profile ${profile.id}`, error)
-      // Allow a later retry this year if send/inbox failed after claiming the log.
       await prisma.birthdayWishLog
         .delete({ where: { profileId_year: { profileId: profile.id, year: today.year } } })
         .catch(() => {})
+      return false
     }
+  }
+
+  for (const [key, group] of groups) {
+    const fresh = group.filter((profile) => !alreadyWished.has(profile.id))
+    result.skipped += group.length - fresh.length
+    if (!fresh.length) continue
+
+    let delivered = 0
+    for (const profile of fresh) {
+      if (await deliverCard(profile)) delivered += 1
+    }
+
+    const personKey = !key.startsWith('card:')
+    const alreadyTexted = group.some((profile) => alreadyWished.has(profile.id))
+    if (!personKey || delivered < 1 || alreadyTexted) continue
+
+    const card = featuredCard(group)
+    const count = group.length
+    smsService.sendTopicSms({
+      to: card.phone,
+      countryCode: personRegion(card),
+      topic: 'Birthday',
+      cardName: card.name.trim() || 'your card',
+      cardUrl: cardPublicUrl(card.slug, card.id),
+      detail:
+        count > 1
+          ? `Happy birthday from vBiz Me. Today is ${wishDate}. This number is on ${count} cards with this birthday.`
+          : `Happy birthday from vBiz Me. Today is ${wishDate}.`,
+    })
   }
 
   logger.info(

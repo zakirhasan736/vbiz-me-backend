@@ -1,8 +1,10 @@
 import type { Prisma } from '../../generated/prisma/client'
+import config from '../configs/config'
 import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
+import authUtils from '../utils/auth.utils'
 import {
   assertRequestedProfileInScope,
   isProfileIdInCrmScope,
@@ -21,6 +23,8 @@ import type {
 } from '../zodValidation/crmEvent.zod'
 import calendarIntegrationService from './calendarIntegration.service'
 import { computeStartsAt } from './meeting.service'
+import pushService from './push.service'
+import smsService from './sms.service'
 
 type CrmEventRow = {
   id: string
@@ -460,6 +464,48 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
       calendarEventId: row.googleEventId || '',
     },
   })
+
+  if (status === 'Scheduled') {
+    const guest = guestUserDataId
+      ? await prisma.guestUserData.findUnique({
+          where: { id: guestUserDataId },
+          select: { email: true, fullName: true },
+        })
+      : null
+    const personEmail = guest?.email?.trim() || recipientEmail
+    const personName = guest?.fullName?.trim() || recipientName || 'there'
+    const safe = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    if (personEmail && config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
+      void authUtils
+        .sendEmail({
+          receiverMail: personEmail,
+          subject: `Scheduled: ${row.type} on ${row.date}`,
+          html: `<p>Hello ${safe(personName)},</p><p>${safe(actorLabel)} scheduled ${safe(row.type)} with you on ${safe(row.date)} at ${safe(row.time)}.</p><p>vBiz Me</p>`,
+        })
+        .catch((error) => logger.error('CRM schedule email failed', error))
+    }
+    const pushIds = new Set<string>()
+    if (!guest && row.profileId) pushIds.add(row.profileId)
+    if (personEmail) {
+      for (const profileId of await pushService.profileIdsMatchingEmails([personEmail])) pushIds.add(profileId)
+    }
+    for (const profileId of pushIds) {
+      pushService.notifyProfileUpdate(profileId, {
+        title: `Scheduled: ${row.type}`,
+        body: `${row.date} at ${row.time}`,
+        type: 'meeting_alert',
+      })
+    }
+    void smsService.notifyScheduleCreated({
+      guestUserDataId,
+      profileId: row.profileId,
+      groupProfileIds: row.groupProfileIds,
+      senderName: actorLabel,
+      type: row.type,
+      date: row.date,
+      time: row.time,
+    })
+  }
 
   return serializeCrmEvent(row)
 }

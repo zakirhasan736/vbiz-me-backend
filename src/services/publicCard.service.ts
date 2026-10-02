@@ -32,10 +32,12 @@ import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } fro
 import { resolveStoredProductPricing } from '../utils/productPricing'
 import { collectSaveContactPhotoCandidates, resolveSaveContactPhotoUrls } from '../utils/saveContactPhoto'
 import { resolveProfileSharePreviewImageUrl, SHARE_PREVIEW_IMAGE_SETTING_KEY } from '../utils/sharePreviewImage'
+import { hasFullSaveContactInfo } from '../utils/smsMessage'
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
 import pushService, { mediaFromProfile } from './push.service'
 import { mergeSeoSettingsWithDefaults } from './seoMetadata.service'
+import smsService from './sms.service'
 
 const RETURNING_SAVED_GUEST_EVENT = 'returning_saved_guest'
 const RETURNING_SAVED_GUEST_DELAY_MS = 3 * 24 * 60 * 60 * 1000
@@ -2330,6 +2332,17 @@ const saveGuestUser = async (
 
   liveDashboardHub.emitKpi('save', [profile.userId, profile.companyUserId])
 
+  if (hasFullSaveContactInfo({ name: fullName, email, phone })) {
+    const base = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
+    smsService.sendTopicSms({
+      to: phone,
+      topic: 'Saved contact',
+      cardName: profile.name?.trim() || 'vBiz card',
+      cardUrl: profile.slug ? buildFrontendPublicCardUrl(base, profile.slug) : base,
+      detail: `You saved ${profile.name?.trim() || 'this card'}. We'll text you about this card.`,
+    })
+  }
+
   return {
     id: row.id,
     full_name: row.fullName,
@@ -2418,6 +2431,7 @@ const saveNote = async (profileId: string, content: string, options: PublicNoteO
   const note = await prisma.userNote.create({
     data: { profileId, content, meta },
   })
+  void smsService.notifyProfilePhone(profile.id, 'Note', `${authorName || 'A visitor'} left a note on this card.`)
   return mapPublicNote(note)
 }
 
@@ -2635,6 +2649,7 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
     body,
     url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
   })
+  void smsService.notifyProfilePhone(profile.id, 'Repeat view', `${guestName} is looking at this card again.`)
 }
 
 const trackEvent = async (
