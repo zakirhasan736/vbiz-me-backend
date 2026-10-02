@@ -453,7 +453,9 @@ async function pushGuestMeetingNotification(opts: {
   meetingUrl: string | null
   message?: string | null
 }) {
-  if (!opts.guestProfileId) return { sent: false as const, reason: 'no_push_subscription' as const }
+  const matchedProfiles = await pushService.profileIdsMatchingEmails([opts.guestEmail])
+  const profileIds = [...new Set([...(opts.guestProfileId ? [opts.guestProfileId] : []), ...matchedProfiles])]
+  if (!profileIds.length) return { sent: false as const, reason: 'no_push_subscription' as const }
 
   const title =
     opts.eventType === 'times_proposed'
@@ -480,13 +482,33 @@ async function pushGuestMeetingNotification(opts: {
     body = `${body} Message: "${truncatedReply}"`
   }
 
-  pushService.notifyProfileUpdate(opts.guestProfileId, {
-    title,
-    body,
-    type: 'meeting_alert',
-    url: opts.meetingUrl || undefined,
-  })
+  for (const profileId of profileIds) {
+    pushService.notifyProfileUpdate(profileId, {
+      title,
+      body,
+      type: 'meeting_alert',
+      url: opts.meetingUrl || undefined,
+    })
+  }
   return { sent: true as const, reason: 'ok' as const }
+}
+
+async function notifyOwnerMeetingPush(
+  profileId: string,
+  ownerEmails: string[],
+  payload: { title: string; body: string; url?: string },
+  slug?: string | null
+) {
+  const matched = await pushService.profileIdsMatchingEmails(ownerEmails)
+  const profileIds = [...new Set([profileId, ...matched])]
+  for (const id of profileIds) {
+    pushService.notifyProfileUpdate(id, {
+      title: payload.title,
+      body: payload.body,
+      type: 'meeting_alert',
+      url: payload.url || (slug ? buildFrontendPublicCardPath(slug) : undefined),
+    })
+  }
 }
 
 async function createOrUpdateZohoEvent(opts: {
@@ -869,8 +891,9 @@ const confirmGuestSlot = async (requestId: string, input: ConfirmGuestSlotInput)
   )
 
   const stakeholders = await resolveCardStakeholderEmails(profile.id)
-  notifyCardPush(
+  await notifyOwnerMeetingPush(
     profile.id,
+    stakeholders.emails,
     {
       title: `${request.guestName} confirmed the 1-on-1`,
       body: `Meeting confirmed for ${dateLabel} at ${timeLabel}.`,
