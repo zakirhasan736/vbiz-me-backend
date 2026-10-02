@@ -16,6 +16,11 @@ jobs:
     name: Lint · Typecheck · Test · Build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Dummy URL for prisma.config.ts / postinstall `prisma generate` only.
+    # CI does not connect to a real database.
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci?schema=public
+      NODE_ENV: test
 
     steps:
       - name: Checkout
