@@ -28,7 +28,6 @@ import {
   createContactConflictMessage,
   findCreateContactConflict,
   normalizeCardEmail,
-  normalizeCardPhone,
   type CardActivationInput,
 } from '../utils/cardActivation'
 import {
@@ -1073,31 +1072,16 @@ const assertCardIdentityForCreate = (input: Pick<CardActivationInput, 'email' | 
   throw new AppError(400, cardCreationIssueMessage(issue))
 }
 
-const assertCreateContactsAvailable = async (email: unknown, phone: unknown) => {
+const assertCreateContactsAvailable = async (email: unknown) => {
   const normalizedEmail = normalizeCardEmail(email)
-  const digits = normalizeCardPhone(phone)
+  if (!normalizedEmail) return
 
-  if (normalizedEmail) {
-    const hit = await prisma.profile.findFirst({
-      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
-      select: { email: true, phone: true },
-    })
-    if (hit && findCreateContactConflict({ email, phone }, hit) === 'email') {
-      throw new AppError(409, createContactConflictMessage('email'))
-    }
-  }
-
-  if (!digits) return
-
-  const hits = await prisma.$queryRaw<Array<{ email: string | null; phone: string | null }>>`
-    SELECT email, phone
-    FROM "Profile"
-    WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ${digits}
-    LIMIT 1
-  `
-  const phoneHit = hits[0]
-  if (phoneHit && findCreateContactConflict({ email, phone }, phoneHit) === 'phone') {
-    throw new AppError(409, createContactConflictMessage('phone'))
+  const hit = await prisma.profile.findFirst({
+    where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+    select: { email: true, phone: true },
+  })
+  if (hit && findCreateContactConflict({ email }, hit) === 'email') {
+    throw new AppError(409, createContactConflictMessage('email'))
   }
 }
 
@@ -1274,7 +1258,7 @@ const create = async (
       phone: raw.phone,
       dob: raw.dob,
     })
-    await assertCreateContactsAvailable(resolvedEmail, raw.phone)
+    await assertCreateContactsAvailable(resolvedEmail)
   }
   if (initialLifecycle.statusName === 'active') {
     assertCardCanActivate({
@@ -1824,7 +1808,7 @@ const duplicate = async (
       throw new AppError(400, "Password can't be the same as email")
     }
 
-    await assertCreateContactsAvailable(email, member.phone)
+    await assertCreateContactsAvailable(email)
 
     const provisioned = await provisionCorporateMemberUser({
       name,

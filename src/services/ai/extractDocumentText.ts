@@ -110,7 +110,11 @@ export function classifyWebsitePage(url: string, text = ''): WebsitePageCategory
   if (/portfolio|project|gallery|case.?stud|our-work/.test(hay)) return 'portfolio'
   if (/blog|news|article|press/.test(hay)) return 'blog'
   if (/service|offer|package|solution/.test(hay)) return 'services'
-  if (/product|shop|store/.test(hay)) return 'products'
+  if (
+    /\/(?:cars?|vehicles?|inventory|stock|listings?|showroom|for-sale)(?:\/|$)/.test(hay) ||
+    /product|shop|store/.test(hay)
+  )
+    return 'products'
   if (/team|staff|our people/.test(hay)) return 'team'
   if (/contact|get in touch/.test(hay)) return 'contact'
   if (/location|offices|service area/.test(hay)) return 'locations'
@@ -530,7 +534,7 @@ async function discoverSitemapUrls(home: string): Promise<string[]> {
     const sitemapUrl = new URL('/sitemap.xml', origin).toString()
     const xml = await fetchHtml(sitemapUrl, 12_000)
     const locs = parseSitemapLocs(xml, origin.hostname)
-    const nested = locs.filter((loc) => /sitemap/i.test(loc)).slice(0, 4)
+    const nested = locs.filter((loc) => /sitemap/i.test(loc)).slice(0, 12)
     const nestedLocs: string[] = []
     for (const nestedUrl of nested) {
       try {
@@ -553,6 +557,190 @@ type FetchedPage = {
   imageUrls: string[]
 }
 
+const CORE_READ_CATEGORIES = new Set<WebsitePageCategory>([
+  'about',
+  'services',
+  'contact',
+  'team',
+  'faq',
+  'reviews',
+  'locations',
+  'certifications',
+])
+
+export type CatalogReadGroup = {
+  label: string
+  count: number
+  sampleUrl: string
+  otherLabels: string[]
+}
+
+function canonicalPageUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    parsed.hash = ''
+    if (parsed.pathname !== '/' && parsed.pathname.endsWith('/')) parsed.pathname = parsed.pathname.slice(0, -1)
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
+function pathParts(url: string): string[] {
+  try {
+    return new URL(url).pathname
+      .split('/')
+      .filter(Boolean)
+      .map((part) => decodeURIComponent(part))
+  } catch {
+    return []
+  }
+}
+
+function parentKey(url: string): string {
+  const parts = pathParts(url)
+  return parts.length > 1 ? parts.slice(0, -1).join('/') : '/'
+}
+
+function humanizeSlug(slug: string): string {
+  const words = slug.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!words) return slug
+  if (words.length <= 4) return words.toUpperCase()
+  return words.replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+}
+
+function categoryToken(slug: string): string {
+  const token = slug
+    .toLowerCase()
+    .split('-')
+    .find((part) => part && !/^(19|20)\d{2}$/.test(part) && !/^(used|new|car|cars|for|sale|stock)$/.test(part))
+  return token || 'inventory'
+}
+
+function isCatalogItem(url: string, siblingCount: number): boolean {
+  const parts = pathParts(url)
+  const leaf = parts[parts.length - 1] || ''
+  const detailed = leaf.length > 22 || (leaf.match(/-/g) || []).length >= 3 || /\b(19|20)\d{2}\b/.test(leaf)
+  if (parts.length < 2) return siblingCount >= 8 && detailed
+  const head = parts[0].toLowerCase()
+  const inventoryRoot = /^(cars?|vehicles?|inventory|stock|listings?|for-sale|showroom|used-cars|new-cars)$/.test(head)
+  if (inventoryRoot && parts.length >= 3) return true
+  if ((inventoryRoot || classifyWebsitePage(url) === 'products') && siblingCount >= 4) return true
+  return siblingCount >= 6 && detailed
+}
+
+/**
+ * Full site is discovered, but a long inventory is not opened car by car.
+ * Main business pages are always read. Each car/product category contributes
+ * its index page plus one example, and the rest stay as a category list.
+ */
+export function planCatalogReads(
+  urls: string[],
+  limit = DEFAULT_CRAWL_MAX_PAGES - 1
+): {
+  fetchUrls: string[]
+  summary: string
+  groups: CatalogReadGroup[]
+} {
+  const unique: string[] = []
+  const seen = new Set<string>()
+  for (const url of urls) {
+    const canonical = canonicalPageUrl(url)
+    if (!canonical || seen.has(canonical)) continue
+    seen.add(canonical)
+    unique.push(canonical)
+  }
+
+  const siblingCount = new Map<string, number>()
+  for (const url of unique) {
+    const key = parentKey(url)
+    siblingCount.set(key, (siblingCount.get(key) || 0) + 1)
+  }
+
+  const cores: string[] = []
+  const blogs: string[] = []
+  const others: string[] = []
+  const items: string[] = []
+  for (const url of unique) {
+    const category = classifyWebsitePage(url)
+    if (CORE_READ_CATEGORIES.has(category)) {
+      cores.push(url)
+      continue
+    }
+    if (category === 'blog' && pathParts(url).length >= 2) {
+      blogs.push(url)
+      continue
+    }
+    if (isCatalogItem(url, siblingCount.get(parentKey(url)) || 0)) {
+      items.push(url)
+      continue
+    }
+    others.push(url)
+  }
+
+  const buckets = new Map<string, string[]>()
+  for (const url of items) {
+    const parts = pathParts(url)
+    const key = parts.length >= 3 ? parts[parts.length - 2].toLowerCase() : categoryToken(parts[parts.length - 1] || '')
+    const list = buckets.get(key) || []
+    list.push(url)
+    buckets.set(key, list)
+  }
+
+  const groups: CatalogReadGroup[] = [...buckets.entries()]
+    .map(([key, members]) => ({
+      label: humanizeSlug(key),
+      count: members.length,
+      sampleUrl: members[0],
+      otherLabels: members.slice(1, 9).map((member) => humanizeSlug(pathParts(member).pop() || member)),
+    }))
+    .sort((a, b) => b.count - a.count)
+
+  const longList = items.length >= 8 || groups.some((group) => group.count >= 4)
+  if (!longList) {
+    return {
+      fetchUrls: [...cores, ...others, ...blogs, ...items].slice(0, limit),
+      summary: '',
+      groups: [],
+    }
+  }
+
+  const categoryPages = others.filter((url) => {
+    const parts = pathParts(url)
+    const head = (parts[0] || '').toLowerCase()
+    return (
+      /^(cars?|vehicles?|inventory|stock|listings?|showroom|services?|products?)$/.test(head) ||
+      classifyWebsitePage(url) === 'products'
+    )
+  })
+  const samples = groups.slice(0, 12).map((group) => group.sampleUrl)
+  const fetchUrls = [...new Set([...cores, ...categoryPages, ...samples, ...blogs.slice(0, 3), ...others])].slice(
+    0,
+    limit
+  )
+  const listed = groups
+    .slice(0, 24)
+    .map((group) => {
+      const extra = group.count - 1
+      const names = group.otherLabels.slice(0, 6).join(', ')
+      return `- ${group.label}: ${group.count} listed. Read one example (${group.sampleUrl}).${names ? ` Also in this category: ${names}${extra > group.otherLabels.length ? `, and ${extra - Math.min(6, group.otherLabels.length)} more` : ''}.` : ''}`
+    })
+    .join('\n')
+  const summary = [
+    `FULL WEBSITE: ${unique.length} pages discovered.`,
+    'Main pages (home, about, services, contact, team, and similar) are read in full.',
+    'Long car or product lists are read by category: one example from each category, not every listing.',
+    listed,
+    blogs.length > 3
+      ? `Articles discovered: ${blogs.length}. Opened ${Math.min(3, blogs.length)} and kept the rest as titles only.`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  return { fetchUrls, summary: summary.slice(0, 4500), groups }
+}
+
 /** Crawl homepage + inner pages (services, portfolio, blog, faq, reviews…) including sitemap URLs.
  * Storefront mode stays on the provided seller/vendor URL (+ a few product links), no site-root sitemap.
  */
@@ -560,11 +748,16 @@ export async function crawlWebsiteDeep(
   url: string,
   focus?: string,
   options?: { mode?: WebsiteCrawlMode }
-): Promise<{ pages: CrawledWebsitePage[]; combined: string; mode: WebsiteCrawlMode }> {
+): Promise<{ pages: CrawledWebsitePage[]; combined: string; mode: WebsiteCrawlMode; catalogSummary?: string }> {
   const mode: WebsiteCrawlMode = options?.mode === 'storefront' ? 'storefront' : 'full'
   const home = url.startsWith('http') ? url : `https://${url}`
-  const cacheId = cacheKey(['crawl-v3', home, focus || '', mode])
-  const cached = cacheGet<{ pages: CrawledWebsitePage[]; combined: string; mode: WebsiteCrawlMode }>(cacheId)
+  const cacheId = cacheKey(['crawl-v4', home, focus || '', mode])
+  const cached = cacheGet<{
+    pages: CrawledWebsitePage[]
+    combined: string
+    mode: WebsiteCrawlMode
+    catalogSummary?: string
+  }>(cacheId)
   if (cached) return cached
 
   const imageLimit = mode === 'storefront' ? 24 : 8
@@ -580,7 +773,8 @@ export async function crawlWebsiteDeep(
       imageUrls: extractPageImageUrls(homeHtml, home, imageLimit),
     },
   ]
-  const visited = new Set<string>([home])
+  const visited = new Set<string>([canonicalPageUrl(home), home])
+  let catalogSummary = ''
   const maxPages =
     mode === 'storefront' ? STOREFRONT_CRAWL_MAX_PAGES : focus ? FOCUSED_CRAWL_MAX_PAGES : DEFAULT_CRAWL_MAX_PAGES
 
@@ -616,13 +810,8 @@ export async function crawlWebsiteDeep(
   }
 
   // Storefront: only follow a few product/service links from this seller page — never site-root sitemap.
-  const firstLinkLimit = mode === 'storefront' ? 8 : focus ? 20 : 16
-  const firstLinks = extractSameOriginLinks(
-    homeHtml,
-    home,
-    mode === 'storefront' ? 'services' : focus,
-    firstLinkLimit
-  ).filter(remember)
+  // Full sites are planned below so a long inventory is read by category, not link order.
+  const firstLinks = mode === 'storefront' ? extractSameOriginLinks(homeHtml, home, 'services', 8).filter(remember) : []
 
   if (mode === 'storefront') {
     if (firstLinks.length) {
@@ -633,37 +822,45 @@ export async function crawlWebsiteDeep(
       }
     }
   } else {
-    const sitemapPromise = discoverSitemapUrls(home)
-    const firstResults = await fetchSettledInChunks(firstLinks, 8, fetchPage)
-    const childLinks: string[] = []
-    for (const result of firstResults) {
-      if (result.status !== 'fulfilled') continue
-      const page = result.value as FetchedPage
-      acceptPage(page)
-      childLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 12))
+    const homeLinks = extractSameOriginLinks(homeHtml, home, focus, 80)
+    const sitemapUrls = await discoverSitemapUrls(home)
+    const plan = planCatalogReads([...homeLinks, ...sitemapUrls], Math.max(8, maxPages - 1))
+    catalogSummary = plan.summary
+    const fetchList = plan.fetchUrls.filter((link) => !visited.has(link)).slice(0, Math.max(0, maxPages - pages.length))
+    for (const link of fetchList) visited.add(link)
+    const extraLinks: string[] = []
+    if (fetchList.length) {
+      const results = await fetchSettledInChunks(fetchList, 8, fetchPage)
+      for (const result of results) {
+        if (result.status !== 'fulfilled') continue
+        const page = result.value as FetchedPage
+        acceptPage(page)
+        extraLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 40))
+      }
     }
-
-    const sitemapCandidates = (await sitemapPromise).filter((link) => !visited.has(link))
-    const childCandidates = childLinks.filter((link) => !visited.has(link))
-    const secondLinks = [...sitemapCandidates, ...childCandidates]
-      .filter((link, index, all) => all.indexOf(link) === index)
-      .slice(0, Math.max(0, maxPages - pages.length))
-    for (const link of secondLinks) visited.add(link)
-    if (secondLinks.length) {
-      const secondResults = await fetchSettledInChunks(secondLinks, 8, fetchPage)
-      for (const result of secondResults) {
+    const refined = planCatalogReads([...homeLinks, ...sitemapUrls, ...extraLinks], Math.max(8, maxPages - 1))
+    if (refined.summary) catalogSummary = refined.summary
+    const more = refined.fetchUrls.filter((link) => !visited.has(link)).slice(0, Math.max(0, maxPages - pages.length))
+    for (const link of more) visited.add(link)
+    if (more.length) {
+      const moreResults = await fetchSettledInChunks(more, 6, fetchPage)
+      for (const result of moreResults) {
         if (result.status !== 'fulfilled') continue
         acceptPage(result.value as FetchedPage)
       }
     }
   }
 
-  const combinedPrefix =
+  const combinedPrefix = [
     mode === 'storefront'
-      ? `CRAWL MODE: storefront (seller/vendor page — focus on this URL, not the full marketplace)\n`
-      : ''
+      ? 'CRAWL MODE: storefront (seller/vendor page — focus on this URL, not the full marketplace)'
+      : '',
+    catalogSummary,
+  ]
+    .filter(Boolean)
+    .join('\n')
   const combined =
-    combinedPrefix +
+    (combinedPrefix ? `${combinedPrefix}\n\n` : '') +
     pages
       .map((p, i) => {
         const media = p.imageUrls?.length
@@ -678,6 +875,7 @@ export async function crawlWebsiteDeep(
     pages,
     combined: truncate(combined, mode === 'storefront' ? 90000 : focus ? 120000 : 110000),
     mode,
+    catalogSummary: catalogSummary || undefined,
   }
   cacheSet(cacheId, result)
   return result

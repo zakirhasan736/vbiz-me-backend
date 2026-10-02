@@ -69,6 +69,7 @@ async function createJsonCompletion(
   input: {
     model: string
     temperature?: number
+    maxCompletionTokens?: number
     messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
   }
 ) {
@@ -77,14 +78,24 @@ async function createJsonCompletion(
     response_format: { type: 'json_object' as const },
     messages: input.messages,
   }
+  const withBudget = input.maxCompletionTokens ? { max_completion_tokens: input.maxCompletionTokens } : {}
   try {
     return await client.chat.completions.create({
       ...base,
+      ...withBudget,
       temperature: input.temperature ?? 0.4,
     })
   } catch (error) {
     if (!isUnsupportedParameterError(error)) throw error
-    return client.chat.completions.create(base)
+    try {
+      return await client.chat.completions.create({
+        ...base,
+        ...(input.maxCompletionTokens ? { max_tokens: input.maxCompletionTokens } : {}),
+      })
+    } catch (retryError) {
+      if (!isUnsupportedParameterError(retryError)) throw retryError
+      return client.chat.completions.create(base)
+    }
   }
 }
 
@@ -95,6 +106,7 @@ export async function chatJson<T>(params: {
   tier?: AiTier
   model?: string
   temperature?: number
+  maxCompletionTokens?: number
 }): Promise<{ data: T; meta: ChatJsonMeta }> {
   const client = createOpenAIClient()
   const requested = params.tier || 'luna'
@@ -125,6 +137,7 @@ export async function chatJson<T>(params: {
       completion = await createJsonCompletion(client, {
         model: candidate,
         temperature: params.temperature,
+        maxCompletionTokens: params.maxCompletionTokens,
         messages,
       })
       break
@@ -153,8 +166,12 @@ export async function chatJson<T>(params: {
     )
   }
 
-  const text = completion.choices[0]?.message?.content
+  const choice = completion.choices[0]
+  const text = choice?.message?.content
   if (!text) throw publicAiFailure(502, 'The AI assistant returned an empty response. Please try again.', 'AI_EMPTY')
+  if (choice?.finish_reason === 'length') {
+    throw publicAiFailure(502, 'The AI assistant returned an incomplete response. Please try again.', 'AI_INVALID_JSON')
+  }
 
   let data: T
   try {

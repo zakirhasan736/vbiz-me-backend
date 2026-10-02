@@ -102,8 +102,8 @@ export function collectCardCreationIssues(
   if (!email) issues.push({ field: 'email', label: 'Email', reason: 'missing' })
   else if (!EMAIL_PATTERN.test(email)) issues.push({ field: 'email', label: 'Email', reason: 'invalid' })
 
-  if (!phoneRaw) issues.push({ field: 'phone', label: 'Phone', reason: 'missing' })
-  else if (phone.length < 7 || phone.length > 15) {
+  // Same owner can reuse one phone across multiple business cards.
+  if (phoneRaw && (phone.length < 7 || phone.length > 15)) {
     issues.push({ field: 'phone', label: 'Phone', reason: 'invalid' })
   }
 
@@ -118,24 +118,22 @@ export function cardCreationIssueMessage(issue: CardActivationIssue): string {
       : 'Enter a valid email address to create a card.'
   }
   if (issue.field === 'phone') {
-    return issue.reason === 'missing'
-      ? 'Phone number is required to create a card.'
-      : 'Enter a valid phone number to create a card.'
+    return 'Enter a valid phone number to create a card.'
   }
   if (issue.reason === 'missing') return 'Date of birth is required to create a card.'
   if (issue.reason === 'underage') return 'You must be at least 12 years old to create a card.'
   return 'Enter a valid date of birth in YYYY-MM-DD format.'
 }
 
-/** Used only when creating a new card. Edits and already-saved cards are not checked. */
+/** Used only when creating a new card. Phone is not unique: one owner may use it on several businesses. */
 export function findCreateContactConflict(
   input: { email?: unknown; phone?: unknown },
   existing: { email?: string | null; phone?: string | null }
-): 'email' | 'phone' | null {
+): 'email' | null {
   const email = normalizeCardEmail(input.email)
-  const phone = normalizeCardPhone(input.phone)
   if (email && normalizeCardEmail(existing.email) === email) return 'email'
-  if (phone && normalizeCardPhone(existing.phone) === phone) return 'phone'
+  void input.phone
+  void existing.phone
   return null
 }
 

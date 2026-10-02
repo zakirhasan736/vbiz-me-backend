@@ -29,6 +29,7 @@ import {
   extractPageImageUrls,
   parseSitemapLocs,
   pdfTextLooksScanned,
+  planCatalogReads,
   stripWebsiteBoilerplate,
 } from '../extractDocumentText'
 import {
@@ -403,7 +404,7 @@ describe('vBiz Me auto card builder', () => {
     const dob = fields.find((f) => f.fieldKey === 'dob')
     const faq = fields.find((f) => f.fieldKey === 'faqs')
     assert.equal(phone?.status, 'READY')
-    assert.equal(phone?.required, true)
+    assert.equal(phone?.required, false)
     assert.equal(dob?.status, 'EMPTY')
     assert.equal(dob?.required, true)
     assert.equal(faq?.status, 'EMPTY')
@@ -471,7 +472,7 @@ describe('vBiz Me auto card builder', () => {
     assert.ok(plan.tabs.some((tab) => tab.tabId === 'home'))
   })
 
-  it('asks for missing email then phone then date of birth at creation, and reuses existing card contacts', async () => {
+  it('asks for missing email then date of birth at creation, and reuses existing card contacts', async () => {
     const { applyExistingCardToProfile, buildFieldGraph, nextActionableField } = await import('../fieldGraph.service')
     const seeded = applyExistingCardToProfile(profile({ email: null, phone: null, dateOfBirth: null }), {
       personal: { email: 'owner@card.test', phone: '8605550100', dob: '1990-05-05', fullName: 'Pat Owner' },
@@ -489,7 +490,7 @@ describe('vBiz Me auto card builder', () => {
     const afterEmail = missing.map((field) =>
       field.fieldKey === 'email' ? { ...field, status: 'READY' as const, currentValue: 'a@b.co' } : field
     )
-    assert.equal(nextActionableField(afterEmail, ['home', 'services'])?.fieldKey, 'phone')
+    assert.equal(nextActionableField(afterEmail, ['home', 'services'])?.fieldKey, 'dob')
   })
 
   it('does not allow AI to invent licenses', async () => {
@@ -641,11 +642,11 @@ describe('vBiz Me auto card builder', () => {
     )
   })
 
-  it('requires email, phone, and date of birth for every new card, including drafts', () => {
+  it('requires email and date of birth for every new card, and allows a shared phone', () => {
     const missing = collectCardCreationIssues({ email: '', phone: '', dob: '' })
     assert.deepEqual(
       missing.map((issue) => issue.field),
-      ['email', 'phone', 'dob']
+      ['email', 'dob']
     )
     assert.equal(cardCreationIssueMessage(missing[0]!), 'Email is required to create a card.')
 
@@ -654,18 +655,19 @@ describe('vBiz Me auto card builder', () => {
       phone: '',
       dob: '1990-07-18',
     })
-    assert.equal(missingPhone[0]?.field, 'phone')
+    assert.equal(missingPhone.length, 0)
 
     const invalid = collectCardCreationIssues({
       email: 'owner@example.com',
       phone: '12025550101',
       dob: '1990-02-31',
     })
+    assert.equal(invalid[0]?.field, 'dob')
     assert.equal(invalid[0]?.reason, 'invalid')
     assert.equal(
       collectCardCreationIssues({
         email: 'owner@example.com',
-        phone: '12025550101',
+        phone: '',
         dob: '1990-07-18',
       }).length,
       0
@@ -690,7 +692,7 @@ describe('vBiz Me auto card builder', () => {
     assert.equal(normalizeCardEmail('  Owner@Example.COM '), 'owner@example.com')
   })
 
-  it('flags email or phone already used on another card only for create-time matching', () => {
+  it('flags a reused email at create time and allows the same phone on another card', () => {
     assert.equal(
       findCreateContactConflict(
         { email: 'Owner@Example.COM', phone: '+1 (202) 555-0101' },
@@ -702,13 +704,6 @@ describe('vBiz Me auto card builder', () => {
       findCreateContactConflict(
         { email: 'new@example.com', phone: '+1 (202) 555-0101' },
         { email: 'owner@example.com', phone: '1 (202) 555-0101' }
-      ),
-      'phone'
-    )
-    assert.equal(
-      findCreateContactConflict(
-        { email: 'new@example.com', phone: '12025550199' },
-        { email: 'owner@example.com', phone: '12025550101' }
       ),
       null
     )
@@ -778,5 +773,71 @@ describe('vBiz Me auto card builder', () => {
     assert.match(route, /statusCode: 202/)
     assert.match(route, /builderMode/)
     assert.match(route, /profileId/)
+  })
+
+  it('reads a long car inventory by category and still opens main business pages', () => {
+    const origin = 'https://www.thepaddockcars.com'
+    const urls = [`${origin}/about`, `${origin}/services`, `${origin}/contact`, `${origin}/team`, `${origin}/inventory`]
+    for (const brand of ['porsche', 'bmw', 'ferrari']) {
+      for (let n = 1; n <= 6; n += 1) {
+        urls.push(`${origin}/inventory/${brand}/${brand}-model-${n}-2020`)
+      }
+    }
+    const plan = planCatalogReads(urls, 30)
+    assert.match(plan.summary, /by category/i)
+    assert.match(plan.summary, /Porsche/)
+    assert.match(plan.summary, /BMW/)
+    assert.match(plan.summary, /FERRARI|Ferrari/)
+    for (const page of ['/about', '/services', '/contact', '/team', '/inventory']) {
+      assert.ok(plan.fetchUrls.some((url) => url.includes(page)))
+    }
+    const openedCars = plan.fetchUrls.filter((url) => /\/inventory\/(porsche|bmw|ferrari)\//.test(url))
+    assert.equal(openedCars.length, 3)
+    assert.equal(plan.groups.length, 3)
+  })
+
+  it('suggests a card from an uploaded document when there is no website', async () => {
+    const { buildArchitectureSource, fallbackArchitecture } = await import('../solArchitect.service')
+    const { emptyNormalizedSources } = await import('../sourceNormalizer.service')
+    const normalized = emptyNormalizedSources('')
+    normalized.documents = [
+      {
+        id: '1',
+        label: 'brochure.pdf',
+        extractionMethod: 'native',
+        text: 'Harbor Dental\nFamily dentistry and teeth whitening.\nCall (860) 555-0199 or email hello@harbordental.test',
+      },
+    ]
+    normalized.extractedText = normalized.documents[0].text
+    const source = buildArchitectureSource(normalized)
+    assert.match(source, /NO WEBSITE URL/)
+    assert.match(source, /Harbor Dental/)
+    const draft = fallbackArchitecture(normalized)
+    assert.match(String(draft.masterBusinessProfile.businessName), /Harbor Dental/)
+    assert.match(String(draft.masterBusinessProfile.businessDescription), /whitening/)
+    assert.equal(draft.masterBusinessProfile.email, 'hello@harbordental.test')
+    assert.ok(draft.recommendedTabs.some((tab) => tab.navId === 'home'))
+  })
+
+  it('large site digest keeps every crawled page without dumping the full crawl', async () => {
+    const { buildArchitectureSource, fallbackArchitecture } = await import('../solArchitect.service')
+    const { emptyNormalizedSources } = await import('../sourceNormalizer.service')
+    const normalized = emptyNormalizedSources('https://www.thepaddockcars.com')
+    normalized.website.pages = Array.from({ length: 17 }, (_, index) => ({
+      url: `https://www.thepaddockcars.com/${index === 0 ? '' : `car-${index}`}`,
+      category: index === 0 ? 'home' : index < 3 ? 'about' : 'products',
+      title: index === 0 ? 'The Paddock Cars | Luxury dealer' : `Car ${index}`,
+      text: `Inventory detail ${index} ${'spec '.repeat(800)}`,
+    }))
+    normalized.extractedText = normalized.website.pages.map((page) => page.text).join('\n')
+    const digest = buildArchitectureSource(normalized)
+    assert.ok(digest.length < 28_000)
+    assert.match(digest, /LARGE SITE DIGEST/)
+    assert.match(digest, /car-16/)
+    assert.match(digest, /The Paddock Cars/)
+    const draft = fallbackArchitecture(normalized)
+    assert.match(String(draft.masterBusinessProfile.businessName), /Paddock/)
+    assert.ok((draft.masterBusinessProfile.products || []).length > 0)
+    assert.ok(draft.recommendedTabs.some((tab) => tab.navId === 'home'))
   })
 })

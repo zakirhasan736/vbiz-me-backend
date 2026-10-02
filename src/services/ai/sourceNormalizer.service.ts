@@ -28,6 +28,8 @@ export type NormalizedSourceData = {
     scrapeFailed?: boolean
     scrapeError?: string
     crawlMode?: WebsiteCrawlMode
+    /** Category rollup for long inventories. Main pages are still stored in full. */
+    catalogSummary?: string
   }
   documents: NormalizedDocument[]
   ocrResults: NormalizedDocument[]
@@ -243,6 +245,7 @@ export async function normalizeSources(input: {
       imageUrls: (page.imageUrls || []).map((url) => mirrored.get(url) || url),
     }))
     website.crawlMode = crawled.mode || crawlMode
+    if (crawled.catalogSummary) website.catalogSummary = crawled.catalogSummary
     if (crawlMode === 'storefront') {
       textParts.push(STOREFRONT_SOURCE_PREAMBLE)
       textParts.push(

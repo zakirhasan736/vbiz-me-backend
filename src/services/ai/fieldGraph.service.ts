@@ -99,9 +99,10 @@ const FIELD_DEFS: FieldDef[] = [
     sectionId: 'personal',
     fieldKey: 'phone',
     fieldLabel: 'Phone',
-    required: true,
+    required: false,
     aiGenerationAllowed: false,
-    prompt: 'A phone number visitors can tap. Enter it during card creation; AI cannot invent it.',
+    prompt:
+      'Optional. A phone number visitors can tap. The same number may be used on more than one of this owner’s business cards. AI cannot invent it.',
     getValue: (p) => p.phone,
   },
   {
