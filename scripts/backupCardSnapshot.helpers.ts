@@ -80,8 +80,8 @@ export function summarizeSnapshot(snapshot: CardSnapshot) {
     customTabs: snapshot.customTabs.length,
     lists: Object.fromEntries(
       Object.entries(snapshot.lists)
-        .map(([key, rows]) => [key, rows.length])
-        .filter(([, n]) => n > 0)
+        .map(([key, rows]): [string, number] => [key, rows.length])
+        .filter((entry): entry is [string, number] => entry[1] > 0)
     ),
     posts: snapshot.posts.length,
     attachments: snapshot.attachments.length,
