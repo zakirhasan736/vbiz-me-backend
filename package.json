@@ -34,6 +34,8 @@
     "restore:corporate-avatars": "tsx --env-file=.env scripts/restoreCorporateCardAvatars.ts",
     "restore:corporate-portfolios": "tsx --env-file=.env scripts/restoreCorporateCardPortfolios.ts",
     "restore:card-about-me": "tsx --env-file=.env scripts/restoreCardAboutMe.ts",
+    "backup:card": "tsx --env-file=.env scripts/backupCardSnapshot.ts",
+    "restore:card": "tsx --env-file=.env scripts/restoreCardSnapshot.ts",
     "sync:laravel-media": "tsx --env-file=.env scripts/sync-laravel-tab-media.ts",
     "s3:make-public": "tsx --env-file=.env scripts/make-s3-public.ts",
     "prepare": "husky",
