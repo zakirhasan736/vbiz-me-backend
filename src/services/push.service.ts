@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import webpush from 'web-push'
 import type { PushNotificationPreference } from '../../generated/prisma/client'
 import config from '../configs/config'
-import { buildFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
+import { buildFrontendPublicCardPath, normalizeFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
 import AppError from '../error/AppError'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from '../utils/mediaUrl'
@@ -429,6 +429,31 @@ const sendOne = async (sub: { id: string; endpoint: string; p256dh: string; auth
   }
 }
 
+/** Short action line for card-content pushes — always names the updated card owner. */
+const actionPhraseForType = (type: string): string => {
+  switch (type) {
+    case 'contact_updates':
+      return 'updated their contact info'
+    case 'theme_updates':
+      return 'updated their card design'
+    case 'service_updates':
+      return 'updated their services'
+    case 'portfolio_updates':
+      return 'added new photos or videos'
+    case 'news':
+      return 'published a new post'
+    case 'event_updates':
+      return 'shared a new event'
+    case 'business_hours':
+      return 'updated their profile'
+    default:
+      return 'has a new update on their card'
+  }
+}
+
+const keepsCustomPushCopy = (type: string) =>
+  type === 'meeting_alert' || type === 'viewer_return' || type === 'save_contact' || type === 'announcement_updates'
+
 const buildProfilePayload = async (
   profileId: string,
   partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
@@ -442,20 +467,36 @@ const buildProfilePayload = async (
   const allowPrivate = options?.allowPrivate || skipsPublicProfileGate(partial.type)
   if (!profile || (!allowPrivate && (!profile.isPublic || !profile.slug))) return null
 
-  const businessName = profile.companyName || profile.name || profile.slug || 'vBiz Me'
+  // Identity ALWAYS comes from the profile being notified — never another card / caller cache.
+  const slug = (profile.slug || '').trim() || undefined
+  const businessName = profile.companyName?.trim() || profile.name?.trim() || slug || 'vBiz Me'
   const media = mediaFromProfile(profile)
   const icon = stillImageUrl(partial.icon) || media.icon
   const badge = stillImageUrl(partial.badge) || icon
   const image = stillImageUrl(partial.image) || icon
 
+  const meetingExternalUrl =
+    partial.type === 'meeting_alert' && typeof partial.url === 'string' && /^https?:\/\//i.test(partial.url.trim())
+      ? partial.url.trim()
+      : ''
+
+  // Always public card path: /vCard/{slug} (never legacy /v/{slug}).
+  const url =
+    meetingExternalUrl ||
+    normalizeFrontendPublicCardPath(partial.url?.trim() || (slug ? buildFrontendPublicCardPath(slug) : undefined), slug)
+
+  const customCopy = keepsCustomPushCopy(partial.type)
+  const title = customCopy ? partial.title : partial.title?.trim() || 'Card updated'
+  const body = customCopy ? partial.body : `${businessName} ${actionPhraseForType(partial.type)}.`
+
   return {
     ...partial,
-    title: partial.title,
-    body: partial.body,
+    title,
+    body,
     type: partial.type,
-    slug: partial.slug || profile.slug || undefined,
-    url: partial.url || (profile.slug ? buildFrontendPublicCardPath(profile.slug) : '/'),
-    businessName: partial.businessName || businessName,
+    slug,
+    url,
+    businessName,
     icon,
     badge,
     image,
@@ -523,6 +564,7 @@ const sendToProfile = async (
   const payload = await buildProfilePayload(profileId, partial, { allowPrivate: options?.allowPrivate })
   if (!payload) return { sent: 0, skipped: true as const }
 
+  // Only active subscriptions on THIS card — never another card’s devices.
   const subscriptions = await prisma.pushSubscription.findMany({
     where: { profileId, isActive: true },
     include: { preferences: true },
@@ -535,12 +577,26 @@ const sendToProfile = async (
     if (ok) sent += 1
   }
 
+  // Optional legacy fan-out (disabled by cardChangeAlsoReachesSavers). If re-enabled,
+  // always keep the updated card’s slug/url so the notification opens the right card.
   const includeSavers = options?.includeSavers !== false && cardChangeAlsoReachesSavers(payload.type)
   if (includeSavers) {
     const saverIds = await profileIdsMatchingEmails(await saverEmailsForProfile(profileId))
+    const sourcePartial = {
+      ...partial,
+      slug: payload.slug,
+      url: payload.url,
+      businessName: payload.businessName,
+      title: payload.title,
+      body: payload.body,
+      type: payload.type,
+    }
     for (const saverProfileId of saverIds) {
       if (saverProfileId === profileId) continue
-      const extra = await sendToProfile(saverProfileId, partial, { includeSavers: false, allowPrivate: true })
+      const extra = await sendToProfile(saverProfileId, sourcePartial, {
+        includeSavers: false,
+        allowPrivate: true,
+      })
       sent += extra.sent
     }
   }

@@ -1,7 +1,15 @@
 import { toApiRole } from '../src/constants/userRole'
 import { prisma } from '../src/utils/prisma'
 
-const SLUGS = ['michaelangelo-casanova-2', 'michaelanglo-casanova', 'julia-rose', 'mila']
+const SLUGS = [
+  'michaelangelo-casanova-2',
+  'julia-rose',
+  'mila',
+  'michaelanglo-casanova',
+  'billy-toolen',
+  'ryan',
+  'ryan-aldrich',
+]
 const EMAIL = 'mcasanova@vbizme.com'
 
 async function main() {
@@ -58,6 +66,7 @@ async function main() {
               companyName: user.companyName,
             }
           : null,
+        expectedSlugs: SLUGS,
         cardCount: rows.length,
         cards: rows.map((card) => ({
           slug: card.slug,
@@ -74,6 +83,7 @@ async function main() {
               }
             : null,
           isTeamMember: Boolean(card.userId && card.companyUserId && card.userId !== card.companyUserId),
+          isOwnerCard: Boolean(user && card.userId === user.id && card.companyUserId === user.id),
         })),
       },
       null,

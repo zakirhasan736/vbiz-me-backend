@@ -7,6 +7,7 @@ import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
+import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
 import type {
   CreateMeetingInput,
   ListMeetingsQuery,
@@ -233,13 +234,11 @@ async function resolveOwnerEmails(profileId: string | null | undefined): Promise
   })
   if (!profile) return { emails: [], displayName: null }
 
-  const emails = [
-    ...new Set(
-      [profile.user?.email, profile.email, profile.companyUser?.email]
-        .map((e) => e?.trim().toLowerCase())
-        .filter((e): e is string => Boolean(e))
-    ),
-  ]
+  const emails = collectProfileNotificationEmails({
+    profileEmail: profile.email,
+    userEmail: profile.user?.email,
+    companyUserEmail: profile.companyUser?.email,
+  })
 
   return {
     emails,

@@ -10,9 +10,13 @@ export function skipsPublicProfileGate(type: string) {
   return isOperationalPushType(type) || type === 'announcement_updates'
 }
 
-/** Card edits should also reach a saver who allowed push on their own account. */
-export function cardChangeAlsoReachesSavers(type: string) {
-  return !isOperationalPushType(type)
+/**
+ * Card edits notify only devices subscribed on that exact card
+ * (and only when that subscription’s preference allows the type).
+ * Do not fan out to a saver’s other cards — wrong URL / wrong card.
+ */
+export function cardChangeAlsoReachesSavers(_type: string) {
+  return false
 }
 
 export function mergeAnnouncementPushProfiles(input: {

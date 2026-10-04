@@ -2,6 +2,7 @@ import config from '../configs/config'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
+import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
 import announcementService from './announcement.service'
 import crmEventService from './crmEvent.service'
 import pushService from './push.service'
@@ -136,13 +137,11 @@ async function resolveProfileEmails(profileId: string | null | undefined): Promi
     },
   })
   if (!profile) return { emails: [], displayName: null }
-  const emails = [
-    ...new Set(
-      [profile.user?.email, profile.email, profile.companyUser?.email]
-        .map((e) => e?.trim().toLowerCase())
-        .filter((e): e is string => Boolean(e))
-    ),
-  ]
+  const emails = collectProfileNotificationEmails({
+    profileEmail: profile.email,
+    userEmail: profile.user?.email,
+    companyUserEmail: profile.companyUser?.email,
+  })
   return {
     emails,
     displayName: profile.user?.name?.trim() || profile.name?.trim() || null,

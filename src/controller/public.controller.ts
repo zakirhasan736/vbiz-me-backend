@@ -229,9 +229,13 @@ const googleWallet = catchAsyncError(async (req, res) => {
 
 const appleWallet = catchAsyncError(async (req, res) => {
   const { buffer, filename } = await appleWalletService.createPass(param(req.params.slug))
+  // `inline` lets iOS Safari hand the pass to Wallet (Add Pass).
+  // `attachment` often downloads a blank/useless page instead of opening Wallet.
   res.setHeader('Content-Type', 'application/vnd.apple.pkpass')
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  res.setHeader('Content-Disposition', `inline; filename="${filename}"`)
   res.setHeader('Content-Length', String(buffer.length))
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+  res.setHeader('Pragma', 'no-cache')
   res.status(200).send(buffer)
 })
 

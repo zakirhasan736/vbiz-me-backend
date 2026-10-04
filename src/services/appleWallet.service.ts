@@ -246,6 +246,10 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
         'icon.png': iconLo,
         'icon@2x.png': iconMid,
         'icon@3x.png': iconHi,
+        // logo is required for a readable storeCard header on iPhone Wallet.
+        'logo.png': iconLo,
+        'logo@2x.png': iconMid,
+        'logo@3x.png': iconHi,
         'strip.png': stripLo,
         'strip@2x.png': stripMid,
         'strip@3x.png': stripHi,
@@ -260,7 +264,8 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
         formatVersion: 1,
         passTypeIdentifier: passTypeId,
         teamIdentifier: teamId,
-        serialNumber: `card-face4-${profile.id}`.slice(0, 64),
+        // Stable per card so re-adding updates the same pass instead of orphans.
+        serialNumber: `vbiz-card-${profile.id}`.slice(0, 64),
         organizationName: config.APPLE_WALLET.ORGANIZATION,
         description: `${name} digital card`,
         logoText: (name || config.APPLE_WALLET.ORGANIZATION).slice(0, 40),
@@ -272,9 +277,15 @@ export async function createAppleWalletPass(slug: string): Promise<{ buffer: Buf
     )
 
     pass.type = 'storeCard'
+    // Face fields — empty face made Add Pass look blank / easy to dismiss.
+    pushField(pass.primaryFields, 'name', 'NAME', name)
+    pushField(pass.secondaryFields, 'title', 'TITLE', profile.designation || profile.prof)
+    pushField(pass.secondaryFields, 'company', 'COMPANY', profile.companyName)
     pushField(pass.backFields, 'card', 'Open digital card', cardUrl)
     pushField(pass.backFields, 'phone', 'Phone', profile.phone)
     pushField(pass.backFields, 'email', 'Email', profile.email)
+    pushField(pass.backFields, 'website', 'Website', profile.website)
+    pass.setBarcodes(cardUrl)
 
     const filename = `${slugForPass.replace(/[^a-zA-Z0-9._-]/g, '-') || 'vbiz-card'}.pkpass`
     return { buffer: pass.getAsBuffer(), filename }
