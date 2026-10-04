@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import webpush from 'web-push'
 import type { PushNotificationPreference } from '../../generated/prisma/client'
 import config from '../configs/config'
-import { buildFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
+import { buildFrontendPublicCardPath, normalizeFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
 import AppError from '../error/AppError'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from '../utils/mediaUrl'
@@ -448,13 +448,20 @@ const buildProfilePayload = async (
   const badge = stillImageUrl(partial.badge) || icon
   const image = stillImageUrl(partial.image) || icon
 
+  const slug = (partial.slug || profile.slug || '').trim() || undefined
+  // Always public card path: /vCard/{slug} (never legacy /v/{slug}).
+  const url = normalizeFrontendPublicCardPath(
+    partial.url?.trim() || (slug ? buildFrontendPublicCardPath(slug) : undefined),
+    slug
+  )
+
   return {
     ...partial,
     title: partial.title,
     body: partial.body,
     type: partial.type,
-    slug: partial.slug || profile.slug || undefined,
-    url: partial.url || (profile.slug ? buildFrontendPublicCardPath(profile.slug) : '/'),
+    slug,
+    url,
     businessName: partial.businessName || businessName,
     icon,
     badge,
@@ -523,6 +530,7 @@ const sendToProfile = async (
   const payload = await buildProfilePayload(profileId, partial, { allowPrivate: options?.allowPrivate })
   if (!payload) return { sent: 0, skipped: true as const }
 
+  // Only active subscriptions on THIS card — never another card’s devices.
   const subscriptions = await prisma.pushSubscription.findMany({
     where: { profileId, isActive: true },
     include: { preferences: true },
@@ -535,12 +543,26 @@ const sendToProfile = async (
     if (ok) sent += 1
   }
 
+  // Optional legacy fan-out (disabled by cardChangeAlsoReachesSavers). If re-enabled,
+  // always keep the updated card’s slug/url so the notification opens the right card.
   const includeSavers = options?.includeSavers !== false && cardChangeAlsoReachesSavers(payload.type)
   if (includeSavers) {
     const saverIds = await profileIdsMatchingEmails(await saverEmailsForProfile(profileId))
+    const sourcePartial = {
+      ...partial,
+      slug: payload.slug,
+      url: payload.url,
+      businessName: payload.businessName,
+      title: payload.title,
+      body: payload.body,
+      type: payload.type,
+    }
     for (const saverProfileId of saverIds) {
       if (saverProfileId === profileId) continue
-      const extra = await sendToProfile(saverProfileId, partial, { includeSavers: false, allowPrivate: true })
+      const extra = await sendToProfile(saverProfileId, sourcePartial, {
+        includeSavers: false,
+        allowPrivate: true,
+      })
       sent += extra.sent
     }
   }

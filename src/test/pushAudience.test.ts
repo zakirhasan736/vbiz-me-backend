@@ -16,9 +16,9 @@ describe('push audience', () => {
     }
   })
 
-  it('sends card edits to saved contacts and still requires a public card for the follower blast', () => {
+  it('keeps card-edit pushes on the updated card only (no cross-card saver fan-out)', () => {
     for (const type of ['contact_updates', 'theme_updates', 'service_updates', 'news', 'business_hours']) {
-      assert.equal(cardChangeAlsoReachesSavers(type), true)
+      assert.equal(cardChangeAlsoReachesSavers(type), false)
       assert.equal(skipsPublicProfileGate(type), false)
     }
   })

@@ -5,6 +5,7 @@ import AppError from '../error/AppError'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
+import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
 import type {
   CancelMeetingInput,
   CompleteMeetingInput,
@@ -336,13 +337,11 @@ async function resolveCardStakeholderEmails(profileId: string): Promise<{
   })
   if (!profile) throw new AppError(404, 'Card not found')
 
-  const emails = [
-    ...new Set(
-      [profile.user?.email, profile.email, profile.companyUser?.email]
-        .map((e) => e?.trim().toLowerCase())
-        .filter((e): e is string => Boolean(e))
-    ),
-  ]
+  const emails = collectProfileNotificationEmails({
+    profileEmail: profile.email,
+    userEmail: profile.user?.email,
+    companyUserEmail: profile.companyUser?.email,
+  })
 
   return {
     emails,
