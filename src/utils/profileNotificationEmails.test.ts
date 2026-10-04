@@ -1,34 +1,38 @@
-import { describe, expect, it } from 'vitest'
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
 import { collectProfileNotificationEmails } from './profileNotificationEmails'
 
 describe('collectProfileNotificationEmails', () => {
   it('prefers card contact email over stale login email', () => {
-    expect(
+    assert.deepEqual(
       collectProfileNotificationEmails({
         profileEmail: 'hello@vbizme.com',
         userEmail: 'absolutsaluteinc@gmail.com',
         companyUserEmail: null,
-      })
-    ).toEqual(['hello@vbizme.com'])
+      }),
+      ['hello@vbizme.com']
+    )
   })
 
   it('falls back to login email when card email is missing', () => {
-    expect(
+    assert.deepEqual(
       collectProfileNotificationEmails({
         profileEmail: '  ',
         userEmail: 'owner@gmail.com',
         companyUserEmail: null,
-      })
-    ).toEqual(['owner@gmail.com'])
+      }),
+      ['owner@gmail.com']
+    )
   })
 
   it('includes corporate email and de-dupes', () => {
-    expect(
+    assert.deepEqual(
       collectProfileNotificationEmails({
         profileEmail: 'card@vbizme.com',
         userEmail: 'card@vbizme.com',
         companyUserEmail: 'corp@vbizme.com',
-      })
-    ).toEqual(['card@vbizme.com', 'corp@vbizme.com'])
+      }),
+      ['card@vbizme.com', 'corp@vbizme.com']
+    )
   })
 })
