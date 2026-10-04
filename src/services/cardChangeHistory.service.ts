@@ -5,6 +5,7 @@ import { formatCardHealth, type CardHealthCounts } from '../utils/cardHealth'
 import { prisma } from '../utils/prisma'
 import type { CardChangeMeta } from '../utils/recordCardChange'
 import { recordCardChange, recordCollectionChange } from '../utils/recordCardChange'
+import { readCardHistoryFootprint } from './cardDailyBackup.service'
 import profileService from './profile.service'
 
 const MAX_LIST = 200
@@ -81,7 +82,7 @@ const listCardChangeHistory = async (profileId: string, userId: string, role: st
   await expireCardChangeSnapshots().catch(() => undefined)
   const take = Math.min(MAX_LIST, Math.max(1, limit))
   const start = Math.max(0, skip)
-  const [rows, total] = await Promise.all([
+  const [rows, total, footprint] = await Promise.all([
     prisma.cardChangeHistory.findMany({
       where: { profileId },
       orderBy: { createdAt: 'desc' },
@@ -89,8 +90,16 @@ const listCardChangeHistory = async (profileId: string, userId: string, role: st
       take,
     }),
     prisma.cardChangeHistory.count({ where: { profileId } }),
+    readCardHistoryFootprint(profileId),
   ])
-  return { items: rows.map(serializeHistory), total, skip: start, limit: take }
+  return {
+    items: rows.map(serializeHistory),
+    total,
+    skip: start,
+    limit: take,
+    inventory: footprint.inventory,
+    backups: footprint.backups,
+  }
 }
 
 const COLLECTION_RESTORE_MAP: Record<string, (item: Record<string, unknown>) => Record<string, unknown>> = {

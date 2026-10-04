@@ -378,6 +378,7 @@ model Profile {
   oneOnOneRequests    OneOnOneRequest[]
   auditLogs           AuditLog[]
   changeHistories     CardChangeHistory[]
+  dailyBackups        CardDailyBackup[]
   birthdayWishLogs    BirthdayWishLog[]
   aiGenerationLogs    AiGenerationLog[]
   assistantConfig     ProfileAssistantConfig?
@@ -1854,6 +1855,25 @@ model CardChangeHistory {
 
   @@index([profileId, createdAt])
   @@index([snapshotExpiresAt])
+}
+
+/// One row per card per calendar day. Only the newest 7 days are kept.
+model CardDailyBackup {
+  id         String   @id @default(cuid())
+  profileId  String
+  profile    Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  /// Local calendar day, YYYY-MM-DD.
+  backupDate String
+  tabCount   Int
+  /// Tab labels and item counts for that day. Item bodies live in snapshot.
+  tabs       Json
+  snapshot   Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([profileId, backupDate])
+  @@index([profileId, backupDate])
+  @@index([backupDate])
 }
 
 model AuditLog {
