@@ -1,5 +1,5 @@
 import { linkCardsToCorporateAccount } from '../src/utils/corporateMemberUser'
-import { safeSyncCorporateSiblingSharedContent } from '../src/utils/corporateSiblingSync'
+import { syncCorporateSiblingSharedContent } from '../src/utils/corporateSiblingSync'
 import { prisma } from '../src/utils/prisma'
 
 /**
@@ -52,7 +52,7 @@ async function main() {
     if (!owner) {
       throw new Error(`Owner card not found after link: ${OWNER_SLUG}`)
     }
-    const result = await safeSyncCorporateSiblingSharedContent(owner.id, { type: 'fullShared' }, { allowEmpty: false })
+    const result = await syncCorporateSiblingSharedContent(owner.id, { type: 'fullShared' }, { allowEmpty: false })
     console.log(
       JSON.stringify(
         {
