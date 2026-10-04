@@ -429,6 +429,31 @@ const sendOne = async (sub: { id: string; endpoint: string; p256dh: string; auth
   }
 }
 
+/** Short action line for card-content pushes — always names the updated card owner. */
+const actionPhraseForType = (type: string): string => {
+  switch (type) {
+    case 'contact_updates':
+      return 'updated their contact info'
+    case 'theme_updates':
+      return 'updated their card design'
+    case 'service_updates':
+      return 'updated their services'
+    case 'portfolio_updates':
+      return 'added new photos or videos'
+    case 'news':
+      return 'published a new post'
+    case 'event_updates':
+      return 'shared a new event'
+    case 'business_hours':
+      return 'updated their profile'
+    default:
+      return 'has a new update on their card'
+  }
+}
+
+const keepsCustomPushCopy = (type: string) =>
+  type === 'meeting_alert' || type === 'viewer_return' || type === 'save_contact' || type === 'announcement_updates'
+
 const buildProfilePayload = async (
   profileId: string,
   partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
@@ -442,27 +467,36 @@ const buildProfilePayload = async (
   const allowPrivate = options?.allowPrivate || skipsPublicProfileGate(partial.type)
   if (!profile || (!allowPrivate && (!profile.isPublic || !profile.slug))) return null
 
-  const businessName = profile.companyName || profile.name || profile.slug || 'vBiz Me'
+  // Identity ALWAYS comes from the profile being notified — never another card / caller cache.
+  const slug = (profile.slug || '').trim() || undefined
+  const businessName = profile.companyName?.trim() || profile.name?.trim() || slug || 'vBiz Me'
   const media = mediaFromProfile(profile)
   const icon = stillImageUrl(partial.icon) || media.icon
   const badge = stillImageUrl(partial.badge) || icon
   const image = stillImageUrl(partial.image) || icon
 
-  const slug = (partial.slug || profile.slug || '').trim() || undefined
+  const meetingExternalUrl =
+    partial.type === 'meeting_alert' && typeof partial.url === 'string' && /^https?:\/\//i.test(partial.url.trim())
+      ? partial.url.trim()
+      : ''
+
   // Always public card path: /vCard/{slug} (never legacy /v/{slug}).
-  const url = normalizeFrontendPublicCardPath(
-    partial.url?.trim() || (slug ? buildFrontendPublicCardPath(slug) : undefined),
-    slug
-  )
+  const url =
+    meetingExternalUrl ||
+    normalizeFrontendPublicCardPath(partial.url?.trim() || (slug ? buildFrontendPublicCardPath(slug) : undefined), slug)
+
+  const customCopy = keepsCustomPushCopy(partial.type)
+  const title = customCopy ? partial.title : partial.title?.trim() || 'Card updated'
+  const body = customCopy ? partial.body : `${businessName} ${actionPhraseForType(partial.type)}.`
 
   return {
     ...partial,
-    title: partial.title,
-    body: partial.body,
+    title,
+    body,
     type: partial.type,
     slug,
     url,
-    businessName: partial.businessName || businessName,
+    businessName,
     icon,
     badge,
     image,
