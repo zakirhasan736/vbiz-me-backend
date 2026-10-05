@@ -1,9 +1,11 @@
-import type { Prisma } from '../../generated/prisma/client'
+import { Prisma } from '../../generated/prisma/client'
 import { toApiRole } from '../constants/userRole'
 import {
   areaLabelFor,
+  CARD_CHANGE_SNAPSHOT_KEEP,
   countryNameFromCode,
   formatChangeLocation,
+  generateChangeCode,
   getCardChangeActor,
   parseDeviceLabel,
   resolveActorRoleLabel,
@@ -22,6 +24,28 @@ export type CardChangeMeta = {
   ip?: string
   country?: string
   countryName?: string
+  /** Short 7-digit change id (e.g. 4829173) for restore / support. */
+  changeCode?: string
+  /** When this row was caused by linked corporate sync from another card. */
+  syncSourceProfileId?: string
+  syncSourceSlug?: string
+  syncSourceName?: string
+  syncScope?: string
+  syncTargetCount?: number
+}
+
+async function pruneOldCardChangeSnapshots(profileId: string): Promise<void> {
+  const overflow = await prisma.cardChangeHistory.findMany({
+    where: { profileId, snapshot: { not: Prisma.DbNull } },
+    orderBy: { createdAt: 'desc' },
+    skip: CARD_CHANGE_SNAPSHOT_KEEP,
+    select: { id: true },
+  })
+  if (!overflow.length) return
+  await prisma.cardChangeHistory.updateMany({
+    where: { id: { in: overflow.map((row) => row.id) } },
+    data: { snapshot: Prisma.DbNull, snapshotExpiresAt: null },
+  })
 }
 
 export async function recordCardChange(input: {
@@ -30,6 +54,7 @@ export async function recordCardChange(input: {
   action: string
   summary: string
   snapshot: CardChangeSnapshot | null
+  meta?: Partial<CardChangeMeta>
 }): Promise<void> {
   try {
     const actor = getCardChangeActor()
@@ -53,6 +78,7 @@ export async function recordCardChange(input: {
       profileCompanyUserId: profile?.companyUserId,
     })
     const health = await collectCardHealth(input.profileId)
+    const changeCode = generateChangeCode()
     const meta: CardChangeMeta = {
       health,
       healthLabel: formatCardHealth(health),
@@ -60,16 +86,18 @@ export async function recordCardChange(input: {
       ip: actor.ip,
       country: actor.country,
       countryName: countryNameFromCode(actor.country) || undefined,
+      changeCode,
+      ...input.meta,
     }
     const snapshotPayload = input.snapshot
-      ? ({ ...input.snapshot, health, footprint: meta } as Prisma.InputJsonValue)
+      ? ({ ...input.snapshot, health, footprint: meta, changeCode } as Prisma.InputJsonValue)
       : undefined
     const data = {
       profileId: input.profileId,
       area: input.area,
       areaLabel: areaLabelFor(input.area),
       action: input.action,
-      summary: input.summary,
+      summary: `[#${changeCode}] ${input.summary}`,
       actorId: actor.userId,
       actorName,
       actorRoleLabel,
@@ -86,6 +114,9 @@ export async function recordCardChange(input: {
       const withoutMeta = { ...data }
       delete (withoutMeta as { meta?: unknown }).meta
       await prisma.cardChangeHistory.create({ data: withoutMeta })
+    }
+    if (input.snapshot) {
+      await pruneOldCardChangeSnapshots(input.profileId).catch(() => undefined)
     }
   } catch (error) {
     logger.warn('card change history record failed', error)

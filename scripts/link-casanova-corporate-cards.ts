@@ -9,7 +9,7 @@ import { prisma } from '../src/utils/prisma'
  * Newly link: michaelanglo-casanova, billy-toolen, ryan, ryan-aldrich
  *
  * Personal Information + About Me stay per card.
- * Shared business tabs sync from the corporate owner card.
+ * Shared business sync is OPT-IN only (--sync-shared) and requires force:true.
  */
 const CORPORATE_EMAIL = 'mcasanova@vbizme.com'
 const OWNER_SLUG = 'michaelangelo-casanova-2'
@@ -27,8 +27,8 @@ const SLUGS = [
 
 async function main() {
   const apply = process.argv.includes('--apply')
-  // Default: after --apply, push shared business tabs from owner. Opt out with --no-sync-shared.
-  const syncShared = apply && !process.argv.includes('--no-sync-shared')
+  // Opt-in only — never auto-wipe sibling tabs on link.
+  const syncShared = apply && process.argv.includes('--sync-shared')
 
   const data = await linkCardsToCorporateAccount({
     corporateEmail: CORPORATE_EMAIL,
@@ -40,7 +40,8 @@ async function main() {
   console.log(JSON.stringify(data, null, 2))
 
   if (!apply) {
-    console.log('Dry-run only. Re-run with --apply to write links + sync shared business tabs from the owner.')
+    console.log('Dry-run only. Re-run with --apply to write links.')
+    console.log('Optional (destructive): --apply --sync-shared to copy owner business tabs onto linked cards.')
     return
   }
 
@@ -52,7 +53,11 @@ async function main() {
     if (!owner) {
       throw new Error(`Owner card not found after link: ${OWNER_SLUG}`)
     }
-    const result = await syncCorporateSiblingSharedContent(owner.id, { type: 'fullShared' }, { allowEmpty: false })
+    const result = await syncCorporateSiblingSharedContent(
+      owner.id,
+      { type: 'fullShared' },
+      { allowEmpty: false, force: true }
+    )
     console.log(
       JSON.stringify(
         {
@@ -65,7 +70,9 @@ async function main() {
       )
     )
   } else {
-    console.log('Links written. Skipped shared sync (--no-sync-shared).')
+    console.log(
+      'Links written. Shared content was NOT synced (pass --sync-shared only if you intend a full overwrite).'
+    )
   }
 }
 

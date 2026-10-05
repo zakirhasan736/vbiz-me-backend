@@ -2,7 +2,15 @@ import type { Request } from 'express'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { isStaffRole } from '../constants/userRole'
 
-export const CARD_CHANGE_SNAPSHOT_TTL_MS = 72 * 60 * 60 * 1000
+/** Keep restoreable snapshots ~10 days (was 72h). */
+export const CARD_CHANGE_SNAPSHOT_TTL_MS = 10 * 24 * 60 * 60 * 1000
+/** Max restoreable snapshots retained per card (older snapshot JSON is cleared). */
+export const CARD_CHANGE_SNAPSHOT_KEEP = 10
+
+/** Short Git-like change id (7 digits) for humans to cite / restore. */
+export function generateChangeCode(): string {
+  return String(Math.floor(1_000_000 + Math.random() * 9_000_000))
+}
 
 export type CardChangeActorContext = {
   userId: string
@@ -179,6 +187,12 @@ export const AREA_LABELS: Record<string, string> = {
   faq: 'FAQ',
   gallery: 'Gallery',
   photos: 'Photos',
+  sync: 'Corporate sync',
+  fullShared: 'Corporate sync',
+  settings: 'Shared settings',
+  storage: 'Tab content',
+  posts: 'Posts',
+  collection: 'Shared list',
 }
 
 export function areaLabelFor(area: string): string {

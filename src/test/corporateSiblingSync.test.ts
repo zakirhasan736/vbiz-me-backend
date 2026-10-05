@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { runWithCardChangeActor } from '../utils/cardChangeHistory'
 import {
+  canRunCorporateSiblingSync,
   cardBelongsToCorporation,
   corporateSiblingProfileWhere,
   isCorporateSiblingSyncRunning,
@@ -191,5 +193,15 @@ describe('empty / stale fan-out guards', () => {
     assert.equal(shouldReplaceSiblingRows(0, false), false)
     assert.equal(shouldReplaceSiblingRows(3, false), true)
     assert.equal(shouldReplaceSiblingRows(0, true), true)
+  })
+
+  it('allows corporate sync only for logged-in actors or explicit force', () => {
+    assert.equal(canRunCorporateSiblingSync({}), false)
+    assert.equal(canRunCorporateSiblingSync({ force: true }), true)
+    const allowed = runWithCardChangeActor(
+      { userId: 'user-1', role: 'corporate-owner', email: 'owner@example.com' },
+      () => canRunCorporateSiblingSync({})
+    )
+    assert.equal(allowed, true)
   })
 })

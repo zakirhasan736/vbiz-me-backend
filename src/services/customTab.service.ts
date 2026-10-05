@@ -26,8 +26,14 @@ const listTabs = async (profileId: string, userId: string, role: string) => {
   await profileService.getOwnedLite(profileId, userId, role)
   try {
     return await prisma.customTab.findMany({
-      where: { profileId },
-      include: { items: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }], take: 200 } },
+      where: { profileId, status: { not: '0' }, isEnabled: true },
+      include: {
+        items: {
+          where: { status: { not: '0' } },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+          take: 200,
+        },
+      },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     })
   } catch (error) {

@@ -360,9 +360,15 @@ const loadProfileCollections = async (profileId: string) => {
   const [education, experiences, services, portfolios, reviews, skillTags, galleries] = await Promise.all([
     safePrismaQuery(() => prisma.education.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
     safePrismaQuery(() => prisma.experience.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
-    safePrismaQuery(() => prisma.service.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+    safePrismaQuery(
+      () => prisma.service.findMany({ where: { profileId, status: { not: 0 } }, orderBy: { sortOrder: 'asc' } }),
+      []
+    ),
     listPortfoliosSafe(profileId),
-    safePrismaQuery(() => prisma.review.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+    safePrismaQuery(
+      () => prisma.review.findMany({ where: { profileId, status: { not: 0 } }, orderBy: { sortOrder: 'asc' } }),
+      []
+    ),
     safePrismaQuery(() => prisma.skillTag.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
     listGalleriesForProfile(profileId),
   ])
@@ -492,6 +498,14 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
   try {
     await prisma.$transaction(async (tx) => {
       const existing = await tx.customTab.findMany({ where: { profileId }, select: { id: true, key: true } })
+      // Never wipe saved custom tabs from an empty/stale editor payload.
+      if (tabs.length === 0 && existing.length > 0) {
+        logger.warn('refusing empty custom_tabs_json wipe of existing tabs', {
+          profileId,
+          existingCount: existing.length,
+        })
+        return
+      }
       const retainedIds: string[] = []
       for (let tabIndex = 0; tabIndex < tabs.length; tabIndex += 1) {
         const input = tabs[tabIndex]
@@ -534,7 +548,11 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
               },
             })
         retainedIds.push(tab.id)
-        await tx.customTabItem.deleteMany({ where: { customTabId: tab.id } })
+        // Soft-retire prior items; keep DB history for restore.
+        await tx.customTabItem.updateMany({
+          where: { customTabId: tab.id, status: { not: '0' } },
+          data: { status: '0' },
+        })
         const items = Array.isArray(input.items) ? input.items : []
         for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
           const item = items[itemIndex]
@@ -563,9 +581,17 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
           })
         }
       }
-      await tx.customTab.deleteMany({
+      // Soft-disable tabs removed from the editor payload (never hard-delete).
+      await tx.customTab.updateMany({
         where: retainedIds.length ? { profileId, id: { notIn: retainedIds } } : { profileId },
+        data: { status: '0', isEnabled: false, isPublic: false },
       })
+      if (retainedIds.length) {
+        await tx.customTabItem.updateMany({
+          where: { profileId, customTabId: { notIn: retainedIds }, status: { not: '0' } },
+          data: { status: '0' },
+        })
+      }
     })
   } catch (error) {
     if (!isPrismaMissingTable(error)) throw error
@@ -2478,14 +2504,41 @@ const replaceCollection = async <T extends Record<string, unknown>>(
     }
   >
   const beforeItems = (await collectionClient[delegate]?.findMany?.({ where: { profileId } }).catch(() => [])) ?? []
-  const beforeCount = beforeItems.length
+  const beforeCount = beforeItems.filter((row) => !row.deletedAt && row.status !== 0 && row.status !== '0').length
   await prisma.$transaction(async (tx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (tx as any)[delegate]
-    if (!model?.deleteMany || !model?.create) {
+    if (!model?.create) {
       throw new AppError(500, `Unknown collection model: ${kind}`)
     }
-    await model.deleteMany({ where: { profileId } })
+    // Soft-clear when possible (deletedAt / status); hard-delete only as last resort.
+    let cleared = false
+    if (typeof model.updateMany === 'function') {
+      if (kind === 'portfolios') {
+        try {
+          await model.updateMany({ where: { profileId, deletedAt: null }, data: { deletedAt: new Date() } })
+          cleared = true
+        } catch {
+          try {
+            await model.updateMany({ where: { profileId }, data: { status: '0' } })
+            cleared = true
+          } catch {
+            cleared = false
+          }
+        }
+      } else if (kind === 'services' || kind === 'reviews') {
+        try {
+          await model.updateMany({ where: { profileId }, data: { status: 0 } })
+          cleared = true
+        } catch {
+          cleared = false
+        }
+      }
+    }
+    if (!cleared) {
+      if (!model.deleteMany) throw new AppError(500, `Unknown collection model: ${kind}`)
+      await model.deleteMany({ where: { profileId } })
+    }
     // Prefer per-row `create` over `createMany` so Prisma applies `@default(cuid())`
     // and `@updatedAt` (createMany skips those client-side defaults).
     for (let index = 0; index < items.length; index += 1) {
@@ -2499,7 +2552,11 @@ const replaceCollection = async <T extends Record<string, unknown>>(
       })
     }
     if (kind === 'portfolios') {
-      await tx.portfolio.deleteMany({ where: { profileId } })
+      try {
+        await tx.portfolio.updateMany({ where: { profileId }, data: { status: 0 } })
+      } catch {
+        await tx.portfolio.deleteMany({ where: { profileId } })
+      }
       for (let index = 0; index < items.length; index += 1) {
         const mapped = mapItem(items[index])
         const statusValue = Number(mapped.status)
@@ -2509,7 +2566,7 @@ const replaceCollection = async <T extends Record<string, unknown>>(
             sortOrder: index,
             title: typeof mapped.title === 'string' ? mapped.title : null,
             description: typeof mapped.description === 'string' ? mapped.description : null,
-            status: Number.isFinite(statusValue) ? statusValue : 1,
+            status: Number.isFinite(statusValue) && statusValue !== 0 ? statusValue : 1,
             url: typeof mapped.url === 'string' ? mapped.url : null,
             imageUrl:
               (typeof mapped.featuredImage === 'string' ? mapped.featuredImage.trim() : '') ||

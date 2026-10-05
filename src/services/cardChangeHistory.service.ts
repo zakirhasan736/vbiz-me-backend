@@ -42,8 +42,15 @@ const serializeHistory = (row: {
       ? (row.snapshot as { health?: CardHealthCounts }).health
       : undefined
   const health = fromRow.health || snapshotHealth || fromSnapshot.health
+  const changeCode =
+    fromRow.changeCode ||
+    (row.snapshot && typeof row.snapshot === 'object' && !Array.isArray(row.snapshot)
+      ? String((row.snapshot as { changeCode?: string }).changeCode || '')
+      : '') ||
+    ''
   return {
     id: row.id,
+    changeCode,
     area: row.area,
     areaLabel: row.areaLabel,
     action: row.action,
@@ -58,6 +65,11 @@ const serializeHistory = (row: {
     countryName: fromRow.countryName || fromSnapshot.countryName || '',
     health: health || null,
     healthLabel: fromRow.healthLabel || formatCardHealth(health) || '',
+    syncSourceProfileId: fromRow.syncSourceProfileId || '',
+    syncSourceSlug: fromRow.syncSourceSlug || '',
+    syncSourceName: fromRow.syncSourceName || '',
+    syncScope: fromRow.syncScope || '',
+    syncTargetCount: fromRow.syncTargetCount ?? null,
     canRestore,
     restoreExpired: Boolean(row.snapshotExpiresAt) && !canRestore,
     restoredAt: row.restoredAt?.toISOString() ?? null,

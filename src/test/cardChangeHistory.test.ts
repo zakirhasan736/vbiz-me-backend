@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import {
   countryNameFromCode,
   formatChangeLocation,
+  generateChangeCode,
   isSnapshotRestorable,
   parseDeviceLabel,
   resolveActorRoleLabel,
@@ -82,11 +83,16 @@ describe('card change history helpers', () => {
     assert.equal(data.attachmentName, null)
   })
 
-  it('allows restore only while the 72-hour snapshot is still present', () => {
+  it('allows restore only while the 10-day snapshot is still present', () => {
     const expires = snapshotExpiresAt(new Date('2026-09-27T00:00:00.000Z'))
-    assert.equal(expires.toISOString(), '2026-09-30T00:00:00.000Z')
-    assert.equal(isSnapshotRestorable({ version: 1 }, expires, new Date('2026-09-29T23:00:00.000Z')), true)
-    assert.equal(isSnapshotRestorable({ version: 1 }, expires, new Date('2026-09-30T00:00:01.000Z')), false)
-    assert.equal(isSnapshotRestorable(null, expires, new Date('2026-09-29T00:00:00.000Z')), false)
+    assert.equal(expires.toISOString(), '2026-10-07T00:00:00.000Z')
+    assert.equal(isSnapshotRestorable({ version: 1 }, expires, new Date('2026-10-06T23:00:00.000Z')), true)
+    assert.equal(isSnapshotRestorable({ version: 1 }, expires, new Date('2026-10-07T00:00:01.000Z')), false)
+    assert.equal(isSnapshotRestorable(null, expires, new Date('2026-10-06T00:00:00.000Z')), false)
+  })
+
+  it('generates a 7-digit change code', () => {
+    const code = generateChangeCode()
+    assert.match(code, /^[1-9]\d{6}$/)
   })
 })

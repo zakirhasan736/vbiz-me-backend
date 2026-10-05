@@ -246,7 +246,11 @@ async function main() {
 
   let fanout: { siblingCount: number } | null = null
   if (args.fanout) {
-    fanout = await syncCorporateSiblingSharedContent(profile.id, { type: 'fullShared' }, { allowEmpty: true })
+    fanout = await syncCorporateSiblingSharedContent(
+      profile.id,
+      { type: 'fullShared' },
+      { allowEmpty: true, force: true }
+    )
   }
 
   await prisma.cardChangeHistory.create({

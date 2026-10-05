@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import type { Prisma } from '../../generated/prisma/client'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import { getEffectiveEntitlements } from '../services/entitlement.service'
+import { getCardChangeActor } from './cardChangeHistory'
 import {
   cloneRecord,
   isCorporateLiveSyncProfileField,
@@ -24,6 +25,7 @@ import {
   isPrismaTypeMismatch,
   isPrismaUnknownArgument,
 } from './prismaErrors'
+import { recordCardChange } from './recordCardChange'
 
 const syncLock = new AsyncLocalStorage<boolean>()
 
@@ -79,7 +81,41 @@ type ListDelegate = {
     select?: Record<string, boolean>
   }) => Promise<Array<Record<string, unknown>>>
   deleteMany: (args: { where: Record<string, unknown> }) => Promise<unknown>
+  updateMany?: (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => Promise<unknown>
   create: (args: { data: Record<string, unknown> }) => Promise<unknown>
+}
+
+async function softClearTargetRows(
+  delegate: ListDelegate,
+  model: string,
+  targetWhere: Record<string, unknown>
+): Promise<void> {
+  if (MODELS_WITH_DELETED_AT.has(model) && delegate.updateMany) {
+    try {
+      await delegate.updateMany({
+        where: { ...targetWhere, deletedAt: null },
+        data: { deletedAt: new Date() },
+      })
+      return
+    } catch (error) {
+      if (!isPrismaUnknownArgument(error)) throw error
+    }
+  }
+  if (MODELS_WITH_STATUS_SOFT.has(model) && delegate.updateMany) {
+    try {
+      // Prefer numeric 0 (Service/Review); fall back to string for String status columns.
+      await delegate.updateMany({ where: targetWhere, data: { status: 0 } })
+      return
+    } catch {
+      try {
+        await delegate.updateMany({ where: targetWhere, data: { status: '0' } })
+        return
+      } catch (error) {
+        if (!isPrismaUnknownArgument(error) && !isPrismaTypeMismatch(error)) throw error
+      }
+    }
+  }
+  await delegate.deleteMany({ where: targetWhere })
 }
 
 export type SharedSyncScope =
@@ -98,6 +134,36 @@ export type SharedSyncOptions = {
   allowEmpty?: boolean
   /** Setting keys that already had a real value on the source card before this write. */
   settingHadValue?: Record<string, boolean>
+  /**
+   * Ops scripts may pass force:true. Live editor saves sync when a logged-in actor
+   * is present (bindCardChangeContext) — never from anonymous/background jobs.
+   */
+  force?: boolean
+}
+
+/** Models that support soft clear via deletedAt. */
+const MODELS_WITH_DELETED_AT = new Set([
+  'gallery',
+  'post',
+  'tabItem',
+  'faq',
+  'announcementDirect',
+  'clientPortfolio',
+  'certification',
+  'propertyListing',
+  'joinMyTeam',
+  'additionalService',
+  'bbbAccreditation',
+  'calendarSection',
+  'imageGallery',
+])
+
+/** Models that support soft clear via status (0 / "0"). */
+const MODELS_WITH_STATUS_SOFT = new Set(['service', 'review', 'portfolio', 'gallery', 'tabItem', 'faq'])
+
+export function canRunCorporateSiblingSync(options: SharedSyncOptions = {}): boolean {
+  if (options.force === true) return true
+  return Boolean(getCardChangeActor()?.userId)
 }
 
 const JSON_SHARED_SETTING_KEYS = new Set(['custom_tabs_json', 'tab_section_meta_json', 'tab_label_overrides_json'])
@@ -438,15 +504,19 @@ const replaceModelRows = async (
     }
   }
 
-  const liveRows = rows.filter((row) => !row.deletedAt)
+  const liveRows = rows.filter((row) => {
+    if (row.deletedAt) return false
+    if (row.status === 0 || row.status === '0') return false
+    return true
+  })
   if (!shouldReplaceSiblingRows(liveRows.length, options.allowEmpty === true)) return
 
   try {
-    await delegate.deleteMany({ where: targetWhere })
+    await softClearTargetRows(delegate, model, targetWhere)
   } catch (error) {
     if (isPrismaMissingTable(error)) return
     if (isPrismaUnknownArgument(error) && Object.keys(extraWhere).length) {
-      logger.warn(`corporate sibling sync skipped deleteMany extra filter for ${model}`)
+      logger.warn(`corporate sibling sync skipped soft-clear extra filter for ${model}`)
       return
     }
     throw error
@@ -490,7 +560,10 @@ const replacePosts = async (
   })
   if (!shouldReplaceSiblingRows(sourcePosts.length, options.allowEmpty === true)) return
 
-  await prisma.post.deleteMany({ where: targetWhere })
+  await prisma.post.updateMany({
+    where: { ...targetWhere, deletedAt: null },
+    data: { deletedAt: new Date(), status: '0' },
+  })
 
   for (const post of sourcePosts) {
     const created = await prisma.post.create({
@@ -551,13 +624,13 @@ const replaceCustomTabs = async (
   options: SharedSyncOptions = {}
 ): Promise<Map<string, string>> => {
   const sourceTabs = await prisma.customTab.findMany({
-    where: { profileId: sourceProfileId },
-    include: { items: { orderBy: { sortOrder: 'asc' } } },
+    where: { profileId: sourceProfileId, status: { not: '0' }, isEnabled: true },
+    include: { items: { where: { status: { not: '0' } }, orderBy: { sortOrder: 'asc' } } },
     orderBy: { sortOrder: 'asc' },
   })
   if (!shouldReplaceSiblingRows(sourceTabs.length, options.allowEmpty === true)) return new Map()
   const targetTabs = await prisma.customTab.findMany({
-    where: { profileId: targetProfileId },
+    where: { profileId: targetProfileId, status: { not: '0' } },
     orderBy: { sortOrder: 'asc' },
   })
   const unused = [...targetTabs]
@@ -605,7 +678,11 @@ const replaceCustomTabs = async (
     idMap.set(sourceTab.id, targetTab.id)
     if (sourceTab.key) idMap.set(sourceTab.key, targetTab.key)
 
-    await prisma.customTabItem.deleteMany({ where: { customTabId: targetTab.id } })
+    // Soft-retire prior items (keep rows for recovery); then add the source copy as live.
+    await prisma.customTabItem.updateMany({
+      where: { customTabId: targetTab.id, status: { not: '0' } },
+      data: { status: '0' },
+    })
     for (const item of sourceTab.items) {
       await prisma.customTabItem.create({
         data: {
@@ -616,7 +693,7 @@ const replaceCustomTabs = async (
           url: item.url,
           featuredImage: item.featuredImage,
           sortOrder: item.sortOrder,
-          status: item.status,
+          status: item.status === '0' ? '1' : item.status,
           data: item.data === null ? undefined : (item.data as Prisma.InputJsonValue),
         },
       })
@@ -624,7 +701,14 @@ const replaceCustomTabs = async (
   }
 
   if (unused.length) {
-    await prisma.customTab.deleteMany({ where: { id: { in: unused.map((tab) => tab.id) } } })
+    await prisma.customTab.updateMany({
+      where: { id: { in: unused.map((tab) => tab.id) } },
+      data: { status: '0', isEnabled: false, isPublic: false },
+    })
+    await prisma.customTabItem.updateMany({
+      where: { customTabId: { in: unused.map((tab) => tab.id) } },
+      data: { status: '0' },
+    })
   }
 
   return idMap
@@ -870,6 +954,14 @@ export async function syncCorporateSiblingSharedContent(
   options: SharedSyncOptions = {}
 ): Promise<{ siblingCount: number }> {
   if (isCorporateSiblingSyncRunning()) return { siblingCount: 0 }
+  // Linked corporate cards sync when a human is logged in (or ops force). Never anonymous/background.
+  if (!canRunCorporateSiblingSync(options)) {
+    logger.info('corporate sibling sync skipped (no logged-in actor)', {
+      sourceProfileId,
+      scopeType: scope.type,
+    })
+    return { siblingCount: 0 }
+  }
   // Per-card identity / Card Settings — never fan out across linked cards.
   if (scope.type === 'aboutMe') return { siblingCount: 0 }
   if (scope.type === 'profileSettings') return { siblingCount: 0 }
@@ -891,15 +983,51 @@ export async function syncCorporateSiblingSharedContent(
   const siblingIds = await listCorporateSiblingProfileIds(sourceProfileId)
   if (!siblingIds.length) return { siblingCount: 0 }
 
+  const actor = getCardChangeActor()
+  const sourceCard = await prisma.profile.findUnique({
+    where: { id: sourceProfileId },
+    select: { id: true, slug: true, name: true },
+  })
+  const sourceLabel = sourceCard?.name?.trim() || sourceCard?.slug?.trim() || `card ${sourceProfileId.slice(-8)}`
+  const sourceSlug = sourceCard?.slug?.trim() || ''
   const resolvedOptions: SharedSyncOptions = {
     allowEmpty: options.allowEmpty === true,
     settingHadValue: options.settingHadValue,
+    force: options.force === true,
+  }
+  const scopeLabel =
+    scope.type === 'collection'
+      ? scope.kind
+      : scope.type === 'storage'
+        ? scope.storage
+        : scope.type === 'settings'
+          ? scope.keys.join(',')
+          : scope.type
+  const syncMeta = {
+    syncSourceProfileId: sourceProfileId,
+    syncSourceSlug: sourceSlug || undefined,
+    syncSourceName: sourceCard?.name?.trim() || undefined,
+    syncScope: scopeLabel,
+    syncTargetCount: siblingIds.length,
   }
 
   await syncLock.run(true, async () => {
     for (const siblingId of siblingIds) {
       try {
         await applyScopeToSibling(sourceProfileId, siblingId, scope, resolvedOptions)
+        // On A/B/D: clearly attribute the update to source card C + the logged-in editor.
+        await recordCardChange({
+          profileId: siblingId,
+          area: 'sync',
+          action: 'sync',
+          summary: `Updated from linked card "${sourceLabel}"${
+            sourceSlug ? ` (/${sourceSlug})` : ''
+          } — corporate sync of ${scopeLabel}. This card changed because that linked card was edited${
+            actor?.email ? ` by ${actor.email}` : ''
+          }.`,
+          snapshot: null,
+          meta: syncMeta,
+        })
       } catch (error) {
         logger.error('corporate sibling shared-tab sync failed', {
           sourceProfileId,
@@ -911,6 +1039,18 @@ export async function syncCorporateSiblingSharedContent(
     }
   })
 
+  // On source card C: record that this edit was pushed to the other linked corporate cards.
+  await recordCardChange({
+    profileId: sourceProfileId,
+    area: 'sync',
+    action: 'sync',
+    summary: `Pushed ${scopeLabel} to ${siblingIds.length} linked corporate card${
+      siblingIds.length === 1 ? '' : 's'
+    } because this card ("${sourceLabel}") was edited${actor?.email ? ` by ${actor.email}` : ''}.`,
+    snapshot: null,
+    meta: syncMeta,
+  })
+
   return { siblingCount: siblingIds.length }
 }
 
@@ -919,9 +1059,11 @@ export async function safeSyncCorporateSiblingSharedContent(
   scope: SharedSyncScope,
   options: SharedSyncOptions = {}
 ): Promise<void> {
+  // Live saves: sync only if bindCardChangeContext set a logged-in actor (force stays false here).
   const resolved: SharedSyncOptions = {
     ...options,
     allowEmpty: options.allowEmpty === true,
+    force: false,
   }
   try {
     await syncCorporateSiblingSharedContent(sourceProfileId, scope, resolved)
