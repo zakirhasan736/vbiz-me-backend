@@ -189,9 +189,7 @@ export const AREA_LABELS: Record<string, string> = {
   photos: 'Photos',
   sync: 'Corporate sync',
   fullShared: 'Corporate sync',
-  settings: 'Shared settings',
   storage: 'Tab content',
-  posts: 'Posts',
   collection: 'Shared list',
 }
 
