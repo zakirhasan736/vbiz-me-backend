@@ -25,11 +25,12 @@ export function normalizeFrontendPublicCardPath(rawUrl: string | null | undefine
       .replace(/^\/+|\/+$/g, '')
       .split('/')
       .filter(Boolean)
-    if (parts[0] === LEGACY_PUBLIC_CARD_PATH_SEGMENT && parts[1]) {
+    const root = parts[0]?.toLowerCase()
+    if (
+      (root === LEGACY_PUBLIC_CARD_PATH_SEGMENT || root === FRONTEND_PUBLIC_CARD_PATH_SEGMENT.toLowerCase()) &&
+      parts[1]
+    ) {
       parsed.pathname = `/${FRONTEND_PUBLIC_CARD_PATH_SEGMENT}/${parts.slice(1).join('/')}`
-      return absolute ? parsed.href : `${parsed.pathname}${parsed.search}${parsed.hash}`
-    }
-    if (parts[0] === FRONTEND_PUBLIC_CARD_PATH_SEGMENT && parts[1]) {
       return absolute ? parsed.href : `${parsed.pathname}${parsed.search}${parsed.hash}`
     }
     if (parts.length === 1 && parts[0]) {

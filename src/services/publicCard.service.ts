@@ -607,6 +607,8 @@ function buildMyCard(profile: Awaited<ReturnType<typeof getProfileBySlugOrThrow>
       linkedin: profile.linkedin,
       pinterest: profile.pinterest,
       whatsapp: profile.whatsapp,
+      is_draft: profile.isDraft,
+      is_public: profile.isPublic,
     },
     settings,
     features,
@@ -1955,7 +1957,7 @@ const getPublicBootstrap = async (slug: string): Promise<BootstrapPayload> => {
     theme_config: profile.profileSettings?.themeConfig || profile.themeConfig || null,
   }
   const lightTabs = Object.values(TAB_REGISTRY).filter((tab) =>
-    ['about_me', 'mission_statement', 'why_choose_us', 'service', 'review'].includes(tab.storage)
+    ['about_me', 'mission_statement', 'why_choose_us', 'service', 'review', 'faq', 'product'].includes(tab.storage)
   )
 
   const [myCard, postTypes, sectionEntries] = await Promise.all([

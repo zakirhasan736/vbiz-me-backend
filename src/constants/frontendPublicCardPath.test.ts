@@ -7,12 +7,13 @@ describe('frontend public card path', () => {
     assert.equal(buildFrontendPublicCardPath('michael-casanova'), '/vCard/michael-casanova')
   })
 
-  it('rewrites legacy /v/{slug} to /vCard/{slug}', () => {
+  it('rewrites legacy /v/{slug} and lowercase /vcard/{slug} to /vCard/{slug}', () => {
     assert.equal(normalizeFrontendPublicCardPath('/v/michael-casanova'), '/vCard/michael-casanova')
     assert.equal(
       normalizeFrontendPublicCardPath('https://app.vbizme.com/v/demo-card'),
       'https://app.vbizme.com/vCard/demo-card'
     )
+    assert.equal(normalizeFrontendPublicCardPath('/vcard/demo-card'), '/vCard/demo-card')
   })
 
   it('keeps modern /vCard/{slug} paths', () => {
