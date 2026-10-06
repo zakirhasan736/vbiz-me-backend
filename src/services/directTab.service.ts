@@ -144,7 +144,7 @@ const queryBlogs = async (profileId: string, skip = 0, limit = 200) => {
   const take = Math.min(200, Math.max(1, limit))
   const start = Math.max(0, skip)
   const where = { profileId, deletedAt: null }
-  const [rows, total, ownedBlogIds] = await Promise.all([
+  const [rows, total, ownedBlogIds, isOwnerCard] = await Promise.all([
     prisma.blog.findMany({
       where,
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
@@ -153,9 +153,13 @@ const queryBlogs = async (profileId: string, skip = 0, limit = 200) => {
     }),
     prisma.blog.count({ where }),
     getCorporateOwnedIds(profileId, 'blog'),
+    isCorporateTeamOwnerSourceCard(profileId),
   ])
   return {
-    items: rows.map((row) => ({ ...serializeBlog(row), corporateOwned: ownedBlogIds.has(row.id) })),
+    items: rows.map((row) => ({
+      ...serializeBlog(row),
+      corporateOwned: !isOwnerCard && ownedBlogIds.has(row.id),
+    })),
     total,
     skip: start,
     limit: take,
@@ -226,14 +230,12 @@ const deleteBlog = async (profileId: string, blogId: string, userId: string, rol
   if (!existing) throw new AppError(404, 'Blog not found')
   const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
   await assertNotCorporateOwnedRow({ profileId, model: 'blog', rowId: blogId, isOwnerCard })
-  await prisma.blog.update({
-    where: { id: blogId },
-    data: { deletedAt: new Date(), status: '0' },
-  })
+  await prisma.blog.delete({ where: { id: blogId } })
+  const remainingBlogs = isOwnerCard ? await prisma.blog.count({ where: { profileId, deletedAt: null } }) : 1
   await safeSyncCorporateSiblingSharedContent(
     profileId,
     { type: 'storage', storage: 'blog', tabKey: 'blogs' },
-    { allowEmpty: false }
+    { allowEmpty: isOwnerCard && remainingBlogs === 0 }
   )
   return { deleted: true as const }
 }
@@ -481,10 +483,7 @@ async function deleteGenericTabItem(tab: TabRegistryEntry, profileId: string, it
       where: { id: itemId, profileId, tabKey: tab.key, deletedAt: null },
     })
     if (!existing) throw new AppError(404, 'Item not found')
-    await prisma.tabItem.update({
-      where: { id: itemId },
-      data: { deletedAt: new Date(), status: '0' },
-    })
+    await prisma.tabItem.delete({ where: { id: itemId } })
     return { deleted: true as const }
   } catch (error) {
     if (error instanceof AppError) throw error
@@ -523,13 +522,21 @@ const queryTabItems = async (profileId: string, tabKey: string, skip = 0, limit 
     total = galleryRows.length
   } else if (tab.storage === 'service') {
     ;[rows, total] = await Promise.all([
-      prisma.service.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' }, ...pageArgs }),
-      prisma.service.count({ where: { profileId } }),
+      prisma.service.findMany({
+        where: { profileId, status: { not: 0 } },
+        orderBy: { sortOrder: 'asc' },
+        ...pageArgs,
+      }),
+      prisma.service.count({ where: { profileId, status: { not: 0 } } }),
     ])
   } else if (tab.storage === 'review') {
     ;[rows, total] = await Promise.all([
-      prisma.review.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' }, ...pageArgs }),
-      prisma.review.count({ where: { profileId } }),
+      prisma.review.findMany({
+        where: { profileId, status: { not: 0 } },
+        orderBy: { sortOrder: 'asc' },
+        ...pageArgs,
+      }),
+      prisma.review.count({ where: { profileId, status: { not: 0 } } }),
     ])
   } else if (tab.storage === 'about_me') {
     try {
@@ -553,11 +560,17 @@ const queryTabItems = async (profileId: string, tabKey: string, skip = 0, limit 
     }
   }
   const ownedModel = ownedModelForTab(tab)
-  const ownedIds = isMemberEditableCorporateModel(ownedModel)
-    ? new Set<string>()
-    : await getCorporateOwnedIds(profileId, ownedModel)
+  const [ownedIds, isOwnerCard] = await Promise.all([
+    isMemberEditableCorporateModel(ownedModel)
+      ? Promise.resolve(new Set<string>())
+      : getCorporateOwnedIds(profileId, ownedModel),
+    isCorporateTeamOwnerSourceCard(profileId),
+  ])
   return {
-    items: rows.map((row) => ({ ...serializeDedicatedRow(tab, row), corporateOwned: ownedIds.has(row.id) })),
+    items: rows.map((row) => ({
+      ...serializeDedicatedRow(tab, row),
+      corporateOwned: !isOwnerCard && ownedIds.has(row.id),
+    })),
     total,
     skip: start,
     limit: take,
@@ -818,11 +831,11 @@ const deleteTabItem = async (profileId: string, tabKey: string, itemId: string, 
     const existing = await model.findFirst({ where: { id: itemId, profileId } })
     if (!existing) throw new AppError(404, 'Item not found')
     const singleton = tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)
-    const numericStatus = tab.storage === 'service' || tab.storage === 'review'
-    await model.update({
-      where: { id: itemId },
-      data: singleton ? { status: '0' } : numericStatus ? { status: 0 } : { deletedAt: new Date(), status: '0' },
-    })
+    if (singleton) {
+      await model.update({ where: { id: itemId }, data: { status: '0' } })
+    } else {
+      await model.delete({ where: { id: itemId } })
+    }
     return { deleted: true as const }
   } catch (error) {
     if (error instanceof AppError) throw error
@@ -861,7 +874,12 @@ const findTabKeyByPublicSectionName = (name: string): string | null => {
   return null
 }
 
-const afterDirectTabWrite = async <T>(profileId: string, tabKey: string, result: T): Promise<T> => {
+const afterDirectTabWrite = async <T>(
+  profileId: string,
+  tabKey: string,
+  result: T,
+  options?: { allowEmpty?: boolean }
+): Promise<T> => {
   const tab = getTabByKey(tabKey)
   if (tab && tab.storage !== 'blog' && tab.storage !== 'about_me' && tab.key !== 'about_me') {
     await safeSyncCorporateSiblingSharedContent(
@@ -871,7 +889,7 @@ const afterDirectTabWrite = async <T>(profileId: string, tabKey: string, result:
         storage: tab.storage,
         tabKey: tab.key,
       },
-      { allowEmpty: false }
+      { allowEmpty: options?.allowEmpty === true }
     )
   }
   await recordCardChange({
@@ -902,7 +920,9 @@ const directTabService = {
     input: TabItemInput
   ) => afterDirectTabWrite(profileId, tabKey, await updateTabItem(profileId, tabKey, itemId, userId, role, input)),
   deleteTabItem: async (profileId: string, tabKey: string, itemId: string, userId: string, role: string) =>
-    afterDirectTabWrite(profileId, tabKey, await deleteTabItem(profileId, tabKey, itemId, userId, role)),
+    afterDirectTabWrite(profileId, tabKey, await deleteTabItem(profileId, tabKey, itemId, userId, role), {
+      allowEmpty: true,
+    }),
   listPublicBlogs,
   listPublicTabItems,
   findTabKeyByPublicSectionName,

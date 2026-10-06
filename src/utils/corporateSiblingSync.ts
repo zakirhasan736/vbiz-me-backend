@@ -178,9 +178,18 @@ export async function isCorporateTeamOwnerSourceCard(sourceProfileId: string): P
     select: { id: true, userId: true, companyUserId: true },
   })
   if (!source?.userId) return false
-  const parentId = await resolveCorporateParentUserIdFromProfile(source)
-  if (!parentId) return false
-  return source.userId === parentId
+  const [parentId, duplicatedFrom] = await Promise.all([
+    resolveCorporateParentUserIdFromProfile(source),
+    prisma.setting.findUnique({
+      where: { profileId_key: { profileId: sourceProfileId, key: 'duplicated_from' } },
+      select: { value: true },
+    }),
+  ])
+  return isCorporateOwnerSourceCard({
+    userId: source.userId,
+    parentUserId: parentId,
+    duplicatedFrom: duplicatedFrom?.value,
+  })
 }
 
 const JSON_SHARED_SETTING_KEYS = new Set(['custom_tabs_json', 'tab_section_meta_json', 'tab_label_overrides_json'])
@@ -201,6 +210,36 @@ export function isSparseSharedSettingValue(key: string, value: string | null | u
 
 export function shouldReplaceSiblingRows(sourceLiveCount: number, allowEmpty: boolean): boolean {
   return sourceLiveCount > 0 || allowEmpty
+}
+
+/**
+ * Which sibling rows an owner sync may hard-delete.
+ * Tracked owner copies are removed. Member-added rows are never in that id list.
+ * An empty owner list does not wipe a member card that has no tracked copies.
+ */
+export function corporateSyncRowIdsToHardDelete(input: {
+  sourceLiveCount: number
+  allowEmpty: boolean
+  ownedIds: string[]
+}): string[] | 'all' | 'none' {
+  if (input.sourceLiveCount === 0 && !input.allowEmpty) return 'none'
+  const ownedIds = [...new Set(input.ownedIds.filter((id) => id.trim()))]
+  if (ownedIds.length > 0) return ownedIds
+  if (input.sourceLiveCount === 0) return 'none'
+  return 'all'
+}
+
+/** A duplicated team card never fans out, even when its login is the corporate account. */
+export function isCorporateOwnerSourceCard(input: {
+  userId?: string | null
+  parentUserId?: string | null
+  duplicatedFrom?: string | null
+}): boolean {
+  const userId = typeof input.userId === 'string' ? input.userId.trim() : ''
+  const parentUserId = typeof input.parentUserId === 'string' ? input.parentUserId.trim() : ''
+  if (!userId || !parentUserId || userId !== parentUserId) return false
+  const duplicatedFrom = typeof input.duplicatedFrom === 'string' ? input.duplicatedFrom.trim() : ''
+  return !duplicatedFrom
 }
 
 export function shouldCopySharedSetting(args: {
@@ -521,26 +560,43 @@ const replaceModelRows = async (
     }
   }
 
-  const liveRows = rows.filter((row) => {
+  let liveRows = rows.filter((row) => {
     if (row.deletedAt) return false
     if (row.status === 0 || row.status === '0') return false
     return true
   })
+  const ownedKey = typeof extraWhere.tabKey === 'string' ? `${model}:${extraWhere.tabKey}` : model
+  // Member-added rows stay on that card. Never copy them onto the owner or other cards.
+  if (!(await isCorporateTeamOwnerSourceCard(sourceProfileId))) {
+    const sourceOwned = await getCorporateOwnedIds(sourceProfileId, ownedKey)
+    liveRows = liveRows.filter((row) => typeof row.id === 'string' && sourceOwned.has(row.id))
+  }
   if (!shouldReplaceSiblingRows(liveRows.length, options.allowEmpty === true)) return
 
-  const ownedKey = typeof extraWhere.tabKey === 'string' ? `${model}:${extraWhere.tabKey}` : model
   const ownedIds = await getCorporateOwnedIds(targetProfileId, ownedKey)
-  const clearWhere = ownedIds.size > 0 ? { ...targetWhere, id: { in: [...ownedIds] } } : targetWhere
+  const removal = corporateSyncRowIdsToHardDelete({
+    sourceLiveCount: liveRows.length,
+    allowEmpty: options.allowEmpty === true,
+    ownedIds: [...ownedIds],
+  })
+  if (removal === 'none') return
+
+  const clearWhere = removal === 'all' ? targetWhere : { ...targetWhere, id: { in: removal } }
 
   try {
-    await softClearTargetRows(delegate, model, clearWhere)
+    await delegate.deleteMany({ where: clearWhere })
   } catch (error) {
     if (isPrismaMissingTable(error)) return
     if (isPrismaUnknownArgument(error) && Object.keys(extraWhere).length) {
-      logger.warn(`corporate sibling sync skipped soft-clear extra filter for ${model}`)
+      logger.warn(`corporate sibling sync skipped hard-delete extra filter for ${model}`)
       return
     }
-    throw error
+    try {
+      await softClearTargetRows(delegate, model, clearWhere)
+    } catch (softError) {
+      if (isPrismaMissingTable(softError)) return
+      throw softError
+    }
   }
 
   const createdIds: string[] = []
@@ -580,23 +636,26 @@ const replacePosts = async (
     ...(postTypeId ? { postTypeId } : {}),
   }
 
-  const sourcePosts = await prisma.post.findMany({
+  let sourcePosts = await prisma.post.findMany({
     where: sourceWhere,
     include: { metas: true },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
   })
+  if (!(await isCorporateTeamOwnerSourceCard(sourceProfileId))) {
+    const sourceOwned = await getCorporateOwnedIds(sourceProfileId, 'post')
+    sourcePosts = sourcePosts.filter((post) => sourceOwned.has(post.id))
+  }
   if (!shouldReplaceSiblingRows(sourcePosts.length, options.allowEmpty === true)) return
 
   const ownedIds = await getCorporateOwnedIds(targetProfileId, 'post')
-  const clearWhere =
-    ownedIds.size > 0
-      ? { ...targetWhere, id: { in: [...ownedIds] }, deletedAt: null }
-      : { ...targetWhere, deletedAt: null }
-
-  await prisma.post.updateMany({
-    where: clearWhere,
-    data: { deletedAt: new Date(), status: '0' },
+  const removal = corporateSyncRowIdsToHardDelete({
+    sourceLiveCount: sourcePosts.length,
+    allowEmpty: options.allowEmpty === true,
+    ownedIds: [...ownedIds],
   })
+  if (removal === 'none') return
+  const clearWhere = removal === 'all' ? { ...targetWhere, deletedAt: null } : { ...targetWhere, id: { in: removal } }
+  await prisma.post.deleteMany({ where: clearWhere })
 
   const createdIds: string[] = []
   for (const post of sourcePosts) {

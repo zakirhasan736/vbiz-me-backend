@@ -5,6 +5,8 @@ import {
   canRunCorporateSiblingSync,
   cardBelongsToCorporation,
   corporateSiblingProfileWhere,
+  corporateSyncRowIdsToHardDelete,
+  isCorporateOwnerSourceCard,
   isCorporateSiblingSyncRunning,
   isPersonalCollectionKind,
   isPersonalStorage,
@@ -78,6 +80,37 @@ describe('collection fan-out rules', () => {
     assert.equal(isPersonalCollectionKind('services'), false)
     assert.equal(isPersonalStorage('about_me'), true)
     assert.equal(isPersonalStorage('faq'), false)
+  })
+})
+
+describe('corporate owner delete and member-local rows', () => {
+  it('treats only the corporate owner card as the sync source', () => {
+    assert.equal(isCorporateOwnerSourceCard({ userId: 'corp-1', parentUserId: 'corp-1', duplicatedFrom: null }), true)
+    assert.equal(
+      isCorporateOwnerSourceCard({ userId: 'member-1', parentUserId: 'corp-1', duplicatedFrom: null }),
+      false
+    )
+    assert.equal(
+      isCorporateOwnerSourceCard({ userId: 'corp-1', parentUserId: 'corp-1', duplicatedFrom: 'owner-card' }),
+      false
+    )
+  })
+
+  it('hard-deletes tracked owner copies and leaves member-added rows alone', () => {
+    assert.deepEqual(
+      corporateSyncRowIdsToHardDelete({
+        sourceLiveCount: 1,
+        allowEmpty: false,
+        ownedIds: ['owner-copy', 'owner-copy'],
+      }),
+      ['owner-copy']
+    )
+    assert.deepEqual(
+      corporateSyncRowIdsToHardDelete({ sourceLiveCount: 0, allowEmpty: true, ownedIds: ['owner-copy'] }),
+      ['owner-copy']
+    )
+    assert.equal(corporateSyncRowIdsToHardDelete({ sourceLiveCount: 0, allowEmpty: true, ownedIds: [] }), 'none')
+    assert.equal(corporateSyncRowIdsToHardDelete({ sourceLiveCount: 2, allowEmpty: false, ownedIds: [] }), 'all')
   })
 })
 

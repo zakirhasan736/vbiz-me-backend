@@ -58,6 +58,7 @@ import {
   shouldFanOutCollection,
 } from '../utils/corporateSiblingSync'
 import { guestSaveDashboardVisibleWhere } from '../utils/crmLeadOrigin'
+import { resolveCustomTabItemWrite } from '../utils/customTabItemWrite'
 import {
   DASHBOARD_ALL_CHART_DAYS,
   SOCIAL_CHANNELS,
@@ -468,7 +469,7 @@ const loadProfileCollections = async (profileId: string) => {
   }
 
   const mark = <T extends { id: string }>(rows: T[], owned: Set<string>) =>
-    rows.map((row) => ({ ...row, corporateOwned: owned.has(row.id) }))
+    rows.map((row) => ({ ...row, corporateOwned: !isOwnerCard && owned.has(row.id) }))
   return {
     education: mark(education, seeded.education),
     experiences: mark(experiences, seeded.experience),
@@ -612,6 +613,7 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
         return
       }
       const retainedIds: string[] = []
+      const usedItemIds = new Set<string>()
       for (let tabIndex = 0; tabIndex < tabs.length; tabIndex += 1) {
         const input = tabs[tabIndex]
         const inputId = typeof input.id === 'string' ? input.id.trim() : ''
@@ -666,24 +668,41 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
           const itemId = typeof row.id === 'string' && row.id.trim() ? row.id.trim() : undefined
           const mediaUrl = typeof row.mediaUrl === 'string' ? row.mediaUrl.trim() : ''
           const linkUrl = typeof row.url === 'string' ? row.url.trim() : ''
-          await tx.customTabItem.create({
+          const itemData = {
+            customTabId: tab.id,
+            profileId,
+            title: row.title == null ? null : String(row.title),
+            description: row.description == null ? null : String(row.description),
+            url: linkUrl || null,
+            featuredImage: mediaUrl || null,
+            sortOrder: itemIndex,
+            status: row.active === false ? '0' : '1',
             data: {
-              ...(itemId ? { id: itemId } : {}),
-              customTabId: tab.id,
-              profileId,
-              title: row.title == null ? null : String(row.title),
-              description: row.description == null ? null : String(row.description),
-              url: linkUrl || null,
-              featuredImage: mediaUrl || null,
-              sortOrder: itemIndex,
-              status: row.active === false ? '0' : '1',
-              data: {
-                mediaName: row.mediaName ?? null,
-                mediaKind: row.mediaKind ?? null,
-                gallery: Array.isArray(row.gallery) ? row.gallery : [],
-              } as Prisma.InputJsonValue,
-            },
+              mediaName: row.mediaName ?? null,
+              mediaKind: row.mediaKind ?? null,
+              gallery: Array.isArray(row.gallery) ? row.gallery : [],
+            } as Prisma.InputJsonValue,
+          }
+          const existingItem = itemId
+            ? await tx.customTabItem.findUnique({ where: { id: itemId }, select: { profileId: true } })
+            : null
+          const plan = resolveCustomTabItemWrite({
+            requestedId: itemId,
+            existingProfileId: existingItem?.profileId ?? null,
+            cardProfileId: profileId,
+            alreadyUsed: Boolean(itemId && usedItemIds.has(itemId)),
           })
+          if (plan.id) usedItemIds.add(plan.id)
+          if (plan.mode === 'update' && plan.id) {
+            await tx.customTabItem.update({ where: { id: plan.id }, data: itemData })
+          } else {
+            await tx.customTabItem.create({
+              data: {
+                ...(plan.id ? { id: plan.id } : {}),
+                ...itemData,
+              },
+            })
+          }
         }
       }
       // Soft-disable tabs removed from the editor payload (never hard-delete).
@@ -2769,34 +2788,9 @@ const replaceCollection = async <T extends Record<string, unknown>>(
       return
     }
 
-    // Soft-clear when possible (deletedAt / status); hard-delete only as last resort.
-    let cleared = false
-    if (typeof model.updateMany === 'function') {
-      if (kind === 'portfolios') {
-        try {
-          await model.updateMany({ where: { profileId, deletedAt: null }, data: { deletedAt: new Date() } })
-          cleared = true
-        } catch {
-          try {
-            await model.updateMany({ where: { profileId }, data: { status: '0' } })
-            cleared = true
-          } catch {
-            cleared = false
-          }
-        }
-      } else if (kind === 'services' || kind === 'reviews') {
-        try {
-          await model.updateMany({ where: { profileId }, data: { status: 0 } })
-          cleared = true
-        } catch {
-          cleared = false
-        }
-      }
-    }
-    if (!cleared) {
-      if (!model.deleteMany) throw new AppError(500, `Unknown collection model: ${kind}`)
-      await model.deleteMany({ where: { profileId } })
-    }
+    // Corporate owner removals are permanent. Member-local rows are handled above and are not touched here.
+    if (!model.deleteMany) throw new AppError(500, `Unknown collection model: ${kind}`)
+    await model.deleteMany({ where: { profileId } })
     // Prefer per-row `create` over `createMany` so Prisma applies `@default(cuid())`
     // and `@updatedAt` (createMany skips those client-side defaults).
     for (let index = 0; index < items.length; index += 1) {
@@ -2810,11 +2804,7 @@ const replaceCollection = async <T extends Record<string, unknown>>(
       })
     }
     if (kind === 'portfolios') {
-      try {
-        await tx.portfolio.updateMany({ where: { profileId }, data: { status: 0 } })
-      } catch {
-        await tx.portfolio.deleteMany({ where: { profileId } })
-      }
+      await tx.portfolio.deleteMany({ where: { profileId } })
       for (let index = 0; index < items.length; index += 1) {
         const mapped = toWriteData(mapItem(items[index]))
         const statusValue = Number(mapped.status)
@@ -3348,11 +3338,16 @@ const deletePost = async (postId: string, userId: string, role: string) => {
     isOwnerCard,
     postTypeName: post.postType?.name,
   })
-  await prisma.post.update({ where: { id: postId }, data: { deletedAt: new Date(), status: '0' } })
+  await prisma.post.delete({ where: { id: postId } })
+  const remainingPosts = isOwnerCard
+    ? await prisma.post.count({
+        where: { profileId: post.profileId, postTypeId: post.postTypeId, deletedAt: null },
+      })
+    : 1
   await safeSyncCorporateSiblingSharedContent(
     post.profileId,
     { type: 'posts', postTypeId: post.postTypeId },
-    { allowEmpty: false }
+    { allowEmpty: isOwnerCard && remainingPosts === 0 }
   )
   return { id: postId, deleted: true }
 }
@@ -3383,11 +3378,14 @@ const listPosts = async (
     }),
     prisma.post.count({ where }),
   ])
-  const ownedPostIds = await getCorporateOwnedIds(profileId, 'post')
+  const [ownedPostIds, isOwnerCard] = await Promise.all([
+    getCorporateOwnedIds(profileId, 'post'),
+    isCorporateTeamOwnerSourceCard(profileId),
+  ])
   return {
     items: items.map((item) => ({
       ...item,
-      corporateOwned: ownedPostIds.has(item.id),
+      corporateOwned: !isOwnerCard && ownedPostIds.has(item.id),
     })),
     total,
     skip: start,

@@ -172,7 +172,7 @@ export async function listGalleriesForProfile(profileId: string, take = 200): Pr
   const limit = Math.min(200, Math.max(1, take))
   try {
     const rows = await prisma.gallery.findMany({
-      where: { profileId },
+      where: { profileId, deletedAt: null, status: { not: '0' } },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
       take: limit,
       select: GALLERY_SAFE_SELECT,
@@ -215,6 +215,8 @@ export async function listGalleriesForProfile(profileId: string, take = 200): Pr
         "legacyPostId"
       FROM "Gallery"
       WHERE "profileId" = ${profileId}
+        AND "deletedAt" IS NULL
+        AND status::text <> '0'
       ORDER BY "sortOrder" ASC, "createdAt" DESC
       LIMIT ${limit}
     `
@@ -250,6 +252,8 @@ export async function listGalleriesForProfile(profileId: string, take = 200): Pr
         COALESCE("updatedAt", NOW()) AS "updatedAt"
       FROM "Gallery"
       WHERE "profileId" = ${profileId}
+        AND "deletedAt" IS NULL
+        AND status::text <> '0'
       LIMIT ${limit}
     `
     return rows.map((row) =>
