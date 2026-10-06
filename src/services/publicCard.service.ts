@@ -26,6 +26,7 @@ import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUrl } from '../utils/mediaUrl'
+import { hiddenOwnerMediaIds, withoutOwnedIds } from '../utils/memberMediaVisibility'
 import { formatProfileLocation, hasProfileLocationParts } from '../utils/personalAddress'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
@@ -735,7 +736,9 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
     : legacyPortfolio.length
       ? legacyPortfolio
       : filledGallery
-  const portfolio = source.map((item) => {
+  const hiddenPhotoIds = await hiddenOwnerMediaIds(profile.id, 'photos')
+  const visibleSource = source.filter((item) => !hiddenPhotoIds.has(item.id))
+  const portfolio = visibleSource.map((item) => {
     const featuredImage = 'featuredImage' in item ? item.featuredImage : item.imageUrl
     const legacyPostId = 'legacyPostId' in item && typeof item.legacyPostId === 'number' ? item.legacyPostId : null
 
@@ -1347,6 +1350,27 @@ const getDynamicSection = async (
             })
           }
         }
+        if (tab.storage === 'video') {
+          const hiddenVideoIds = await hiddenOwnerMediaIds(profileId, 'videos')
+          const visibleRows = withoutOwnedIds(rows, hiddenVideoIds)
+          if (visibleRows.length !== rows.length) {
+            rows = visibleRows
+            if (!rows.length) {
+              return {
+                type: tab.publicSectionName,
+                postType: {
+                  name: tab.publicSectionName,
+                  title: tab.label,
+                  type_id: tab.legacyPostTypeId,
+                },
+                profile: { id: profileId },
+                items: [],
+                section_id: tab.key,
+                post_type: { name: tab.publicSectionName, title: tab.label, type_id: tab.legacyPostTypeId },
+              }
+            }
+          }
+        }
         if (tab.storage === 'client' && rows.some((row) => !row.featuredImage)) {
           const legacyPostIds = rows.map((row) => row.legacyPostId).filter((id): id is number => typeof id === 'number')
           const directRowIds = rows.map((row) => row.id)
@@ -1510,6 +1534,9 @@ const getDynamicSection = async (
           : galleryRows.length
             ? galleryRows
             : mappedLegacy
+      const hiddenPhotoIds = await hiddenOwnerMediaIds(profileId, 'photos')
+      const visibleItems = withoutOwnedIds(items, hiddenPhotoIds)
+      const hidOwnerPhotos = visibleItems.length !== items.length
       logPublicSectionMedia(
         name,
         profileId,
@@ -1540,12 +1567,12 @@ const getDynamicSection = async (
           })),
         }
       )
-      if (items.length) {
+      if (visibleItems.length || hidOwnerPhotos) {
         return {
           type: 'gallery',
           postType: { name: 'gallery', title: 'Gallery' },
           profile: { id: profileId },
-          items: items.map((p) => {
+          items: visibleItems.map((p) => {
             const imageUrl = abs(p.featuredImage, null, 5, 'Portfolio Gallery')
             const featured = mediaAsset(p.id, p.title, imageUrl)
             return {
