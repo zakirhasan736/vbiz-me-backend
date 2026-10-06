@@ -269,6 +269,47 @@ const notifyCardActivated = async (actor: LifecycleNotifyActor, profileId: strin
 /** Controllers pass API roles (`super-admin`); tolerate Prisma enum values too. */
 const isAdminRole = (role: string) => isStaffRole(role) || role === 'ADMIN' || role === 'SUPER_ADMIN'
 
+async function ensureNamedRow(
+  findFirst: (name: string) => Promise<{ id: string } | null>,
+  create: (name: string) => Promise<{ id: string }>,
+  name: string
+): Promise<string> {
+  const existing = await findFirst(name)
+  if (existing) return existing.id
+  try {
+    return (await create(name)).id
+  } catch (error) {
+    if (!isPrismaUniqueConstraint(error)) throw error
+    const again = await findFirst(name)
+    if (again) return again.id
+    throw error
+  }
+}
+
+/** Match an existing gender or relationship label, or create it, so the editor value can be stored. */
+async function ensureCatalogId(kind: 'gender' | 'maritalStatus', name: string): Promise<string> {
+  if (kind === 'gender') {
+    return ensureNamedRow(
+      (label) =>
+        prisma.gender.findFirst({ where: { name: { equals: label, mode: 'insensitive' } }, select: { id: true } }),
+      (label) => prisma.gender.create({ data: { name: label }, select: { id: true } }),
+      name
+    )
+  }
+  return ensureNamedRow(
+    (label) =>
+      prisma.maritalStatus.findFirst({ where: { name: { equals: label, mode: 'insensitive' } }, select: { id: true } }),
+    (label) => prisma.maritalStatus.create({ data: { name: label }, select: { id: true } }),
+    name
+  )
+}
+
+async function catalogIdFromInput(kind: 'gender' | 'maritalStatus', value: unknown): Promise<string | null> {
+  const name = typeof value === 'string' ? value.trim() : ''
+  if (!name) return null
+  return ensureCatalogId(kind, name)
+}
+
 const RECENT_ENGAGEMENT_LIMIT = 10
 
 /** Setting keys that store media URLs shown on the admin vCards grid. */
@@ -1360,6 +1401,8 @@ const create = async (
         zipCode: raw.zipCode as string | undefined,
         about: raw.about as string | undefined,
         prof: raw.prof as string | undefined,
+        genderId: await catalogIdFromInput('gender', raw.gender),
+        maritalStatusId: await catalogIdFromInput('maritalStatus', raw.maritalStatus ?? raw.relationship),
         dob: raw.dob ? new Date(String(raw.dob)) : undefined,
         template: (raw.template as string) || 'default',
         themeConfig: (profileSettings?.themeConfig ?? raw.themeConfig) as object | undefined,
@@ -2009,7 +2052,15 @@ const update = async (
     throw new AppError(403, 'This card is suspended. Contact an administrator to restore access.')
   }
 
-  const { settings, profileSettings, status: rawStatus, ...raw } = data
+  const {
+    settings,
+    profileSettings,
+    status: rawStatus,
+    gender: genderName,
+    maritalStatus: maritalStatusName,
+    relationship: relationshipName,
+    ...raw
+  } = data
   const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
   const requestedStatus = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : undefined
@@ -2085,10 +2136,25 @@ const update = async (
       template: true,
       isEmploy: true,
       professionId: true,
+      genderId: true,
       maritalStatusId: true,
     },
   })
   if (!currentProfile) throw new AppError(404, 'Profile not found')
+
+  if ('gender' in data) {
+    const genderId = await catalogIdFromInput('gender', genderName)
+    if (genderId) profileData.gender = { connect: { id: genderId } }
+    else if (currentProfile.genderId) profileData.gender = { disconnect: true }
+  }
+  if ('maritalStatus' in data || 'relationship' in data) {
+    const maritalStatusId = await catalogIdFromInput(
+      'maritalStatus',
+      'maritalStatus' in data ? maritalStatusName : relationshipName
+    )
+    if (maritalStatusId) profileData.maritalStatus = { connect: { id: maritalStatusId } }
+    else if (currentProfile.maritalStatusId) profileData.maritalStatus = { disconnect: true }
+  }
 
   const nextEmail =
     'email' in raw
