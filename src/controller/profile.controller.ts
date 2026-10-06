@@ -118,6 +118,8 @@ const replaceServices = catchAsyncError(async (req, res) => {
     'services',
     items,
     (item) => ({
+      id: item.id,
+      corporateOwned: item.corporateOwned,
       title: item.title,
       description: item.description,
       status: item.status ?? 1,
@@ -143,6 +145,8 @@ const replacePortfolios = catchAsyncError(async (req, res) => {
         (typeof item.imageUrl === 'string' ? item.imageUrl.trim() : '') ||
         null
       return {
+        id: item.id,
+        corporateOwned: item.corporateOwned,
         title: item.title,
         description: item.description,
         status: String(item.status ?? '1'),
@@ -170,6 +174,8 @@ const replaceReviews = catchAsyncError(async (req, res) => {
       const rawRating = typeof item.rating === 'number' ? item.rating : Number(item.rating)
       const rating = Number.isFinite(rawRating) ? Math.min(5, Math.max(1, Math.round(rawRating))) : 5
       return {
+        id: item.id,
+        corporateOwned: item.corporateOwned,
         author: item.author,
         text: item.text,
         rating,

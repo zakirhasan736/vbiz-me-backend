@@ -25,7 +25,7 @@ describe('card change history helpers', () => {
         profileUserId: 'm1',
         profileCompanyUserId: 'c1',
       }),
-      'Corporate card owner'
+      'Corporate Team Owner'
     )
     assert.equal(
       resolveActorRoleLabel({
@@ -34,7 +34,7 @@ describe('card change history helpers', () => {
         profileUserId: 'm1',
         profileCompanyUserId: 'c1',
       }),
-      'Corporate team member'
+      'Corporate Team Member'
     )
     assert.equal(
       resolveActorRoleLabel({

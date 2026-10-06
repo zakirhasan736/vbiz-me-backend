@@ -4,6 +4,7 @@ import type { Prisma } from '../../generated/prisma/client'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import { getEffectiveEntitlements } from '../services/entitlement.service'
 import { getCardChangeActor } from './cardChangeHistory'
+import { getCorporateOwnedIds, setCorporateOwnedIds } from './corporateOwnedContent'
 import {
   cloneRecord,
   isCorporateLiveSyncProfileField,
@@ -135,8 +136,9 @@ export type SharedSyncOptions = {
   /** Setting keys that already had a real value on the source card before this write. */
   settingHadValue?: Record<string, boolean>
   /**
-   * Ops scripts may pass force:true. Live editor saves sync when a logged-in actor
-   * is present (bindCardChangeContext) — never from anonymous/background jobs.
+   * Ops scripts may pass force:true. Live editor saves sync only from the corporate
+   * team owner card when a logged-in actor is present — never from member cards or
+   * anonymous/background jobs.
    */
   force?: boolean
 }
@@ -164,6 +166,21 @@ const MODELS_WITH_STATUS_SOFT = new Set(['service', 'review', 'portfolio', 'gall
 export function canRunCorporateSiblingSync(options: SharedSyncOptions = {}): boolean {
   if (options.force === true) return true
   return Boolean(getCardChangeActor()?.userId)
+}
+
+/**
+ * True when this profile is a corporate team owner card (owned by the corporate parent).
+ * Only these cards may fan shared tabs out to linked team member cards.
+ */
+export async function isCorporateTeamOwnerSourceCard(sourceProfileId: string): Promise<boolean> {
+  const source = await prisma.profile.findUnique({
+    where: { id: sourceProfileId },
+    select: { id: true, userId: true, companyUserId: true },
+  })
+  if (!source?.userId) return false
+  const parentId = await resolveCorporateParentUserIdFromProfile(source)
+  if (!parentId) return false
+  return source.userId === parentId
 }
 
 const JSON_SHARED_SETTING_KEYS = new Set(['custom_tabs_json', 'tab_section_meta_json', 'tab_label_overrides_json'])
@@ -511,8 +528,12 @@ const replaceModelRows = async (
   })
   if (!shouldReplaceSiblingRows(liveRows.length, options.allowEmpty === true)) return
 
+  const ownedKey = typeof extraWhere.tabKey === 'string' ? `${model}:${extraWhere.tabKey}` : model
+  const ownedIds = await getCorporateOwnedIds(targetProfileId, ownedKey)
+  const clearWhere = ownedIds.size > 0 ? { ...targetWhere, id: { in: [...ownedIds] } } : targetWhere
+
   try {
-    await softClearTargetRows(delegate, model, targetWhere)
+    await softClearTargetRows(delegate, model, clearWhere)
   } catch (error) {
     if (isPrismaMissingTable(error)) return
     if (isPrismaUnknownArgument(error) && Object.keys(extraWhere).length) {
@@ -522,6 +543,7 @@ const replaceModelRows = async (
     throw error
   }
 
+  const createdIds: string[] = []
   for (const row of liveRows) {
     const cloned = cloneRecord(row)
     if ('status' in row && cloned.status === undefined) {
@@ -530,11 +552,16 @@ const replaceModelRows = async (
     if ('sortOrder' in row && cloned.sortOrder === undefined) cloned.sortOrder = 0
     try {
       const payload = model === 'gallery' ? toGalleryWriteData(cloned) : cloned
-      await createClonedRow(delegate, { ...payload, profileId: targetProfileId })
+      const created = (await createClonedRow(delegate, {
+        ...payload,
+        profileId: targetProfileId,
+      })) as { id?: string } | null
+      if (created && typeof created.id === 'string') createdIds.push(created.id)
     } catch (error) {
       logger.error(`corporate sibling sync failed for ${model}`, error)
     }
   }
+  await setCorporateOwnedIds(targetProfileId, ownedKey, createdIds)
 }
 
 const replacePosts = async (
@@ -560,11 +587,18 @@ const replacePosts = async (
   })
   if (!shouldReplaceSiblingRows(sourcePosts.length, options.allowEmpty === true)) return
 
+  const ownedIds = await getCorporateOwnedIds(targetProfileId, 'post')
+  const clearWhere =
+    ownedIds.size > 0
+      ? { ...targetWhere, id: { in: [...ownedIds] }, deletedAt: null }
+      : { ...targetWhere, deletedAt: null }
+
   await prisma.post.updateMany({
-    where: { ...targetWhere, deletedAt: null },
+    where: clearWhere,
     data: { deletedAt: new Date(), status: '0' },
   })
 
+  const createdIds: string[] = []
   for (const post of sourcePosts) {
     const created = await prisma.post.create({
       data: {
@@ -578,12 +612,14 @@ const replacePosts = async (
         sortOrder: post.sortOrder,
       },
     })
+    createdIds.push(created.id)
     for (const meta of post.metas) {
       await prisma.postMeta.create({
         data: { postId: created.id, metaKey: meta.metaKey, metaValue: meta.metaValue },
       })
     }
   }
+  await setCorporateOwnedIds(targetProfileId, 'post', createdIds)
 }
 
 const replaceAboutMe = async (sourceProfileId: string, targetProfileId: string, options: SharedSyncOptions = {}) => {
@@ -633,13 +669,22 @@ const replaceCustomTabs = async (
     where: { profileId: targetProfileId, status: { not: '0' } },
     orderBy: { sortOrder: 'asc' },
   })
+  const ownedTabIds = await getCorporateOwnedIds(targetProfileId, 'customTab')
   const unused = [...targetTabs]
   const idMap = new Map<string, string>()
+  const nextOwnedTabIds: string[] = []
+  const nextOwnedItemIds: string[] = []
 
   for (const sourceTab of sourceTabs) {
     const match = takeMatchingCustomTab(sourceTab, unused)
+    // Prefer rematching an already owner-synced tab; never absorb a member-local tab.
+    if (match && ownedTabIds.size > 0 && !ownedTabIds.has(match.id)) {
+      unused.push(match)
+      // Fall through to create a fresh owner-synced tab instead.
+    }
+    const useMatch = match && (ownedTabIds.size === 0 || ownedTabIds.has(match.id)) ? match : null
     const targetTab =
-      match ||
+      useMatch ||
       (await prisma.customTab.create({
         data: {
           profileId: targetProfileId,
@@ -657,7 +702,7 @@ const replaceCustomTabs = async (
         },
       }))
 
-    if (match) {
+    if (useMatch) {
       await prisma.customTab.update({
         where: { id: targetTab.id },
         data: {
@@ -675,16 +720,25 @@ const replaceCustomTabs = async (
       })
     }
 
+    nextOwnedTabIds.push(targetTab.id)
     idMap.set(sourceTab.id, targetTab.id)
     if (sourceTab.key) idMap.set(sourceTab.key, targetTab.key)
 
-    // Soft-retire prior items (keep rows for recovery); then add the source copy as live.
-    await prisma.customTabItem.updateMany({
-      where: { customTabId: targetTab.id, status: { not: '0' } },
-      data: { status: '0' },
-    })
+    const ownedItemIds = await getCorporateOwnedIds(targetProfileId, 'customTabItem')
+    if (ownedItemIds.size > 0) {
+      await prisma.customTabItem.updateMany({
+        where: { customTabId: targetTab.id, id: { in: [...ownedItemIds] }, status: { not: '0' } },
+        data: { status: '0' },
+      })
+    } else {
+      // Soft-retire prior items (keep rows for recovery); then add the source copy as live.
+      await prisma.customTabItem.updateMany({
+        where: { customTabId: targetTab.id, status: { not: '0' } },
+        data: { status: '0' },
+      })
+    }
     for (const item of sourceTab.items) {
-      await prisma.customTabItem.create({
+      const createdItem = await prisma.customTabItem.create({
         data: {
           customTabId: targetTab.id,
           profileId: targetProfileId,
@@ -697,20 +751,28 @@ const replaceCustomTabs = async (
           data: item.data === null ? undefined : (item.data as Prisma.InputJsonValue),
         },
       })
+      nextOwnedItemIds.push(createdItem.id)
     }
   }
 
-  if (unused.length) {
+  // Only retire previously owner-synced tabs that no longer match — keep member-local tabs.
+  const retireIds =
+    ownedTabIds.size > 0
+      ? unused.filter((tab) => ownedTabIds.has(tab.id)).map((tab) => tab.id)
+      : unused.map((tab) => tab.id)
+  if (retireIds.length) {
     await prisma.customTab.updateMany({
-      where: { id: { in: unused.map((tab) => tab.id) } },
+      where: { id: { in: retireIds } },
       data: { status: '0', isEnabled: false, isPublic: false },
     })
     await prisma.customTabItem.updateMany({
-      where: { customTabId: { in: unused.map((tab) => tab.id) } },
+      where: { customTabId: { in: retireIds } },
       data: { status: '0' },
     })
   }
 
+  await setCorporateOwnedIds(targetProfileId, 'customTab', nextOwnedTabIds)
+  await setCorporateOwnedIds(targetProfileId, 'customTabItem', nextOwnedItemIds)
   return idMap
 }
 
@@ -962,6 +1024,18 @@ export async function syncCorporateSiblingSharedContent(
     })
     return { siblingCount: 0 }
   }
+  // Live path: only the corporate team owner card fans out to team members.
+  // Member-card edits stay local (About Me / Personal already excluded below).
+  if (options.force !== true) {
+    const isOwnerSource = await isCorporateTeamOwnerSourceCard(sourceProfileId)
+    if (!isOwnerSource) {
+      logger.info('corporate sibling sync skipped (not corporate team owner card)', {
+        sourceProfileId,
+        scopeType: scope.type,
+      })
+      return { siblingCount: 0 }
+    }
+  }
   // Per-card identity / Card Settings — never fan out across linked cards.
   if (scope.type === 'aboutMe') return { siblingCount: 0 }
   if (scope.type === 'profileSettings') return { siblingCount: 0 }
@@ -1015,16 +1089,14 @@ export async function syncCorporateSiblingSharedContent(
     for (const siblingId of siblingIds) {
       try {
         await applyScopeToSibling(sourceProfileId, siblingId, scope, resolvedOptions)
-        // On A/B/D: clearly attribute the update to source card C + the logged-in editor.
+        // On team member cards: attribute the update to the corporate team owner source card.
         await recordCardChange({
           profileId: siblingId,
           area: 'sync',
           action: 'sync',
-          summary: `Updated from linked card "${sourceLabel}"${
+          summary: `Updated from corporate team owner card "${sourceLabel}"${
             sourceSlug ? ` (/${sourceSlug})` : ''
-          } — corporate sync of ${scopeLabel}. This card changed because that linked card was edited${
-            actor?.email ? ` by ${actor.email}` : ''
-          }.`,
+          } — corporate sync of ${scopeLabel}${actor?.email ? ` by ${actor.email}` : ''}.`,
           snapshot: null,
           meta: syncMeta,
         })
@@ -1039,14 +1111,14 @@ export async function syncCorporateSiblingSharedContent(
     }
   })
 
-  // On source card C: record that this edit was pushed to the other linked corporate cards.
+  // On corporate team owner card: record that this edit was pushed to linked team member cards.
   await recordCardChange({
     profileId: sourceProfileId,
     area: 'sync',
     action: 'sync',
-    summary: `Pushed ${scopeLabel} to ${siblingIds.length} linked corporate card${
+    summary: `Pushed ${scopeLabel} to ${siblingIds.length} corporate team member card${
       siblingIds.length === 1 ? '' : 's'
-    } because this card ("${sourceLabel}") was edited${actor?.email ? ` by ${actor.email}` : ''}.`,
+    } from this corporate team owner card ("${sourceLabel}")${actor?.email ? ` by ${actor.email}` : ''}.`,
     snapshot: null,
     meta: syncMeta,
   })

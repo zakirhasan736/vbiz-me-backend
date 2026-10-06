@@ -43,6 +43,14 @@ import {
   provisionCorporateMemberUser,
 } from '../utils/corporateMemberUser'
 import {
+  assertNotCorporateOwnedRow,
+  corporateContentFingerprint,
+  getCorporateOwnedIds,
+  isClientDraftCollectionId,
+  seedCorporateOwnedIdsIfEmpty,
+} from '../utils/corporateOwnedContent'
+import {
+  isCorporateTeamOwnerSourceCard,
   isSparseSharedSettingValue,
   resolveCorporateParentUserId,
   safeSyncCorporateSiblingSharedContent,
@@ -357,22 +365,77 @@ const listPortfoliosSafe = async (profileId: string) => {
 }
 
 const loadProfileCollections = async (profileId: string) => {
-  const [education, experiences, services, portfolios, reviews, skillTags, galleries] = await Promise.all([
-    safePrismaQuery(() => prisma.education.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
-    safePrismaQuery(() => prisma.experience.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
-    safePrismaQuery(
-      () => prisma.service.findMany({ where: { profileId, status: { not: 0 } }, orderBy: { sortOrder: 'asc' } }),
-      []
-    ),
-    listPortfoliosSafe(profileId),
-    safePrismaQuery(
-      () => prisma.review.findMany({ where: { profileId, status: { not: 0 } }, orderBy: { sortOrder: 'asc' } }),
-      []
-    ),
-    safePrismaQuery(() => prisma.skillTag.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
-    listGalleriesForProfile(profileId),
-  ])
-  return { education, experiences, services, portfolios, reviews, skillTags, galleries }
+  const [education, experiences, services, portfolios, reviews, skillTags, galleries, ownedMap, isOwnerCard] =
+    await Promise.all([
+      safePrismaQuery(() => prisma.education.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+      safePrismaQuery(() => prisma.experience.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+      safePrismaQuery(
+        () => prisma.service.findMany({ where: { profileId, status: { not: 0 } }, orderBy: { sortOrder: 'asc' } }),
+        []
+      ),
+      listPortfoliosSafe(profileId),
+      safePrismaQuery(
+        () => prisma.review.findMany({ where: { profileId, status: { not: 0 } }, orderBy: { sortOrder: 'asc' } }),
+        []
+      ),
+      safePrismaQuery(() => prisma.skillTag.findMany({ where: { profileId }, orderBy: { sortOrder: 'asc' } }), []),
+      listGalleriesForProfile(profileId),
+      getCorporateOwnedIds(profileId, 'service').then(async (serviceOwned) => {
+        const [educationOwned, experienceOwned, portfolioOwned, reviewOwned, skillOwned, galleryOwned] =
+          await Promise.all([
+            getCorporateOwnedIds(profileId, 'education'),
+            getCorporateOwnedIds(profileId, 'experience'),
+            getCorporateOwnedIds(profileId, 'portfolio'),
+            getCorporateOwnedIds(profileId, 'review'),
+            getCorporateOwnedIds(profileId, 'skillTag'),
+            getCorporateOwnedIds(profileId, 'gallery'),
+          ])
+        return {
+          service: serviceOwned,
+          education: educationOwned,
+          experience: experienceOwned,
+          portfolio: portfolioOwned,
+          review: reviewOwned,
+          skillTag: skillOwned,
+          gallery: galleryOwned,
+        }
+      }),
+      isCorporateTeamOwnerSourceCard(profileId),
+    ])
+
+  // Member cards with legacy synced rows: seed ownership so editor locks work and members can append.
+  const seeded = { ...ownedMap }
+  if (!isOwnerCard) {
+    const seedPairs: Array<[keyof typeof ownedMap, Array<{ id: string }>]> = [
+      ['service', services],
+      ['education', education],
+      ['experience', experiences],
+      ['portfolio', portfolios],
+      ['review', reviews],
+      ['skillTag', skillTags],
+      ['gallery', galleries as Array<{ id: string }>],
+    ]
+    for (const [model, rows] of seedPairs) {
+      if (seeded[model].size > 0) continue
+      seeded[model] = await seedCorporateOwnedIdsIfEmpty(
+        profileId,
+        model,
+        rows.map((row) => row.id)
+      )
+    }
+  }
+
+  const mark = <T extends { id: string }>(rows: T[], owned: Set<string>) =>
+    rows.map((row) => ({ ...row, corporateOwned: owned.has(row.id) }))
+  return {
+    education: mark(education, seeded.education),
+    experiences: mark(experiences, seeded.experience),
+    services: mark(services, seeded.service),
+    portfolios: mark(portfolios, seeded.portfolio),
+    reviews: mark(reviews, seeded.review),
+    skillTags: mark(skillTags, seeded.skillTag),
+    galleries: mark(galleries as Array<{ id: string }>, seeded.gallery),
+  }
 }
 
 const loadProfileRelations = async (profileId: string) => {
@@ -2484,6 +2547,12 @@ const replaceCollection = async <T extends Record<string, unknown>>(
   mapItem: (item: T) => Record<string, unknown>
 ) => {
   await getOwnedForWrite(profileId, userId, role)
+  const toWriteData = (mapped: Record<string, unknown>) => {
+    const next = { ...mapped }
+    delete next.id
+    delete next.corporateOwned
+    return next
+  }
   if (kind === 'socialLinks') {
     const nextCount = countFilledSocialLinks(items)
     const existing = await prisma.socialLink.findMany({
@@ -2500,17 +2569,139 @@ const replaceCollection = async <T extends Record<string, unknown>>(
     string,
     {
       count?: (args: { where: { profileId: string } }) => Promise<number>
-      findMany?: (args: { where: { profileId: string } }) => Promise<Array<Record<string, unknown>>>
+      findMany?: (args: { where: Record<string, unknown> }) => Promise<Array<Record<string, unknown>>>
     }
   >
   const beforeItems = (await collectionClient[delegate]?.findMany?.({ where: { profileId } }).catch(() => [])) ?? []
   const beforeCount = beforeItems.filter((row) => !row.deletedAt && row.status !== 0 && row.status !== '0').length
+
+  const fanOutKind = shouldFanOutCollection(kind)
+  const isOwnerCard = fanOutKind ? await isCorporateTeamOwnerSourceCard(profileId) : true
+  let ownedIds = !isOwnerCard && fanOutKind ? await getCorporateOwnedIds(profileId, delegate) : new Set<string>()
+
+  // Linked member cards that already have owner-synced rows but no ownership map yet:
+  // seed current live rows as owner-owned so the member can append editable local items.
+  if (!isOwnerCard && fanOutKind && ownedIds.size === 0) {
+    const liveIds = beforeItems
+      .filter((row) => typeof row.id === 'string' && !row.deletedAt && row.status !== 0 && row.status !== '0')
+      .map((row) => row.id as string)
+    ownedIds = await seedCorporateOwnedIdsIfEmpty(profileId, delegate, liveIds)
+  }
+
   await prisma.$transaction(async (tx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (tx as any)[delegate]
     if (!model?.create) {
       throw new AppError(500, `Unknown collection model: ${kind}`)
     }
+
+    // Team member cards: keep corporate-owner-synced rows; only replace member-local rows.
+    if (!isOwnerCard && fanOutKind && ownedIds.size > 0) {
+      const ownedRows = beforeItems.filter((row) => typeof row.id === 'string' && ownedIds.has(row.id))
+      const ownedFingerprints = new Set(
+        ownedRows
+          .filter((row) => !row.deletedAt && row.status !== 0 && row.status !== '0')
+          .map((row) => corporateContentFingerprint(row))
+          .filter(Boolean)
+      )
+      const localIds = beforeItems
+        .filter((row) => typeof row.id === 'string' && !ownedIds.has(row.id))
+        .map((row) => row.id as string)
+
+      if (localIds.length) {
+        let cleared = false
+        if (typeof model.updateMany === 'function') {
+          if (kind === 'portfolios') {
+            try {
+              await model.updateMany({
+                where: { profileId, id: { in: localIds }, deletedAt: null },
+                data: { deletedAt: new Date() },
+              })
+              cleared = true
+            } catch {
+              try {
+                await model.updateMany({ where: { profileId, id: { in: localIds } }, data: { status: '0' } })
+                cleared = true
+              } catch {
+                cleared = false
+              }
+            }
+          } else if (kind === 'services' || kind === 'reviews') {
+            try {
+              await model.updateMany({ where: { profileId, id: { in: localIds } }, data: { status: 0 } })
+              cleared = true
+            } catch {
+              cleared = false
+            }
+          }
+        }
+        if (!cleared) {
+          if (!model.deleteMany) throw new AppError(500, `Unknown collection model: ${kind}`)
+          await model.deleteMany({ where: { profileId, id: { in: localIds } } })
+        }
+      }
+
+      let localIndex = 0
+      for (let index = 0; index < items.length; index += 1) {
+        const raw = items[index] as Record<string, unknown>
+        const rawId = typeof raw.id === 'string' ? raw.id : ''
+        // Never recreate/replace owner-synced rows (by id or content fingerprint).
+        if (rawId && ownedIds.has(rawId)) continue
+        if (raw.corporateOwned === true && !isClientDraftCollectionId(rawId)) continue
+        const mapped = toWriteData(mapItem(items[index]))
+        const fingerprint = corporateContentFingerprint(mapped)
+        if (fingerprint && ownedFingerprints.has(fingerprint)) continue
+
+        await model.create({
+          data: {
+            profileId,
+            sortOrder: ownedRows.length + localIndex,
+            ...(kind === 'portfolios' ? toGalleryWriteData(mapped) : mapped),
+          },
+        })
+        localIndex += 1
+      }
+      if (kind === 'portfolios') {
+        try {
+          await tx.portfolio.updateMany({
+            where: { profileId, id: { in: localIds } },
+            data: { status: 0 },
+          })
+        } catch {
+          if (localIds.length) await tx.portfolio.deleteMany({ where: { profileId, id: { in: localIds } } })
+        }
+        localIndex = 0
+        for (let index = 0; index < items.length; index += 1) {
+          const raw = items[index] as Record<string, unknown>
+          const rawId = typeof raw.id === 'string' ? raw.id : ''
+          if (rawId && ownedIds.has(rawId)) continue
+          if (raw.corporateOwned === true && !isClientDraftCollectionId(rawId)) continue
+          const mapped = toWriteData(mapItem(items[index]))
+          const fingerprint = corporateContentFingerprint(mapped)
+          if (fingerprint && ownedFingerprints.has(fingerprint)) continue
+          const statusValue = Number(mapped.status)
+          await tx.portfolio.create({
+            data: {
+              profileId,
+              sortOrder: ownedRows.length + localIndex,
+              title: typeof mapped.title === 'string' ? mapped.title : null,
+              description: typeof mapped.description === 'string' ? mapped.description : null,
+              status: Number.isFinite(statusValue) && statusValue !== 0 ? statusValue : 1,
+              url: typeof mapped.url === 'string' ? mapped.url : null,
+              imageUrl:
+                (typeof mapped.featuredImage === 'string' ? mapped.featuredImage.trim() : '') ||
+                (typeof mapped.imageUrl === 'string' ? mapped.imageUrl.trim() : '') ||
+                null,
+              attachmentUrl: null,
+              attachmentName: null,
+            },
+          })
+          localIndex += 1
+        }
+      }
+      return
+    }
+
     // Soft-clear when possible (deletedAt / status); hard-delete only as last resort.
     let cleared = false
     if (typeof model.updateMany === 'function') {
@@ -2542,7 +2733,7 @@ const replaceCollection = async <T extends Record<string, unknown>>(
     // Prefer per-row `create` over `createMany` so Prisma applies `@default(cuid())`
     // and `@updatedAt` (createMany skips those client-side defaults).
     for (let index = 0; index < items.length; index += 1) {
-      const mapped = mapItem(items[index])
+      const mapped = toWriteData(mapItem(items[index]))
       await model.create({
         data: {
           profileId,
@@ -2558,7 +2749,7 @@ const replaceCollection = async <T extends Record<string, unknown>>(
         await tx.portfolio.deleteMany({ where: { profileId } })
       }
       for (let index = 0; index < items.length; index += 1) {
-        const mapped = mapItem(items[index])
+        const mapped = toWriteData(mapItem(items[index]))
         const statusValue = Number(mapped.status)
         await tx.portfolio.create({
           data: {
@@ -2579,7 +2770,8 @@ const replaceCollection = async <T extends Record<string, unknown>>(
       }
     }
   })
-  if (shouldFanOutCollection(kind)) {
+  // Only corporate team owner cards fan shared tabs out to linked team members.
+  if (fanOutKind && isOwnerCard) {
     await safeSyncCorporateSiblingSharedContent(
       profileId,
       { type: 'collection', kind },
@@ -2999,6 +3191,13 @@ const updatePost = async (
   const post = await prisma.post.findUnique({ where: { id: postId } })
   if (!post) throw new AppError(404, 'Post not found')
   await getOwnedForWrite(post.profileId, userId, role)
+  const isOwnerCard = await isCorporateTeamOwnerSourceCard(post.profileId)
+  await assertNotCorporateOwnedRow({
+    profileId: post.profileId,
+    model: 'post',
+    rowId: postId,
+    isOwnerCard,
+  })
 
   const primaryDocUrl = Array.isArray(data.documents)
     ? data.documents.find((d) => d?.url?.trim())?.url?.trim()
@@ -3066,6 +3265,13 @@ const deletePost = async (postId: string, userId: string, role: string) => {
   const post = await prisma.post.findUnique({ where: { id: postId } })
   if (!post) throw new AppError(404, 'Post not found')
   await getOwnedForWrite(post.profileId, userId, role)
+  const isOwnerCard = await isCorporateTeamOwnerSourceCard(post.profileId)
+  await assertNotCorporateOwnedRow({
+    profileId: post.profileId,
+    model: 'post',
+    rowId: postId,
+    isOwnerCard,
+  })
   await prisma.post.update({ where: { id: postId }, data: { deletedAt: new Date(), status: '0' } })
   await safeSyncCorporateSiblingSharedContent(
     post.profileId,
@@ -3101,7 +3307,16 @@ const listPosts = async (
     }),
     prisma.post.count({ where }),
   ])
-  return { items, total, skip: start, limit: take }
+  const ownedPostIds = await getCorporateOwnedIds(profileId, 'post')
+  return {
+    items: items.map((item) => ({
+      ...item,
+      corporateOwned: ownedPostIds.has(item.id),
+    })),
+    total,
+    skip: start,
+    limit: take,
+  }
 }
 
 const emptyProfileIds = (profileIds: string[]) => profileIds.length === 0
