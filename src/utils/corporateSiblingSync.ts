@@ -266,10 +266,10 @@ export function cardBelongsToCorporation(
 type CustomTabMatch = { id: string; key: string; label: string }
 
 /** Match custom tabs by key, then label. Never treat remapped source ids as the sibling row. */
-export function takeMatchingCustomTab(
+export function takeMatchingCustomTab<T extends CustomTabMatch>(
   source: { key: string; label: string },
-  unused: CustomTabMatch[]
-): CustomTabMatch | null {
+  unused: T[]
+): T | null {
   const byKey = unused.findIndex((tab) => tab.key && tab.key === source.key)
   if (byKey >= 0) return unused.splice(byKey, 1)[0] || null
   const sourceLabel = source.label.trim().toLowerCase()
