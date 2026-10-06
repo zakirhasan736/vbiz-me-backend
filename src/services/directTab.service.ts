@@ -7,7 +7,12 @@ import {
 } from '../constants/directSectionStorage'
 import { getTabByKey, TAB_REGISTRY, type TabRegistryEntry } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
-import { assertNotCorporateOwnedRow } from '../utils/corporateOwnedContent'
+import {
+  assertNotCorporateOwnedRow,
+  getCorporateOwnedIds,
+  isLockedCorporateOwnedRow,
+  isMemberEditableCorporateModel,
+} from '../utils/corporateOwnedContent'
 import {
   isCorporateTeamOwnerSourceCard,
   safeSyncCorporateSiblingSharedContent,
@@ -120,6 +125,13 @@ const assertDirectListTab = (tabKey: string): TabRegistryEntry => {
   return tab
 }
 
+const ownedModelForTab = (tab: TabRegistryEntry): string =>
+  tab.storage === 'gallery' || tab.storage === 'service' || tab.storage === 'review'
+    ? tab.storage
+    : isListSectionStorage(tab.storage)
+      ? storageToPrismaModel(tab.storage)
+      : `tabItem:${tab.key}`
+
 const str = (v: unknown) => (v == null ? null : String(v))
 const statusOf = (v: unknown, fallback = '1') => {
   const s = str(v)?.trim()
@@ -132,7 +144,7 @@ const queryBlogs = async (profileId: string, skip = 0, limit = 200) => {
   const take = Math.min(200, Math.max(1, limit))
   const start = Math.max(0, skip)
   const where = { profileId, deletedAt: null }
-  const [rows, total] = await Promise.all([
+  const [rows, total, ownedBlogIds] = await Promise.all([
     prisma.blog.findMany({
       where,
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
@@ -140,8 +152,14 @@ const queryBlogs = async (profileId: string, skip = 0, limit = 200) => {
       take,
     }),
     prisma.blog.count({ where }),
+    getCorporateOwnedIds(profileId, 'blog'),
   ])
-  return { items: rows.map(serializeBlog), total, skip: start, limit: take }
+  return {
+    items: rows.map((row) => ({ ...serializeBlog(row), corporateOwned: ownedBlogIds.has(row.id) })),
+    total,
+    skip: start,
+    limit: take,
+  }
 }
 
 const listBlogs = async (profileId: string, userId: string, role: string, skip = 0, limit = 200) => {
@@ -180,7 +198,9 @@ const updateBlog = async (profileId: string, blogId: string, userId: string, rol
   const existing = await prisma.blog.findFirst({ where: { id: blogId, profileId, deletedAt: null } })
   if (!existing) throw new AppError(404, 'Blog not found')
   const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
-  await assertNotCorporateOwnedRow({ profileId, model: 'blog', rowId: blogId, isOwnerCard })
+  if (await isLockedCorporateOwnedRow({ profileId, model: 'blog', rowId: blogId, isOwnerCard })) {
+    return serializeBlog(existing)
+  }
   const row = await prisma.blog.update({
     where: { id: blogId },
     data: {
@@ -532,7 +552,16 @@ const queryTabItems = async (profileId: string, tabKey: string, skip = 0, limit 
       total = fallback.total
     }
   }
-  return { items: rows.map((row) => serializeDedicatedRow(tab, row)), total, skip: start, limit: take }
+  const ownedModel = ownedModelForTab(tab)
+  const ownedIds = isMemberEditableCorporateModel(ownedModel)
+    ? new Set<string>()
+    : await getCorporateOwnedIds(profileId, ownedModel)
+  return {
+    items: rows.map((row) => ({ ...serializeDedicatedRow(tab, row), corporateOwned: ownedIds.has(row.id) })),
+    total,
+    skip: start,
+    limit: take,
+  }
 }
 
 const listTabItems = async (profileId: string, tabKey: string, userId: string, role: string, skip = 0, limit = 200) => {
@@ -661,20 +690,7 @@ const updateTabItem = async (
   await profileService.getOwnedForWrite(profileId, userId, role)
   if (tab.storage === 'blog') return updateBlog(profileId, itemId, userId, role, input)
   const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
-  const ownedModel =
-    tab.storage === 'gallery' || tab.storage === 'service' || tab.storage === 'review'
-      ? tab.storage
-      : isListSectionStorage(tab.storage)
-        ? storageToPrismaModel(tab.storage)
-        : `tabItem:${tabKey}`
-  if (tab.storage !== 'about_me') {
-    await assertNotCorporateOwnedRow({
-      profileId,
-      model: ownedModel,
-      rowId: itemId,
-      isOwnerCard,
-    })
-  }
+  const ownedModel = ownedModelForTab(tab)
   const model =
     tab.storage === 'gallery'
       ? prisma.gallery
@@ -690,6 +706,12 @@ const updateTabItem = async (
   try {
     const existing = await model.findFirst({ where: { id: itemId, profileId } })
     if (!existing) throw new AppError(404, 'Item not found')
+    if (
+      tab.storage !== 'about_me' &&
+      (await isLockedCorporateOwnedRow({ profileId, model: ownedModel, rowId: itemId, isOwnerCard }))
+    ) {
+      return serializeDedicatedRow(tab, existing)
+    }
     const base =
       tab.storage === 'gallery'
         ? galleryUpdateData(input)
@@ -752,6 +774,16 @@ const updateTabItem = async (
   } catch (error) {
     if (error instanceof AppError) throw error
     if (!isSchemaGap(error)) throw error
+    if (
+      tab.storage !== 'about_me' &&
+      (await isLockedCorporateOwnedRow({ profileId, model: ownedModel, rowId: itemId, isOwnerCard }))
+    ) {
+      const generic = await prisma.tabItem.findFirst({
+        where: { id: itemId, profileId, tabKey: tab.key, deletedAt: null },
+      })
+      if (!generic) throw new AppError(404, 'Item not found')
+      return serializeTabItem(generic)
+    }
     return updateGenericTabItem(tab, profileId, itemId, input)
   }
 }
@@ -761,12 +793,7 @@ const deleteTabItem = async (profileId: string, tabKey: string, itemId: string, 
   await profileService.getOwnedForWrite(profileId, userId, role)
   if (tab.storage === 'blog') return deleteBlog(profileId, itemId, userId, role)
   const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
-  const ownedModel =
-    tab.storage === 'gallery' || tab.storage === 'service' || tab.storage === 'review'
-      ? tab.storage
-      : isListSectionStorage(tab.storage)
-        ? storageToPrismaModel(tab.storage)
-        : `tabItem:${tabKey}`
+  const ownedModel = ownedModelForTab(tab)
   if (tab.storage !== 'about_me') {
     await assertNotCorporateOwnedRow({
       profileId,

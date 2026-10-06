@@ -3,6 +3,8 @@ import { describe, it } from 'node:test'
 import {
   corporateContentFingerprint,
   isClientDraftCollectionId,
+  isMemberEditableCorporateModel,
+  isMemberEditablePostTypeName,
   parseCorporateOwnedIdsMap,
 } from '../utils/corporateOwnedContent'
 
@@ -24,6 +26,21 @@ describe('isClientDraftCollectionId', () => {
     assert.equal(isClientDraftCollectionId(''), true)
     assert.equal(isClientDraftCollectionId(null), true)
     assert.equal(isClientDraftCollectionId('clxyz0123456789abcdef'), false)
+  })
+})
+
+describe('member editable corporate content', () => {
+  it('keeps About Me editable and leaves shared tabs locked', () => {
+    assert.equal(isMemberEditableCorporateModel('aboutMe'), true)
+    assert.equal(isMemberEditableCorporateModel('about_me'), true)
+    assert.equal(isMemberEditableCorporateModel('tabItem:about_me'), true)
+    assert.equal(isMemberEditableCorporateModel('service'), false)
+    assert.equal(isMemberEditableCorporateModel('faq'), false)
+    assert.equal(isMemberEditableCorporateModel('gallery'), false)
+    assert.equal(isMemberEditableCorporateModel('video'), false)
+    assert.equal(isMemberEditablePostTypeName('About Me'), true)
+    assert.equal(isMemberEditablePostTypeName('about-me'), true)
+    assert.equal(isMemberEditablePostTypeName('Faq'), false)
   })
 })
 

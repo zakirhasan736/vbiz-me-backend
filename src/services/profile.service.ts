@@ -47,6 +47,7 @@ import {
   corporateContentFingerprint,
   getCorporateOwnedIds,
   isClientDraftCollectionId,
+  isLockedCorporateOwnedRow,
   seedCorporateOwnedIdsIfEmpty,
 } from '../utils/corporateOwnedContent'
 import {
@@ -3254,16 +3255,24 @@ const updatePost = async (
     documents?: PostDocumentInput[]
   }
 ) => {
-  const post = await prisma.post.findUnique({ where: { id: postId } })
+  const post = await prisma.post.findUnique({ where: { id: postId }, include: { postType: true } })
   if (!post) throw new AppError(404, 'Post not found')
   await getOwnedForWrite(post.profileId, userId, role)
   const isOwnerCard = await isCorporateTeamOwnerSourceCard(post.profileId)
-  await assertNotCorporateOwnedRow({
-    profileId: post.profileId,
-    model: 'post',
-    rowId: postId,
-    isOwnerCard,
-  })
+  if (
+    await isLockedCorporateOwnedRow({
+      profileId: post.profileId,
+      model: 'post',
+      rowId: postId,
+      isOwnerCard,
+      postTypeName: post.postType?.name,
+    })
+  ) {
+    return prisma.post.findUniqueOrThrow({
+      where: { id: postId },
+      include: { postType: true, metas: true, attachments: true },
+    })
+  }
 
   const primaryDocUrl = Array.isArray(data.documents)
     ? data.documents.find((d) => d?.url?.trim())?.url?.trim()
@@ -3328,7 +3337,7 @@ const updatePost = async (
 }
 
 const deletePost = async (postId: string, userId: string, role: string) => {
-  const post = await prisma.post.findUnique({ where: { id: postId } })
+  const post = await prisma.post.findUnique({ where: { id: postId }, include: { postType: true } })
   if (!post) throw new AppError(404, 'Post not found')
   await getOwnedForWrite(post.profileId, userId, role)
   const isOwnerCard = await isCorporateTeamOwnerSourceCard(post.profileId)
@@ -3337,6 +3346,7 @@ const deletePost = async (postId: string, userId: string, role: string) => {
     model: 'post',
     rowId: postId,
     isOwnerCard,
+    postTypeName: post.postType?.name,
   })
   await prisma.post.update({ where: { id: postId }, data: { deletedAt: new Date(), status: '0' } })
   await safeSyncCorporateSiblingSharedContent(

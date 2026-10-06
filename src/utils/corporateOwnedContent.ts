@@ -92,21 +92,50 @@ export async function isCorporateOwnedRow(profileId: string, model: string, rowI
   return owned.has(rowId)
 }
 
+/** About Me stays fully editable on a team member card. */
+const MEMBER_EDITABLE_MODELS = new Set(['aboutMe', 'about_me', 'tabItem:about_me'])
+
+export function isMemberEditableCorporateModel(model: string): boolean {
+  return MEMBER_EDITABLE_MODELS.has(model.trim())
+}
+
+export function isMemberEditablePostTypeName(name: string | null | undefined): boolean {
+  const key = (name || '').trim().toLowerCase()
+  return key === 'about me' || key === 'about_me' || key === 'about-me'
+}
+
 /**
- * Team members may add local content, but cannot edit/delete rows that were
- * synced from the corporate team owner card.
+ * Owner-synced rows on shared tabs (services, FAQ, reviews, photos, videos, and
+ * similar) stay locked for team members. About Me does not.
+ */
+export async function isLockedCorporateOwnedRow(args: {
+  profileId: string
+  model: string
+  rowId: string
+  isOwnerCard: boolean
+  postTypeName?: string | null
+}): Promise<boolean> {
+  if (args.isOwnerCard) return false
+  if (isMemberEditableCorporateModel(args.model)) return false
+  if (isMemberEditablePostTypeName(args.postTypeName)) return false
+  return isCorporateOwnedRow(args.profileId, args.model, args.rowId)
+}
+
+/**
+ * Team members may add local content. They cannot delete rows synced from the
+ * corporate team owner card. About Me is never locked.
  */
 export async function assertNotCorporateOwnedRow(args: {
   profileId: string
   model: string
   rowId: string
   isOwnerCard: boolean
+  postTypeName?: string | null
 }): Promise<void> {
-  if (args.isOwnerCard) return
-  if (!(await isCorporateOwnedRow(args.profileId, args.model, args.rowId))) return
+  if (!(await isLockedCorporateOwnedRow(args))) return
   throw new AppError(
     403,
-    'This item was added by the corporate team owner and cannot be edited or removed on a team member card.'
+    'This item was added by the corporate team owner and cannot be removed on a team member card.'
   )
 }
 
