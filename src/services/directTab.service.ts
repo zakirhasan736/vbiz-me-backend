@@ -7,7 +7,12 @@ import {
 } from '../constants/directSectionStorage'
 import { getTabByKey, TAB_REGISTRY, type TabRegistryEntry } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
-import { safeSyncCorporateSiblingSharedContent } from '../utils/corporateSiblingSync'
+import { assertNotCorporateOwnedRow } from '../utils/corporateOwnedContent'
+import {
+  isCorporateTeamOwnerSourceCard,
+  safeSyncCorporateSiblingSharedContent,
+  storageToPrismaModel,
+} from '../utils/corporateSiblingSync'
 import { listGalleriesForProfile } from '../utils/galleryMedia'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
@@ -174,6 +179,8 @@ const updateBlog = async (profileId: string, blogId: string, userId: string, rol
   await profileService.getOwnedForWrite(profileId, userId, role)
   const existing = await prisma.blog.findFirst({ where: { id: blogId, profileId, deletedAt: null } })
   if (!existing) throw new AppError(404, 'Blog not found')
+  const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
+  await assertNotCorporateOwnedRow({ profileId, model: 'blog', rowId: blogId, isOwnerCard })
   const row = await prisma.blog.update({
     where: { id: blogId },
     data: {
@@ -197,6 +204,8 @@ const deleteBlog = async (profileId: string, blogId: string, userId: string, rol
   await profileService.getOwnedForWrite(profileId, userId, role)
   const existing = await prisma.blog.findFirst({ where: { id: blogId, profileId, deletedAt: null } })
   if (!existing) throw new AppError(404, 'Blog not found')
+  const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
+  await assertNotCorporateOwnedRow({ profileId, model: 'blog', rowId: blogId, isOwnerCard })
   await prisma.blog.update({
     where: { id: blogId },
     data: { deletedAt: new Date(), status: '0' },
@@ -651,6 +660,21 @@ const updateTabItem = async (
   const tab = assertDirectListTab(tabKey)
   await profileService.getOwnedForWrite(profileId, userId, role)
   if (tab.storage === 'blog') return updateBlog(profileId, itemId, userId, role, input)
+  const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
+  const ownedModel =
+    tab.storage === 'gallery' || tab.storage === 'service' || tab.storage === 'review'
+      ? tab.storage
+      : isListSectionStorage(tab.storage)
+        ? storageToPrismaModel(tab.storage)
+        : `tabItem:${tabKey}`
+  if (tab.storage !== 'about_me') {
+    await assertNotCorporateOwnedRow({
+      profileId,
+      model: ownedModel,
+      rowId: itemId,
+      isOwnerCard,
+    })
+  }
   const model =
     tab.storage === 'gallery'
       ? prisma.gallery
@@ -736,6 +760,21 @@ const deleteTabItem = async (profileId: string, tabKey: string, itemId: string, 
   const tab = assertDirectListTab(tabKey)
   await profileService.getOwnedForWrite(profileId, userId, role)
   if (tab.storage === 'blog') return deleteBlog(profileId, itemId, userId, role)
+  const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
+  const ownedModel =
+    tab.storage === 'gallery' || tab.storage === 'service' || tab.storage === 'review'
+      ? tab.storage
+      : isListSectionStorage(tab.storage)
+        ? storageToPrismaModel(tab.storage)
+        : `tabItem:${tabKey}`
+  if (tab.storage !== 'about_me') {
+    await assertNotCorporateOwnedRow({
+      profileId,
+      model: ownedModel,
+      rowId: itemId,
+      isOwnerCard,
+    })
+  }
   const model =
     tab.storage === 'gallery'
       ? prisma.gallery

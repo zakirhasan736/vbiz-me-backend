@@ -159,10 +159,10 @@ export function resolveActorRoleLabel(input: {
 }): string {
   const role = input.actorRole.trim().toLowerCase()
   if (isStaffRole(role)) return 'Admin'
-  if (role === 'corporate-owner') return 'Corporate card owner'
+  if (role === 'corporate-owner') return 'Corporate Team Owner'
   const companyId = input.profileCompanyUserId?.trim() || ''
   if (companyId && companyId !== input.actorUserId && input.profileUserId === input.actorUserId) {
-    return 'Corporate team member'
+    return 'Corporate Team Member'
   }
   return 'Card owner'
 }
