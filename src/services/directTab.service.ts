@@ -126,6 +126,15 @@ const assertDirectListTab = (tabKey: string): TabRegistryEntry => {
   return tab
 }
 
+/** One company form. Corporate members can view it. They cannot add, edit, or remove it. */
+const MEMBER_LOCKED_ONE_FORM_STORAGES = new Set(['mission_statement', 'video_explainer', 'why_choose_us'])
+
+const memberOneFormLocked = (storage: string, isOwnerCard: boolean) =>
+  !isOwnerCard && MEMBER_LOCKED_ONE_FORM_STORAGES.has(storage)
+
+const ONE_FORM_MEMBER_MESSAGE =
+  'This section is set by the corporate owner and cannot be changed on a team member card.'
+
 const ownedModelForTab = (tab: TabRegistryEntry): string =>
   tab.storage === 'gallery' || tab.storage === 'service' || tab.storage === 'review'
     ? tab.storage
@@ -623,6 +632,9 @@ const createTabItem = async (profileId: string, tabKey: string, userId: string, 
   const tab = assertDirectListTab(tabKey)
   await profileService.getOwnedForWrite(profileId, userId, role)
   if (tab.storage === 'blog') return createBlog(profileId, userId, role, input)
+  if (memberOneFormLocked(tab.storage, await isCorporateTeamOwnerSourceCard(profileId))) {
+    throw new AppError(403, ONE_FORM_MEMBER_MESSAGE)
+  }
   try {
     if (tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -737,6 +749,9 @@ const updateTabItem = async (
   try {
     const existing = await model.findFirst({ where: { id: itemId, profileId } })
     if (!existing) throw new AppError(404, 'Item not found')
+    if (memberOneFormLocked(tab.storage, isOwnerCard)) {
+      return serializeDedicatedRow(tab, existing)
+    }
     if (
       tab.storage !== 'about_me' &&
       (await isLockedCorporateOwnedRow({ profileId, model: ownedModel, rowId: itemId, isOwnerCard }))
@@ -825,6 +840,9 @@ const deleteTabItem = async (profileId: string, tabKey: string, itemId: string, 
   if (tab.storage === 'blog') return deleteBlog(profileId, itemId, userId, role)
   const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
   const ownedModel = ownedModelForTab(tab)
+  if (memberOneFormLocked(tab.storage, isOwnerCard)) {
+    throw new AppError(403, ONE_FORM_MEMBER_MESSAGE)
+  }
   if (tab.storage !== 'about_me') {
     await assertNotCorporateOwnedRow({
       profileId,
