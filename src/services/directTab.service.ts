@@ -12,6 +12,7 @@ import {
   getCorporateOwnedIds,
   isLockedCorporateOwnedRow,
   isMemberEditableCorporateModel,
+  seedCorporateOwnedIdsIfEmpty,
 } from '../utils/corporateOwnedContent'
 import {
   isCorporateTeamOwnerSourceCard,
@@ -144,7 +145,7 @@ const queryBlogs = async (profileId: string, skip = 0, limit = 200) => {
   const take = Math.min(200, Math.max(1, limit))
   const start = Math.max(0, skip)
   const where = { profileId, deletedAt: null }
-  const [rows, total, ownedBlogIds, isOwnerCard] = await Promise.all([
+  const [rows, total, ownedBlogIdsRaw, isOwnerCard] = await Promise.all([
     prisma.blog.findMany({
       where,
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
@@ -155,6 +156,14 @@ const queryBlogs = async (profileId: string, skip = 0, limit = 200) => {
     getCorporateOwnedIds(profileId, 'blog'),
     isCorporateTeamOwnerSourceCard(profileId),
   ])
+  const ownedBlogIds =
+    !isOwnerCard && ownedBlogIdsRaw.size === 0
+      ? await seedCorporateOwnedIdsIfEmpty(
+          profileId,
+          'blog',
+          rows.map((row) => row.id)
+        )
+      : ownedBlogIdsRaw
   return {
     items: rows.map((row) => ({
       ...serializeBlog(row),
@@ -560,12 +569,21 @@ const queryTabItems = async (profileId: string, tabKey: string, skip = 0, limit 
     }
   }
   const ownedModel = ownedModelForTab(tab)
-  const [ownedIds, isOwnerCard] = await Promise.all([
+  const [ownedIdsRaw, isOwnerCard] = await Promise.all([
     isMemberEditableCorporateModel(ownedModel)
       ? Promise.resolve(new Set<string>())
       : getCorporateOwnedIds(profileId, ownedModel),
     isCorporateTeamOwnerSourceCard(profileId),
   ])
+  const liveIds = rows.flatMap((row) => {
+    if (!row || typeof row !== 'object' || !('id' in row)) return []
+    const id = (row as { id?: unknown }).id
+    return typeof id === 'string' && id.trim() ? [id] : []
+  })
+  const ownedIds =
+    !isOwnerCard && !isMemberEditableCorporateModel(ownedModel) && ownedIdsRaw.size === 0
+      ? await seedCorporateOwnedIdsIfEmpty(profileId, ownedModel, liveIds)
+      : ownedIdsRaw
   return {
     items: rows.map((row) => ({
       ...serializeDedicatedRow(tab, row),

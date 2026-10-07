@@ -51,6 +51,7 @@ import {
   seedCorporateOwnedIdsIfEmpty,
 } from '../utils/corporateOwnedContent'
 import {
+  isCorporateOwnerSourceCard,
   isCorporateTeamOwnerSourceCard,
   isSparseSharedSettingValue,
   resolveCorporateParentUserId,
@@ -1944,6 +1945,16 @@ const duplicate = async (
 
   if (corporateParentId && !member) {
     throw new AppError(400, 'Member name, email, and password are required to duplicate a corporate team card')
+  }
+  if (
+    corporateParentId &&
+    !isCorporateOwnerSourceCard({
+      userId: typeof source.userId === 'string' ? source.userId : null,
+      parentUserId: corporateParentId,
+      duplicatedFrom: settingsMapFromRows(source.settings).duplicated_from,
+    })
+  ) {
+    throw new AppError(403, 'Only the corporate owner card can be duplicated.')
   }
   if (member && !corporateParentId) {
     throw new AppError(400, 'Member login can only be provisioned for cards under a corporate account')
