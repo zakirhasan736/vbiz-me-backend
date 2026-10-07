@@ -31,6 +31,7 @@ import { formatProfileLocation, hasProfileLocationParts } from '../utils/persona
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
 import { resolveStoredProductPricing } from '../utils/productPricing'
+import { buildSaveContactFields } from '../utils/saveContactPayload'
 import { collectSaveContactPhotoCandidates, resolveSaveContactPhotoUrls } from '../utils/saveContactPhoto'
 import { resolveProfileSharePreviewImageUrl, SHARE_PREVIEW_IMAGE_SETTING_KEY } from '../utils/sharePreviewImage'
 import { hasFullSaveContactInfo } from '../utils/smsMessage'
@@ -2541,19 +2542,26 @@ const saveContactCard = async (
     action_buttons: {
       save_contact: {
         data: {
-          name: profile.name,
-          email: profile.email,
-          phone: profile.phone || '',
-          company: profile.companyName || '',
-          profession: profile.profession?.name || profile.prof || profile.designation || '',
-          gender: profile.gender?.name || '',
-          website: profile.website || '',
+          ...buildSaveContactFields({
+            name: profile.name,
+            email: profile.email,
+            phone: profile.phone,
+            companyName: profile.companyName,
+            professionName: profile.profession?.name,
+            prof: profile.prof,
+            designation: profile.designation,
+            genderName: profile.gender?.name,
+            website: profile.website,
+            address: profile.address,
+            city: profile.city,
+            state: profile.state,
+            zipCode: profile.zipCode,
+            about: profile.about,
+          }),
           slug,
           profileUrl,
           imageUrl,
           imageUrls,
-          note: profile.about || '',
-          address: formatProfileLocation(profile) || '',
         },
       },
     },
