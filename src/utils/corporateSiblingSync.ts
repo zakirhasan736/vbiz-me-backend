@@ -19,6 +19,7 @@ import {
 } from './duplicateCard'
 import { toGalleryWriteData } from './galleryMedia'
 import logger from './logger'
+import { isHideOwnerMediaEnabled } from './memberMediaVisibility'
 import { prisma } from './prisma'
 import {
   isPrismaMissingTable,
@@ -835,6 +836,17 @@ const replaceCustomTabs = async (
   return idMap
 }
 
+const MEMBER_NAV_CUSTOMIZED_KEY = 'member_nav_customized'
+
+/** Once a member card keeps its own navbar and custom tabs, owner sync must not overwrite them. */
+async function memberKeepsOwnTabs(profileId: string): Promise<boolean> {
+  const row = await prisma.setting.findUnique({
+    where: { profileId_key: { profileId, key: MEMBER_NAV_CUSTOMIZED_KEY } },
+    select: { value: true },
+  })
+  return isHideOwnerMediaEnabled(row?.value)
+}
+
 const copySharedSettings = async (
   sourceProfileId: string,
   targetProfileId: string,
@@ -843,6 +855,7 @@ const copySharedSettings = async (
 ) => {
   const sharedKeys = keys.filter(isSharedSettingKey)
   if (!sharedKeys.length) return
+  if (await memberKeepsOwnTabs(targetProfileId)) return
 
   const needsIdMap = sharedKeys.some(
     (key) => key === 'custom_tabs_json' || key === 'tab_section_meta_json' || key === 'tab_label_overrides_json'
@@ -955,6 +968,7 @@ const copySharedProfileSettings = async (
 }
 
 const applyCustomTabsJson = async (sourceProfileId: string, siblingId: string, options: SharedSyncOptions = {}) => {
+  if (await memberKeepsOwnTabs(siblingId)) return
   const sourceJson = await prisma.setting.findFirst({
     where: { profileId: sourceProfileId, key: 'custom_tabs_json' },
     select: { value: true },

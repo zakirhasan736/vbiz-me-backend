@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { isHideOwnerMediaEnabled, withoutOwnedIds } from '../utils/memberMediaVisibility'
+import {
+  hiddenOwnerMediaMatches,
+  isHideOwnerMediaEnabled,
+  ownerMediaFingerprint,
+  parseHiddenOwnerMedia,
+  withoutOwnedIds,
+} from '../utils/memberMediaVisibility'
 
 describe('member media visibility', () => {
   it('treats the checkbox values as on', () => {
@@ -9,6 +15,16 @@ describe('member media visibility', () => {
     assert.equal(isHideOwnerMediaEnabled('0'), false)
     assert.equal(isHideOwnerMediaEnabled(''), false)
     assert.equal(isHideOwnerMediaEnabled(null), false)
+  })
+
+  it('matches a hidden owner photo after its id changes', () => {
+    const original = { id: 'old-id', title: 'Office', imageUrl: 'https://cdn.example/office.jpg' }
+    const synced = { id: 'new-id', title: 'Office', imageUrl: 'https://cdn.example/office.jpg' }
+    const entries = [{ id: original.id, fingerprint: ownerMediaFingerprint(original) }]
+    assert.equal(hiddenOwnerMediaMatches(entries, original), true)
+    assert.equal(hiddenOwnerMediaMatches(entries, synced), true)
+    assert.equal(hiddenOwnerMediaMatches(entries, { id: 'mine', title: 'Headshot' }), false)
+    assert.deepEqual(parseHiddenOwnerMedia(JSON.stringify({ photos: entries, videos: [] })).photos, entries)
   })
 
   it('drops only owner-synced rows', () => {

@@ -1977,7 +1977,9 @@ const duplicate = async (
 
   const customTabIdMap = new Map<string, string>()
   const remappedSettings = remapDuplicatedCardSettings(settingsMapFromRows(source.settings), profileId, customTabIdMap)
-  const settings = corporateParentId ? stripAboutMeSettings(remappedSettings) : remappedSettings
+  const settings = corporateParentId
+    ? { ...stripAboutMeSettings(remappedSettings), member_nav_customized: '1' }
+    : remappedSettings
   const ownership =
     memberUserId && corporateParentId
       ? corporateMemberCardOwnership(corporateParentId, memberUserId)

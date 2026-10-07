@@ -368,8 +368,9 @@ describe('remapDuplicatedCardSettings', () => {
     assert.notEqual(tabs[0]?.id, 'custom-tab-old')
     assert.equal(display.editorNavOrder[0], 'home')
     assert.equal(display.editorNavOrder.includes(tabs[0]?.id || ''), true)
+    assert.ok(display.editorNavOrder.indexOf(tabs[0]?.id || '') < display.editorNavOrder.indexOf('faq'))
     assert.deepEqual(display.editorNavOrder.slice(-2), ['public-cards', 'my-info'])
-    assert.equal(display.navOrderCustomized, false)
+    assert.equal(display.navOrderCustomized, true)
     assert.equal(remapped.duplicated_from, 'src-profile')
   })
 

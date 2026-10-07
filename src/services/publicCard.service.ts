@@ -26,7 +26,7 @@ import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUrl } from '../utils/mediaUrl'
-import { hiddenOwnerMediaIds, withoutOwnedIds } from '../utils/memberMediaVisibility'
+import { idsHiddenOnMemberPublicCard, withoutOwnedIds } from '../utils/memberMediaVisibility'
 import { formatProfileLocation, hasProfileLocationParts } from '../utils/personalAddress'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
@@ -736,7 +736,7 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
     : legacyPortfolio.length
       ? legacyPortfolio
       : filledGallery
-  const hiddenPhotoIds = await hiddenOwnerMediaIds(profile.id, 'photos')
+  const hiddenPhotoIds = await idsHiddenOnMemberPublicCard(profile.id, 'photos', source)
   const visibleSource = source.filter((item) => !hiddenPhotoIds.has(item.id))
   const portfolio = visibleSource.map((item) => {
     const featuredImage = 'featuredImage' in item ? item.featuredImage : item.imageUrl
@@ -1351,7 +1351,7 @@ const getDynamicSection = async (
           }
         }
         if (tab.storage === 'video') {
-          const hiddenVideoIds = await hiddenOwnerMediaIds(profileId, 'videos')
+          const hiddenVideoIds = await idsHiddenOnMemberPublicCard(profileId, 'videos', rows)
           const visibleRows = withoutOwnedIds(rows, hiddenVideoIds)
           if (visibleRows.length !== rows.length) {
             rows = visibleRows
@@ -1534,7 +1534,7 @@ const getDynamicSection = async (
           : galleryRows.length
             ? galleryRows
             : mappedLegacy
-      const hiddenPhotoIds = await hiddenOwnerMediaIds(profileId, 'photos')
+      const hiddenPhotoIds = await idsHiddenOnMemberPublicCard(profileId, 'photos', items)
       const visibleItems = withoutOwnedIds(items, hiddenPhotoIds)
       const hidOwnerPhotos = visibleItems.length !== items.length
       logPublicSectionMedia(

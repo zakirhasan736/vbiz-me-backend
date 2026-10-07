@@ -459,6 +459,16 @@ export function remapDuplicatedCardSettings(
     }
   }
 
+  for (const key of ['tab_label_overrides_json', 'tab_section_meta_json'] as const) {
+    const raw = next[key]
+    if (!raw) continue
+    let value = raw
+    for (const [oldId, newId] of idMap) {
+      if (oldId && newId) value = value.split(oldId).join(newId)
+    }
+    next[key] = value
+  }
+
   const rawDisplay = next.display_settings_json
   try {
     const parsed = rawDisplay?.trim()
@@ -468,9 +478,10 @@ export function remapDuplicatedCardSettings(
     parsed.editorNavOrder = assemblePublicNavOrder(
       order
         .map((id) => (typeof id === 'string' && idMap.has(id) ? idMap.get(id) : id))
-        .filter((id): id is string => typeof id === 'string')
+        .filter((id): id is string => typeof id === 'string'),
+      { preserveCustom: true }
     )
-    parsed.navOrderCustomized = false
+    parsed.navOrderCustomized = true
     next.display_settings_json = JSON.stringify(parsed)
   } catch {
     // Keep original display settings if they are not parseable.
