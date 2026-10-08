@@ -18,6 +18,7 @@ import AppError from '../error/AppError'
 import { readAboutMeFeaturedMediaUrl, readAboutMeMediaFocusY } from '../utils/aboutMeMediaFocus'
 import { PUBLIC_ATTACHMENT_KIND_ALIASES, sameMediaUrl, scoreAttachmentTypeName } from '../utils/attachmentTypeMatch'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
+import { isCorporateEditUnlockedCard } from '../utils/corporateSiblingSync'
 import { CRM_LEAD_ORIGIN_GUEST } from '../utils/crmLeadOrigin'
 import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { enrichGuestSaveMeta, mergeGuestSaveMeta } from '../utils/guestSaveMeta'
@@ -26,7 +27,7 @@ import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUrl } from '../utils/mediaUrl'
-import { idsHiddenOnMemberPublicCard, withoutOwnedIds } from '../utils/memberMediaVisibility'
+import { idsHiddenOnMemberPublicCard, withoutOwnedIds, type OwnerMediaRow } from '../utils/memberMediaVisibility'
 import { formatProfileLocation, hasProfileLocationParts } from '../utils/personalAddress'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
@@ -40,6 +41,16 @@ import { getPublicAssistantSupplement } from './profileAssistant.service'
 import pushService, { mediaFromProfile } from './push.service'
 import { mergeSeoSettingsWithDefaults } from './seoMetadata.service'
 import smsService from './sms.service'
+
+/** Only corporate team member cards can hide owner media. Single and owner cards show everything. */
+const hiddenOwnerMediaOnPublicCard = async (
+  profileId: string,
+  kind: 'photos' | 'videos',
+  rows: readonly OwnerMediaRow[]
+): Promise<Set<string>> => {
+  if (await isCorporateEditUnlockedCard(profileId)) return new Set()
+  return idsHiddenOnMemberPublicCard(profileId, kind, rows)
+}
 
 const RETURNING_SAVED_GUEST_EVENT = 'returning_saved_guest'
 const RETURNING_SAVED_GUEST_DELAY_MS = 3 * 24 * 60 * 60 * 1000
@@ -737,7 +748,7 @@ const getMyCardFromProfile = async (profile: Awaited<ReturnType<typeof getProfil
     : legacyPortfolio.length
       ? legacyPortfolio
       : filledGallery
-  const hiddenPhotoIds = await idsHiddenOnMemberPublicCard(profile.id, 'photos', source)
+  const hiddenPhotoIds = await hiddenOwnerMediaOnPublicCard(profile.id, 'photos', source)
   const visibleSource = source.filter((item) => !hiddenPhotoIds.has(item.id))
   const portfolio = visibleSource.map((item) => {
     const featuredImage = 'featuredImage' in item ? item.featuredImage : item.imageUrl
@@ -1352,7 +1363,7 @@ const getDynamicSection = async (
           }
         }
         if (tab.storage === 'video') {
-          const hiddenVideoIds = await idsHiddenOnMemberPublicCard(profileId, 'videos', rows)
+          const hiddenVideoIds = await hiddenOwnerMediaOnPublicCard(profileId, 'videos', rows)
           const visibleRows = withoutOwnedIds(rows, hiddenVideoIds)
           if (visibleRows.length !== rows.length) {
             rows = visibleRows
@@ -1535,7 +1546,7 @@ const getDynamicSection = async (
           : galleryRows.length
             ? galleryRows
             : mappedLegacy
-      const hiddenPhotoIds = await idsHiddenOnMemberPublicCard(profileId, 'photos', items)
+      const hiddenPhotoIds = await hiddenOwnerMediaOnPublicCard(profileId, 'photos', items)
       const visibleItems = withoutOwnedIds(items, hiddenPhotoIds)
       const hidOwnerPhotos = visibleItems.length !== items.length
       logPublicSectionMedia(

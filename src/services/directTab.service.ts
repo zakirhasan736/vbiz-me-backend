@@ -15,7 +15,7 @@ import {
   seedCorporateOwnedIdsIfEmpty,
 } from '../utils/corporateOwnedContent'
 import {
-  isCorporateTeamOwnerSourceCard,
+  isCorporateEditUnlockedCard,
   safeSyncCorporateSiblingSharedContent,
   storageToPrismaModel,
 } from '../utils/corporateSiblingSync'
@@ -163,7 +163,7 @@ const queryBlogs = async (profileId: string, skip = 0, limit = 200) => {
     }),
     prisma.blog.count({ where }),
     getCorporateOwnedIds(profileId, 'blog'),
-    isCorporateTeamOwnerSourceCard(profileId),
+    isCorporateEditUnlockedCard(profileId),
   ])
   const ownedBlogIds =
     !isOwnerCard && ownedBlogIdsRaw.size === 0
@@ -219,7 +219,7 @@ const updateBlog = async (profileId: string, blogId: string, userId: string, rol
   await profileService.getOwnedForWrite(profileId, userId, role)
   const existing = await prisma.blog.findFirst({ where: { id: blogId, profileId, deletedAt: null } })
   if (!existing) throw new AppError(404, 'Blog not found')
-  const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
+  const isOwnerCard = await isCorporateEditUnlockedCard(profileId)
   if (await isLockedCorporateOwnedRow({ profileId, model: 'blog', rowId: blogId, isOwnerCard })) {
     return serializeBlog(existing)
   }
@@ -246,7 +246,7 @@ const deleteBlog = async (profileId: string, blogId: string, userId: string, rol
   await profileService.getOwnedForWrite(profileId, userId, role)
   const existing = await prisma.blog.findFirst({ where: { id: blogId, profileId, deletedAt: null } })
   if (!existing) throw new AppError(404, 'Blog not found')
-  const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
+  const isOwnerCard = await isCorporateEditUnlockedCard(profileId)
   await assertNotCorporateOwnedRow({ profileId, model: 'blog', rowId: blogId, isOwnerCard })
   await prisma.blog.delete({ where: { id: blogId } })
   const remainingBlogs = isOwnerCard ? await prisma.blog.count({ where: { profileId, deletedAt: null } }) : 1
@@ -582,7 +582,7 @@ const queryTabItems = async (profileId: string, tabKey: string, skip = 0, limit 
     isMemberEditableCorporateModel(ownedModel)
       ? Promise.resolve(new Set<string>())
       : getCorporateOwnedIds(profileId, ownedModel),
-    isCorporateTeamOwnerSourceCard(profileId),
+    isCorporateEditUnlockedCard(profileId),
   ])
   const liveIds = rows.flatMap((row) => {
     if (!row || typeof row !== 'object' || !('id' in row)) return []
@@ -632,7 +632,7 @@ const createTabItem = async (profileId: string, tabKey: string, userId: string, 
   const tab = assertDirectListTab(tabKey)
   await profileService.getOwnedForWrite(profileId, userId, role)
   if (tab.storage === 'blog') return createBlog(profileId, userId, role, input)
-  if (memberOneFormLocked(tab.storage, await isCorporateTeamOwnerSourceCard(profileId))) {
+  if (memberOneFormLocked(tab.storage, await isCorporateEditUnlockedCard(profileId))) {
     throw new AppError(403, ONE_FORM_MEMBER_MESSAGE)
   }
   try {
@@ -732,7 +732,7 @@ const updateTabItem = async (
   const tab = assertDirectListTab(tabKey)
   await profileService.getOwnedForWrite(profileId, userId, role)
   if (tab.storage === 'blog') return updateBlog(profileId, itemId, userId, role, input)
-  const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
+  const isOwnerCard = await isCorporateEditUnlockedCard(profileId)
   const ownedModel = ownedModelForTab(tab)
   const model =
     tab.storage === 'gallery'
@@ -838,7 +838,7 @@ const deleteTabItem = async (profileId: string, tabKey: string, itemId: string, 
   const tab = assertDirectListTab(tabKey)
   await profileService.getOwnedForWrite(profileId, userId, role)
   if (tab.storage === 'blog') return deleteBlog(profileId, itemId, userId, role)
-  const isOwnerCard = await isCorporateTeamOwnerSourceCard(profileId)
+  const isOwnerCard = await isCorporateEditUnlockedCard(profileId)
   const ownedModel = ownedModelForTab(tab)
   if (memberOneFormLocked(tab.storage, isOwnerCard)) {
     throw new AppError(403, ONE_FORM_MEMBER_MESSAGE)

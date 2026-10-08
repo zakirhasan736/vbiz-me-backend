@@ -193,6 +193,45 @@ export async function isCorporateTeamOwnerSourceCard(sourceProfileId: string): P
   })
 }
 
+/**
+ * True only for a team member card inside a corporate group: the group has a
+ * corporate parent account and this card is not that parent's own original card.
+ * Single cards (no corporate parent) are never member cards.
+ */
+export function isCorporateMemberCard(input: {
+  userId?: string | null
+  parentUserId?: string | null
+  duplicatedFrom?: string | null
+}): boolean {
+  const parentUserId = typeof input.parentUserId === 'string' ? input.parentUserId.trim() : ''
+  if (!parentUserId) return false
+  return !isCorporateOwnerSourceCard(input)
+}
+
+/**
+ * Edit locks (owner-synced rows, one-form sections) apply only to corporate team
+ * member cards. Single cards and the corporate owner card edit everything.
+ */
+export async function isCorporateEditUnlockedCard(profileId: string): Promise<boolean> {
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { id: true, userId: true, companyUserId: true },
+  })
+  if (!profile) return true
+  const [parentId, duplicatedFrom] = await Promise.all([
+    resolveCorporateParentUserIdFromProfile(profile),
+    prisma.setting.findUnique({
+      where: { profileId_key: { profileId, key: 'duplicated_from' } },
+      select: { value: true },
+    }),
+  ])
+  return !isCorporateMemberCard({
+    userId: profile.userId,
+    parentUserId: parentId,
+    duplicatedFrom: duplicatedFrom?.value,
+  })
+}
+
 const JSON_SHARED_SETTING_KEYS = new Set(['custom_tabs_json', 'tab_section_meta_json', 'tab_label_overrides_json'])
 
 export function isSparseSharedSettingValue(key: string, value: string | null | undefined): boolean {

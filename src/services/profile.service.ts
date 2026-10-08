@@ -51,8 +51,8 @@ import {
   seedCorporateOwnedIdsIfEmpty,
 } from '../utils/corporateOwnedContent'
 import {
+  isCorporateEditUnlockedCard,
   isCorporateOwnerSourceCard,
-  isCorporateTeamOwnerSourceCard,
   isSparseSharedSettingValue,
   resolveCorporateParentUserId,
   safeSyncCorporateSiblingSharedContent,
@@ -444,7 +444,7 @@ const loadProfileCollections = async (profileId: string) => {
           gallery: galleryOwned,
         }
       }),
-      isCorporateTeamOwnerSourceCard(profileId),
+      isCorporateEditUnlockedCard(profileId),
     ])
 
   // Member cards with legacy synced rows: seed ownership so editor locks work and members can append.
@@ -472,6 +472,7 @@ const loadProfileCollections = async (profileId: string) => {
   const mark = <T extends { id: string }>(rows: T[], owned: Set<string>) =>
     rows.map((row) => ({ ...row, corporateOwned: !isOwnerCard && owned.has(row.id) }))
   return {
+    corporateMemberCard: !isOwnerCard,
     education: mark(education, seeded.education),
     experiences: mark(experiences, seeded.experience),
     services: mark(services, seeded.service),
@@ -2675,7 +2676,7 @@ const replaceCollection = async <T extends Record<string, unknown>>(
   const beforeCount = beforeItems.filter((row) => !row.deletedAt && row.status !== 0 && row.status !== '0').length
 
   const fanOutKind = shouldFanOutCollection(kind)
-  const isOwnerCard = fanOutKind ? await isCorporateTeamOwnerSourceCard(profileId) : true
+  const isOwnerCard = fanOutKind ? await isCorporateEditUnlockedCard(profileId) : true
   let ownedIds = !isOwnerCard && fanOutKind ? await getCorporateOwnedIds(profileId, delegate) : new Set<string>()
 
   // Linked member cards that already have owner-synced rows but no ownership map yet:
@@ -3261,7 +3262,7 @@ const updatePost = async (
   const post = await prisma.post.findUnique({ where: { id: postId }, include: { postType: true } })
   if (!post) throw new AppError(404, 'Post not found')
   await getOwnedForWrite(post.profileId, userId, role)
-  const isOwnerCard = await isCorporateTeamOwnerSourceCard(post.profileId)
+  const isOwnerCard = await isCorporateEditUnlockedCard(post.profileId)
   if (
     await isLockedCorporateOwnedRow({
       profileId: post.profileId,
@@ -3343,7 +3344,7 @@ const deletePost = async (postId: string, userId: string, role: string) => {
   const post = await prisma.post.findUnique({ where: { id: postId }, include: { postType: true } })
   if (!post) throw new AppError(404, 'Post not found')
   await getOwnedForWrite(post.profileId, userId, role)
-  const isOwnerCard = await isCorporateTeamOwnerSourceCard(post.profileId)
+  const isOwnerCard = await isCorporateEditUnlockedCard(post.profileId)
   await assertNotCorporateOwnedRow({
     profileId: post.profileId,
     model: 'post',
@@ -3393,7 +3394,7 @@ const listPosts = async (
   ])
   const [ownedPostIds, isOwnerCard] = await Promise.all([
     getCorporateOwnedIds(profileId, 'post'),
-    isCorporateTeamOwnerSourceCard(profileId),
+    isCorporateEditUnlockedCard(profileId),
   ])
   return {
     items: items.map((item) => ({

@@ -6,6 +6,7 @@ import {
   cardBelongsToCorporation,
   corporateSiblingProfileWhere,
   corporateSyncRowIdsToHardDelete,
+  isCorporateMemberCard,
   isCorporateOwnerSourceCard,
   isCorporateSiblingSyncRunning,
   isPersonalCollectionKind,
@@ -93,6 +94,17 @@ describe('corporate owner delete and member-local rows', () => {
     assert.equal(
       isCorporateOwnerSourceCard({ userId: 'corp-1', parentUserId: 'corp-1', duplicatedFrom: 'owner-card' }),
       false
+    )
+  })
+
+  it('locks only corporate team member cards, never single cards', () => {
+    assert.equal(isCorporateMemberCard({ userId: 'single-1', parentUserId: null, duplicatedFrom: null }), false)
+    assert.equal(isCorporateMemberCard({ userId: 'single-1', parentUserId: null, duplicatedFrom: 'card-a' }), false)
+    assert.equal(isCorporateMemberCard({ userId: 'corp-1', parentUserId: 'corp-1', duplicatedFrom: null }), false)
+    assert.equal(isCorporateMemberCard({ userId: 'member-1', parentUserId: 'corp-1', duplicatedFrom: null }), true)
+    assert.equal(
+      isCorporateMemberCard({ userId: 'corp-1', parentUserId: 'corp-1', duplicatedFrom: 'owner-card' }),
+      true
     )
   })
 
