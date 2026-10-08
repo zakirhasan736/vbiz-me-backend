@@ -1,12 +1,17 @@
 import { Prisma } from '../../generated/prisma/client'
-import { DIRECT_SECTION_LOADERS, countPublicSection, isGenericDirectStorage } from '../constants/directSectionStorage'
+import { countPublicSection, DIRECT_SECTION_LOADERS, isGenericDirectStorage } from '../constants/directSectionStorage'
 import { NAV_CHECKBOX_TO_TAB_KEY, NAV_ID_TO_TAB_KEY, TAB_KEY_TO_NAV_ID, TAB_REGISTRY } from '../constants/tabRegistry'
 import {
   backupDayKey,
   backupRowIdsToDelete,
   labelForNavId,
+  mediaKindForUrl,
+  PERSONAL_MEDIA_ENTRY_ID,
+  readMediaSlots,
   resolveCardNavIds,
   toTabCount,
+  withImageBreakdown,
+  type CardMediaSlot,
   type CardTabCount,
 } from '../utils/cardDailyBackup'
 import logger from '../utils/logger'
@@ -29,6 +34,7 @@ export type CardBackupSummary = {
   backupDate: string
   tabCount: number
   tabs: CardTabCount[]
+  personalMedia: CardMediaSlot[]
 }
 
 const ITEM_TEXT_LIMIT = 20_000
@@ -279,7 +285,53 @@ async function itemsForStorage(
     .filter((row): row is CardBackupItem => Boolean(row))
 }
 
-export async function collectCardTabInventory(profileId: string): Promise<{ tabs: CardTabSnapshot[] }> {
+const TEXT_ONLY_NAV_IDS = new Set(['home', 'education', 'work', 'skills', 'my-info', 'resume'])
+const IMAGE_STORAGES = new Set(['about_me', 'service', 'review', 'gallery', 'blog'])
+const IMAGE_NAV_IDS = new Set(['about', 'services', 'reviews', 'gallery', 'blog', 'content-media'])
+
+/** Mirrors the branches in itemsForStorage: true when its items carry a real image field. */
+function tabTracksImages(navId: string): boolean {
+  if (TEXT_ONLY_NAV_IDS.has(navId)) return false
+  const tab = TAB_REGISTRY[NAV_ID_TO_TAB_KEY[navId] || navId]
+  if (!tab) return true
+  if (isGenericDirectStorage(tab.storage)) return true
+  return IMAGE_STORAGES.has(tab.storage) || IMAGE_NAV_IDS.has(navId)
+}
+
+function displayFieldValue(display: Record<string, unknown>, field: string): string {
+  const fields = display.fields
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return ''
+  const entry = (fields as Record<string, unknown>)[field]
+  if (!entry || typeof entry !== 'object') return ''
+  const value = (entry as { customValue?: unknown }).customValue
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/** Personal info avatar / intro / background, each as image, video, or none. */
+async function collectPersonalMedia(
+  profileId: string,
+  map: Record<string, string>,
+  display: Record<string, unknown>
+): Promise<CardMediaSlot[]> {
+  const profile = await prisma.profile
+    .findUnique({ where: { id: profileId }, select: { avatar: true } })
+    .catch(() => null)
+  const avatar =
+    displayFieldValue(display, 'Profile Image/Video') || map.profile_media_url?.trim() || profile?.avatar?.trim() || ''
+  const introFile = displayFieldValue(display, 'Intro vCard Video') || map.intro_video_url?.trim() || ''
+  const introYoutube =
+    displayFieldValue(display, 'Intro YouTube vCard Video Link') || map.intro_youtube_url?.trim() || ''
+  const background = displayFieldValue(display, 'Background Video/Image') || map.background_media_url?.trim() || ''
+  return [
+    { id: 'avatar', label: 'Avatar', kind: mediaKindForUrl(avatar) },
+    { id: 'intro', label: 'Intro video', kind: introFile || introYoutube ? 'video' : 'none' },
+    { id: 'background', label: 'Background', kind: mediaKindForUrl(background) },
+  ]
+}
+
+export async function collectCardTabInventory(
+  profileId: string
+): Promise<{ tabs: CardTabSnapshot[]; personalMedia: CardMediaSlot[] }> {
   const [settings, customTabs] = await Promise.all([
     prisma.setting.findMany({ where: { profileId }, select: { key: true, value: true } }).catch(() => []),
     prisma.customTab
@@ -300,40 +352,67 @@ export async function collectCardTabInventory(profileId: string): Promise<{ tabs
     const label = labelForNavId(navId, custom?.label || TAB_REGISTRY[tabKey]?.label)
     const items = await itemsForStorage(profileId, navId, map)
     const counted = toTabCount(navId, label, items.length)
-    tabs.push({ ...counted, items })
+    const withImages = tabTracksImages(navId)
+      ? withImageBreakdown(
+          counted,
+          items.map((row) => row.image)
+        )
+      : counted
+    tabs.push({ ...withImages, items })
   }
-  return { tabs }
+  const personalMedia = await collectPersonalMedia(profileId, map, display)
+  return { tabs, personalMedia }
 }
 
 function publicTabs(tabs: CardTabSnapshot[]): CardTabCount[] {
-  return tabs.map(({ id, label, count, empty }) => ({ id, label, count, empty }))
+  return tabs.map(({ items: _items, ...tab }) => tab)
 }
 
-function readStoredTabs(value: Prisma.JsonValue): CardTabCount[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((entry) => {
+function readStoredTabs(value: Prisma.JsonValue): { tabs: CardTabCount[]; personalMedia: CardMediaSlot[] } {
+  if (!Array.isArray(value)) return { tabs: [], personalMedia: [] }
+  let personalMedia: CardMediaSlot[] = []
+  const tabs = value.flatMap((entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return []
-    const row = entry as { id?: unknown; label?: unknown; count?: unknown }
+    const row = entry as {
+      id?: unknown
+      label?: unknown
+      count?: unknown
+      withImage?: unknown
+      media?: unknown
+    }
     const id = typeof row.id === 'string' ? row.id : ''
+    if (id === PERSONAL_MEDIA_ENTRY_ID) {
+      personalMedia = readMediaSlots(row.media)
+      return []
+    }
     const label = typeof row.label === 'string' ? row.label : id
     const count = typeof row.count === 'number' ? row.count : 0
     if (!id) return []
-    return [toTabCount(id, label, count)]
+    const tab = toTabCount(id, label, count)
+    if (typeof row.withImage !== 'number') return [tab]
+    const withImage = Math.min(tab.count, Math.max(0, Math.floor(row.withImage)))
+    return [{ ...tab, withImage, withoutImage: tab.count - withImage }]
   })
+  return { tabs, personalMedia }
 }
 
 export async function saveCardDailyBackup(
   profileId: string,
-  collected: { tabs: CardTabSnapshot[] },
+  collected: { tabs: CardTabSnapshot[]; personalMedia: CardMediaSlot[] },
   now = new Date()
 ): Promise<void> {
   const day = backupDayKey(now)
   const tabs = publicTabs(collected.tabs)
+  const storedTabs = [
+    ...tabs,
+    { id: PERSONAL_MEDIA_ENTRY_ID, label: 'Personal info media', count: 0, media: collected.personalMedia },
+  ]
   const snapshot = {
     version: 1,
     backupDate: day,
     tabCount: tabs.length,
     tabs: collected.tabs,
+    personalMedia: collected.personalMedia,
   }
   await prisma.cardDailyBackup.upsert({
     where: { profileId_backupDate: { profileId, backupDate: day } },
@@ -341,12 +420,12 @@ export async function saveCardDailyBackup(
       profileId,
       backupDate: day,
       tabCount: tabs.length,
-      tabs: tabs as unknown as Prisma.InputJsonValue,
+      tabs: storedTabs as unknown as Prisma.InputJsonValue,
       snapshot: snapshot as unknown as Prisma.InputJsonValue,
     },
     update: {
       tabCount: tabs.length,
-      tabs: tabs as unknown as Prisma.InputJsonValue,
+      tabs: storedTabs as unknown as Prisma.InputJsonValue,
       snapshot: snapshot as unknown as Prisma.InputJsonValue,
     },
   })
@@ -372,17 +451,21 @@ export async function listCardDailyBackups(profileId: string): Promise<CardBacku
     id: row.id,
     backupDate: row.backupDate,
     tabCount: row.tabCount,
-    tabs: readStoredTabs(row.tabs),
+    ...readStoredTabs(row.tabs),
   }))
 }
 
 /** Current tab counts, plus today's backup. Missing backup table does not hide the counts. */
 export async function readCardHistoryFootprint(profileId: string): Promise<{
-  inventory: { tabCount: number; tabs: CardTabCount[] }
+  inventory: { tabCount: number; tabs: CardTabCount[]; personalMedia: CardMediaSlot[] }
   backups: CardBackupSummary[]
 }> {
   const collected = await collectCardTabInventory(profileId)
-  const inventory = { tabCount: collected.tabs.length, tabs: publicTabs(collected.tabs) }
+  const inventory = {
+    tabCount: collected.tabs.length,
+    tabs: publicTabs(collected.tabs),
+    personalMedia: collected.personalMedia,
+  }
   try {
     await saveCardDailyBackup(profileId, collected)
     const backups = await listCardDailyBackups(profileId)

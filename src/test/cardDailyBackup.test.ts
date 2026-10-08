@@ -4,9 +4,12 @@ import {
   backupDayKey,
   backupRowIdsToDelete,
   labelForNavId,
+  mediaKindForUrl,
+  readMediaSlots,
   resolveCardNavIds,
   tabDataLabel,
   toTabCount,
+  withImageBreakdown,
 } from '../utils/cardDailyBackup'
 
 describe('card daily backup retention', () => {
@@ -40,5 +43,37 @@ describe('card daily backup retention', () => {
     })
     assert.equal(labelForNavId('content-media'), 'Content & media')
     assert.equal(labelForNavId('custom-1', 'Specials'), 'Specials')
+  })
+
+  it('splits items into with image and no image', () => {
+    const tab = withImageBreakdown(toTabCount('services', 'Services', 6), [
+      'https://cdn.example.com/a.jpg',
+      null,
+      '',
+      'https://cdn.example.com/b.png',
+      '  ',
+      undefined,
+    ])
+    assert.equal(tab.withImage, 2)
+    assert.equal(tab.withoutImage, 4)
+    assert.equal(tabDataLabel(6, 2), '6 items · 2 with image · 4 no image')
+  })
+
+  it('reads personal media as image, video, or none', () => {
+    assert.equal(mediaKindForUrl('https://cdn.example.com/me.jpg'), 'image')
+    assert.equal(mediaKindForUrl('https://cdn.example.com/intro.mp4?v=2'), 'video')
+    assert.equal(mediaKindForUrl('https://youtu.be/abc'), 'video')
+    assert.equal(mediaKindForUrl(''), 'none')
+    assert.deepEqual(
+      readMediaSlots([
+        { id: 'avatar', label: 'Avatar', kind: 'video' },
+        { id: 'bogus', label: 'x', kind: 'image' },
+        { id: 'background', label: 'Background', kind: 'weird' },
+      ]),
+      [
+        { id: 'avatar', label: 'Avatar', kind: 'video' },
+        { id: 'background', label: 'Background', kind: 'none' },
+      ]
+    )
   })
 })

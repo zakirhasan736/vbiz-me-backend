@@ -1,10 +1,48 @@
 export const CARD_BACKUP_KEEP_DAYS = 7
 
+export type CardMediaKind = 'image' | 'video' | 'none'
+
+export type CardMediaSlot = {
+  id: 'avatar' | 'intro' | 'background'
+  label: string
+  kind: CardMediaKind
+}
+
 export type CardTabCount = {
   id: string
   label: string
   count: number
   empty: boolean
+  /** Only on tabs whose items carry an image (services, blogs, photos, reviews…). */
+  withImage?: number
+  withoutImage?: number
+}
+
+/** Stored inside the backup `tabs` JSON; never counted as a tab. */
+export const PERSONAL_MEDIA_ENTRY_ID = '__personal_media'
+
+const VIDEO_URL = /\.(m4v|mov|mp4|ogv|webm)(\?|#|$)|youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com/i
+
+export function mediaKindForUrl(url: string | null | undefined): CardMediaKind {
+  const raw = (url || '').trim()
+  if (!raw) return 'none'
+  return VIDEO_URL.test(raw) ? 'video' : 'image'
+}
+
+export function withImageBreakdown(tab: CardTabCount, images: Array<string | null | undefined>): CardTabCount {
+  const withImage = images.filter((image) => Boolean(image?.trim())).length
+  return { ...tab, withImage, withoutImage: Math.max(0, tab.count - withImage) }
+}
+
+export function readMediaSlots(value: unknown): CardMediaSlot[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const row = entry as { id?: unknown; label?: unknown; kind?: unknown }
+    if (row.id !== 'avatar' && row.id !== 'intro' && row.id !== 'background') return []
+    const kind: CardMediaKind = row.kind === 'image' || row.kind === 'video' ? row.kind : 'none'
+    return [{ id: row.id, label: typeof row.label === 'string' ? row.label : row.id, kind }]
+  })
 }
 
 const EXTRA_NAV_LABELS: Record<string, string> = {
@@ -57,9 +95,11 @@ export function labelForNavId(navId: string, customLabel?: string | null): strin
     .join(' ')
 }
 
-export function tabDataLabel(count: number): string {
+export function tabDataLabel(count: number, withImage?: number): string {
   if (!Number.isFinite(count) || count <= 0) return 'Empty'
-  return count === 1 ? '1 item' : `${count} items`
+  const base = count === 1 ? '1 item' : `${count} items`
+  if (typeof withImage !== 'number') return base
+  return `${base} · ${withImage} with image · ${Math.max(0, count - withImage)} no image`
 }
 
 export function toTabCount(id: string, label: string, count: number): CardTabCount {
