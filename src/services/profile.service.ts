@@ -51,6 +51,7 @@ import {
   seedCorporateOwnedIdsIfEmpty,
 } from '../utils/corporateOwnedContent'
 import {
+  clearCorporateMemberState,
   isCorporateEditUnlockedCard,
   isCorporateOwnerSourceCard,
   isSparseSharedSettingValue,
@@ -449,7 +450,10 @@ const loadProfileCollections = async (profileId: string) => {
 
   // Member cards with legacy synced rows: seed ownership so editor locks work and members can append.
   const seeded = { ...ownedMap }
-  if (!isOwnerCard) {
+  if (isOwnerCard) {
+    const hasMemberLeftovers = Object.values(ownedMap).some((ids) => ids.size > 0)
+    if (hasMemberLeftovers) await clearCorporateMemberState(profileId)
+  } else {
     const seedPairs: Array<[keyof typeof ownedMap, Array<{ id: string }>]> = [
       ['service', services],
       ['education', education],

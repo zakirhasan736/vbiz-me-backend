@@ -4,7 +4,7 @@ import type { Prisma } from '../../generated/prisma/client'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import { getEffectiveEntitlements } from '../services/entitlement.service'
 import { getCardChangeActor } from './cardChangeHistory'
-import { getCorporateOwnedIds, setCorporateOwnedIds } from './corporateOwnedContent'
+import { CORPORATE_OWNED_IDS_SETTING_KEY, getCorporateOwnedIds, setCorporateOwnedIds } from './corporateOwnedContent'
 import {
   cloneRecord,
   isCorporateLiveSyncProfileField,
@@ -19,7 +19,12 @@ import {
 } from './duplicateCard'
 import { toGalleryWriteData } from './galleryMedia'
 import logger from './logger'
-import { isHideOwnerMediaEnabled } from './memberMediaVisibility'
+import {
+  HIDDEN_OWNER_MEDIA_SETTING_KEY,
+  HIDE_OWNER_PHOTOS_SETTING_KEY,
+  HIDE_OWNER_VIDEOS_SETTING_KEY,
+  isHideOwnerMediaEnabled,
+} from './memberMediaVisibility'
 import { prisma } from './prisma'
 import {
   isPrismaMissingTable,
@@ -230,6 +235,33 @@ export async function isCorporateEditUnlockedCard(profileId: string): Promise<bo
     parentUserId: parentId,
     duplicatedFrom: duplicatedFrom?.value,
   })
+}
+
+/** Settings that only mean something on a corporate team member card. */
+export const CORPORATE_MEMBER_ONLY_SETTING_KEYS = [
+  CORPORATE_OWNED_IDS_SETTING_KEY,
+  HIDE_OWNER_PHOTOS_SETTING_KEY,
+  HIDE_OWNER_VIDEOS_SETTING_KEY,
+  HIDDEN_OWNER_MEDIA_SETTING_KEY,
+] as const
+
+/**
+ * Drops member-only leftovers from a card that is no longer a team member card
+ * (e.g. the account switched to single). Returns rows removed; never throws.
+ */
+export async function clearCorporateMemberState(profileId: string): Promise<number> {
+  try {
+    const result = await prisma.setting.deleteMany({
+      where: { profileId, key: { in: [...CORPORATE_MEMBER_ONLY_SETTING_KEYS] } },
+    })
+    if (result.count > 0) {
+      logger.info('[corporate] cleared member-only settings on unlocked card', { profileId, count: result.count })
+    }
+    return result.count
+  } catch (error) {
+    logger.warn('[corporate] failed to clear member-only settings', { profileId, error })
+    return 0
+  }
 }
 
 const JSON_SHARED_SETTING_KEYS = new Set(['custom_tabs_json', 'tab_section_meta_json', 'tab_label_overrides_json'])
