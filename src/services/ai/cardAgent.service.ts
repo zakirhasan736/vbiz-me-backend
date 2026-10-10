@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { assemblePublicNavOrder } from '../../constants/publicNavOrder'
 import AppError from '../../error/AppError'
+import { buildTabFillSystemPrompt, parseTabFillBodyMode } from '../assistantPolicy'
 import { extractWithOcrFallback, needsServerOcr } from '../documentOcr.service'
 import {
   MAX_OWNER_SEO_KEYWORDS,
@@ -27,8 +28,9 @@ import { buildCompletenessReport } from './completeness.service'
 import { generateCardContent, generateSectionFromProfile, profileToBlueprintFacts } from './contentGenerator.service'
 import { crawlWebsiteDeep, extractTextFromBuffer, type UploadedPart } from './extractDocumentText'
 import { buildFieldGraph, buildTabPlan } from './fieldGraph.service'
-import { LUNA_DOCUMENT_FILL_SECTIONS, routeAiTier, selectFillSectionModel } from './modelRouter.service'
+import { routeAiTier, selectFillSectionModel } from './modelRouter.service'
 import { chatJson, getOpenAiApiKey } from './openai.client'
+import { preferFullPastedBodies } from './preferFullPastedBodies'
 import { runSolArchitect } from './solArchitect.service'
 import { normalizeSources } from './sourceNormalizer.service'
 import {
@@ -511,6 +513,7 @@ export async function fillSection(input: {
   sessionId?: string
   masterProfile?: string
   userId?: string
+  bodyMode?: string
 }) {
   ensureOpenAiConfigured()
   const section = String(input.section || '')
@@ -520,6 +523,7 @@ export async function fillSection(input: {
     throw new AppError(400, `Unsupported section. Use one of: ${SECTIONS.join(', ')}`)
   }
   const sectionId = section as FillSectionId
+  const bodyMode = parseTabFillBodyMode(input.bodyMode)
 
   const session = (await loadCardSession(input.sessionId)) || getCardSession(input.sessionId)
   let profile = session?.businessProfile || null
@@ -612,21 +616,19 @@ export async function fillSection(input: {
     sectionId === 'seo'
       ? `For SEO, write a concise business-specific title (max ${MAX_SEO_TITLE_LENGTH} chars) and description (max ${MAX_SEO_DESCRIPTION_LENGTH} chars) from verified facts. Return 5-${MAX_OWNER_SEO_KEYWORDS} high-intent keywords about this business. Do not include vBiz Me platform keywords; those are added automatically. Never invent numeric search-volume claims.`
       : ''
-  const extractFromSource = LUNA_DOCUMENT_FILL_SECTIONS.has(sectionId)
-    ? sectionId === 'faqs'
-      ? 'Extract every distinct question-and-answer conceptually present in the ready text (OCR output, pasted copy, or crawled pages). Pair each question with its matching answer. Do not invent FAQs that are not implied by the source. Keep all found items with no maximum. If none are present, return an empty faqs array.'
-      : sectionId === 'blogs'
-        ? 'Extract every distinct article or news item conceptually present in the ready text. Use real titles and summaries from the source. Do not invent posts. Keep all found items with no maximum. If none are present, return an empty blogs array.'
-        : 'Extract every distinct testimonial or review conceptually present in the ready text. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual items. Do not invent customer reviews. Keep all found items with no maximum. If none are present, return an empty reviews array.'
-    : 'Create multiple high-quality entries when the source supports it. Treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as individual carousel/list candidates. If reviews, FAQs, or blogs are not in the sources, generate up to 5 realistic items from business topics instead of empty arrays. If some were found but fewer than 5, fill only the remaining slots up to 5. If more than 5 were found, keep all of them. Example reviews must be grounded in the business and must not invent licenses, prices, or awards. If the requested section is not supported and is not faqs/blogs/reviews, return an empty array/object.'
   const fillRoute = selectFillSectionModel(sectionId)
+  const tabFillPrompt =
+    sectionId !== 'seo'
+      ? buildTabFillSystemPrompt(sectionId, bodyMode)
+      : `Return ONLY JSON matching: ${schemaHint}. ${seoRule}`
 
   let raw: unknown
   try {
     const result = await chatJson<unknown>({
       tier: fillRoute.tier,
-      system: `You fill one vCard section from ready text. Return ONLY JSON matching: ${schemaHint}. Fill only the current section/tab. ${extractFromSource} For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
-      user: `Fill section “${section}”.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nREADY TEXT:\n${readyText}`,
+      temperature: bodyMode === 'summarize' ? 0.35 : 0.2,
+      system: `${tabFillPrompt} For services.type use ONLY one of: Web Development, App Design, SEO, Marketing, Other. ${seoRule}`,
+      user: `Fill section “${section}”. Body mode: ${bodyMode}.\nCurrent draft context (may be partial JSON):\n${(input.currentDraft || '').slice(0, 8000)}\n\nREADY TEXT:\n${readyText}`,
     })
     await logChatMeta(`fill_${sectionId}`, result.meta, {
       userId: input.userId,
@@ -660,6 +662,9 @@ export async function fillSection(input: {
   try {
     const coerced = sectionId === 'services' ? coerceServiceTypes(raw) : raw
     payload = schema.parse(coerced) as Record<string, unknown>
+    if (sectionId !== 'seo' && sectionId !== 'personal' && sectionId !== 'skills') {
+      payload = preferFullPastedBodies(sectionId, bodyMode === 'as_written' ? text : '', payload)
+    }
     if (sectionId === 'skills') {
       payload.skills = capGeneratedSkills(payload.skills)
     }

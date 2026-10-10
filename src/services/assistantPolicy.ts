@@ -128,19 +128,75 @@ export function boundKnowledgeContext(
   return chunks.join('\n\n')
 }
 
-export function buildTabFillSystemPrompt(scope: Exclude<FillSectionId, 'seo'>): string {
+export type TabFillBodyMode = 'as_written' | 'summarize'
+
+export function parseTabFillBodyMode(value: unknown): TabFillBodyMode {
+  const raw = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (raw === 'summarize' || raw === 'summarised' || raw === 'summary') return 'summarize'
+  return 'as_written'
+}
+
+/** Body fields on paste-fill sections that must keep the owner's full wording. */
+const FULL_BODY_FIELD_RULE: Partial<Record<Exclude<FillSectionId, 'seo'>, string>> = {
+  blogs:
+    'For each post: put a short clear title in "title". Put the COMPLETE article body in "description" — every paragraph from the source, not a summary or teaser. Prefer HTML with one <p> per paragraph. Never shorten, paraphrase, or omit body paragraphs.',
+  services:
+    'For each service: put the name in "title". Put the COMPLETE service write-up in "description" (every paragraph from the source). Prefer HTML with one <p> per paragraph. Do not reduce a long pasted blurb to one short sentence.',
+  portfolio:
+    'For each project: put the name in "title". Put the COMPLETE project write-up in "description". Prefer HTML with one <p> per paragraph. Do not summarize away detail the owner pasted.',
+  faqs: 'For each FAQ: put the question in "question". Put the COMPLETE answer in "answer" (full wording from the source). Prefer HTML with one <p> per paragraph when the answer has multiple paragraphs. Do not shorten answers.',
+  reviews:
+    'For each review: put the author in "author". Put the COMPLETE quote in "text" (full wording from the source). Prefer HTML with one <p> per paragraph when the quote has multiple paragraphs. Do not shorten quotes.',
+}
+
+/** Body fields when the owner asked for a polished short summary. */
+const SUMMARIZE_BODY_FIELD_RULE: Partial<Record<Exclude<FillSectionId, 'seo'>, string>> = {
+  blogs:
+    'For each post: put a short clear title in "title". Write a polished HTML summary in "description" (2–5 sentences, one or more <p> tags) that captures the main points of the source. Do not copy the full article verbatim.',
+  services:
+    'For each service: put the name in "title". Write a polished HTML benefit-focused summary in "description" (2–4 sentences). Keep only facts from the source.',
+  portfolio:
+    'For each project: put the name in "title". Write a polished HTML summary in "description" (2–4 sentences) of what the project is about.',
+  faqs: 'For each FAQ: put the question in "question". Write a clear, concise HTML answer in "answer" that keeps the meaning of the source without unnecessary length.',
+  reviews:
+    'For each review: put the author in "author". Keep a faithful but concise quote in "text" (trim filler if needed; do not invent praise).',
+}
+
+export function buildTabFillSystemPrompt(
+  scope: Exclude<FillSectionId, 'seo'>,
+  bodyMode: TabFillBodyMode = 'as_written'
+): string {
+  const summarize = bodyMode === 'summarize'
   const extractRule =
     scope === 'faqs'
       ? 'Extract every distinct Q&A conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Pair questions with their answers. Do not invent FAQs that are not implied by the source.'
       : scope === 'blogs'
-        ? 'Extract every distinct post or news item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and summaries. Do not invent articles.'
+        ? summarize
+          ? 'Extract every distinct post or news item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and write a smart summary in description. Do not invent articles.'
+          : 'Extract every distinct post or news item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and the FULL post body in description. Do not invent articles.'
         : scope === 'reviews'
-          ? 'Extract every distinct testimonial conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Capture author, quote, and rating when present. Do not invent reviews.'
-          : 'Use only facts present in the supplied text/files/current public card.'
+          ? summarize
+            ? 'Extract every distinct testimonial conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Capture author, a concise faithful quote, and rating when present. Do not invent reviews.'
+            : 'Extract every distinct testimonial conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Capture author, the FULL quote, and rating when present. Do not invent reviews.'
+          : scope === 'services' || scope === 'portfolio'
+            ? summarize
+              ? 'Extract every distinct item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and write polished short descriptions from the source.'
+              : 'Extract every distinct item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and FULL descriptions from the source.'
+            : 'Use only facts present in the supplied text/files/current public card.'
+  const bodyRule = (summarize ? SUMMARIZE_BODY_FIELD_RULE : FULL_BODY_FIELD_RULE)[scope] || ''
+  const singleItemRule = summarize
+    ? 'When the paste is a single article/item (title line plus body paragraphs), return exactly one entry and summarize the body clearly for a public card.'
+    : 'When the paste is a single article/item (title line plus body paragraphs), return exactly one entry and keep the entire body — never compress it into a short summary.'
   return `You extract and write data for exactly one public vCard section: "${scope}".
 Return ONLY valid JSON matching this exact shape: ${FILL_SECTION_SCHEMA_HINTS[scope]}
 Do not return keys, suggestions, or content for any other section.
-${extractRule} Do not invent reviews, credentials, dates, contact details, or claims.
+Body mode: ${summarize ? 'summarize' : 'as_written'}.
+${extractRule}
+${bodyRule}
+${singleItemRule}
+Do not invent reviews, credentials, dates, contact details, or claims.
 If the sources do not support this section, return the matching empty array/object.`
 }
 

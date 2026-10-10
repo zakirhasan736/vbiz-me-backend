@@ -141,14 +141,14 @@ export const fillSectionSchemas = {
 export type FillSectionId = keyof typeof fillSectionSchemas
 
 export const FILL_SECTION_SCHEMA_HINTS: Record<FillSectionId, string> = {
-  services: `{ "services": [{ "type": "Web Development"|"App Design"|"SEO"|"Marketing"|"Other", "title": "", "description": "", "url": "" }] }`,
-  blogs: `{ "blogs": [{ "title": "", "description": "", "category": "News", "url": "", "imageUrl": "" }] }`,
-  portfolio: `{ "portfolio": [{ "title": "", "description": "", "url": "", "imageUrl": "" }] }`,
-  reviews: `{ "reviews": [{ "author": "", "text": "", "rating": 5, "imageUrl": "", "url": "" }] }`,
+  services: `{ "services": [{ "type": "Web Development"|"App Design"|"SEO"|"Marketing"|"Other", "title": "", "description": "full write-up as HTML paragraphs", "url": "" }] }`,
+  blogs: `{ "blogs": [{ "title": "", "description": "full article body as HTML paragraphs", "category": "News", "url": "", "imageUrl": "" }] }`,
+  portfolio: `{ "portfolio": [{ "title": "", "description": "full project write-up as HTML paragraphs", "url": "", "imageUrl": "" }] }`,
+  reviews: `{ "reviews": [{ "author": "", "text": "full quote as HTML paragraphs when multi-paragraph", "rating": 5, "imageUrl": "", "url": "" }] }`,
   skills: `{ "skills": [{ "type": "Core", "skills": [""] }] }`,
   education: `{ "education": [{ "institute": "", "degree": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
   experience: `{ "experience": [{ "company": "", "jobTitle": "", "description": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
-  faqs: `{ "faqs": [{ "question": "", "answer": "", "imageUrl": "", "url": "" }] }`,
+  faqs: `{ "faqs": [{ "question": "", "answer": "full answer as HTML paragraphs when multi-paragraph", "imageUrl": "", "url": "" }] }`,
   personal: `{ "personal": { "fullName": "", "email": "", "dob": "YYYY-MM-DD", "phone": "", "designation": "", "company": "", "about": "", "website": "", "address": "" }, "socialHandles": {} }`,
   seo: `{ "seo": { "metaTitle": "", "metaDescription": "", "keywords": ["business phrase", "service phrase"] } }`,
 }

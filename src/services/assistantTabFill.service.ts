@@ -4,7 +4,13 @@ import { coerceServiceTypes, countFillEntries, fillSectionSchemas } from './ai/c
 import { extractTextFromBuffer, type UploadedPart } from './ai/extractDocumentText'
 import { getModelForTier, selectFillSectionModel } from './ai/modelRouter.service'
 import { chatJson } from './ai/openai.client'
-import { buildTabFillSystemPrompt, parseSupportedTabScope } from './assistantPolicy'
+import { preferFullPastedBodies } from './ai/preferFullPastedBodies'
+import {
+  buildTabFillSystemPrompt,
+  parseSupportedTabScope,
+  parseTabFillBodyMode,
+  type TabFillBodyMode,
+} from './assistantPolicy'
 import { extractWithOcrFallback, needsServerOcr } from './documentOcr.service'
 
 export async function prepareTabFillSources(files: UploadedPart[]) {
@@ -27,8 +33,11 @@ export async function fillProfileSection(input: {
   scope: unknown
   text?: string
   files?: UploadedPart[]
+  /** as_written (default) keeps full pasted body; summarize asks AI for a short polished body. */
+  bodyMode?: unknown
 }) {
   const scope = parseSupportedTabScope(input.scope)
+  const bodyMode: TabFillBodyMode = parseTabFillBodyMode(input.bodyMode)
   const pastedText = String(input.text || '').trim()
   const files = input.files || []
   if (!pastedText && !files.length) throw new AppError(400, 'Provide pasted text and/or supported files.')
@@ -49,9 +58,10 @@ export async function fillProfileSection(input: {
   if (!currentProfile) throw new AppError(404, 'Profile not found')
 
   const prepared = await prepareTabFillSources(files)
-  const system = buildTabFillSystemPrompt(scope)
+  const system = buildTabFillSystemPrompt(scope, bodyMode)
   const userText = [
     `CURRENT PUBLIC CARD (context only; output remains limited to "${scope}"):\n${JSON.stringify(currentProfile)}`,
+    `BODY MODE: ${bodyMode === 'summarize' ? 'summarize (short polished body)' : 'as_written (keep full pasted wording)'}`,
     pastedText ? `PASTED TEXT:\n${pastedText}` : '',
     ...prepared.textParts,
   ]
@@ -66,7 +76,7 @@ export async function fillProfileSection(input: {
   const fillRoute = selectFillSectionModel(scope)
   const result = await chatJson<unknown>({
     tier: fillRoute.tier,
-    temperature: 0.2,
+    temperature: bodyMode === 'summarize' ? 0.35 : 0.2,
     system,
     user: userText,
   })
@@ -74,7 +84,12 @@ export async function fillProfileSection(input: {
 
   try {
     const schema = fillSectionSchemas[scope]
-    const parsed = schema.parse(scope === 'services' ? coerceServiceTypes(raw) : raw) as Record<string, unknown>
+    const parsedRaw = schema.parse(scope === 'services' ? coerceServiceTypes(raw) : raw) as Record<string, unknown>
+    // Only restore the owner's full paste when they chose "as I wrote".
+    const parsed =
+      bodyMode === 'as_written'
+        ? preferFullPastedBodies(scope, pastedText, parsedRaw)
+        : preferFullPastedBodies(scope, '', parsedRaw)
     if (scope === 'faqs' || scope === 'blogs' || scope === 'reviews') {
       parsed[scope] = Array.isArray(parsed[scope]) ? parsed[scope] : []
     }

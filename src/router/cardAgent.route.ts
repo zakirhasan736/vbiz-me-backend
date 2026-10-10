@@ -138,6 +138,7 @@ router.post(
       currentDraft: String(req.body?.currentDraft || ''),
       sessionId: String(req.body?.sessionId || ''),
       masterProfile: String(req.body?.masterProfile || ''),
+      bodyMode: String(req.body?.bodyMode || ''),
       files,
       userId: req.user?.id,
     })
