@@ -506,6 +506,8 @@ model Blog {
   description      String?
   url              String?
   featuredImage    String?
+  /** Drag crop for the featured image or video. */
+  mediaFrame       Json?
   status           String    @default("1")
   sortOrder        Int       @default(0)
   deletedAt        DateTime?
@@ -694,6 +696,8 @@ model Faq {
   description      String?
   url              String?
   featuredImage    String?
+  /** Drag crop for the featured image or video. */
+  mediaFrame       Json?
   status           String    @default("1")
   sortOrder        Int       @default(0)
   deletedAt        DateTime?
@@ -798,6 +802,8 @@ model MissionStatement {
   description      String?
   url              String?
   featuredImage    String?
+  /** Drag crop for the featured image or video. */
+  mediaFrame       Json?
   status           String    @default("1")
   sortOrder        Int       @default(0)
   deletedAt        DateTime?
@@ -836,6 +842,8 @@ model WhyChooseUs {
   title            String   @default("Why Choose Us")
   description      String?
   featuredMediaUrl String?
+  /** Drag crop for the featured image or video. */
+  mediaFrame       Json?
   status           String   @default("1")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -1285,6 +1293,8 @@ model Service {
   sortOrder   Int      @default(0)
   reviewUrl   String?
   imageUrl    String?
+  /** Drag crop for the featured image or video. */
+  mediaFrame  Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1303,6 +1313,8 @@ model Portfolio {
   sortOrder      Int      @default(0)
   url            String?
   imageUrl       String?
+  /** Drag crop for the featured image or video. */
+  mediaFrame     Json?
   /**
    * Deprecated: secondary portfolio attachments are no longer used.
    * Columns kept for legacy rows; writes always null them.
@@ -1329,6 +1341,8 @@ model Review {
   sortOrder       Int      @default(0)
   imageUrl        String?
   reviewUrl       String?
+  /** Drag crop for the reviewer photo. */
+  mediaFrame      Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

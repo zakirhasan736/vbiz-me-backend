@@ -102,6 +102,7 @@ import { fillMissingGalleryMedia, listGalleriesForProfile, toGalleryWriteData } 
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
 import { catalogGateForWallpaperChange, catalogGatesForSettingChange } from '../utils/mediaFeatureGates'
+import { mediaFrameColumnValue } from '../utils/mediaFrame'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
 import {
   canCreateAnotherCard,
@@ -406,7 +407,13 @@ const listPortfoliosSafe = async (profileId: string) => {
       }),
     []
   )
-  return slim.map((row) => ({ ...row, attachmentUrl: null, attachmentName: null, legacyId: null }))
+  return slim.map((row) => ({
+    ...row,
+    attachmentUrl: null,
+    attachmentName: null,
+    legacyId: null,
+    mediaFrame: null,
+  }))
 }
 
 const loadProfileCollections = async (profileId: string) => {
@@ -2796,6 +2803,9 @@ const replaceCollection = async <T extends Record<string, unknown>>(
                 (typeof mapped.featuredImage === 'string' ? mapped.featuredImage.trim() : '') ||
                 (typeof mapped.imageUrl === 'string' ? mapped.imageUrl.trim() : '') ||
                 null,
+              ...(Object.prototype.hasOwnProperty.call(mapped, 'mediaFrame')
+                ? { mediaFrame: mediaFrameColumnValue(mapped.mediaFrame) }
+                : {}),
               attachmentUrl: null,
               attachmentName: null,
             },
@@ -2838,6 +2848,9 @@ const replaceCollection = async <T extends Record<string, unknown>>(
               (typeof mapped.featuredImage === 'string' ? mapped.featuredImage.trim() : '') ||
               (typeof mapped.imageUrl === 'string' ? mapped.imageUrl.trim() : '') ||
               null,
+            ...(Object.prototype.hasOwnProperty.call(mapped, 'mediaFrame')
+              ? { mediaFrame: mediaFrameColumnValue(mapped.mediaFrame) }
+              : {}),
             attachmentUrl: null,
             attachmentName: null,
           },

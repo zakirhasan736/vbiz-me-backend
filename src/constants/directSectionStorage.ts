@@ -9,6 +9,7 @@ export type DirectSectionRow = {
   description: string | null
   url: string | null
   featuredImage: string | null
+  mediaFrame?: unknown
   status: string
   sortOrder: number
   metas?: unknown
@@ -38,6 +39,7 @@ export const LIVE_POST_STYLE_SELECT = {
   description: true,
   url: true,
   featuredImage: true,
+  mediaFrame: true,
   status: true,
   sortOrder: true,
   deletedAt: true,

@@ -125,6 +125,7 @@ const replaceServices = catchAsyncError(async (req, res) => {
       status: item.status ?? 1,
       reviewUrl: item.reviewUrl,
       imageUrl: item.imageUrl,
+      mediaFrame: item.mediaFrame,
     })
   )
   sendResponse(res, { success: true, statusCode: 200, message: 'Services updated', data })
@@ -152,6 +153,7 @@ const replacePortfolios = catchAsyncError(async (req, res) => {
         status: String(item.status ?? '1'),
         url: item.url,
         featuredImage: featured,
+        mediaFrame: item.mediaFrame,
         // Portfolio secondary attachments removed — always clear on save.
         attachmentUrl: null,
         attachmentName: null,
@@ -182,6 +184,7 @@ const replaceReviews = catchAsyncError(async (req, res) => {
         status: item.status ?? 1,
         imageUrl: typeof item.imageUrl === 'string' ? item.imageUrl : item.featuredImage,
         reviewUrl: typeof item.reviewUrl === 'string' ? item.reviewUrl : item.url,
+        mediaFrame: item.mediaFrame,
       }
     }
   )

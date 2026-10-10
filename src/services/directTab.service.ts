@@ -20,6 +20,12 @@ import {
   storageToPrismaModel,
 } from '../utils/corporateSiblingSync'
 import { listGalleriesForProfile } from '../utils/galleryMedia'
+import {
+  mediaFrameColumnValue,
+  metasWithMediaFrame,
+  metasWithoutMediaFrame,
+  readRowMediaFrame,
+} from '../utils/mediaFrame'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable } from '../utils/prismaErrors'
 import { resolveStoredProductPricing } from '../utils/productPricing'
@@ -35,6 +41,7 @@ type BlogInput = {
   featuredImage?: string | null
   status?: string | null
   sortOrder?: number | null
+  mediaFrame?: unknown
 }
 
 type TabItemInput = {
@@ -45,6 +52,7 @@ type TabItemInput = {
   status?: string | null
   sortOrder?: number | null
   metas?: Record<string, unknown> | null
+  mediaFrame?: unknown
 }
 
 const serializeBlog = (row: {
@@ -54,6 +62,7 @@ const serializeBlog = (row: {
   description: string | null
   url: string | null
   featuredImage: string | null
+  mediaFrame?: unknown
   status: string
   sortOrder: number
   legacyPostId: number | null
@@ -68,6 +77,7 @@ const serializeBlog = (row: {
   date: null as string | null,
   url: row.url,
   featuredImage: row.featuredImage,
+  mediaFrame: readRowMediaFrame(row),
   status: row.status,
   sortOrder: row.sortOrder,
   legacyPostId: row.legacyPostId,
@@ -203,6 +213,7 @@ const createBlog = async (profileId: string, userId: string, role: string, input
       description: str(input.description),
       url: str(input.url),
       featuredImage: str(input.featuredImage),
+      ...(input.mediaFrame !== undefined ? { mediaFrame: mediaFrameColumnValue(input.mediaFrame) } : {}),
       status: statusOf(input.status),
       sortOrder: typeof input.sortOrder === 'number' ? input.sortOrder : (max._max.sortOrder ?? -1) + 1,
     },
@@ -230,6 +241,7 @@ const updateBlog = async (profileId: string, blogId: string, userId: string, rol
       ...(input.description !== undefined ? { description: str(input.description) } : {}),
       ...(input.url !== undefined ? { url: str(input.url) } : {}),
       ...(input.featuredImage !== undefined ? { featuredImage: str(input.featuredImage) } : {}),
+      ...(input.mediaFrame !== undefined ? { mediaFrame: mediaFrameColumnValue(input.mediaFrame) } : {}),
       ...(input.status !== undefined ? { status: statusOf(input.status, existing.status) } : {}),
       ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
     },
@@ -304,31 +316,36 @@ const serializeDedicatedRow = (tab: TabRegistryEntry, row: DirectRow) => {
     row.metas && typeof row.metas === 'object' && !Array.isArray(row.metas)
       ? { ...(row.metas as Record<string, unknown>) }
       : {}
-  if (row.rating != null) metas.rating = row.rating
+  const mediaFrame = readRowMediaFrame({ mediaFrame: (row as { mediaFrame?: unknown }).mediaFrame, metas })
+  const publicMetas = metasWithoutMediaFrame(metas)
+  if (row.rating != null) publicMetas.rating = row.rating
   if (tab.storage === 'product') {
     const pricing = resolveStoredProductPricing({
       price: row.price,
       offerPrice: row.offerPrice,
-      metas,
+      metas: publicMetas,
     })
-    Object.assign(metas, pricing.metas)
+    Object.assign(publicMetas, pricing.metas)
   }
-  return serializeTabItem({
-    id: row.id,
-    profileId: row.profileId,
-    tabKey: tab.key,
-    title: row.title ?? row.author ?? null,
-    description: row.description ?? row.text ?? null,
-    url: row.url ?? row.reviewUrl ?? null,
-    featuredImage: row.featuredImage ?? row.featuredMediaUrl ?? row.imageUrl ?? null,
-    status: String(row.status),
-    sortOrder: row.sortOrder ?? 0,
-    metas,
-    legacyPostId: row.legacyPostId ?? null,
-    legacyPostTypeId: tab.legacyPostTypeId,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  })
+  return {
+    ...serializeTabItem({
+      id: row.id,
+      profileId: row.profileId,
+      tabKey: tab.key,
+      title: row.title ?? row.author ?? null,
+      description: row.description ?? row.text ?? null,
+      url: row.url ?? row.reviewUrl ?? null,
+      featuredImage: row.featuredImage ?? row.featuredMediaUrl ?? row.imageUrl ?? null,
+      status: String(row.status),
+      sortOrder: row.sortOrder ?? 0,
+      metas: publicMetas,
+      legacyPostId: row.legacyPostId ?? null,
+      legacyPostTypeId: tab.legacyPostTypeId,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }),
+    mediaFrame,
+  }
 }
 
 // Prisma delegate methods are structurally incompatible across models although these direct-list
@@ -347,7 +364,7 @@ const galleryData = (input: TabItemInput) => {
     featuredImage: str(input.featuredImage),
     status: statusOf(input.status),
     ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
-    metas: input.metas != null ? (input.metas as Prisma.InputJsonValue) : undefined,
+    metas: metasWithMediaFrame(input.metas, input.mediaFrame),
     // Secondary portfolio attachments removed — keep columns null.
     attachmentUrl: null,
     attachmentName: null,
@@ -361,7 +378,9 @@ const genericData = (input: TabItemInput) => ({
   featuredImage: str(input.featuredImage),
   status: statusOf(input.status),
   ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
-  metas: input.metas != null ? (input.metas as Prisma.InputJsonValue) : undefined,
+  ...(input.metas !== undefined || input.mediaFrame !== undefined
+    ? { metas: metasWithMediaFrame(input.metas, input.mediaFrame) }
+    : {}),
 })
 
 const genericUpdateData = (input: TabItemInput) => ({
@@ -371,8 +390,8 @@ const genericUpdateData = (input: TabItemInput) => ({
   ...(input.featuredImage !== undefined ? { featuredImage: str(input.featuredImage) } : {}),
   ...(input.status !== undefined ? { status: statusOf(input.status) } : {}),
   ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
-  ...(input.metas !== undefined
-    ? { metas: input.metas == null ? undefined : (input.metas as Prisma.InputJsonValue) }
+  ...(input.metas !== undefined || input.mediaFrame !== undefined
+    ? { metas: metasWithMediaFrame(input.metas, input.mediaFrame) }
     : {}),
 })
 
@@ -383,10 +402,13 @@ const omitMetas = <T extends { metas?: unknown }>(data: T) => {
   return rest
 }
 
+const frameColumn = (input: { mediaFrame?: unknown }) =>
+  input.mediaFrame === undefined ? {} : { mediaFrame: mediaFrameColumnValue(input.mediaFrame) }
+
 const listCreateData = (tab: TabRegistryEntry, input: TabItemInput) => {
   const data = genericData(input)
   if (tab.storage === 'faq' || tab.storage === 'mission_statement') {
-    return { ...omitMetas(data), legacyPostTypeId: tab.legacyPostTypeId }
+    return { ...omitMetas(data), ...frameColumn(input), legacyPostTypeId: tab.legacyPostTypeId }
   }
   if (tab.storage === 'product') {
     const pricing = productPricingFromInput(input)
@@ -403,7 +425,7 @@ const listCreateData = (tab: TabRegistryEntry, input: TabItemInput) => {
 
 const listUpdateData = (tab: TabRegistryEntry, input: TabItemInput) => {
   const data = genericUpdateData(input)
-  if (tab.storage === 'faq' || tab.storage === 'mission_statement') return omitMetas(data)
+  if (tab.storage === 'faq' || tab.storage === 'mission_statement') return { ...omitMetas(data), ...frameColumn(input) }
   if (tab.storage === 'product' && input.metas !== undefined) {
     const pricing = productPricingFromInput(input)
     return {
@@ -650,6 +672,7 @@ const createTabItem = async (profileId: string, tabKey: string, userId: string, 
         description: str(input.description),
         featuredMediaUrl: str(input.featuredImage),
         status: statusOf(input.status),
+        ...(tab.storage === 'why_choose_us' ? frameColumn(input) : {}),
       }
       if (tab.storage === 'about_me' && existing) {
         if (!String(data.description || '').trim() && existing.description) {
@@ -684,6 +707,7 @@ const createTabItem = async (profileId: string, tabKey: string, userId: string, 
               reviewUrl: str(input.url),
               imageUrl: str(input.featuredImage),
               status: Number(statusOf(input.status)),
+              ...frameColumn(input),
             }
           : tab.storage === 'review'
             ? {
@@ -693,6 +717,7 @@ const createTabItem = async (profileId: string, tabKey: string, userId: string, 
                 status: Number(statusOf(input.status)),
                 reviewUrl: str(input.url),
                 imageUrl: str(input.featuredImage),
+                ...frameColumn(input),
               }
             : listCreateData(tab, input)
     try {
@@ -768,6 +793,7 @@ const updateTabItem = async (
               ...(input.url !== undefined ? { reviewUrl: str(input.url) } : {}),
               ...(input.featuredImage !== undefined ? { imageUrl: str(input.featuredImage) } : {}),
               ...(input.status !== undefined ? { status: Number(statusOf(input.status)) } : {}),
+              ...frameColumn(input),
             }
           : tab.storage === 'review'
             ? {
@@ -777,6 +803,7 @@ const updateTabItem = async (
                 ...(input.metas?.rating !== undefined ? { rating: Number(input.metas.rating) || 5 } : {}),
                 ...(input.url !== undefined ? { reviewUrl: str(input.url) } : {}),
                 ...(input.featuredImage !== undefined ? { imageUrl: str(input.featuredImage) } : {}),
+                ...frameColumn(input),
               }
             : tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)
               ? {
@@ -784,6 +811,7 @@ const updateTabItem = async (
                   ...(input.description !== undefined ? { description: str(input.description) } : {}),
                   ...(input.featuredImage !== undefined ? { featuredMediaUrl: str(input.featuredImage) } : {}),
                   ...(input.status !== undefined ? { status: statusOf(input.status) } : {}),
+                  ...(tab.storage === 'why_choose_us' ? frameColumn(input) : {}),
                 }
               : listUpdateData(tab, input)
     // Singleton tables (WhyChooseUs / AboutMe) have no sortOrder column.

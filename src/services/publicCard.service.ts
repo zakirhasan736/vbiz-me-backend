@@ -26,6 +26,7 @@ import { resolveLiveAgentGreetingHostName } from '../utils/liveAgentGreeting'
 import { liveDashboardHub } from '../utils/liveDashboardHub'
 import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
+import { metasWithoutMediaFrame, readRowMediaFrame } from '../utils/mediaFrame'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUrl } from '../utils/mediaUrl'
 import { idsHiddenOnMemberPublicCard, withoutOwnedIds, type OwnerMediaRow } from '../utils/memberMediaVisibility'
 import { formatProfileLocation, hasProfileLocationParts } from '../utils/personalAddress'
@@ -1179,6 +1180,7 @@ const getDynamicSection = async (
             description: s.description,
             status: s.status,
             featured_image: imageUrl || null,
+            media_frame: readRowMediaFrame(s),
             review_link: { url: s.reviewUrl || '', has_link: Boolean(s.reviewUrl) },
           }
         }),
@@ -1241,6 +1243,7 @@ const getDynamicSection = async (
             issuer: '',
             year: '',
             featured_image: featuredFromField ? [{ id: p.id, doc_name: p.title, url: featuredFromField }] : [],
+            media_frame: readRowMediaFrame(p),
             general_info_url: p.url,
             attachments: featuredFromField ? [{ id: p.id, doc_name: p.title || 'image', url: featuredFromField }] : [],
             metas,
@@ -1466,7 +1469,7 @@ const getDynamicSection = async (
                 offerPrice: (p as { offerPrice?: string | null }).offerPrice,
                 metas: metasRaw,
               })
-              const metas = pricing.metas
+              const metas = metasWithoutMediaFrame({ ...pricing.metas }) as typeof pricing.metas
               const issuer = typeof metas.issuer === 'string' ? metas.issuer.trim() : ''
               const year = typeof metas.year === 'string' ? metas.year.trim() : ''
               const metaGeneralInfoUrl = typeof metas.general_info_url === 'string' ? metas.general_info_url.trim() : ''
@@ -1484,6 +1487,7 @@ const getDynamicSection = async (
                 price: pricing.price,
                 offerPrice: pricing.offerPrice,
                 featured_image: featuredImage,
+                media_frame: readRowMediaFrame(p),
                 general_info_url: publicHref,
                 url: publicHref,
                 video_url: isVideoTab ? publicHref : undefined,
@@ -1515,6 +1519,8 @@ const getDynamicSection = async (
         attachmentName: string | null
         status: string
         createdAt: Date
+        mediaFrame?: unknown
+        metas?: unknown
       }
       const [galleryRowsRaw, legacy] = await Promise.all([
         listGalleriesForProfile(profileId, takeOverride ?? 100).then((rows) =>
@@ -1537,6 +1543,7 @@ const getDynamicSection = async (
         attachmentName: p.attachmentName,
         status: String(p.status),
         createdAt: p.createdAt,
+        mediaFrame: p.mediaFrame,
       }))
       // Use Gallery when it has media (after portfolio backfill). Otherwise fall back to Portfolio.
       const items: PublicGalleryRow[] = galleryHasMedia(galleryRows)
@@ -1593,6 +1600,7 @@ const getDynamicSection = async (
               description: p.description,
               status: p.status === '0' ? 0 : 1,
               featured_image: featured,
+              media_frame: readRowMediaFrame(p),
               gallery: featured ? [featured] : [],
               general_info_url: p.url,
               created_at: p.createdAt,
@@ -1648,6 +1656,7 @@ const getDynamicSection = async (
             status: r.status,
             rating: r.rating,
             featured_image: asset,
+            media_frame: readRowMediaFrame(r),
             review_link: { url: reviewUrl, has_link: Boolean(reviewUrl) },
             general_info_url: reviewUrl,
           }

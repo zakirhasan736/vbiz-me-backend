@@ -38,6 +38,7 @@ const createBlog = catchAsyncError(async (req, res) => {
     featuredImage: body.featuredImage == null ? null : String(body.featuredImage),
     status: body.status == null ? null : String(body.status),
     sortOrder: typeof body.sortOrder === 'number' ? body.sortOrder : null,
+    mediaFrame: body.mediaFrame,
   })
   sendResponse(res, { success: true, statusCode: 201, message: 'Blog created', data })
 })
@@ -76,6 +77,7 @@ const updateBlog = catchAsyncError(async (req, res) => {
         body.featuredImage === undefined ? undefined : body.featuredImage == null ? null : String(body.featuredImage),
       status: body.status === undefined ? undefined : body.status == null ? null : String(body.status),
       sortOrder: typeof body.sortOrder === 'number' ? body.sortOrder : undefined,
+      mediaFrame: body.mediaFrame,
     }
   )
   sendResponse(res, { success: true, statusCode: 200, message: 'Blog updated', data })
@@ -139,6 +141,7 @@ const createTabItem = catchAsyncError(async (req, res) => {
       featuredImage: body.featuredImage == null ? null : String(body.featuredImage),
       status: body.status == null ? null : String(body.status),
       sortOrder: typeof body.sortOrder === 'number' ? body.sortOrder : null,
+      mediaFrame: body.mediaFrame,
       metas:
         body.metas && typeof body.metas === 'object' && !Array.isArray(body.metas)
           ? (body.metas as Record<string, unknown>)
@@ -166,6 +169,7 @@ const updateTabItem = catchAsyncError(async (req, res) => {
         body.featuredImage === undefined ? undefined : body.featuredImage == null ? null : String(body.featuredImage),
       status: body.status === undefined ? undefined : body.status == null ? null : String(body.status),
       sortOrder: typeof body.sortOrder === 'number' ? body.sortOrder : undefined,
+      mediaFrame: body.mediaFrame,
       metas:
         body.metas === undefined
           ? undefined

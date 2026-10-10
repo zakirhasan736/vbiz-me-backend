@@ -106,6 +106,17 @@ export function toGalleryWriteData(mapped: Record<string, unknown>): Record<stri
   next.featuredImage = featured
   next.attachmentUrl = null
   next.attachmentName = null
+  if ('mediaFrame' in mapped) {
+    const current =
+      next.metas && typeof next.metas === 'object' && !Array.isArray(next.metas)
+        ? { ...(next.metas as Record<string, unknown>) }
+        : {}
+    const frame = mapped.mediaFrame
+    if (frame && typeof frame === 'object') current.mediaFrame = frame
+    else delete current.mediaFrame
+    next.metas = current
+    delete next.mediaFrame
+  }
   if (next.status != null) next.status = String(next.status)
   return next
 }
@@ -142,6 +153,7 @@ const GALLERY_SAFE_SELECT = {
   createdAt: true,
   updatedAt: true,
   legacyPostId: true,
+  metas: true,
 } as const
 
 const withGalleryDefaults = (row: {
@@ -158,13 +170,14 @@ const withGalleryDefaults = (row: {
   createdAt: Date
   updatedAt: Date
   legacyPostId?: number | null
+  metas?: unknown
 }): LiveGalleryRow => ({
   ...row,
   attachmentUrl: row.attachmentUrl ?? null,
   attachmentName: row.attachmentName ?? null,
   deletedAt: null,
   legacyPostId: row.legacyPostId ?? null,
-  metas: null,
+  metas: row.metas ?? null,
 })
 
 /** Load Gallery rows with legacyPostId while keeping schema-drift fallbacks for older optional columns. */
