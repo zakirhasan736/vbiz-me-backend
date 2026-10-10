@@ -7,6 +7,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const URL_RE = /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i
 const CATALOG_NAMES = new Set(TAB_CATALOG.map((t) => t.name))
 const CATALOG_NAV = new Set(TAB_CATALOG.map((t) => t.navId))
+/** Legacy AI / saved tab labels → current catalog name. */
+const TAB_NAME_ALIASES: Record<string, string> = {
+  'Blogs and Media': 'Blogs',
+  Blog: 'Blogs',
+  'News/Blogs': 'Blogs',
+}
+
+function normalizeCatalogTabName(name: string): string {
+  return TAB_NAME_ALIASES[name] || name
+}
 
 export type ValidationIssue = { code: string; message: string; field?: string }
 
@@ -94,13 +104,16 @@ export function sanitizeBlueprint(raw: unknown): { blueprint: CardBlueprint; iss
     parsed = { ...parsed, personal: { ...parsed.personal, dob: '' } }
   }
 
-  const enabledTabs = (parsed.enabledTabs || []).filter((name) => CATALOG_NAMES.has(name))
-  const dropped = (parsed.enabledTabs || []).filter((name) => !CATALOG_NAMES.has(name))
+  const normalizedEnabled = (parsed.enabledTabs || []).map(normalizeCatalogTabName)
+  const enabledTabs = normalizedEnabled.filter((name) => CATALOG_NAMES.has(name))
+  const dropped = normalizedEnabled.filter((name) => !CATALOG_NAMES.has(name))
   for (const name of dropped) {
     issues.push({ code: 'unsupported_tab', field: 'enabledTabs', message: `Dropped unsupported tab “${name}”.` })
   }
 
-  const recommendedTabs = (parsed.recommendedTabs || []).filter((row) => CATALOG_NAMES.has(row.tab))
+  const recommendedTabs = (parsed.recommendedTabs || [])
+    .map((row) => ({ ...row, tab: normalizeCatalogTabName(row.tab) }))
+    .filter((row) => CATALOG_NAMES.has(row.tab))
 
   const about = parsed.personal.about || ''
   if (about.length > 4000) {

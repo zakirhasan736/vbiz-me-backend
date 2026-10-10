@@ -70,6 +70,11 @@ export type CardAgentSection = (typeof SECTIONS)[number]
 
 const TAB_BY_NAV = Object.fromEntries(TAB_CATALOG.map((t) => [t.navId, t]))
 const TAB_BY_NAME = Object.fromEntries(TAB_CATALOG.map((t) => [t.name.trim().toLowerCase(), t]))
+const TAB_NAME_ALIASES: Record<string, string> = {
+  'blogs and media': 'blogs',
+  blog: 'blogs',
+  'news/blogs': 'blogs',
+}
 const PINNED_SUGGEST_BLOCK = new Set(['home', 'about', 'public-cards', 'my-info'])
 
 function resolveCatalogTab(tab?: string, navId?: string) {
@@ -78,7 +83,8 @@ function resolveCatalogTab(tab?: string, navId?: string) {
     .trim()
     .toLowerCase()
   if (!key) return null
-  return TAB_BY_NAME[key] || null
+  const normalized = TAB_NAME_ALIASES[key] || key
+  return TAB_BY_NAME[normalized] || TAB_BY_NAME[key] || null
 }
 
 function ensureOpenAiConfigured() {

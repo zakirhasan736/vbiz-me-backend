@@ -146,8 +146,7 @@ function articleBlock(
 ): string {
   const items = pages.filter((page) => page.category === category)
   if (!items.length) return ''
-  const label =
-    category === 'blog' ? 'EXTRACTED SITE ARTICLES (place on Blogs and Media)' : 'EXTRACTED PORTFOLIO / PROJECT PAGES'
+  const label = category === 'blog' ? 'EXTRACTED SITE ARTICLES (place on Blogs)' : 'EXTRACTED PORTFOLIO / PROJECT PAGES'
   return `${label}:\n${items
     .slice(0, 12)
     .map((page, index) => {
