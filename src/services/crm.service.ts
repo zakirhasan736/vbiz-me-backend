@@ -493,16 +493,40 @@ async function loadScopedGuest(actor: CrmActor, id: string) {
 export async function patchCrmLead(
   actor: CrmActor,
   id: string,
-  body: { privateNotes?: string; lastReply?: string }
+  body: {
+    fullName?: string
+    email?: string
+    phone?: string
+    notes?: string
+    privateNotes?: string
+    lastReply?: string
+  }
 ): Promise<CrmLeadRow> {
   // Guest replies belong on notepad UserNotes, not GuestUserData contact saves.
   if (body.lastReply !== undefined) {
     throw new AppError(400, 'Replies are only supported on lead notes, not contact saves')
   }
   const existing = await loadScopedGuest(actor, id)
+  const data: Prisma.GuestUserDataUpdateInput = {}
+  if (body.fullName?.trim()) {
+    const { firstName, lastName } = splitName(body.fullName)
+    data.fullName = body.fullName.trim()
+    data.firstName = firstName
+    data.lastName = lastName || null
+  }
+  if (body.email !== undefined) {
+    data.email = body.email.trim() ? normalizeLeadEmail(body.email) : null
+  }
+  if (body.phone !== undefined) {
+    data.phone = body.phone.trim() || null
+  }
+  const notes = body.privateNotes ?? body.notes
+  if (notes !== undefined) {
+    data.meta = mergeAdminMeta(existing.meta, { privateNotes: notes })
+  }
   const updated = await prisma.guestUserData.update({
     where: { id },
-    data: { meta: mergeAdminMeta(existing.meta, body) },
+    data,
     include: {
       profile: profileInclude,
       _count: { select: { leadNotes: true } },

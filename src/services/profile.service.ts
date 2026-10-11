@@ -3956,6 +3956,38 @@ const patchContact = async (
   return row
 }
 
+const deleteContact = async (
+  userId: string,
+  role: string,
+  contactId: string
+): Promise<{ id: string; deleted: boolean }> => {
+  const profiles = await listForUser(userId, role)
+  const ownedIds = new Set(profiles.map((p) => p.id))
+
+  const guest = await prisma.guestUserData.findUnique({
+    where: { id: contactId },
+    select: { id: true, profileId: true },
+  })
+  if (guest && ownedIds.has(guest.profileId)) {
+    await prisma.guestUserData.delete({ where: { id: contactId } })
+    return { id: contactId, deleted: true }
+  }
+
+  const contact = await prisma.contact.findUnique({ where: { id: contactId }, select: { id: true, profileId: true } })
+  if (contact && ownedIds.has(contact.profileId)) {
+    await prisma.contact.delete({ where: { id: contactId } })
+    return { id: contactId, deleted: true }
+  }
+
+  const note = await prisma.userNote.findUnique({ where: { id: contactId }, select: { id: true, profileId: true } })
+  if (note && ownedIds.has(note.profileId)) {
+    await prisma.userNote.delete({ where: { id: contactId } })
+    return { id: contactId, deleted: true }
+  }
+
+  throw new AppError(404, 'Contact not found')
+}
+
 const csvEscape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`
 
 const exportContactsCsv = async (userId: string, role: string, profileId?: string) => {
@@ -4957,6 +4989,7 @@ const profileService = {
   listContacts,
   listContactsPage,
   patchContact,
+  deleteContact,
   exportContactsCsv,
   listTeamNotices,
   createTeamNotice,

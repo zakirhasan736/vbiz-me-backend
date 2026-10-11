@@ -373,6 +373,12 @@ const patchContact = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Contact updated', data })
 })
 
+const deleteContact = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const data = await profileService.deleteContact(req.user.id, req.user.role, String(req.params.id))
+  sendResponse(res, { success: true, statusCode: 200, message: 'Contact deleted', data })
+})
+
 const exportContacts = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const csv = await profileService.exportContactsCsv(
@@ -518,6 +524,7 @@ const profileController = {
   exportDashboard,
   contacts,
   patchContact,
+  deleteContact,
   exportContacts,
   listTeamNotices,
   createTeamNotice,

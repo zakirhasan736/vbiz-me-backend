@@ -23,12 +23,23 @@ const createLeadBody = z.object({
 
 const patchLeadBody = z
   .object({
+    fullName: z.string().trim().min(1).max(200).optional(),
+    email: z.union([z.string().trim().email().max(320), z.literal('')]).optional(),
+    phone: z.string().trim().max(40).optional(),
+    notes: z.string().max(5000).optional(),
     privateNotes: z.string().max(5000).optional(),
     lastReply: z.string().max(5000).optional(),
   })
-  .refine((v) => v.privateNotes !== undefined || v.lastReply !== undefined, {
-    message: 'At least one of privateNotes or lastReply is required',
-  })
+  .refine(
+    (v) =>
+      v.fullName !== undefined ||
+      v.email !== undefined ||
+      v.phone !== undefined ||
+      v.notes !== undefined ||
+      v.privateNotes !== undefined ||
+      v.lastReply !== undefined,
+    { message: 'Nothing to update' }
+  )
 
 const idParam = z.object({
   id: z.string().trim().min(1),
