@@ -26,7 +26,8 @@ describe('vBiz Me SMS copy', () => {
       cardUrl: 'https://vbiz.me/vCard/northstar-dental',
       detail: 'Alex proposed times. Open the card to choose one.',
     })
-    assert.match(text, /^vBiz Me\n/)
+    assert.match(text, /^vBiz Me LLC\n/)
+    assert.match(text, /Reply STOP to unsubscribe\.$/)
     assert.match(text, /1-on-1: Alex proposed times/)
     assert.match(text, /Card: Northstar Dental/)
     assert.match(text, /https:\/\/vbiz\.me\/vCard\/northstar-dental/)

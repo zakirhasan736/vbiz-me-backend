@@ -48,6 +48,51 @@ My role is to help sellers understand the full picture.`
   it('builds rich HTML from plain paragraphs', () => {
     assert.equal(plainTextToRichHtml('A\n\nB'), '<p>A</p><p>B</p>')
   })
+
+  it('puts a pasted quote in the review and the later name on the reviewer', () => {
+    const quote =
+      'I had no idea how much stress I was carrying until I finally started getting a clearer picture of my business finances. Gigi has a way of making complicated things feel manageable.'
+    const payload = preferFullPastedBodies('reviews', `${quote}\n— Michelle R.`, {
+      reviews: [{ author: quote, text: '— Michelle R.', rating: 5 }],
+    })
+    const row = (payload.reviews as Array<{ author: string; text: string }>)[0]
+    assert.equal(row?.author, 'Michelle R.')
+    assert.match(String(row?.text), /no idea how much stress/)
+    assert.doesNotMatch(String(row?.text), /Michelle R/)
+  })
+
+  it('keeps a review that is already name then quote', () => {
+    const quote =
+      'I had no idea how much stress I was carrying until I finally started getting a clearer picture of my business finances.'
+    const payload = preferFullPastedBodies('reviews', '', {
+      reviews: [{ author: 'Michelle R.', text: quote, rating: 5 }],
+    })
+    const row = (payload.reviews as Array<{ author: string; text: string }>)[0]
+    assert.equal(row?.author, 'Michelle R.')
+    assert.match(String(row?.text), /no idea how much stress/)
+  })
+
+  it('puts a short service name in the title when the write-up was pasted first', () => {
+    const writeup =
+      'Create a professional interactive card that brings contact information, services, videos, and booking together in one place for every client meeting.'
+    const payload = preferFullPastedBodies('services', '', {
+      services: [{ title: writeup, description: 'Digital Business Card Design', type: 'Other' }],
+    })
+    const row = (payload.services as Array<{ title: string; description: string }>)[0]
+    assert.equal(row?.title, 'Digital Business Card Design')
+    assert.match(String(row?.description), /interactive card/)
+  })
+
+  it('puts the question in the question field when the answer was pasted first', () => {
+    const answer =
+      'Yes, the card is fully editable and you can update it anytime through your account without reprinting anything for your team.'
+    const payload = preferFullPastedBodies('faqs', '', {
+      faqs: [{ question: answer, answer: 'Can I update my vCard anytime?' }],
+    })
+    const row = (payload.faqs as Array<{ question: string; answer: string }>)[0]
+    assert.equal(row?.question, 'Can I update my vCard anytime?')
+    assert.match(String(row?.answer), /fully editable/)
+  })
 })
 
 describe('buildTabFillSystemPrompt full-body rules', () => {

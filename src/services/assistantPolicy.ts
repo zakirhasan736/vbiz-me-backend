@@ -196,6 +196,10 @@ Body mode: ${summarize ? 'summarize' : 'as_written'}.
 ${extractRule}
 ${bodyRule}
 ${singleItemRule}
+The order of lines in the paste is not the order of fields. Decide by what the text is:
+- reviews: a short person name (even after a dash, quotes, or "by", and even when it is the last line) is "author". The testimonial paragraph is "text", even when that paragraph is pasted first.
+- services, portfolio, blogs: a short name or headline is "title". The longer write-up is "description", even when the write-up is pasted first.
+- faqs: the question is "question". The longer answer is "answer", even when the answer is pasted first.
 Do not invent reviews, credentials, dates, contact details, or claims.
 If the sources do not support this section, return the matching empty array/object.`
 }

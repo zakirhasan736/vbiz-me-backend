@@ -124,6 +124,6 @@ export function buildVbizSms(input: { topic: SmsTopic; cardName: string; cardUrl
   const cardName = input.cardName.replace(/\s+/g, ' ').trim() || 'vBiz card'
   const detail = input.detail.replace(/\s+/g, ' ').trim()
   const url = input.cardUrl.trim()
-  const text = `vBiz Me\n${input.topic}: ${detail}\nCard: ${cardName}\n${url}`
+  const text = `vBiz Me LLC\n${input.topic}: ${detail}\nCard: ${cardName}\n${url}\nReply STOP to unsubscribe.`
   return text.length <= MAX_SMS_CHARS ? text : `${text.slice(0, MAX_SMS_CHARS - 1)}…`
 }
