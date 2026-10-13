@@ -2,9 +2,13 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   cardChangeAlsoReachesSavers,
+  defaultPushDeliveryAudience,
+  exactOwnerPushProfileIds,
   isOperationalPushType,
   mergeAnnouncementPushProfiles,
   skipsPublicProfileGate,
+  subscriberKindsForDelivery,
+  userMatchesSpecificAnnouncement,
 } from '../utils/pushAudience'
 
 describe('push audience', () => {
@@ -52,5 +56,63 @@ describe('push audience', () => {
       activeSubscriptionProfileIds: ['someone-else'],
     })
     assert.deepEqual(inboxOnly.sort(), ['guest-card', 'owner-card'])
+  })
+
+  it('keeps owner push on the exact card profile only', () => {
+    assert.deepEqual(exactOwnerPushProfileIds({ primaryProfileId: 'julie-card' }), ['julie-card'])
+    assert.deepEqual(
+      exactOwnerPushProfileIds({
+        primaryProfileId: null,
+        additionalProfileIds: ['a', 'b', 'a'],
+      }).sort(),
+      ['a', 'b']
+    )
+  })
+
+  it('routes owner-only events away from public-card savers', () => {
+    assert.equal(defaultPushDeliveryAudience('save_contact'), 'owners')
+    assert.equal(defaultPushDeliveryAudience('viewer_return'), 'owners')
+    assert.equal(defaultPushDeliveryAudience('contact_updates'), 'followers')
+    assert.equal(defaultPushDeliveryAudience('theme_updates'), 'followers')
+    assert.equal(defaultPushDeliveryAudience('announcement_updates'), 'followers')
+    assert.deepEqual(subscriberKindsForDelivery('owners'), ['owner'])
+    assert.deepEqual(subscriberKindsForDelivery('followers'), ['follower'])
+    assert.equal(subscriberKindsForDelivery('all'), null)
+  })
+
+  it('matches inbox notices by userId / owned profile, not shared corporate email', () => {
+    assert.equal(
+      userMatchesSpecificAnnouncement({
+        userId: 'julie',
+        userEmail: 'corp@vbizme.com',
+        targetEmails: ['corp@vbizme.com'],
+        metaUserId: 'julie',
+        metaProfileId: 'julie-card',
+        ownedProfileIds: ['julie-card'],
+      }),
+      true
+    )
+    assert.equal(
+      userMatchesSpecificAnnouncement({
+        userId: 'corp-parent',
+        userEmail: 'corp@vbizme.com',
+        targetEmails: ['corp@vbizme.com'],
+        metaUserId: 'julie',
+        metaProfileId: 'julie-card',
+        ownedProfileIds: ['other-card'],
+      }),
+      false
+    )
+    assert.equal(
+      userMatchesSpecificAnnouncement({
+        userId: 'julie',
+        userEmail: 'julie@vbizme.com',
+        targetEmails: ['ignored@example.com'],
+        metaUserId: null,
+        metaProfileId: 'julie-card',
+        ownedProfileIds: ['julie-card'],
+      }),
+      true
+    )
   })
 })

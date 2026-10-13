@@ -2,8 +2,9 @@ import { randomBytes } from 'node:crypto'
 import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
 import { AccountStatus } from '../../generated/prisma/enums'
+import config from '../configs/config'
 import { buildAdminTeamCardsScopeWhere } from '../constants/adminTeamCards'
-import { buildFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
+import { buildFrontendPublicCardPath, buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
 import {
   CORPORATE_CARD_LIMIT_REACHED,
   FEATURE_LIMIT_REACHED,
@@ -130,8 +131,10 @@ import {
   findLinkedCorporateParentUserId,
   getEffectiveEntitlements,
 } from './entitlement.service'
+import exactOwnerNotifyService from './exactOwnerNotify.service'
 import pushService from './push.service'
 import { normalizeSeoSettings } from './seoMetadata.service'
+import smsService from './sms.service'
 import subscriptionService from './subscription.service'
 
 type LifecycleNotifyActor = { id: string; email: string; name?: string | null }
@@ -202,6 +205,7 @@ const notifyCardPausedOrSuspended = async (
 
     if (announcementEmails.length) {
       try {
+        const ownerUserId = profile.userId || profile.companyUserId || null
         await announcementService.create(actor, {
           type: 'warning',
           kind: 'warning',
@@ -210,7 +214,13 @@ const notifyCardPausedOrSuspended = async (
           status: 'active',
           targetType: 'specific',
           targetEmails: announcementEmails,
-          meta: { profileId: profile.id, action },
+          meta: {
+            profileId: profile.id,
+            action,
+            ...(ownerUserId ? { userId: ownerUserId } : {}),
+            channel: 'inbox',
+            sendPush: '1',
+          },
         })
       } catch (error) {
         logger.error(`Failed to create card ${action} announcement`, error)
@@ -261,6 +271,7 @@ const notifyCardActivated = async (actor: LifecycleNotifyActor, profileId: strin
     await announcementService.archiveLockNotices({ profileId: profile.id })
 
     try {
+      const ownerUserId = profile.userId || profile.companyUserId || null
       await announcementService.create(actor, {
         type: 'success',
         kind: 'announcement',
@@ -269,7 +280,13 @@ const notifyCardActivated = async (actor: LifecycleNotifyActor, profileId: strin
         status: 'active',
         targetType: 'specific',
         targetEmails: announcementEmails,
-        meta: { profileId: profile.id, action: 'activated', channel: 'inbox', sendPush: '1' },
+        meta: {
+          profileId: profile.id,
+          action: 'activated',
+          channel: 'inbox',
+          sendPush: '1',
+          ...(ownerUserId ? { userId: ownerUserId } : {}),
+        },
       })
     } catch (error) {
       logger.error('Failed to create card activated announcement', error)
@@ -3397,7 +3414,14 @@ const listPosts = async (
   const where = {
     profileId,
     deletedAt: null,
-    ...(postTypeName ? { postType: { name: { equals: postTypeName, mode: 'insensitive' as const } } } : {}),
+    ...(postTypeName
+      ? {
+          OR: [
+            { postType: { name: { equals: postTypeName, mode: 'insensitive' as const } } },
+            { postType: { title: { equals: postTypeName, mode: 'insensitive' as const } } },
+          ],
+        }
+      : {}),
   }
   const [items, total] = await Promise.all([
     prisma.post.findMany({
@@ -3953,6 +3977,31 @@ const patchContact = async (
           : (await tryGuest()) || (await tryContact()) || (await tryNote())
 
   if (!row) throw new AppError(404, 'Contact not found')
+
+  // Owner → visitor reply: email + push (visitor's own cards) + SMS — exact recipient only.
+  const replyText = body.lastReply?.trim()
+  if (replyText && (row.source === 'note' || row.source === 'contact')) {
+    const cardName = row.profile?.name?.trim() || 'a vBiz card'
+    const frontendBase = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
+    const cardUrl = row.profile?.slug ? buildFrontendPublicCardUrl(frontendBase, row.profile.slug) : ''
+    void exactOwnerNotifyService
+      .notifyVisitorChannels({
+        email: row.email,
+        phone: row.phone,
+        title: `Reply from ${cardName}`,
+        body: replyText.slice(0, 200),
+        emailHtml: `<div style="font-family:sans-serif;line-height:1.5"><p><strong>${escapeHtml(cardName)}</strong> replied:</p><p>${escapeHtml(replyText)}</p></div>`,
+        smsTopic: 'Note',
+        cardName,
+        cardUrl,
+        pushType: 'contact_updates',
+      })
+      .catch((error) => logger.error('Visitor reply notify failed', { contactId, error }))
+
+    // Owner confirmation stays on this exact card only (push already covered by UI; SMS optional).
+    void smsService.notifyProfilePhone(row.profile.id, 'Note', `Your reply was sent to ${row.name || 'the visitor'}.`)
+  }
+
   return row
 }
 

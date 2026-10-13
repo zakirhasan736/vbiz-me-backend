@@ -5,6 +5,7 @@ import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
 import { prisma } from '../utils/prisma'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
+import { userMatchesSpecificAnnouncement } from '../utils/pushAudience'
 import type { SmsTopic } from '../utils/smsMessage'
 import type {
   AnnouncementKind,
@@ -417,10 +418,11 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
           // If meta contains a profileId (explicit card owner), include it
           if (profileId) profileIds.add(profileId)
 
+          // Exact identity: meta.userId → only cards that user directly owns (not corporate children).
           const metaUserId = metaRecord(meta)?.userId
           if (typeof metaUserId === 'string' && metaUserId.trim()) {
             const owned = await prisma.profile.findMany({
-              where: { OR: [{ userId: metaUserId }, { companyUserId: metaUserId }] },
+              where: { userId: metaUserId.trim() },
               select: { id: true },
             })
             for (const p of owned) profileIds.add(p.id)
@@ -442,8 +444,15 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
             type: 'announcement_updates',
           }
 
+          // Public notices → savers/followers who allowed notifications.
+          // Backoffice/inbox companions → owner devices only for that card.
+          const deliveryAudience = showPublic ? ('followers' as const) : ('owners' as const)
+
           for (const pid of profileIds) {
-            await pushService.sendToProfile(pid, payloadPartial)
+            await pushService.sendToProfile(pid, payloadPartial, {
+              audience: deliveryAudience,
+              allowPrivate: true,
+            })
           }
 
           // Guest email blast only for public-facing specific card notices.
@@ -610,29 +619,51 @@ const clearLive = async (actor: Actor) => {
   return { clearedCount: announcementIds.length }
 }
 
-const getActiveForUser = async (user: { email: string; role?: string }) => {
+const getActiveForUser = async (user: { id: string; email: string; role?: string }) => {
   const now = new Date()
   const email = user.email.trim().toLowerCase()
+  const userId = user.id.trim()
 
-  const candidates = await prisma.announcement.findMany({
-    where: {
-      status: 'active',
-      AND: [
-        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-        { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
-      ],
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 40,
-  })
+  const [candidates, ownedProfiles] = await Promise.all([
+    prisma.announcement.findMany({
+      where: {
+        status: 'active',
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 40,
+    }),
+    prisma.profile.findMany({
+      where: { userId },
+      select: { id: true },
+    }),
+  ])
 
-  const matchesEmail = (row: AnnouncementRow) =>
-    row.targetType === 'specific' && row.targetEmails.map((e) => e.toLowerCase()).includes(email)
+  const ownedProfileIds = ownedProfiles.map((profile) => profile.id)
 
-  const inbox = candidates.filter(matchesEmail).map(serializeAnnouncement)
+  const matchesIdentity = (row: AnnouncementRow) => {
+    if (row.targetType !== 'specific') return false
+    const meta = metaRecord(row.meta)
+    const metaUserId = typeof meta?.userId === 'string' ? meta.userId : null
+    const metaProfileId = typeof meta?.profileId === 'string' ? meta.profileId : null
+    return userMatchesSpecificAnnouncement({
+      userId,
+      userEmail: email,
+      targetEmails: row.targetEmails,
+      metaUserId,
+      metaProfileId,
+      ownedProfileIds,
+    })
+  }
 
+  const inbox = candidates.filter(matchesIdentity).map(serializeAnnouncement)
+
+  // Global banner is for every signed-in owner/admin. Specific banners stay identity-scoped.
   const bannerRow =
-    candidates.find((row) => !isInboxOnly(row.meta) && matchesEmail(row)) ??
+    candidates.find((row) => !isInboxOnly(row.meta) && matchesIdentity(row)) ??
     candidates.find((row) => row.targetType === 'all' && !isInboxOnly(row.meta))
 
   return {

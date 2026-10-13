@@ -5,7 +5,8 @@ import AppError from '../error/AppError'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
-import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
+import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
+import { exactOwnerPushProfileIds } from '../utils/pushAudience'
 import type {
   CancelMeetingInput,
   CompleteMeetingInput,
@@ -299,8 +300,9 @@ async function findGuestPushProfile(guestEmail: string) {
     select: { id: true },
   })
   if (!user) return null
+  // Guest/requester push: only cards they directly own — never corporate children.
   const profiles = await prisma.profile.findMany({
-    where: { OR: [{ userId: user.id }, { companyUserId: user.id }] },
+    where: { userId: user.id },
     select: { id: true },
   })
   if (!profiles.length) return null
@@ -321,6 +323,7 @@ async function resolveCardStakeholderEmails(profileId: string): Promise<{
   slug: string | null
   companyUserId: string | null
   userId: string | null
+  ownerUserId: string | null
 }> {
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
@@ -350,6 +353,10 @@ async function resolveCardStakeholderEmails(profileId: string): Promise<{
     slug: profile.slug,
     companyUserId: profile.companyUserId,
     userId: profile.userId,
+    ownerUserId: resolveDirectOwnerUserId({
+      userId: profile.userId,
+      companyUserId: profile.companyUserId,
+    }),
   }
 }
 
@@ -393,9 +400,11 @@ async function createStakeholderInboxNotice(opts: {
   profileId: string
   slug?: string | null
   requestId?: string
+  userId?: string | null
 }) {
   const emails = [...new Set(opts.emails.map((e) => e.trim().toLowerCase()).filter(Boolean))]
   if (!emails.length) return
+  const userId = opts.userId?.trim() || null
   try {
     await prisma.announcement.create({
       data: {
@@ -410,6 +419,7 @@ async function createStakeholderInboxNotice(opts: {
           channel: 'inbox',
           category: 'event',
           profileId: opts.profileId,
+          ...(userId ? { userId } : {}),
           ...(opts.slug ? { slug: opts.slug } : {}),
           ...(opts.requestId ? { oneOnOneRequestId: opts.requestId } : {}),
           sendPush: '0',
@@ -427,12 +437,17 @@ function notifyCardPush(
   payload: { title: string; body: string; url?: string },
   slug?: string | null
 ) {
-  pushService.notifyProfileUpdate(profileId, {
-    title: payload.title,
-    body: payload.body,
-    type: 'meeting_alert',
-    url: payload.url || (slug ? buildFrontendPublicCardPath(slug) : undefined),
-  })
+  // Owner-device only — savers who follow this public card must not get owner CRM/1-on-1 alerts.
+  pushService.notifyProfileUpdate(
+    profileId,
+    {
+      title: payload.title,
+      body: payload.body,
+      type: 'meeting_alert',
+      url: payload.url || (slug ? buildFrontendPublicCardPath(slug) : undefined),
+    },
+    { audience: 'owners', allowPrivate: true }
+  )
 }
 
 async function sendEmailsSafe(emails: string[], subject: string, html: string, context: string) {
@@ -495,19 +510,22 @@ async function pushGuestMeetingNotification(opts: {
 
 async function notifyOwnerMeetingPush(
   profileId: string,
-  ownerEmails: string[],
+  _ownerEmails: string[],
   payload: { title: string; body: string; url?: string },
   slug?: string | null
 ) {
-  const matched = await pushService.profileIdsMatchingEmails(ownerEmails)
-  const profileIds = [...new Set([profileId, ...matched])]
-  for (const id of profileIds) {
-    pushService.notifyProfileUpdate(id, {
-      title: payload.title,
-      body: payload.body,
-      type: 'meeting_alert',
-      url: payload.url || (slug ? buildFrontendPublicCardPath(slug) : undefined),
-    })
+  // Exact card only — never fan out to sibling corporate cards by email.
+  for (const id of exactOwnerPushProfileIds({ primaryProfileId: profileId })) {
+    pushService.notifyProfileUpdate(
+      id,
+      {
+        title: payload.title,
+        body: payload.body,
+        type: 'meeting_alert',
+        url: payload.url || (slug ? buildFrontendPublicCardPath(slug) : undefined),
+      },
+      { audience: 'owners', allowPrivate: true }
+    )
   }
 }
 
@@ -591,9 +609,7 @@ const createPublicRequest = async (input: CreatePublicRequestInput) => {
       { label: 'Phone', value: guestPhone || '—' },
       { label: 'Message', value: messageLine || '—' },
     ],
-    footer: stakeholders.companyUserId
-      ? 'You are receiving this because you own or manage this card (including corporate).'
-      : 'You are receiving this because you own this card.',
+    footer: 'You are receiving this because you own this card.',
   })
 
   await sendEmailsSafe(stakeholders.emails, `New 1-on-1 request from ${guestName}`, emailHtml, '1-on-1 request owner')
@@ -619,6 +635,7 @@ const createPublicRequest = async (input: CreatePublicRequestInput) => {
     profileId: profile.id,
     slug: stakeholders.slug,
     requestId: row.id,
+    userId: stakeholders.ownerUserId,
   })
 
   return serializeRequest(row)
@@ -930,9 +947,7 @@ const confirmGuestSlot = async (requestId: string, input: ConfirmGuestSlotInput)
       ],
       ctaLabel: calendar.meetLink ? 'Open join link' : undefined,
       ctaUrl: calendar.meetLink,
-      footer: stakeholders.companyUserId
-        ? 'Sent to the card owner and linked corporate manager.'
-        : 'Sent to the card owner.',
+      footer: 'Sent to the card owner.',
     }),
     '1-on-1 confirm stakeholders'
   )
@@ -949,6 +964,7 @@ const confirmGuestSlot = async (requestId: string, input: ConfirmGuestSlotInput)
     profileId: profile.id,
     slug: stakeholders.slug,
     requestId: request.id,
+    userId: stakeholders.ownerUserId,
   })
 
   return {

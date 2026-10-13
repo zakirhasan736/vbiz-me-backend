@@ -37,6 +37,7 @@ import { buildSaveContactFields } from '../utils/saveContactPayload'
 import { collectSaveContactPhotoCandidates, resolveSaveContactPhotoUrls } from '../utils/saveContactPhoto'
 import { resolveProfileSharePreviewImageUrl, SHARE_PREVIEW_IMAGE_SETTING_KEY } from '../utils/sharePreviewImage'
 import { hasFullSaveContactInfo } from '../utils/smsMessage'
+import exactOwnerNotifyService from './exactOwnerNotify.service'
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
 import pushService, { mediaFromProfile } from './push.service'
@@ -2382,13 +2383,34 @@ const saveGuestUser = async (
 
   liveDashboardHub.emitKpi('save', [profile.userId, profile.companyUserId])
 
+  const base = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
+  const cardUrl = profile.slug ? buildFrontendPublicCardUrl(base, profile.slug) : base
+  const cardName = profile.name?.trim() || 'vBiz card'
+
+  // Exact card owner only — keep visitor SMS + owner inbox/push/SMS channels.
+  void exactOwnerNotifyService
+    .notifyExactCardOwnerInbox({
+      profileId: profile.id,
+      title: `New contact: ${fullName}`,
+      body: `${fullName}${email ? ` · ${email}` : ''}${phone ? ` · ${phone}` : ''} saved their details on ${cardName}.`,
+      category: 'contact_save',
+      push: {
+        title: 'New contact saved',
+        body: `${fullName} shared their details on your card.`,
+        type: 'save_contact',
+        url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
+      },
+    })
+    .catch((error) => logger.error('Owner contact-save inbox notify failed', { profileId: profile.id, error }))
+
+  void smsService.notifyProfilePhone(profile.id, 'Saved contact', `${fullName} saved their details on your card.`)
+
   if (hasFullSaveContactInfo({ name: fullName, email, phone })) {
-    const base = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
     smsService.sendTopicSms({
       to: phone,
       topic: 'Saved contact',
-      cardName: profile.name?.trim() || 'vBiz card',
-      cardUrl: profile.slug ? buildFrontendPublicCardUrl(base, profile.slug) : base,
+      cardName,
+      cardUrl,
       detail: `You saved ${profile.name?.trim() || 'this card'}. We'll text you about this card.`,
     })
   }
@@ -2481,7 +2503,24 @@ const saveNote = async (profileId: string, content: string, options: PublicNoteO
   const note = await prisma.userNote.create({
     data: { profileId, content, meta },
   })
-  void smsService.notifyProfilePhone(profile.id, 'Note', `${authorName || 'A visitor'} left a note on this card.`)
+  const notePreview = content.trim().slice(0, 120)
+  const authorLabel = authorName || 'A visitor'
+  // Keep SMS + add exact-owner inbox/push (not corporate siblings).
+  void smsService.notifyProfilePhone(profile.id, 'Note', `${authorLabel} left a note on this card.`)
+  void exactOwnerNotifyService
+    .notifyExactCardOwnerInbox({
+      profileId: profile.id,
+      title: `New note from ${authorLabel}`,
+      body: notePreview || `${authorLabel} left a note on your card.`,
+      category: 'note',
+      push: {
+        title: `Note from ${authorLabel}`,
+        body: notePreview || 'Open your card to read and reply.',
+        type: 'contact_updates',
+        url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
+      },
+    })
+    .catch((error) => logger.error('Owner note inbox notify failed', { profileId: profile.id, error }))
   return mapPublicNote(note)
 }
 
@@ -2539,6 +2578,14 @@ const saveContactCard = async (
     body: `Someone saved ${profile.name?.trim() || 'your card'} to their phone.`,
     url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
   })
+  void exactOwnerNotifyService
+    .notifyExactCardOwnerInbox({
+      profileId: profile.id,
+      title: 'Contact saved to phone',
+      body: `Someone saved ${profile.name?.trim() || 'your card'} to their phone.`,
+      category: 'contact_save',
+    })
+    .catch((error) => logger.error('Owner VCF-save inbox notify failed', { profileId: profile.id, error }))
   // Do not emit dashboard:kpi save — that KPI tracks guest form submissions (GuestUserData), not VCF downloads.
 
   const frontendBase = (config.FRONTEND_URL || '').replace(/\/$/, '')
@@ -2654,7 +2701,8 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
   ])
   if (!savedGuest || !savedContact || recentNotice) return
 
-  const ownerEmails = [...new Set([profile.user?.email, profile.companyUser?.email])]
+  const ownerUserId = profile.userId || profile.companyUserId || null
+  const ownerEmails = [...new Set([profile.user?.email, !profile.userId ? profile.companyUser?.email : null])]
     .map((email) => (email || '').trim().toLowerCase())
     .filter(Boolean)
   if (!ownerEmails.length) return
@@ -2691,6 +2739,7 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
           channel: 'inbox',
           source: RETURNING_SAVED_GUEST_EVENT,
           profileId: profile.id,
+          ...(ownerUserId ? { userId: ownerUserId } : {}),
           guestId,
           guestUserId: savedGuest.id,
           ...(profile.slug ? { slug: profile.slug } : {}),

@@ -7,7 +7,8 @@ import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
-import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
+import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
+import { exactOwnerPushProfileIds } from '../utils/pushAudience'
 import type {
   CreateMeetingInput,
   ListMeetingsQuery,
@@ -220,19 +221,22 @@ async function resolveOptionalGuestUserDataId(
 async function resolveOwnerEmails(profileId: string | null | undefined): Promise<{
   emails: string[]
   displayName: string | null
+  ownerUserId: string | null
 }> {
-  if (!profileId) return { emails: [], displayName: null }
+  if (!profileId) return { emails: [], displayName: null, ownerUserId: null }
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: {
       name: true,
       email: true,
+      userId: true,
+      companyUserId: true,
       user: { select: { email: true, name: true } },
       companyUser: { select: { email: true } },
     },
   })
-  if (!profile) return { emails: [], displayName: null }
+  if (!profile) return { emails: [], displayName: null, ownerUserId: null }
 
   const emails = collectProfileNotificationEmails({
     profileEmail: profile.email,
@@ -243,6 +247,10 @@ async function resolveOwnerEmails(profileId: string | null | undefined): Promise
   return {
     emails,
     displayName: profile.user?.name?.trim() || profile.name?.trim() || null,
+    ownerUserId: resolveDirectOwnerUserId({
+      userId: profile.userId,
+      companyUserId: profile.companyUserId,
+    }),
   }
 }
 
@@ -371,33 +379,25 @@ function meetingAlertPayload(meeting: MeetingRow) {
   }
 }
 
-/** Card on the meeting, plus any account that matches the owner or guest email and already allowed push. */
-async function profileIdsForMeetingPush(meeting: MeetingRow, emails: string[]) {
-  const ids = new Set<string>()
-  if (meeting.scope === 'group') {
-    for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) ids.add(profileId)
-  } else if (meeting.profileId) {
-    ids.add(meeting.profileId)
-  }
+/**
+ * Exact invited cards for schedule push.
+ * Guest/requester devices are resolved separately by direct-owned email match only.
+ */
+async function profileIdsForMeetingPush(meeting: MeetingRow, guestEmails: string[] = []) {
+  const ids = new Set<string>(
+    exactOwnerPushProfileIds({
+      primaryProfileId: meeting.scope === 'group' ? null : meeting.profileId,
+      additionalProfileIds: meeting.scope === 'group' ? parseGroupProfileIds(meeting.groupProfileIds) : [],
+    })
+  )
 
-  const normalized = [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))]
+  const normalized = [...new Set(guestEmails.map((email) => email.trim().toLowerCase()).filter(Boolean))]
   if (!normalized.length) return [...ids]
 
-  const users = await prisma.user.findMany({
-    where: { email: { in: normalized } },
-    select: { id: true },
-  })
-  const userIds = users.map((user) => user.id)
-  const profiles = await prisma.profile.findMany({
-    where: {
-      OR: [
-        { email: { in: normalized } },
-        ...(userIds.length ? [{ userId: { in: userIds } }, { companyUserId: { in: userIds } }] : []),
-      ],
-    },
-    select: { id: true },
-  })
-  for (const profile of profiles) ids.add(profile.id)
+  // Guests: only profiles they directly own (userId), never corporate children.
+  for (const profileId of await pushService.profileIdsMatchingEmails(normalized)) {
+    ids.add(profileId)
+  }
   return [...ids]
 }
 
@@ -405,26 +405,56 @@ async function notifyOwnerPush(meeting: MeetingRow, emails: string[] = []) {
   if (meeting.scope === 'global') return
 
   const payload = meetingAlertPayload(meeting)
-  const profileIds = await profileIdsForMeetingPush(meeting, emails)
-  for (const profileId of profileIds) {
-    pushService.notifyProfileUpdate(profileId, payload)
+  const ownerEmailSet = new Set<string>()
+  if (meeting.scope === 'group') {
+    for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) {
+      const resolved = await resolveOwnerEmails(profileId)
+      for (const email of resolved.emails) ownerEmailSet.add(email)
+    }
+  } else if (meeting.profileId) {
+    const resolved = await resolveOwnerEmails(meeting.profileId)
+    for (const email of resolved.emails) ownerEmailSet.add(email)
+  }
+
+  // Owner cards → owner devices only. Guest email-matched cards → their devices (all kinds).
+  const guestEmails = emails.filter((email) => !ownerEmailSet.has(email.trim().toLowerCase()))
+  const ownerProfileIds = await profileIdsForMeetingPush(meeting, [])
+  const ownerSet = new Set(ownerProfileIds)
+  const guestProfileIds = guestEmails.length
+    ? (await pushService.profileIdsMatchingEmails(guestEmails)).filter((id) => !ownerSet.has(id))
+    : []
+
+  for (const profileId of ownerProfileIds) {
+    pushService.notifyProfileUpdate(profileId, payload, { audience: 'owners', allowPrivate: true })
+  }
+  for (const profileId of guestProfileIds) {
+    pushService.notifyProfileUpdate(profileId, payload, { audience: 'all', allowPrivate: true })
   }
 }
 
 async function resolveOwnerEmailsForMeeting(meeting: MeetingRow): Promise<{
   emails: string[]
   displayName: string | null
+  ownerUserIds: string[]
 }> {
-  if (meeting.scope === 'global') return { emails: [], displayName: null }
+  if (meeting.scope === 'global') return { emails: [], displayName: null, ownerUserIds: [] }
 
   if (meeting.scope === 'group') {
     const ids = parseGroupProfileIds(meeting.groupProfileIds)
     const emailSets = await Promise.all(ids.map((profileId) => resolveOwnerEmails(profileId)))
     const emails = [...new Set(emailSets.flatMap((entry) => entry.emails))]
-    return { emails, displayName: emailSets[0]?.displayName ?? null }
+    const ownerUserIds = [
+      ...new Set(emailSets.map((entry) => entry.ownerUserId).filter((id): id is string => Boolean(id))),
+    ]
+    return { emails, displayName: emailSets[0]?.displayName ?? null, ownerUserIds }
   }
 
-  return resolveOwnerEmails(meeting.profileId)
+  const single = await resolveOwnerEmails(meeting.profileId)
+  return {
+    emails: single.emails,
+    displayName: single.displayName,
+    ownerUserIds: single.ownerUserId ? [single.ownerUserId] : [],
+  }
 }
 
 async function notifyOwnerAnnouncement(
@@ -432,7 +462,8 @@ async function notifyOwnerAnnouncement(
   meeting: MeetingRow,
   ownerEmails: string[],
   meetLabel: string,
-  onlyBackoffice = false
+  onlyBackoffice = false,
+  ownerUserId?: string | null
 ) {
   if (!ownerEmails.length) return
   if (meeting.scope === 'global') return
@@ -440,6 +471,7 @@ async function notifyOwnerAnnouncement(
   const meetLine = meeting.meetLink ? `\n\n${meetLabel}: ${meeting.meetLink}` : ''
   const notesLine = meeting.notes?.trim() ? `\n\n${meeting.notes.trim()}` : ''
   const scopeLine = meeting.scope === 'group' ? '\n\nThis is a group session for your team cards.' : ''
+  const profileId = meeting.profileId || parseGroupProfileIds(meeting.groupProfileIds)[0] || ''
 
   try {
     await announcementService.create(actor, {
@@ -451,7 +483,8 @@ async function notifyOwnerAnnouncement(
       targetType: 'specific',
       targetEmails: ownerEmails,
       meta: {
-        profileId: meeting.profileId || parseGroupProfileIds(meeting.groupProfileIds)[0] || '',
+        profileId,
+        ...(ownerUserId ? { userId: ownerUserId } : {}),
         meetingId: meeting.id,
         meetLink: meeting.meetLink || '',
         category: 'event',
@@ -482,12 +515,24 @@ async function resolveGuestContact(guestUserDataId: string | null | undefined): 
 }
 
 async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel: string, onlyBackoffice = false) {
-  const { emails: ownerEmails, displayName: ownerDisplayName } = await resolveOwnerEmailsForMeeting(meeting)
+  const {
+    emails: ownerEmails,
+    displayName: ownerDisplayName,
+    ownerUserIds,
+  } = await resolveOwnerEmailsForMeeting(meeting)
   const guest = await resolveGuestContact(meeting.guestUserDataId)
   const receiverEmails = [...new Set([...ownerEmails, ...(guest.email ? [guest.email] : [])])]
   const displayName = guest.name || ownerDisplayName
 
-  await notifyOwnerAnnouncement(actor, meeting, receiverEmails, meetLabel, onlyBackoffice)
+  // Inbox is owner-identity scoped; guest still gets email/push via notifyOwnerPush + sendMeetingEmails.
+  await notifyOwnerAnnouncement(
+    actor,
+    meeting,
+    ownerEmails,
+    meetLabel,
+    onlyBackoffice,
+    ownerUserIds.length === 1 ? ownerUserIds[0] : null
+  )
   await notifyOwnerPush(meeting, receiverEmails)
   if (receiverEmails.length) {
     void sendMeetingEmails({

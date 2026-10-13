@@ -125,18 +125,21 @@ function crmEventEmailHtml(input: {
 async function resolveProfileEmails(profileId: string | null | undefined): Promise<{
   emails: string[]
   displayName: string | null
+  ownerUserId: string | null
 }> {
-  if (!profileId) return { emails: [], displayName: null }
+  if (!profileId) return { emails: [], displayName: null, ownerUserId: null }
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: {
       name: true,
       email: true,
+      userId: true,
+      companyUserId: true,
       user: { select: { email: true, name: true } },
       companyUser: { select: { email: true } },
     },
   })
-  if (!profile) return { emails: [], displayName: null }
+  if (!profile) return { emails: [], displayName: null, ownerUserId: null }
   const emails = collectProfileNotificationEmails({
     profileEmail: profile.email,
     userEmail: profile.user?.email,
@@ -145,6 +148,7 @@ async function resolveProfileEmails(profileId: string | null | undefined): Promi
   return {
     emails,
     displayName: profile.user?.name?.trim() || profile.name?.trim() || null,
+    ownerUserId: profile.userId || profile.companyUserId || null,
   }
 }
 
@@ -174,28 +178,53 @@ async function processWorkNoteReminders(leadMinutes: number) {
     },
     take: 80,
     include: {
-      assignee: { select: { email: true } },
-      createdBy: { select: { email: true } },
-      profile: { select: { id: true, email: true, user: { select: { email: true } } } },
+      assignee: { select: { id: true, email: true } },
+      createdBy: { select: { id: true, email: true } },
+      profile: {
+        select: {
+          id: true,
+          email: true,
+          userId: true,
+          user: { select: { email: true } },
+        },
+      },
     },
   })
 
   for (const note of notes) {
-    const emails = [note.assignee?.email, note.createdBy.email, note.profile?.email, note.profile?.user?.email].filter(
-      (e): e is string => Boolean(e)
-    )
-
     const overdue = Boolean(note.dueAt && note.dueAt.getTime() < now.getTime())
     const dueLabel = note.dueAt ? note.dueAt.toLocaleString() : 'soon'
+    const title = overdue ? `Overdue note: ${note.title}` : `Note reminder: ${note.title}`
+    const body = overdue
+      ? `"${note.title}" was due ${dueLabel}. Open CRM Notes to update it.`
+      : `"${note.title}" is due ${dueLabel}. Open CRM Notes to continue.`
 
-    await notifyEmails(
-      emails,
-      overdue ? `Overdue note: ${note.title}` : `Note reminder: ${note.title}`,
-      overdue
-        ? `"${note.title}" was due ${dueLabel}. Open CRM Notes to update it.`
-        : `"${note.title}" is due ${dueLabel}. Open CRM Notes to continue.`,
-      { workNoteId: note.id, href: '/crm' }
-    )
+    // Exact people only — separate inbox rows so corporate siblings never share one blast.
+    const recipients: Array<{ email: string; userId?: string; profileId?: string }> = []
+    if (note.assignee?.email) {
+      recipients.push({ email: note.assignee.email, userId: note.assignee.id })
+    }
+    if (note.createdBy.email && note.createdBy.id !== note.assignee?.id) {
+      recipients.push({ email: note.createdBy.email, userId: note.createdBy.id })
+    }
+    if (note.profile?.userId && note.profile.user?.email) {
+      if (!recipients.some((r) => r.userId === note.profile!.userId)) {
+        recipients.push({
+          email: note.profile.user.email,
+          userId: note.profile.userId,
+          profileId: note.profile.id,
+        })
+      }
+    }
+
+    for (const recipient of recipients) {
+      await notifyEmails([recipient.email], title, body, {
+        workNoteId: note.id,
+        href: '/crm',
+        ...(recipient.userId ? { userId: recipient.userId } : {}),
+        ...(recipient.profileId || note.profileId ? { profileId: recipient.profileId || note.profileId || '' } : {}),
+      })
+    }
 
     if (note.profileId) {
       pushService.notifyProfileUpdate(note.profileId, {
@@ -403,11 +432,49 @@ async function processCrmEventReminders() {
     const receiverBody = `${event.type} for ${event.host} — ${event.date} ${event.time}.${messageSummary}${attachmentSummary}`
     const pushBody = description ? truncateForPush(description) : `${event.date} ${event.time}`
 
-    await notifyEmails(recipientList, `CRM event: ${event.type}`, receiverBody, {
-      crmEventId: event.id,
-      href: '/crm',
-    })
+    // Inbox: exact card owner(s) with userId; external recipientEmail keeps email-only match.
+    if (event.scope === 'group') {
+      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) {
+        const resolved = await resolveProfileEmails(profileId)
+        if (resolved.emails.length) {
+          await notifyEmails(resolved.emails, `CRM event: ${event.type}`, receiverBody, {
+            crmEventId: event.id,
+            href: '/crm',
+            profileId,
+            ...(resolved.ownerUserId ? { userId: resolved.ownerUserId } : {}),
+          })
+        }
+      }
+    } else if (event.profileId) {
+      const resolved = await resolveProfileEmails(event.profileId)
+      if (resolved.emails.length) {
+        await notifyEmails(resolved.emails, `CRM event: ${event.type}`, receiverBody, {
+          crmEventId: event.id,
+          href: '/crm',
+          profileId: event.profileId,
+          ...(resolved.ownerUserId ? { userId: resolved.ownerUserId } : {}),
+        })
+      }
+    }
 
+    const ownerEmailSet = new Set<string>()
+    if (event.profileId) {
+      for (const email of (await resolveProfileEmails(event.profileId)).emails) ownerEmailSet.add(email)
+    }
+    if (event.scope === 'group') {
+      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) {
+        for (const email of (await resolveProfileEmails(profileId)).emails) ownerEmailSet.add(email)
+      }
+    }
+    const externalEmail = event.recipientEmail?.trim().toLowerCase() || ''
+    if (externalEmail && !ownerEmailSet.has(externalEmail)) {
+      await notifyEmails([externalEmail], `CRM event: ${event.type}`, receiverBody, {
+        crmEventId: event.id,
+        href: '/crm',
+      })
+    }
+
+    // Email channel unchanged — every intended address still receives Zoho mail.
     if (config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
       const html = crmEventEmailHtml({
         recipientName: displayName || 'there',

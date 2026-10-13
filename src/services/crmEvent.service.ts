@@ -484,16 +484,28 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
         .catch((error) => logger.error('CRM schedule email failed', error))
     }
     const pushIds = new Set<string>()
-    if (!guest && row.profileId) pushIds.add(row.profileId)
-    if (personEmail) {
+    // Exact card for owner-targeted CRM schedule; guest recipients match by their own cards only.
+    if (row.profileId) pushIds.add(row.profileId)
+    if (row.scope === 'group') {
+      for (const profileId of parseGroupProfileIds(row.groupProfileIds)) pushIds.add(profileId)
+    }
+    if (guest && personEmail) {
+      for (const profileId of await pushService.profileIdsMatchingEmails([personEmail])) pushIds.add(profileId)
+    } else if (!guest && personEmail && !row.profileId) {
       for (const profileId of await pushService.profileIdsMatchingEmails([personEmail])) pushIds.add(profileId)
     }
     for (const profileId of pushIds) {
-      pushService.notifyProfileUpdate(profileId, {
-        title: `Scheduled: ${row.type}`,
-        body: `${row.date} at ${row.time}`,
-        type: 'meeting_alert',
-      })
+      const isExactCard = Boolean(row.profileId && profileId === row.profileId) || row.scope === 'group'
+      pushService.notifyProfileUpdate(
+        profileId,
+        {
+          title: `Scheduled: ${row.type}`,
+          body: `${row.date} at ${row.time}`,
+          type: 'meeting_alert',
+        },
+        // Exact invited cards → owner devices; email-matched guest cards → their devices.
+        { audience: isExactCard ? 'owners' : 'all', allowPrivate: true }
+      )
     }
     void smsService.notifyScheduleCreated({
       guestUserDataId,

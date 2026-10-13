@@ -74,6 +74,7 @@ const getActive = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const actor = await resolveActor(req.user.id)
   const { banner, inbox } = await announcementService.getActiveForUser({
+    id: actor.id,
     email: actor.email,
     role: req.user.role,
   })

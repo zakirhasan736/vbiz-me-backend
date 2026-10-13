@@ -115,13 +115,11 @@ const notifyPhonesForEmails = async (
     select: { id: true },
   })
   const userIds = users.map((user) => user.id)
+  // Exact identity: match contact email / direct owner login only — never corporate children.
   const profiles = await prisma.profile.findMany({
     where: {
       phone: { not: null },
-      OR: [
-        { email: { in: normalized } },
-        ...(userIds.length ? [{ userId: { in: userIds } }, { companyUserId: { in: userIds } }] : []),
-      ],
+      OR: [{ email: { in: normalized } }, ...(userIds.length ? [{ userId: { in: userIds } }] : [])],
     },
     select: phoneSelect,
   })

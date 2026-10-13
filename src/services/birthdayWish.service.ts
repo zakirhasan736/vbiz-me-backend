@@ -128,12 +128,14 @@ async function sendBirthdayEmail(opts: { owner: OwnerCandidate; cardName: string
 
 async function createOwnerInboxNotice(opts: {
   ownerEmail: string
+  ownerUserId?: string | null
   cardName: string
   profileId: string
   slug: string | null
 }) {
   const title = `Happy Birthday — ${opts.cardName}`
   const body = `Today is ${opts.cardName}'s birthday. Send them your best wishes!`
+  const ownerUserId = opts.ownerUserId?.trim() || null
 
   await prisma.announcement.create({
     data: {
@@ -148,6 +150,7 @@ async function createOwnerInboxNotice(opts: {
         channel: 'inbox',
         kind: 'birthday',
         profileId: opts.profileId,
+        ...(ownerUserId ? { userId: ownerUserId } : {}),
         ...(opts.slug ? { slug: opts.slug } : {}),
       },
       createdById: null,
@@ -243,6 +246,7 @@ const runDailyBirthdayWishes = async (opts?: { timeZone?: string }): Promise<Bir
       }
       await createOwnerInboxNotice({
         ownerEmail: owner.email,
+        ownerUserId: owner.id,
         cardName,
         profileId: profile.id,
         slug: profile.slug,

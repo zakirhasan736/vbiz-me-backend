@@ -2048,6 +2048,11 @@ model PushSubscription {
   auth         String
   browser      String?
   platform     String?
+  /**
+   * follower = visitor who saved/allowed notifications on the public card
+   * owner    = card owner / corporate member backoffice device for that card
+   */
+  audience     String    @default("follower")
   isActive     Boolean   @default(true)
   lastUsedAt   DateTime?
   createdAt    DateTime  @default(now())
@@ -2058,6 +2063,7 @@ model PushSubscription {
   @@unique([profileId, endpointHash])
   @@index([profileId])
   @@index([endpointHash])
+  @@index([profileId, audience])
 }
 
 model PushNotificationPreference {

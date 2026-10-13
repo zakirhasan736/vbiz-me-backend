@@ -20,6 +20,7 @@
     "migrate:deploy": "prisma migrate deploy",
     "backfill:owner-packages": "tsx --env-file=.env scripts/backfill-owner-packages.ts",
     "cutover:check": "tsx --env-file=.env scripts/production-cutover-check.ts",
+    "audit:legacy-media": "tsx --env-file=.env scripts/audit-legacy-media-urls.ts",
     "studio": "prisma studio",
     "migrate:laravel": "tsx --env-file=.env scripts/migrate-from-laravel.ts",
     "seed:packages": "tsx --env-file=.env scripts/seed-packages.ts",
