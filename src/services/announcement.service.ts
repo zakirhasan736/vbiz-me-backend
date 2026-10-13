@@ -1,11 +1,12 @@
 import type { Prisma } from '../../generated/prisma/client'
+import config from '../configs/config'
 import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
 import { prisma } from '../utils/prisma'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
-import { userMatchesSpecificAnnouncement } from '../utils/pushAudience'
+import { exactOwnerPushProfileIds, userMatchesSpecificAnnouncement } from '../utils/pushAudience'
 import type { SmsTopic } from '../utils/smsMessage'
 import type {
   AnnouncementKind,
@@ -407,32 +408,55 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
       void (async () => {
         try {
           const profileIds = new Set<string>()
+          const metaObj = metaRecord(meta)
+          const includeCorporateTeam = metaObj?.includeCorporateTeam === '1' || metaObj?.corporateTeam === '1'
+          const inboxPersonal = isInboxOnly(meta)
 
-          // If targeted to specific emails, resolve profiles by email
-          if (targetType === 'specific' && targetEmails.length) {
+          if (profileId) {
+            // Card-scoped: exact target card only — never email-match sibling / member cards.
+            for (const id of exactOwnerPushProfileIds({ primaryProfileId: profileId })) {
+              profileIds.add(id)
+            }
+          } else if (targetType === 'specific' && targetEmails.length && !inboxPersonal) {
+            // Non-card specific (rare): email match. Inbox personal uses meta.userId below.
             for (const matchedId of await pushService.profileIdsMatchingEmails(targetEmails)) {
               profileIds.add(matchedId)
             }
           }
 
-          // If meta contains a profileId (explicit card owner), include it
-          if (profileId) profileIds.add(profileId)
-
-          // Exact identity: meta.userId → only cards that user directly owns (not corporate children).
-          const metaUserId = metaRecord(meta)?.userId
-          if (typeof metaUserId === 'string' && metaUserId.trim()) {
+          // Personal inbox without a card id → direct owner cards for that login only.
+          const metaUserId = typeof metaObj?.userId === 'string' ? metaObj.userId.trim() : ''
+          if (!profileId && metaUserId) {
             const owned = await prisma.profile.findMany({
-              where: { userId: metaUserId.trim() },
+              where: { userId: metaUserId },
               select: { id: true },
+              take: 20,
             })
             for (const p of owned) profileIds.add(p.id)
           }
 
-          // Global public announcements: blast to every active push subscription.
-          // Inbox-only globals still resolve via target emails / profileId above.
-          if (showPublic && targetType === 'all') {
+          // Corporate owner global/team blast → every card linked under this company user.
+          // Personal wishes / card-scoped inbox never set includeCorporateTeam.
+          if (includeCorporateTeam || (targetType === 'all' && !showPublic)) {
+            const actorUser = await prisma.user.findUnique({
+              where: { id: actor.id },
+              select: { role: true },
+            })
+            const isCorporateOwner = actorUser?.role === 'CORPORATE_OWNER'
+            if (includeCorporateTeam || isCorporateOwner) {
+              const teamCards = await prisma.profile.findMany({
+                where: { companyUserId: actor.id },
+                select: { id: true },
+                take: 500,
+              })
+              for (const p of teamCards) profileIds.add(p.id)
+            }
+          }
+
+          // Global public: every active subscription. Backoffice-only global: owner devices only.
+          if (targetType === 'all') {
             const subs = await prisma.pushSubscription.findMany({
-              where: { isActive: true },
+              where: showPublic ? { isActive: true } : { isActive: true, audience: 'owner' },
               select: { profileId: true },
             })
             for (const s of subs) profileIds.add(s.profileId)
@@ -444,15 +468,36 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
             type: 'announcement_updates',
           }
 
-          // Public notices → savers/followers who allowed notifications.
-          // Backoffice/inbox companions → owner devices only for that card.
-          const deliveryAudience = showPublic ? ('followers' as const) : ('owners' as const)
+          // Public announcements → owners + opted-in savers on those cards.
+          // Backoffice / personal inbox → owner devices only.
+          const audiences = showPublic ? (['followers', 'owners'] as const) : (['owners'] as const)
 
           for (const pid of profileIds) {
-            await pushService.sendToProfile(pid, payloadPartial, {
-              audience: deliveryAudience,
-              allowPrivate: true,
+            for (const audience of audiences) {
+              await pushService.sendToProfile(pid, payloadPartial, {
+                audience,
+                allowPrivate: true,
+              })
+            }
+          }
+
+          // Email every active login for global backoffice notices (and global public).
+          if (targetType === 'all' && config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
+            const users = await prisma.user.findMany({
+              where: { deletedAt: null, NOT: { email: '' } },
+              select: { email: true },
+              take: 5000,
             })
+            const subject = row.title || defaultTitle(row.type as AnnouncementType)
+            const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${row.body
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/\n/g, '<br/>')}</p><p>vBiz Me</p></div>`
+            const emails = [...new Set(users.map((u) => (u.email || '').trim().toLowerCase()).filter(Boolean))]
+            await Promise.all(
+              emails.map((email) => authUtils.sendEmail({ receiverMail: email, subject, html }).catch(() => undefined))
+            )
           }
 
           // Guest email blast only for public-facing specific card notices.

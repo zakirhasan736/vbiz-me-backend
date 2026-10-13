@@ -498,12 +498,16 @@ async function pushGuestMeetingNotification(opts: {
   }
 
   for (const profileId of profileIds) {
-    pushService.notifyProfileUpdate(profileId, {
-      title,
-      body,
-      type: 'meeting_alert',
-      url: opts.meetingUrl || undefined,
-    })
+    pushService.notifyProfileUpdate(
+      profileId,
+      {
+        title,
+        body,
+        type: 'meeting_alert',
+        url: opts.meetingUrl || undefined,
+      },
+      { audience: 'owners', allowPrivate: true }
+    )
   }
   return { sent: true as const, reason: 'ok' as const }
 }

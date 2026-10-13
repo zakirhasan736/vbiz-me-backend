@@ -264,6 +264,63 @@ export async function createWorkNote(actor: CrmActor, access: CrmAccessContext, 
     include,
   })
 
+  const { default: exactOwnerNotifyService } = await import('./exactOwnerNotify.service')
+  const preview = (description || title).trim().slice(0, 180)
+  const noteTitle = `CRM note: ${title}`
+  const noteBody = preview || `A new CRM note was added: ${title}`
+  const actorUser = await prisma.user.findUnique({
+    where: { id: actor.id },
+    select: { email: true, name: true },
+  })
+  const notifyActor = {
+    id: actor.id,
+    email: actorUser?.email || 'system@vbizme.com',
+    name: actorUser?.name || 'CRM',
+  }
+
+  // Exact card owner gets CRM in-app + email + owner push when the note is on a card.
+  if (profileId) {
+    void exactOwnerNotifyService
+      .notifyExactCardOwnerInbox({
+        actor: notifyActor,
+        profileId,
+        title: noteTitle,
+        body: noteBody,
+        category: 'note',
+        topic: 'crm',
+        href: '/crm',
+        sendEmail: true,
+        push: {
+          title: noteTitle,
+          body: preview || 'Open CRM Notes to review.',
+          type: 'meeting_alert',
+        },
+      })
+      .catch(() => undefined)
+  }
+
+  // Assignees (partners / members) get their own CRM inbox + push when they are not the creator.
+  const resolvedAssignee = assigneeUserId || actor.id
+  if (resolvedAssignee && resolvedAssignee !== actor.id) {
+    void exactOwnerNotifyService
+      .notifyUserInbox({
+        actor: notifyActor,
+        userId: resolvedAssignee,
+        title: noteTitle,
+        body: noteBody,
+        category: 'note',
+        topic: 'crm',
+        href: '/crm',
+        sendEmail: true,
+        push: {
+          title: noteTitle,
+          body: preview || 'Open CRM Notes to review.',
+          type: 'meeting_alert',
+        },
+      })
+      .catch(() => undefined)
+  }
+
   return mapRow(row)
 }
 

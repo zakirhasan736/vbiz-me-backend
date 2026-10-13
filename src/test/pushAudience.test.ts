@@ -72,6 +72,7 @@ describe('push audience', () => {
   it('routes owner-only events away from public-card savers', () => {
     assert.equal(defaultPushDeliveryAudience('save_contact'), 'owners')
     assert.equal(defaultPushDeliveryAudience('viewer_return'), 'owners')
+    assert.equal(defaultPushDeliveryAudience('meeting_alert'), 'owners')
     assert.equal(defaultPushDeliveryAudience('contact_updates'), 'followers')
     assert.equal(defaultPushDeliveryAudience('theme_updates'), 'followers')
     assert.equal(defaultPushDeliveryAudience('announcement_updates'), 'followers')

@@ -227,11 +227,16 @@ async function processWorkNoteReminders(leadMinutes: number) {
     }
 
     if (note.profileId) {
-      pushService.notifyProfileUpdate(note.profileId, {
-        title: overdue ? 'Overdue note' : 'Note reminder',
-        body: note.title,
-        type: 'event_updates',
-      })
+      // Owner devices only — never content preference / saver fan-out (event_updates).
+      pushService.notifyProfileUpdate(
+        note.profileId,
+        {
+          title: overdue ? 'Overdue note' : 'Note reminder',
+          body: note.title,
+          type: 'meeting_alert',
+        },
+        { audience: 'owners', allowPrivate: true }
+      )
     }
 
     await prisma.workNote.update({
@@ -350,16 +355,19 @@ async function processMeetingReminders() {
     const pushPayload = {
       title: `Upcoming: ${meeting.type}`,
       body: `${meeting.date} ${meeting.time}`,
-      type: 'event_updates' as const,
+      type: 'meeting_alert' as const,
       url: meeting.meetLink || undefined,
     }
 
     if (meeting.scope === 'group') {
       for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) {
-        pushService.notifyProfileUpdate(profileId, pushPayload)
+        pushService.notifyProfileUpdate(profileId, pushPayload, { audience: 'owners', allowPrivate: true })
       }
     } else if (meeting.profileId) {
-      pushService.notifyProfileUpdate(meeting.profileId, pushPayload)
+      pushService.notifyProfileUpdate(meeting.profileId, pushPayload, {
+        audience: 'owners',
+        allowPrivate: true,
+      })
     }
 
     const senderEmail = meeting.createdBy?.email?.trim().toLowerCase()
@@ -498,18 +506,26 @@ async function processCrmEventReminders() {
     }
 
     if (event.profileId) {
-      pushService.notifyProfileUpdate(event.profileId, {
-        title: `CRM event: ${event.type}`,
-        body: pushBody,
-        type: 'event_updates',
-      })
-    } else if (event.scope === 'group') {
-      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) {
-        pushService.notifyProfileUpdate(profileId, {
+      pushService.notifyProfileUpdate(
+        event.profileId,
+        {
           title: `CRM event: ${event.type}`,
           body: pushBody,
-          type: 'event_updates',
-        })
+          type: 'meeting_alert',
+        },
+        { audience: 'owners', allowPrivate: true }
+      )
+    } else if (event.scope === 'group') {
+      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) {
+        pushService.notifyProfileUpdate(
+          profileId,
+          {
+            title: `CRM event: ${event.type}`,
+            body: pushBody,
+            type: 'meeting_alert',
+          },
+          { audience: 'owners', allowPrivate: true }
+        )
       }
     }
 

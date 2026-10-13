@@ -2394,6 +2394,8 @@ const saveGuestUser = async (
       title: `New contact: ${fullName}`,
       body: `${fullName}${email ? ` · ${email}` : ''}${phone ? ` · ${phone}` : ''} saved their details on ${cardName}.`,
       category: 'contact_save',
+      topic: 'card',
+      sendEmail: true,
       push: {
         title: 'New contact saved',
         body: `${fullName} shared their details on your card.`,
@@ -2513,6 +2515,8 @@ const saveNote = async (profileId: string, content: string, options: PublicNoteO
       title: `New note from ${authorLabel}`,
       body: notePreview || `${authorLabel} left a note on your card.`,
       category: 'note',
+      topic: 'card',
+      sendEmail: true,
       push: {
         title: `Note from ${authorLabel}`,
         body: notePreview || 'Open your card to read and reply.',
@@ -2584,6 +2588,8 @@ const saveContactCard = async (
       title: 'Contact saved to phone',
       body: `Someone saved ${profile.name?.trim() || 'your card'} to their phone.`,
       category: 'contact_save',
+      topic: 'card',
+      sendEmail: true,
     })
     .catch((error) => logger.error('Owner VCF-save inbox notify failed', { profileId: profile.id, error }))
   // Do not emit dashboard:kpi save — that KPI tracks guest form submissions (GuestUserData), not VCF downloads.

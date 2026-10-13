@@ -1,10 +1,8 @@
 import type { Prisma } from '../../generated/prisma/client'
-import config from '../configs/config'
 import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
-import authUtils from '../utils/auth.utils'
 import {
   assertRequestedProfileInScope,
   isProfileIdInCrmScope,
@@ -23,8 +21,8 @@ import type {
   UpdateCrmEventInput,
 } from '../zodValidation/crmEvent.zod'
 import calendarIntegrationService from './calendarIntegration.service'
+import exactOwnerNotifyService from './exactOwnerNotify.service'
 import { computeStartsAt } from './meeting.service'
-import pushService from './push.service'
 import smsService from './sms.service'
 
 type CrmEventRow = {
@@ -464,49 +462,76 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
     },
   })
 
+  // Always notify the exact target card owner(s): in-app + email + owner Web Push.
+  const targetProfileIds = new Set<string>()
+  if (row.profileId) targetProfileIds.add(row.profileId)
+  if (row.scope === 'group') {
+    for (const profileId of parseGroupProfileIds(row.groupProfileIds)) targetProfileIds.add(profileId)
+  }
+
+  const messagePreview = (row.description || '').trim().slice(0, 220)
+  const wishBody = messagePreview
+    ? `${actorLabel} sent “${row.type}” for ${row.date} at ${row.time}: ${messagePreview}`
+    : `${actorLabel} sent “${row.type}” for ${row.date} at ${row.time}.`
+
+  for (const profileId of targetProfileIds) {
+    void exactOwnerNotifyService
+      .notifyExactCardOwnerInbox({
+        actor: { id: actor.id, email: actorUser?.email || 'system@vbizme.com', name: actorUser?.name },
+        profileId,
+        title: `${row.type}`,
+        body: wishBody,
+        category: 'event',
+        topic: 'crm',
+        href: '/crm',
+        sendEmail: true,
+        emailSubject: `${row.type} — ${row.date} ${row.time}`,
+        emailHtml: `<div style="font-family:sans-serif;line-height:1.5"><p>${wishBody
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')}</p><p>Open your CRM Wish &amp; Outreach to review.</p><p>vBiz Me</p></div>`,
+        push: {
+          title: row.type,
+          body: wishBody.slice(0, 160),
+          type: 'meeting_alert',
+        },
+      })
+      .catch((error) => logger.error('CRM wish owner notify failed', { profileId, error }))
+  }
+
+  // Optional extra recipient (saved guest) who is not the card owner login.
   if (status === 'Scheduled') {
     const guest = guestUserDataId
       ? await prisma.guestUserData.findUnique({
           where: { id: guestUserDataId },
-          select: { email: true, fullName: true },
+          select: { email: true, fullName: true, phone: true },
         })
       : null
     const personEmail = guest?.email?.trim() || recipientEmail
     const personName = guest?.fullName?.trim() || recipientName || 'there'
-    const safe = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    if (personEmail && config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
-      void authUtils
-        .sendEmail({
-          receiverMail: personEmail,
-          subject: `Scheduled: ${row.type} on ${row.date}`,
-          html: `<p>Hello ${safe(personName)},</p><p>${safe(actorLabel)} scheduled ${safe(row.type)} with you on ${safe(row.date)} at ${safe(row.time)}.</p><p>vBiz Me</p>`,
+    const ownerEmailSet = new Set(
+      (
+        await Promise.all(
+          [...targetProfileIds].map(
+            async (id) => (await exactOwnerNotifyService.resolveExactCardOwner(id))?.emails || []
+          )
+        )
+      ).flat()
+    )
+    if (personEmail && !ownerEmailSet.has(personEmail.toLowerCase())) {
+      void exactOwnerNotifyService
+        .notifyVisitorChannels({
+          email: personEmail,
+          phone: guest?.phone,
+          title: `${row.type} — ${row.date}`,
+          body: `${actorLabel} scheduled ${row.type} with you on ${row.date} at ${row.time}.`,
+          emailHtml: `<p>Hello ${personName.replace(/</g, '')},</p><p>${actorLabel} scheduled ${row.type} with you on ${row.date} at ${row.time}.</p><p>vBiz Me</p>`,
+          smsTopic: 'Schedule',
+          pushType: 'meeting_alert',
         })
-        .catch((error) => logger.error('CRM schedule email failed', error))
+        .catch((error) => logger.error('CRM wish guest notify failed', error))
     }
-    const pushIds = new Set<string>()
-    // Exact card for owner-targeted CRM schedule; guest recipients match by their own cards only.
-    if (row.profileId) pushIds.add(row.profileId)
-    if (row.scope === 'group') {
-      for (const profileId of parseGroupProfileIds(row.groupProfileIds)) pushIds.add(profileId)
-    }
-    if (guest && personEmail) {
-      for (const profileId of await pushService.profileIdsMatchingEmails([personEmail])) pushIds.add(profileId)
-    } else if (!guest && personEmail && !row.profileId) {
-      for (const profileId of await pushService.profileIdsMatchingEmails([personEmail])) pushIds.add(profileId)
-    }
-    for (const profileId of pushIds) {
-      const isExactCard = Boolean(row.profileId && profileId === row.profileId) || row.scope === 'group'
-      pushService.notifyProfileUpdate(
-        profileId,
-        {
-          title: `Scheduled: ${row.type}`,
-          body: `${row.date} at ${row.time}`,
-          type: 'meeting_alert',
-        },
-        // Exact invited cards → owner devices; email-matched guest cards → their devices.
-        { audience: isExactCard ? 'owners' : 'all', allowPrivate: true }
-      )
-    }
+
     void smsService.notifyScheduleCreated({
       guestUserDataId,
       profileId: row.profileId,

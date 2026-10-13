@@ -1,3 +1,4 @@
+import config from '../configs/config'
 import AppError from '../error/AppError'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
@@ -9,6 +10,8 @@ import pushService, { type PushPayload } from './push.service'
 import smsService from './sms.service'
 
 type Actor = { id: string; email: string; name?: string | null }
+
+export type NotificationTopic = 'card' | 'crm'
 
 export type ExactCardOwner = {
   profileId: string
@@ -29,6 +32,10 @@ async function systemActor(): Promise<Actor> {
     return { id: admin.id, email: admin.email, name: admin.name }
   }
   return { id: 'system', email: 'system@vbizme.com', name: 'System' }
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 /** Resolve the direct card owner only — never the corporate parent of a member card. */
@@ -71,26 +78,44 @@ export async function resolveExactCardOwner(profileId: string): Promise<ExactCar
   }
 }
 
-/**
- * In-app (inbox) + optional Web Push to the exact card owner.
- * Does not send SMS/email — callers keep using existing sms/email helpers.
- */
-export async function notifyExactCardOwnerInbox(opts: {
+export type NotifyExactCardOwnerOpts = {
   actor?: Actor
   profileId: string
   title: string
   body: string
   category?: string
+  /** card backoffice vs CRM backoffice bell filtering */
+  topic?: NotificationTopic
   /** When true, announcement service also fans push via sendPush meta. Prefer explicit push below. */
   sendPushViaAnnouncement?: boolean
   push?: Pick<PushPayload, 'title' | 'body' | 'type' | 'url'>
-}): Promise<{ sent: boolean; ownerUserId: string | null; emails: string[] }> {
+  /** Email the exact card owner (Zoho when configured). */
+  sendEmail?: boolean
+  emailSubject?: string
+  emailHtml?: string
+  href?: string
+}
+
+/**
+ * In-app (inbox) + optional Web Push + optional email to the exact card owner.
+ * Never fans out to corporate siblings or public-card savers.
+ */
+export async function notifyExactCardOwnerInbox(
+  opts: NotifyExactCardOwnerOpts
+): Promise<{ sent: boolean; ownerUserId: string | null; emails: string[] }> {
   const owner = await resolveExactCardOwner(opts.profileId)
-  if (!owner?.emails.length) {
-    return { sent: false, ownerUserId: owner?.ownerUserId ?? null, emails: owner?.emails ?? [] }
+  if (!owner) {
+    return { sent: false, ownerUserId: null, emails: [] }
+  }
+  // Push + in-app still go out when the card has an owner account but no contact email yet.
+  if (!owner.ownerUserId && !owner.emails.length) {
+    return { sent: false, ownerUserId: null, emails: [] }
   }
 
   const actor = opts.actor || (await systemActor())
+  const topic = opts.topic || (opts.category === 'event' || opts.category === 'note' ? 'crm' : 'card')
+  const href = opts.href || (topic === 'crm' ? '/crm' : owner.slug ? `/vcards/edit/home/${owner.profileId}` : '/')
+
   try {
     await announcementService.create(actor, {
       type: 'info',
@@ -103,6 +128,8 @@ export async function notifyExactCardOwnerInbox(opts: {
       meta: {
         channel: 'inbox',
         category: opts.category || 'event',
+        topic,
+        href,
         profileId: owner.profileId,
         ...(owner.ownerUserId ? { userId: owner.ownerUserId } : {}),
         ...(owner.slug ? { slug: owner.slug } : {}),
@@ -115,7 +142,6 @@ export async function notifyExactCardOwnerInbox(opts: {
   }
 
   if (opts.push) {
-    // Owner-device Web Push only — never public-card savers/followers.
     pushService.notifyProfileUpdate(
       owner.profileId,
       {
@@ -128,7 +154,105 @@ export async function notifyExactCardOwnerInbox(opts: {
     )
   }
 
+  if (opts.sendEmail !== false && owner.emails.length && config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
+    const subject = opts.emailSubject?.trim() || opts.title
+    const html =
+      opts.emailHtml ||
+      `<div style="font-family:sans-serif;line-height:1.5"><p>Hello ${escapeHtml(owner.displayName)},</p><p>${escapeHtml(opts.body)}</p><p>vBiz Me</p></div>`
+    for (const email of owner.emails) {
+      void authUtils
+        .sendEmail({ receiverMail: email, subject, html })
+        .catch((error) => logger.error('Exact owner email notify failed', { email, error }))
+    }
+  }
+
   return { sent: true, ownerUserId: owner.ownerUserId, emails: owner.emails }
+}
+
+/** In-app + email + owner push for a login user (assignee / partner), not tied to one card. */
+export async function notifyUserInbox(opts: {
+  actor?: Actor
+  userId: string
+  title: string
+  body: string
+  category?: string
+  topic?: NotificationTopic
+  href?: string
+  sendEmail?: boolean
+  emailSubject?: string
+  emailHtml?: string
+  push?: Pick<PushPayload, 'title' | 'body' | 'type' | 'url'>
+}): Promise<{ sent: boolean }> {
+  const userId = opts.userId.trim()
+  if (!userId) return { sent: false }
+
+  const user = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+    select: { id: true, email: true, name: true },
+  })
+  if (!user) return { sent: false }
+
+  const email = user.email?.trim().toLowerCase() || ''
+  const actor = opts.actor || (await systemActor())
+  const topic = opts.topic || 'crm'
+  const href = opts.href || (topic === 'crm' ? '/crm' : '/')
+
+  try {
+    await announcementService.create(actor, {
+      type: 'info',
+      kind: 'announcement',
+      title: opts.title,
+      body: opts.body,
+      status: 'active',
+      targetType: 'specific',
+      targetEmails: email ? [email] : [],
+      meta: {
+        channel: 'inbox',
+        category: opts.category || 'note',
+        topic,
+        href,
+        userId: user.id,
+        sendPush: '0',
+      },
+    })
+  } catch (error) {
+    logger.error('User inbox notice failed', { userId, error })
+    return { sent: false }
+  }
+
+  if (opts.push) {
+    const owned = await prisma.profile.findMany({
+      where: { userId: user.id },
+      select: { id: true },
+      take: 20,
+    })
+    for (const profile of owned) {
+      pushService.notifyProfileUpdate(
+        profile.id,
+        {
+          title: opts.push.title,
+          body: opts.push.body,
+          type: opts.push.type,
+          url: opts.push.url,
+        },
+        { audience: 'owners', allowPrivate: true }
+      )
+    }
+  }
+
+  if (opts.sendEmail !== false && email && config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
+    const subject = opts.emailSubject?.trim() || opts.title
+    const html =
+      opts.emailHtml ||
+      `<div style="font-family:sans-serif;line-height:1.5"><p>Hello ${escapeHtml(
+        user.name?.trim() || 'there'
+      )},</p><p>${escapeHtml(opts.body)}</p><p>vBiz Me</p></div>`
+    void authUtils
+      .sendEmail({ receiverMail: email, subject, html })
+      .catch((error) => logger.error('User email notify failed', { email, error }))
+  }
+
+  return { sent: true }
 }
 
 /** Notify a visitor/requester by email + push on their own cards + SMS when phone present. */
@@ -156,12 +280,17 @@ export async function notifyVisitorChannels(opts: {
         })
         .catch((error) => logger.error('Visitor email notify failed', { email, error }))
     }
+    // Guest’s own owner devices only — never follower/saver subscriptions on those cards.
     for (const profileId of await pushService.profileIdsMatchingEmails([email])) {
-      pushService.notifyProfileUpdate(profileId, {
-        title: opts.title,
-        body: opts.body,
-        type: opts.pushType || 'meeting_alert',
-      })
+      pushService.notifyProfileUpdate(
+        profileId,
+        {
+          title: opts.title,
+          body: opts.body,
+          type: opts.pushType || 'meeting_alert',
+        },
+        { audience: 'owners', allowPrivate: true }
+      )
     }
   }
 
@@ -185,6 +314,7 @@ export async function requireExactCardOwner(profileId: string): Promise<ExactCar
 const exactOwnerNotifyService = {
   resolveExactCardOwner,
   notifyExactCardOwnerInbox,
+  notifyUserInbox,
   notifyVisitorChannels,
   requireExactCardOwner,
 }

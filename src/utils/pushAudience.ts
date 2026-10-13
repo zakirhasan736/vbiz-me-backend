@@ -35,13 +35,13 @@ export function cardChangeAlsoReachesSavers(_type: string) {
  *
  * Responsibility matrix:
  * - Card content updates → followers (savers who allowed notifications)
- * - save_contact / viewer_return → owners only (backoffice person for that card)
- * - meeting_alert → all on the targeted profile (owner card or guest's own card)
- * - announcement_updates → decided by caller (public → followers, inbox companion → owners)
+ * - save_contact / viewer_return / meeting_alert → owners only (never public-card savers)
+ * - announcement_updates → decided by caller (public → followers+owners, inbox → owners)
+ *
+ * Callers that need every subscription on a guest’s own card may pass audience: 'all'.
  */
 export function defaultPushDeliveryAudience(type: string): PushDeliveryAudience {
-  if (type === 'save_contact' || type === 'viewer_return') return 'owners'
-  if (type === 'meeting_alert') return 'all'
+  if (type === 'save_contact' || type === 'viewer_return' || type === 'meeting_alert') return 'owners'
   if (type === 'announcement_updates') return 'followers'
   return 'followers'
 }

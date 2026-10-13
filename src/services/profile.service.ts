@@ -2624,6 +2624,9 @@ const update = async (
   const contactTouched = contactKeys.some((key) => key in raw)
   const lifecycleStatusChange = Boolean(requestedStatus)
 
+  // Birthday / DOB is private — must not fire saver content preferences.
+  const dobTouched = 'dob' in raw || 'dateOfBirth' in raw || 'birthDate' in raw
+
   if (themeTouched) {
     pushService.notifyProfileUpdate(profileId, {
       type: 'theme_updates',
@@ -2636,7 +2639,7 @@ const update = async (
       title: 'Contact info updated',
       body: `${updated.companyName || updated.name} updated their contact info.`,
     })
-  } else if (!lifecycleStatusChange) {
+  } else if (!lifecycleStatusChange && !dobTouched) {
     pushService.notifyProfileUpdate(profileId, {
       type: 'business_hours',
       title: 'Profile updated',
@@ -4721,9 +4724,27 @@ const createTeamNotice = async (
           status: 'active',
           targetType: 'specific',
           targetEmails: [...new Set(ownerEmails)],
-          meta: { profileId: targetProfileId, source: 'card_notice', onlyBackoffice: '1' },
+          meta: {
+            profileId: targetProfileId,
+            source: 'card_notice',
+            onlyBackoffice: '1',
+            sendPush: '1',
+            channel: 'inbox',
+          },
         })
         .catch((error) => logger.error('Card owner backoffice notice failed', { targetProfileId, error }))
+
+      // Owner devices on this card only (never savers / never corporate siblings).
+      pushService.notifyProfileUpdate(
+        targetProfileId,
+        {
+          title: subject,
+          body: text,
+          type: 'announcement_updates',
+          url: targetProfile?.slug ? buildFrontendPublicCardPath(targetProfile.slug) : undefined,
+        },
+        { audience: 'owners', allowPrivate: true }
+      )
     }
 
     const row = await prisma.teamNotice.create({
@@ -4797,11 +4818,20 @@ const createTeamNotice = async (
       )
 
       if (shouldDeliver && targetProfileId) {
-        pushService.notifyProfileUpdate(targetProfileId, {
+        // Public card notice: opted-in savers + the card owner (same card only).
+        const noticePush = {
           title: subject,
           body: text,
-          type: 'announcement_updates',
+          type: 'announcement_updates' as const,
           url: targetProfile?.slug ? buildFrontendPublicCardPath(targetProfile.slug) : undefined,
+        }
+        pushService.notifyProfileUpdate(targetProfileId, noticePush, {
+          audience: 'followers',
+          allowPrivate: true,
+        })
+        pushService.notifyProfileUpdate(targetProfileId, noticePush, {
+          audience: 'owners',
+          allowPrivate: true,
         })
 
         if (actor && ownerEmails.length) {
@@ -4818,7 +4848,13 @@ const createTeamNotice = async (
               status: 'active',
               targetType: 'specific',
               targetEmails: [...new Set(ownerEmails)],
-              meta: { profileId: targetProfileId, source: 'card_notice', channel: 'inbox' },
+              meta: {
+                profileId: targetProfileId,
+                source: 'card_notice',
+                channel: 'inbox',
+                showPublic: '1',
+                sendPush: '0',
+              },
             })
             .catch((error) => logger.error('Card owner backoffice notice failed', { targetProfileId, error }))
         }
