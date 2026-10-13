@@ -3999,7 +3999,9 @@ const patchContact = async (
       .catch((error) => logger.error('Visitor reply notify failed', { contactId, error }))
 
     // Owner confirmation stays on this exact card only (push already covered by UI; SMS optional).
-    void smsService.notifyProfilePhone(row.profile.id, 'Note', `Your reply was sent to ${row.name || 'the visitor'}.`)
+    if (row.profile?.id) {
+      void smsService.notifyProfilePhone(row.profile.id, 'Note', `Your reply was sent to ${row.name || 'the visitor'}.`)
+    }
   }
 
   return row
