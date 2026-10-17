@@ -35,9 +35,11 @@ export type CrawledWebsitePage = {
 }
 
 export const PAGE_FETCH_TIMEOUT_MS = 20_000
-export const DEFAULT_CRAWL_MAX_PAGES = 40
-export const FOCUSED_CRAWL_MAX_PAGES = 48
+export const DEFAULT_CRAWL_MAX_PAGES = 60
+export const FOCUSED_CRAWL_MAX_PAGES = 72
 export const STOREFRONT_CRAWL_MAX_PAGES = 10
+/** Priority inner pages that must be fetched when linked from the site. */
+const PRIORITY_PAGE_FOCUSES = ['about', 'services', 'faqs', 'reviews', 'personal', 'portfolio', 'blogs'] as const
 
 const BROWSER_LIKE_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
@@ -784,7 +786,7 @@ export function planCatalogReads(
     )
   })
   const samples = groups.slice(0, 12).map((group) => group.sampleUrl)
-  const fetchUrls = [...new Set([...cores, ...categoryPages, ...samples, ...blogs.slice(0, 3), ...others])].slice(
+  const fetchUrls = [...new Set([...cores, ...categoryPages, ...samples, ...blogs.slice(0, 8), ...others])].slice(
     0,
     limit
   )
@@ -801,8 +803,8 @@ export function planCatalogReads(
     'Main pages (home, about, services, contact, team, and similar) are read in full.',
     'Long car or product lists are read by category: one example from each category, not every listing.',
     listed,
-    blogs.length > 3
-      ? `Articles discovered: ${blogs.length}. Opened ${Math.min(3, blogs.length)} and kept the rest as titles only.`
+    blogs.length > 8
+      ? `Articles discovered: ${blogs.length}. Opened ${Math.min(8, blogs.length)} and kept the rest as titles only.`
       : '',
   ]
     .filter(Boolean)
@@ -897,9 +899,16 @@ export async function crawlWebsiteDeep(
       }
     }
   } else {
-    const homeLinks = extractSameOriginLinks(homeHtml, home, focus, 80)
+    const homeLinks = extractSameOriginLinks(homeHtml, home, focus, 120)
+    // Explicitly collect About / Services / FAQ / Reviews / Contact / Team links first.
+    const priorityLinks = PRIORITY_PAGE_FOCUSES.flatMap((priorityFocus) =>
+      extractSameOriginLinks(homeHtml, home, priorityFocus, 24)
+    )
     const sitemapUrls = await discoverSitemapUrls(home)
-    const plan = planCatalogReads([...homeLinks, ...sitemapUrls], Math.max(8, maxPages - 1))
+    const plan = planCatalogReads(
+      [...priorityLinks, ...homeLinks, ...sitemapUrls],
+      Math.max(12, maxPages - 1)
+    )
     catalogSummary = plan.summary
     const fetchList = plan.fetchUrls.filter((link) => !visited.has(link)).slice(0, Math.max(0, maxPages - pages.length))
     for (const link of fetchList) visited.add(link)
@@ -910,10 +919,16 @@ export async function crawlWebsiteDeep(
         if (result.status !== 'fulfilled') continue
         const page = result.value as FetchedPage
         acceptPage(page)
-        extraLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 40))
+        extraLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 50))
+        for (const priorityFocus of PRIORITY_PAGE_FOCUSES) {
+          extraLinks.push(...extractSameOriginLinks(page.html, page.url, priorityFocus, 16))
+        }
       }
     }
-    const refined = planCatalogReads([...homeLinks, ...sitemapUrls, ...extraLinks], Math.max(8, maxPages - 1))
+    const refined = planCatalogReads(
+      [...priorityLinks, ...homeLinks, ...sitemapUrls, ...extraLinks],
+      Math.max(12, maxPages - 1)
+    )
     if (refined.summary) catalogSummary = refined.summary
     const more = refined.fetchUrls.filter((link) => !visited.has(link)).slice(0, Math.max(0, maxPages - pages.length))
     for (const link of more) visited.add(link)
@@ -922,6 +937,32 @@ export async function crawlWebsiteDeep(
       for (const result of moreResults) {
         if (result.status !== 'fulfilled') continue
         acceptPage(result.value as FetchedPage)
+      }
+    }
+    // Final pass: if key categories are still missing, chase those links from every fetched HTML.
+    const haveCategories = new Set(pages.map((page) => page.category))
+    const missingPriority = (
+      [
+        ['about', 'about'],
+        ['services', 'services'],
+        ['faq', 'faqs'],
+        ['reviews', 'reviews'],
+        ['contact', 'personal'],
+        ['team', 'personal'],
+      ] as const
+    ).filter(([category]) => !haveCategories.has(category))
+    if (missingPriority.length && pages.length < maxPages) {
+      const chase: string[] = []
+      for (const [, priorityFocus] of missingPriority) {
+        chase.push(...extractSameOriginLinks(homeHtml, home, priorityFocus, 20))
+      }
+      const chaseList = chase.filter((link) => remember(link)).slice(0, Math.max(0, maxPages - pages.length))
+      if (chaseList.length) {
+        const chased = await fetchSettledInChunks(chaseList, 6, fetchPage)
+        for (const result of chased) {
+          if (result.status !== 'fulfilled') continue
+          acceptPage(result.value as FetchedPage)
+        }
       }
     }
   }
@@ -949,7 +990,7 @@ export async function crawlWebsiteDeep(
 
   const result = {
     pages,
-    combined: truncate(combined, mode === 'storefront' ? 90000 : focus ? 120000 : 110000),
+    combined: truncate(combined, mode === 'storefront' ? 90000 : focus ? 160000 : 180000),
     mode,
     catalogSummary: catalogSummary || undefined,
   }

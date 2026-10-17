@@ -42,11 +42,14 @@ export function looksLikeDateOnly(value: string): boolean {
 }
 
 function stripSampleReviews(blueprint: CardBlueprint): CardBlueprint {
+  // Mission v3: never publish invented testimonials. Strip AI example drafts.
   const reviews = (blueprint.reviews || []).filter((row) => {
-    const blob = `${row.author} ${row.text}`.toLowerCase()
+    const author = String(row.author || '').trim()
+    const blob = `${author} ${row.text}`.toLowerCase()
     if (blob.includes('draft / sample') || blob.includes('[sample]')) return false
-    if (/^sample (client|customer|reviewer)/i.test(row.author || '')) return false
-    return Boolean((row.author || '').trim() || (row.text || '').trim())
+    if (/^sample (client|customer|reviewer)$/i.test(author)) return false
+    if (/^example client(\s*\d+)?$/i.test(author)) return false
+    return Boolean(author || (row.text || '').trim())
   })
   return { ...blueprint, reviews }
 }

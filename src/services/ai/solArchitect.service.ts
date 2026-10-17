@@ -363,12 +363,12 @@ First understand the business thoroughly from ALL provided sources (website craw
 7. Draft businessDescription (first-person for individuals), missionStatement (25–45 words), whyChooseUs, suggestedCta + alternateCtas, brandVoice, intendedAudience, uniqueAdvantages, customerBenefits from verified strengths only.
 8. themeRecommendation for BOTH light and dark (primary/secondary/accent HEX). Prefer website HEX candidates from BUSINESS INTELLIGENCE SIGNALS; otherwise label source "suggestion".
 9. services[].imageUrl must always be "". Never invent service images.
-10. reviewLinks only for URLs found in sources. Real reviews only in verifiedReviews.
+10. reviewLinks only for URLs found in sources. Put real testimonials in verifiedReviews. If none exist, leave verifiedReviews empty — never invent fictional customer reviews.
 
 Large sites: finish valid JSON. Keep real services, FAQs, blogs, reviews, and portfolio items up to 15 each. Keep at most 16 products and 10 team members. Do not invent extra list items when the source already has some.
 If no website URL is present, the PDF, Word, text, and photo uploads are the full source. Understand that business from the files and still suggest the card.
 Owner-typed notes and OCR text outrank weaker website guesses when they conflict.
-Never invent tabs. Never invent phones, emails, licenses, awards, reviews, projects, social profiles, or years in business.
+Never invent tabs. Never invent phones, emails, licenses, awards, projects, social profiles, or years in business.
 Prefer facts already on an existing card over weaker new source text. Leave unknown required personal facts null so the owner can be asked later.`,
       user: `${existingCardPrompt(input.existingCard)}\nAnalyze sources and design the best card from supported tabs only.\n\n${buildArchitectureSource(input.normalized, budget)}`,
       images: includeImages ? input.normalized.images.slice(0, 4) : [],

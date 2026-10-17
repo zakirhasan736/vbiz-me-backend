@@ -173,15 +173,15 @@ export async function generateSectionFromProfile(input: {
   const schemaHint = FILL_SECTION_SCHEMA_HINTS[input.section]
   const reviewRule =
     input.section === 'reviews'
-      ? 'If verifiedReviews or existingTestimonials have real quotes, return only those real quotes, up to 15. If they are empty, return { "reviews": [] }. Never invent fictional customer reviews as real quotes.'
+      ? 'If verifiedReviews or existingTestimonials have real quotes, return those (up to 15). If empty, return { "reviews": [] }. Never invent fictional customer reviews or treat examples as authentic testimonials.'
       : input.section === 'faqs'
-        ? 'If the profile or sources contain FAQs, return those and add helpful ones toward 5–8 total when the business is clear. Do not invent prices, hours, guarantees, or certifications.'
+        ? 'If the profile or sources contain FAQs, return those. If empty or fewer than 5, draft helpful FAQs to reach exactly 5 total when the business is clear. Do not invent prices, hours, guarantees, or certifications.'
         : input.section === 'blogs'
           ? 'If the profile or sources contain articles, return only those, up to 15. If none exist, draft at most 2 evergreen industry posts. Do not invent news events, dates, or awards.'
           : input.section === 'personal'
             ? 'For about: individuals = FIRST PERSON ~100–150 words + Mission + Why Choose Us + CTA close. Company voice for companies. Match brand voice. Do not invent contact facts. Change only fields the user asked to change.'
             : input.section === 'services'
-              ? 'If services were found, return only those (up to 15), each with an emoji-capable title and a 40–75 word benefit description. If none exist, draft at most 5 realistic offerings. Do not invent prices, guarantees, or service images/URLs. Never add imageUrl.'
+              ? 'If services were found, return those (up to 15), each with an emoji-capable title and a 40–75 word benefit description. If none exist, draft exactly 5 realistic offerings. Do not invent prices, guarantees, or service images/URLs. Never add imageUrl.'
               : input.section === 'portfolio'
                 ? 'If portfolio items were found, return only those, up to 15. If none exist, draft at most 5 representative project examples. Do not add drafts when any real item exists. Do not invent client names, metrics, awards, or prices.'
                 : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'

@@ -93,7 +93,9 @@ export function decideRecommendedTabs(profile: MasterBusinessProfile): Recommend
   }
 
   if (profile.businessDescription) add('profile', 'A public profile/about section fits this business.', 'medium')
-  add('faq', 'A short FAQ helps visitors act without extra research.', 'medium')
+  add('faq', 'Always include FAQs — keep real ones or draft 5 from the business.', 'high')
+  add('services', 'Always include services — keep real ones or draft 5 from the business.', 'high')
+  add('blog', 'Two educational blog drafts help when the site has no articles.', 'medium')
   if ((profile.services || []).length || profile.businessDescription) {
     add('services', 'Primary services should be listed with benefit-focused descriptions.', 'high')
   }

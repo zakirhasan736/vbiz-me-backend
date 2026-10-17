@@ -84,7 +84,16 @@ export function assessCardQuality(input: { blueprint: CardBlueprint; profile?: M
     issues.push({
       code: 'sample_review_in_reviews',
       field: 'reviews',
-      message: 'Sample/draft testimonials must not appear as real reviews.',
+      message: 'Replace DRAFT / SAMPLE mock reviews with real customer quotes before publishing.',
+    })
+  } else if (
+    (blueprint.reviews || []).length > 0 &&
+    (blueprint.reviews || []).every((review) => /^example client/i.test(String(review.author || '').trim()))
+  ) {
+    issues.push({
+      code: 'example_reviews_only',
+      field: 'reviews',
+      message: 'Reviews are AI examples for an empty site — replace with real testimonials before publishing.',
     })
   }
 

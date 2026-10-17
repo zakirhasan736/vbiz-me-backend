@@ -652,6 +652,8 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       profile,
       userId: session.userId,
       sessionId: session.id,
+      // Always draft FAQs / reviews / blogs when empty so the card is nearly complete.
+      includePermissioned: { faq: true, blog: true, reviews: true },
     })
     const { blueprint } = assembleAiCard({
       profile,
@@ -719,6 +721,7 @@ export async function setSelectedTabs(jobId: string, selectedNavIds: string[], u
     profile: session.businessProfile,
     userId,
     sessionId: session.id,
+    includePermissioned: { faq: true, blog: true, reviews: true },
   })
   const { blueprint } = assembleAiCard({
     profile: session.businessProfile,
@@ -763,7 +766,7 @@ export async function generatePermissionedContent(input: {
         : input.kind === 'blog'
           ? 'The sources had no articles. Draft at most 5 evergreen posts. Do not invent news events, dates, awards, or statistics.'
           : input.kind === 'reviews'
-            ? 'The sources had no reviews. Draft at most 5 realistic example testimonials from the business you understood. Do not invent licenses, prices, or awards.'
+            ? 'The sources had no verified reviews. Return { "reviews": [] }. Never invent fictional customer testimonials.'
             : 'Create at most 5 concise skills from verified services, expertise, and experience. Group them using the editor shape { type, skills }.',
     userId: input.userId,
     sessionId: session.id,
@@ -909,6 +912,7 @@ export async function runFastMode(jobId: string, mode: 'ai' | 'found' | 'review'
     profile: session.businessProfile,
     userId,
     sessionId: session.id,
+    includePermissioned: { faq: true, blog: true, reviews: true },
   })
   return publicJob(await assembleAndReady(await save(session, { fieldGraph: filled })))
 }
