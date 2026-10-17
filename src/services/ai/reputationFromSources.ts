@@ -147,7 +147,10 @@ export function formatReputationBlock(links: ReputationLink[], hexColors: string
     lines.push('- No social/review URLs found in sources.')
   }
   if (hexColors.length) {
-    lines.push(`- Brand HEX candidates from markup: ${hexColors.join(', ')}`)
+    lines.push(`- Brand HEX candidates from website/documents: ${hexColors.join(', ')}`)
+    lines.push(
+      '- If PDF/text names Light/Dark Primary·Secondary·Accent, put those exact HEX into themeRecommendation (source "document").'
+    )
   } else {
     lines.push(
       '- No brand HEX colors found in sources; you MUST still recommend light+dark Primary/Secondary/Accent with themeRecommendation.source="suggestion".'

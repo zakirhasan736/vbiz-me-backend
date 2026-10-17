@@ -376,7 +376,7 @@ First understand the business thoroughly from ALL provided sources (full website
 5. Real blog/news articles and portfolio/project pages from the crawl — copy titles, excerpts, URLs, and images. Likely FAQ topics and SEO opportunities from verified facts.
 6. Which EXISTING catalog tabs fit, which fields can be filled now, what must be asked of the owner, and what is required for a 90–100% ready card. Prefer nearly-complete fills from the scraped/document evidence.
 7. Draft businessDescription (first-person for individuals), missionStatement (25–45 words), whyChooseUs, suggestedCta + alternateCtas, brandVoice, intendedAudience, uniqueAdvantages, customerBenefits from verified strengths only.
-8. themeRecommendation for BOTH light and dark (primary/secondary/accent HEX). Prefer website HEX candidates from BUSINESS INTELLIGENCE SIGNALS; otherwise label source "suggestion".
+8. themeRecommendation for BOTH light and dark (primary/secondary/accent HEX). If uploaded PDF/text lists Light/Dark Primary·Secondary·Accent, copy those HEX exactly and set source "document". Else prefer website HEX from BUSINESS INTELLIGENCE SIGNALS; otherwise label source "suggestion".
 9. services[].imageUrl must always be "". Never invent service images.
 10. Put EVERY distinct customer review/testimonial found ON THE WEBSITE into verifiedReviews (max 15). Do not search Google/Yelp/other sites for review text. If the website has zero reviews, leave verifiedReviews empty — the fill step will draft at most 5 Example Client testimonials.
 

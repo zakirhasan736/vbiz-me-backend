@@ -127,7 +127,7 @@ export const masterBusinessProfileSchema = z.object({
         })
         .optional()
         .default({ primary: '', secondary: '', accent: '' }),
-      source: z.enum(['website', 'logo', 'suggestion', 'mixed']).optional().default('suggestion'),
+      source: z.enum(['website', 'logo', 'suggestion', 'mixed', 'document']).optional().default('suggestion'),
       notes: z.string().optional().default(''),
     })
     .optional()
@@ -292,7 +292,7 @@ export const MASTER_PROFILE_JSON_INSTRUCTION = `Return ONLY JSON for a Master Bu
 - STOREFRONT MODE: prefer seller identity over marketplace brand; map catalog into services/products; authentic product photos → portfolio only.
 - Marketing fields: businessDescription (first-person About draft for individuals; company voice for companies; ~100–150 words), missionStatement (25–45 words), whyChooseUs, suggestedCta + alternateCtas (up to 2), brandVoice, intendedAudience, uniqueAdvantages, customerBenefits.
 - Services: title (emoji allowed) + 40–75 word benefit description. Always set services[].imageUrl to "".
-- themeRecommendation: light + dark primary/secondary/accent HEX. Prefer website/logo colors; else professional suggestions with source "suggestion".
+- themeRecommendation: light + dark primary/secondary/accent HEX. Prefer colors stated in uploaded PDF/text brand guidelines, then website/logo HEX; else professional suggestions with source "suggestion". Use source "document" when taken from uploads.
 - needsConfirmation: uncertain discovered links, suggested services, or claims needing owner approval (status needs_confirmation|suggested).
 - Completeness: populate every field supportable from sources. Never invent service images.
 

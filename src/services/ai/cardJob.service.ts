@@ -45,6 +45,7 @@ import { runSolArchitect } from './solArchitect.service'
 import { emptyNormalizedSources, normalizeSources, seedProfileFromCrawledPages } from './sourceNormalizer.service'
 import { normalizeWebsiteUrl } from './sourceUrl'
 import { autoFillSelectedFields, capGeneratedSkills, topUpGeneratedList } from './tabBuild.service'
+import { resolveProfileThemeRecommendation } from './themeFromDocuments'
 import { themeConfigFromRecommendation } from './themeFromRecommendation'
 
 const running = new Set<string>()
@@ -605,6 +606,18 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       session.normalized.website.pages,
       session.normalized.website.crawlMode || 'full'
     )
+    // PDF/text brand guidelines → Card Settings global colors (light + dark P/S/A).
+    profile = resolveProfileThemeRecommendation(
+      profile,
+      [
+        session.normalized.extractedText,
+        ...session.normalized.documents.map((doc) => doc.text),
+        ...session.normalized.ocrResults.map((doc) => doc.text),
+        session.normalized.manualText,
+      ]
+        .filter(Boolean)
+        .join('\n\n')
+    )
     // Surface truthful research status on the profile for review UI / QC.
     if (session.normalized.research) {
       const r = session.normalized.research
@@ -1093,7 +1106,22 @@ export async function applyJob(input: {
     }
   }
 
-  const recommendedTheme = themeConfigFromRecommendation(ready.businessProfile?.themeRecommendation)
+  // Re-resolve from session sources so PDF Light/Dark P/S/A always reach Card Settings.
+  const themeProfile = resolveProfileThemeRecommendation(
+    ready.businessProfile || ({} as NonNullable<typeof ready.businessProfile>),
+    [
+      ready.normalized?.extractedText,
+      ...(ready.normalized?.documents || []).map((doc) => doc.text),
+      ...(ready.normalized?.ocrResults || []).map((doc) => doc.text),
+      ready.normalized?.manualText,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  )
+  const recommendedTheme = themeConfigFromRecommendation(themeProfile.themeRecommendation)
+  const themeSource = themeProfile.themeRecommendation?.source || ''
+  const shouldApplyTheme =
+    Boolean(recommendedTheme) && (!isUpdate || ['document', 'website', 'logo', 'mixed'].includes(themeSource))
   const profilePayload = {
     name: applyName,
     email: applyEmail,
@@ -1114,8 +1142,9 @@ export async function applyJob(input: {
     linkedin: ready.blueprint.socialHandles?.linkedin,
     youtube: ready.blueprint.socialHandles?.youtube,
     tiktok: ready.blueprint.socialHandles?.tiktok,
-    // New cards only: apply AI light/dark brand colors. Updates keep the owner's theme.
-    ...(recommendedTheme && !isUpdate
+    // Apply light/dark Primary·Secondary·Accent into Card Settings → Theme → Global Color.
+    // Document/website colors also apply on update; pure AI suggestions only on create.
+    ...(shouldApplyTheme
       ? {
           themeConfig: recommendedTheme,
           profileSettings: { themeConfig: recommendedTheme },
