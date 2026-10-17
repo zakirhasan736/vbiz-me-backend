@@ -285,7 +285,7 @@ async function fetchHtml(url: string, timeoutMs = PAGE_FETCH_TIMEOUT_MS): Promis
   } catch {
     throw new AppError(400, `Blocked or invalid website URL: ${url}`)
   }
-  let hostname = ''
+  let hostname: string
   try {
     hostname = new URL(safeUrl).hostname
   } catch {

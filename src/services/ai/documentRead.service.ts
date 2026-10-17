@@ -25,7 +25,7 @@ function emptyFacts(): DocumentChunkFacts {
 
 /** Split long document text into overlapping chunks so every section is read. */
 export function splitDocumentChunks(text: string, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP): string[] {
-  const clean = text.replace(/\u0000/g, '').trim()
+  const clean = text.split('\0').join('').trim()
   if (!clean) return []
   if (clean.length <= size) return [clean]
   const chunks: string[] = []
@@ -151,7 +151,7 @@ export async function readDocumentFullyForCardBuilder(input: {
   label: string
   text: string
 }): Promise<{ text: string; fullyRead: boolean; chunksRead: number }> {
-  const raw = input.text.replace(/\u0000/g, '').trim()
+  const raw = input.text.split('\0').join('').trim()
   if (!raw) return { text: '', fullyRead: false, chunksRead: 0 }
   if (raw.length <= LONG_DOCUMENT_THRESHOLD) {
     return { text: raw, fullyRead: true, chunksRead: 1 }
