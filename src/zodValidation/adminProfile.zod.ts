@@ -56,6 +56,10 @@ const linkCorporateCardsBody = z.object({
   slugs: z.array(z.string().trim().min(1)).min(1).max(40),
   apply: z.boolean().optional().default(false),
   promoteToCorporateOwner: z.boolean().optional().default(true),
+  /** Claim listed cards as owner-login cards (repairs AI auto-member reassignment). */
+  forceAsOwnerCard: z.boolean().optional().default(false),
+  /** Soft-delete previous member users left with zero cards after force claim. */
+  deleteOrphanMembers: z.boolean().optional().default(false),
 })
 
 const AdminProfileZodSchema = {

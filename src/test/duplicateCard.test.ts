@@ -172,6 +172,19 @@ describe('relinkExistingCardToCorporate', () => {
       { userId: 'julia-1', companyUserId: 'casa-1' }
     )
   })
+
+  it('forceAsOwnerCard claims the card for the corporate owner even when emails differ', () => {
+    assert.deepEqual(
+      relinkExistingCardToCorporate({
+        corporateUserId: 'casa-1',
+        corporateEmail: 'arlene@gonzalezps.com',
+        cardEmail: 'arlene@gonzalespg.com',
+        currentUserId: 'member-9',
+        forceAsOwnerCard: true,
+      }),
+      { userId: 'casa-1', companyUserId: 'casa-1' }
+    )
+  })
 })
 
 describe('cardNeedsCorporateMemberLogin', () => {

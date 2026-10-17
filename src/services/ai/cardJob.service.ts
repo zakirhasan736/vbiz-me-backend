@@ -962,12 +962,20 @@ export async function applyJob(input: {
     throw new AppError(409, 'AI update session is missing its persisted profile ID.')
   }
   const persisted = isUpdate
-    ? await profileService.update(String(ready.profileId), input.userId, input.role, profilePayload)
+    ? await profileService.update(String(ready.profileId), input.userId, input.role, {
+        ...profilePayload,
+        // AI must never reassign a corporate owner card to a new team-member login
+        // just because the website email differs from the corporate login email.
+        skipCorporateMemberProvision: true,
+      })
     : await profileService.create(input.userId, input.role, {
         ...profilePayload,
         ownerUserId: input.ownerUserId,
         creationKey: `ai-card-job:${ready.id}`,
         skipCreateContactRules: input.publish !== true,
+        // Keep AI-created cards on the acting corporate owner; team members are
+        // created only via explicit duplicate / member-login flows.
+        skipCorporateMemberProvision: true,
       })
 
   const profileId = persisted.id as string

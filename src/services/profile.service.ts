@@ -2184,8 +2184,10 @@ const update = async (
     gender: genderName,
     maritalStatus: maritalStatusName,
     relationship: relationshipName,
+    skipCorporateMemberProvision,
     ...raw
   } = data
+  const skipMemberProvisionOnUpdate = Boolean(skipCorporateMemberProvision)
   const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
   const requestedStatus = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : undefined
@@ -2292,6 +2294,8 @@ const update = async (
   const nextName = 'name' in raw && typeof raw.name === 'string' ? raw.name.trim() : currentProfile.name || ''
 
   // Backfill member login when a corporate-owned card gets a distinct email.
+  // Skipped for AI card builder / explicit callers so website emails cannot spawn
+  // a new Corporate Team Member user and steal ownership of the owner card.
   let updateProvisionedMemberUserId: string | null = null
   const corporateParentId = await resolveCorporateParentUserId(
     {
@@ -2301,7 +2305,7 @@ const update = async (
     userId,
     role
   )
-  if (corporateParentId && nextEmail) {
+  if (!skipMemberProvisionOnUpdate && corporateParentId && nextEmail) {
     const corporateUser = await prisma.user.findFirst({
       where: { id: corporateParentId, deletedAt: null },
       select: { id: true, email: true },

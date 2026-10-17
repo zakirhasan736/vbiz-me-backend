@@ -499,7 +499,14 @@ const ensureCorporateMemberLogins = async (
 }
 const linkCorporateCards = async (
   actor: { id: string },
-  input: { corporateEmail: string; slugs: string[]; apply?: boolean; promoteToCorporateOwner?: boolean }
+  input: {
+    corporateEmail: string
+    slugs: string[]
+    apply?: boolean
+    promoteToCorporateOwner?: boolean
+    forceAsOwnerCard?: boolean
+    deleteOrphanMembers?: boolean
+  }
 ) => {
   return linkCardsToCorporateAccount({
     corporateEmail: input.corporateEmail,
@@ -507,6 +514,8 @@ const linkCorporateCards = async (
     actorUserId: actor.id,
     apply: input.apply,
     promoteToCorporateOwner: input.promoteToCorporateOwner,
+    forceAsOwnerCard: input.forceAsOwnerCard,
+    deleteOrphanMembers: input.deleteOrphanMembers,
   })
 }
 
