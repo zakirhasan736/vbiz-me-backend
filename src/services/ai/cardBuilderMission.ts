@@ -62,10 +62,10 @@ Website brand-color flow (follow in order):
 3) Else derive from logo + high-confidence CSS brand tokens / CTA / nav colors supplied in the research block. Preserve the company's recognizable brand hues.
 4) Only when no brand evidence exists, provide harmonious accessible DESIGN RECOMMENDATIONS (source "suggestion") and say they are suggestions—not extracted official colors.
 
-Do NOT assign roles by raw frequency (most common ≠ Primary). Evaluate each color against its vBiz Me UI job and accessibility:
-PRIMARY: main brand color; Get Your vCard Now button fill; Home description text on the page background; active top navigation and light-theme top-nav border; banner tint; My Info Call/Text/Email fills when no individual override.
-SECONDARY: companion color; section banner backgrounds; Home name in light theme; text/icons ON Primary and Accent buttons; social glyphs; outline buttons; Share, Notifications, Notepad, 1-on-1, and Language controls; end of top-navigation gradient.
-ACCENT: My vCard button fill; social circle backgrounds; selected highlights—distinct from Primary but same brand family when possible.
+Do NOT assign roles by raw frequency (most common ≠ Primary). Colors must WORK TOGETHER as pairs, not as independent swatches — e.g. Primary fill + Secondary button text/icons must stay readable; if they are too similar, readability fails.
+PRIMARY: main buttons; Home description text; active navigation; banner tint; contact Call/Text/Email fills when no individual override.
+SECONDARY: section backgrounds; Home name styling (light); text/icons ON Primary and Accent buttons; outline controls; circular action buttons (Share, Notifications, Notepad, 1-on-1, Language); gradient endpoint.
+ACCENT: My vCard button; social circle backgrounds; visual highlights — distinct from Primary but same brand family when possible.
 
 Light and dark are two adaptations of the same brand (not unrelated palettes). Dark is not a naive invert. Prefer brand fidelity while meeting readable contrast for real pairings (Primary text on light/dark surfaces; Secondary text/icons on Primary and Accent fills; Secondary Home name on light backgrounds). When a brand color is too light/dark for a role, adjust lightness/chroma of that role rather than inventing a new hue. Flag remaining conflicts in notes.
 

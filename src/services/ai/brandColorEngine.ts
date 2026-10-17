@@ -323,7 +323,7 @@ function repairDarkTriplet(light: Triplet, brandPrimary: string, brandAccent: st
   let primary = pHsl
     ? hslToHex(pHsl.h, Math.min(0.75, pHsl.s + 0.05), Math.max(0.55, Math.min(0.78, pHsl.l + 0.18)))
     : light.primary
-  let accent = aHsl
+  const accent = aHsl
     ? hslToHex(aHsl.h, Math.min(0.8, aHsl.s + 0.05), Math.max(0.5, Math.min(0.72, aHsl.l + 0.12)))
     : light.accent
   let secondary = companionSecondary(brandPrimary || light.primary, false)

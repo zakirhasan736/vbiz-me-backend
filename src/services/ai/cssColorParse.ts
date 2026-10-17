@@ -213,15 +213,18 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   const c = (1 - Math.abs(2 * ll - 1)) * ss
   const x = c * (1 - Math.abs(((hh / 60) % 2) - 1))
   const m = ll - c / 2
-  let rp = 0
-  let gp = 0
-  let bp = 0
-  if (hh < 60) [rp, gp, bp] = [c, x, 0]
-  else if (hh < 120) [rp, gp, bp] = [x, c, 0]
-  else if (hh < 180) [rp, gp, bp] = [0, c, x]
-  else if (hh < 240) [rp, gp, bp] = [0, x, c]
-  else if (hh < 300) [rp, gp, bp] = [x, 0, c]
-  else [rp, gp, bp] = [c, 0, x]
+  const [rp, gp, bp] =
+    hh < 60
+      ? [c, x, 0]
+      : hh < 120
+        ? [x, c, 0]
+        : hh < 180
+          ? [0, c, x]
+          : hh < 240
+            ? [0, x, c]
+            : hh < 300
+              ? [x, 0, c]
+              : [c, 0, x]
   return [(rp + m) * 255, (gp + m) * 255, (bp + m) * 255]
 }
 
@@ -270,7 +273,7 @@ function parseFunctionArgs(inner: string): string[] {
  */
 export function parseCssColor(value: string, vars?: Record<string, string>, depth = 0): ParsedCssColor | null {
   if (!value || depth > 6) return null
-  let raw = value.trim().replace(/^['"]|['"]$/g, '')
+  const raw = value.trim().replace(/^['"]|['"]$/g, '')
   if (!raw || /^transparent$/i.test(raw) || /^currentcolor$/i.test(raw) || /^inherit$/i.test(raw)) {
     return null
   }
@@ -416,10 +419,7 @@ export function hexToHsl(hex: string): { h: number; s: number; l: number } | nul
   if (max === min) return { h: 0, s: 0, l }
   const d = max - min
   const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-  let h = 0
-  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6
-  else if (max === g) h = ((b - r) / d + 2) / 6
-  else h = ((r - g) / d + 4) / 6
+  const h = max === r ? ((g - b) / d + (g < b ? 6 : 0)) / 6 : max === g ? ((b - r) / d + 2) / 6 : ((r - g) / d + 4) / 6
   return { h: h * 360, s, l }
 }
 

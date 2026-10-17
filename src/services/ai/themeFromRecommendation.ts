@@ -15,10 +15,17 @@ function normalizeHex(value: unknown): string | null {
   return trimmed.toLowerCase()
 }
 
-/** Prefer readable secondary against primary/accent fills (button text/icons). */
+/**
+ * vBiz roles are paired, not independent:
+ * Secondary is the text/icon color ON Primary and Accent fills.
+ * Prefer shifting Secondary lightness (same hue) before a hard fallback.
+ */
 function ensureReadableSecondary(fill: string, secondary: string): string {
   if (contrastRatio(fill, secondary) >= 3) return secondary
-  return relativeLuminance(fill) > 0.5 ? '#0f2c4d' : '#f4f4f5'
+  const preferDarker = relativeLuminance(fill) > 0.5
+  const adjusted = ensureContrast(secondary, fill, 3, preferDarker)
+  if (contrastRatio(fill, adjusted) >= 3) return adjusted
+  return preferDarker ? '#0f2c4d' : '#f4f4f5'
 }
 
 function resolveTriplet(
@@ -30,11 +37,16 @@ function resolveTriplet(
   let secondary = normalizeHex(recommended?.secondary) || fallback.secondary
   let accent = normalizeHex(recommended?.accent) || fallback.accent
   const pageBg = mode === 'light' ? '#ffffff' : '#020914'
-  // Primary is also Home description text; Secondary is Home name (light) / control chrome.
+  // Primary = Home description text on page; Secondary = Home name (light) + control chrome.
   primary = ensureContrast(primary, pageBg, 4.5, mode === 'light')
   secondary = ensureContrast(secondary, pageBg, mode === 'light' ? 4.5 : 3, mode === 'light')
+  // Critical pairs: Secondary on Primary fill, Secondary on Accent fill.
   secondary = ensureReadableSecondary(primary, secondary)
   secondary = ensureReadableSecondary(accent, secondary)
+  // If Accent is too close to Primary, nudge Accent so highlights stay distinct.
+  if (contrastRatio(primary, accent) < 1.4) {
+    accent = ensureContrast(accent, primary, 1.6, relativeLuminance(primary) > 0.5)
+  }
   return { primary, secondary, accent }
 }
 
