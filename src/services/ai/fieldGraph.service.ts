@@ -184,7 +184,7 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'TERRA',
     prompt:
-      'Service names must come from sources. For each: one emoji + clear title + 40–75 word premium description that sells customer VALUE (what it is, why it matters, how the buyer benefits) — not a dry feature list. Vary openings. NEVER invent service images or image URLs.',
+      'Service names must come from sources — never invent services to fill a quota. For each verified service: one emoji + clear title + 40–75 word premium description that sells customer VALUE (what it is, why it matters, how the buyer benefits). Vary openings. NEVER invent service images or image URLs.',
     getValue: (p) => p.services,
   },
   {

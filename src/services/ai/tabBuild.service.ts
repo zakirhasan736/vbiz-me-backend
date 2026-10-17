@@ -170,14 +170,9 @@ function shouldAutoFill(
 ) {
   if (!selected.has(field.tabId)) return false
   if (field.special === 'credentials') return false
-  if (
-    field.special === 'portfolio' ||
-    field.fieldKey === 'portfolio' ||
-    field.special === 'services' ||
-    field.fieldKey === 'services'
-  ) {
-    return listLength(field.currentValue) === 0
-  }
+  // Never invent portfolio or service rows; crawl/architect/customer data only (mission v4).
+  if (field.special === 'portfolio' || field.fieldKey === 'portfolio') return false
+  if (field.special === 'services' || field.fieldKey === 'services') return false
   if (!field.aiGenerationAllowed) return false
   if (isListContentField(field)) {
     if (field.special === 'faq' && includePermissioned?.faq === false) return false
@@ -227,9 +222,9 @@ async function generateForField(input: {
             : section === 'personal'
               ? 'Write a professional About Me from verified facts only. Individuals = first person ~100–150 words with Mission + Why Choose Us + CTA.'
               : section === 'services'
-                ? `The sources had no services. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} realistic offerings this business would provide. Each item needs an emoji-capable title and a 40–75 word benefit description. Do not invent prices, guarantees, certifications, or service images.`
+                ? 'Return only verified services from the profile. If none exist, return { "services": [] }. Do not invent services to fill a quota. Never add imageUrl.'
                 : section === 'portfolio'
-                  ? `The sources had no portfolio items. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} representative project examples. Describe the kind of work, not fake client metrics, awards, or named case studies.`
+                  ? 'Return only verified portfolio items from the profile. If none exist, return { "portfolio": [] }. Do not invent projects.'
                   : 'Group skills from verified services and experience only.'
     const payload = await generateSectionFromProfile({
       section,
@@ -246,12 +241,14 @@ async function generateForField(input: {
       section === 'services' ||
       section === 'portfolio'
     ) {
-      if (section === 'reviews' && existingLen === 0) return []
+      if ((section === 'reviews' || section === 'services' || section === 'portfolio') && existingLen === 0) {
+        return Array.isArray(generated) ? generated : []
+      }
       const merged = topUpGeneratedList(input.field.currentValue, generated)
       if (section === 'blogs' && existingLen === 0 && Array.isArray(merged)) {
         return merged.slice(0, 2)
       }
-      if ((section === 'faqs' || section === 'services') && existingLen === 0 && Array.isArray(merged)) {
+      if (section === 'faqs' && existingLen === 0 && Array.isArray(merged)) {
         return merged.slice(0, MAX_DRAFT_WHEN_EMPTY)
       }
       return merged

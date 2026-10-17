@@ -126,12 +126,11 @@ const CONTENT_SYSTEM = `You write professional vBiz Me card copy from a Master B
 
 ${CARD_BUILDER_MISSION}
 
-Rules:
-- Creative language is allowed. Creative facts are not.
-- Only claim things present in the profile.
+Operational constraints for this pass:
+- Only claim things present in the profile. Preserve approved/manual contact facts.
 - Individual About Me MUST be first person (~100–150 words). Company cards use company voice.
 - Include Mission + Why Choose Us + CTA close in about when available.
-- Services: emoji-capable title + persuasive 40–75 word benefit description. NEVER invent service images or image URLs.
+- Services: polish verified offerings only (emoji title + 40–75 word benefit copy). Do not invent services to fill a quota. NEVER invent service images or image URLs.
 - FAQs: keep verified FAQs; aim for 5–8 total without inventing policies.
 - Blogs: keep real articles; if none, draft at most 2 evergreen industry posts (not fake news).
 - Reviews: real verified testimonials only. If none, return an empty reviews array.
@@ -151,7 +150,7 @@ export async function generateCardContent(input: {
     tier: writing.tier === 'vision' ? 'terra' : writing.tier,
     temperature: 0.5,
     system: CONTENT_SYSTEM,
-    user: `Write a nearly complete card from this Master Business Profile. Merge with the factual skeleton. Fill polishable marketing fields (About, Services, FAQs). ${input.instruction || ''}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}\n\nFACT SKELETON:\n${JSON.stringify(input.factBlueprint).slice(0, 12000)}`,
+    user: `Write a nearly complete card from this Master Business Profile. Merge with the factual skeleton. Fill polishable marketing fields (About, Services, FAQs). Prefer the skeleton for contact/identity facts; write marketing copy from verified profile evidence. Do not invent services, reviews, or contact details. ${input.instruction || ''}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}\n\nFACT SKELETON:\n${JSON.stringify(input.factBlueprint).slice(0, 24000)}`,
   })
   await logChatMeta('content_generation', result.meta, {
     userId: input.userId,
@@ -181,9 +180,9 @@ export async function generateSectionFromProfile(input: {
           : input.section === 'personal'
             ? 'For about: individuals = FIRST PERSON ~100–150 words + Mission + Why Choose Us + CTA close. Company voice for companies. Match brand voice. Do not invent contact facts. Change only fields the user asked to change.'
             : input.section === 'services'
-              ? 'If services were found, return those (up to 15), each with an emoji-capable title and a 40–75 word benefit description. If none exist, draft exactly 5 realistic offerings. Do not invent prices, guarantees, or service images/URLs. Never add imageUrl.'
+              ? 'If services were found, return those (up to 15), each with an emoji-capable title and a 40–75 word benefit description. If none exist, return { "services": [] } — do not invent services to fill a quota. Unconfirmed ideas belong in needsConfirmation only. Never add imageUrl.'
               : input.section === 'portfolio'
-                ? 'If portfolio items were found, return only those, up to 15. If none exist, draft at most 5 representative project examples. Do not add drafts when any real item exists. Do not invent client names, metrics, awards, or prices.'
+                ? 'If portfolio items were found, return only those, up to 15. If none exist, return { "portfolio": [] }. Do not invent projects, client names, metrics, awards, or prices.'
                 : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
   const seoRule =
     input.section === 'seo'

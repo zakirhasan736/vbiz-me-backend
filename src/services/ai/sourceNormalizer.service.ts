@@ -414,7 +414,7 @@ export async function normalizeSources(input: {
   }
 }
 
-export function compactProfileForPrompt(profile: MasterBusinessProfile, max = 20000): string {
+export function compactProfileForPrompt(profile: MasterBusinessProfile, max = 32000): string {
   const json = JSON.stringify(profile)
   if (json.length <= max) return json
   return `${json.slice(0, max)}\n[truncated profile]`

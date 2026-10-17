@@ -552,10 +552,10 @@ describe('vBiz Me auto card builder', () => {
     )
   })
 
-  it('allows AI to generate example reviews when none were scraped', () => {
+  it('does not invent reviews when none were scraped', () => {
     const completion = readFileSync(resolve(process.cwd(), 'src/services/ai/fieldCompletion.service.ts'), 'utf8')
-    assert.equal(/AI cannot create real customer reviews/.test(completion), false)
     assert.match(completion, /Reviews: keep every review found in sources/)
+    assert.match(completion, /never invent fictional customer quotes/)
   })
 
   it('21. award objects and zero ratings from the model still parse', () => {

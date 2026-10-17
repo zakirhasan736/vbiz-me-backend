@@ -652,7 +652,7 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       profile,
       userId: session.userId,
       sessionId: session.id,
-      // Always draft FAQs / reviews / blogs when empty so the card is nearly complete.
+      // Draft FAQs/blogs when empty; reviews stay empty unless verified (mission v4).
       includePermissioned: { faq: true, blog: true, reviews: true },
     })
     const { blueprint } = assembleAiCard({

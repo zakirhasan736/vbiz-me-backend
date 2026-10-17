@@ -92,18 +92,39 @@ function ensureOpenAiConfigured() {
 }
 
 function mergeBlueprint(base: Partial<CardBlueprint>, generated: CardBlueprint): CardBlueprint {
+  const basePersonal = base.personal || {}
+  const genPersonal = generated.personal || ({} as CardBlueprint['personal'])
+  // Contact/identity facts from the factual skeleton win; polished About from the content pass wins.
+  const contactKeys = new Set([
+    'fullName',
+    'email',
+    'dob',
+    'phone',
+    'whatsapp',
+    'designation',
+    'company',
+    'profession',
+    'address',
+    'website',
+  ])
+  const mergedPersonal = {
+    ...genPersonal,
+    ...Object.fromEntries(Object.entries(basePersonal).filter(([k, v]) => Boolean(v) && contactKeys.has(k))),
+    about:
+      (genPersonal.about || '').trim().length >= 80
+        ? genPersonal.about
+        : basePersonal.about || genPersonal.about || '',
+  }
   return cardBlueprintSchema.parse({
     ...generated,
-    personal: {
-      ...generated.personal,
-      ...Object.fromEntries(Object.entries(base.personal || {}).filter(([, v]) => v)),
-    },
+    personal: mergedPersonal,
     socialHandles: { ...(generated.socialHandles || {}), ...(base.socialHandles || {}) },
     education: generated.education?.length ? generated.education : base.education || [],
     experience: generated.experience?.length ? generated.experience : base.experience || [],
     skills: generated.skills?.length ? generated.skills : base.skills || [],
+    // Prefer generated polish only when it covers the same verified set; never drop crawl services.
     services: generated.services?.length ? generated.services : base.services || [],
-    portfolio: generated.portfolio?.length ? generated.portfolio : base.portfolio || [],
+    portfolio: base.portfolio?.length ? base.portfolio : generated.portfolio || [],
     reviews: base.reviews || [],
     blogs: generated.blogs || [],
     faqs: generated.faqs || [],
