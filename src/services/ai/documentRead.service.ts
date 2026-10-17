@@ -5,9 +5,9 @@ const CHUNK_SIZE = 12_000
 const CHUNK_OVERLAP = 500
 /** Documents longer than this are read in sequential chunks before card planning. */
 export const LONG_DOCUMENT_THRESHOLD = 35_000
-const MAX_CHUNKS = 24
-const MERGE_EXCERPT_HEAD = 8_000
-const MERGE_EXCERPT_TAIL = 6_000
+const MAX_CHUNKS = 40
+const MERGE_EXCERPT_HEAD = 12_000
+const MERGE_EXCERPT_TAIL = 8_000
 
 export type DocumentChunkFacts = {
   personal: string[]

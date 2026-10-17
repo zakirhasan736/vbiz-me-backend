@@ -123,7 +123,8 @@ function mergeBlueprint(base: Partial<CardBlueprint>, generated: CardBlueprint):
     // Prefer generated polish only when it covers the same verified set; never drop crawl services.
     services: generated.services?.length ? generated.services : base.services || [],
     portfolio: base.portfolio?.length ? base.portfolio : generated.portfolio || [],
-    reviews: base.reviews || [],
+    // Keep crawl/fact reviews when present; otherwise keep AI Example Client drafts from the content pass.
+    reviews: base.reviews?.length ? base.reviews : generated.reviews || [],
     blogs: generated.blogs || [],
     faqs: generated.faqs || [],
     enabledTabs: generated.enabledTabs?.length ? generated.enabledTabs : base.enabledTabs || ['Personal'],

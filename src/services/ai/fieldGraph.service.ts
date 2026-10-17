@@ -220,7 +220,7 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'LUNA',
     prompt:
-      'Prefer real customer reviews from sources and keep all of them. If none were scraped, leave reviews empty — never invent fictional customer quotes. Do not invent licenses, prices, or awards.',
+      'If the website has reviews/testimonials, keep ALL of them (max 15). Never pad real reviews with invented ones. Only when the website has zero reviews, draft up to 5 Example Client testimonials from the business. Do not invent licenses, prices, awards, or review-platform URLs.',
     getValue: (p) => [...(p.verifiedReviews || []), ...(p.existingTestimonials || [])],
   },
   {

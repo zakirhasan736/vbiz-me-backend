@@ -652,7 +652,7 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       profile,
       userId: session.userId,
       sessionId: session.id,
-      // Draft FAQs/blogs when empty; reviews stay empty unless verified (mission v4).
+      // Draft FAQs / blogs / reviews when empty so the card is nearly complete.
       includePermissioned: { faq: true, blog: true, reviews: true },
     })
     const { blueprint } = assembleAiCard({
@@ -766,7 +766,7 @@ export async function generatePermissionedContent(input: {
         : input.kind === 'blog'
           ? 'The sources had no articles. Draft at most 5 evergreen posts. Do not invent news events, dates, awards, or statistics.'
           : input.kind === 'reviews'
-            ? 'The sources had no verified reviews. Return { "reviews": [] }. Never invent fictional customer testimonials.'
+            ? 'The website had no reviews. Draft at most 5 realistic example testimonials from the business you understood. Authors like "Example Client 1". Do not invent licenses, prices, awards, or review URLs.'
             : 'Create at most 5 concise skills from verified services, expertise, and experience. Group them using the editor shape { type, skills }.',
     userId: input.userId,
     sessionId: session.id,

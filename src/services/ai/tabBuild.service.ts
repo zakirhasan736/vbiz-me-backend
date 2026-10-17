@@ -211,14 +211,18 @@ async function generateForField(input: {
       section === 'reviews' ||
       section === 'services' ||
       section === 'portfolio'
-    if (listSection && existingLen > 0) return input.field.currentValue
+    if (listSection && existingLen > 0) {
+      // Website/source lists: keep them all (cap 15). Never pad with AI drafts.
+      const existing = Array.isArray(input.field.currentValue) ? input.field.currentValue : []
+      return existing.slice(0, 15)
+    }
     const instruction =
       section === 'faqs'
         ? `The sources had no FAQs. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} helpful FAQs from the business you understood. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas.`
         : section === 'blogs'
           ? 'The sources had no articles. Draft exactly 2 evergreen industry posts from the business you understood. Do not invent news events, dates, or awards.'
           : section === 'reviews'
-            ? 'The sources had no verified reviews. Return { "reviews": [] }. Never invent fictional customer testimonials. Optional review-collection guidance may go in needsConfirmation only.'
+            ? `The website had no reviews. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} realistic example testimonials grounded in this business. Use authors like "Example Client 1". Do not invent licenses, prices, awards, star-rating platform claims, or review URLs.`
             : section === 'personal'
               ? 'Write a professional About Me from verified facts only. Individuals = first person ~100–150 words with Mission + Why Choose Us + CTA.'
               : section === 'services'
@@ -241,14 +245,14 @@ async function generateForField(input: {
       section === 'services' ||
       section === 'portfolio'
     ) {
-      if ((section === 'reviews' || section === 'services' || section === 'portfolio') && existingLen === 0) {
+      if ((section === 'services' || section === 'portfolio') && existingLen === 0) {
         return Array.isArray(generated) ? generated : []
       }
       const merged = topUpGeneratedList(input.field.currentValue, generated)
       if (section === 'blogs' && existingLen === 0 && Array.isArray(merged)) {
         return merged.slice(0, 2)
       }
-      if (section === 'faqs' && existingLen === 0 && Array.isArray(merged)) {
+      if ((section === 'faqs' || section === 'reviews') && existingLen === 0 && Array.isArray(merged)) {
         return merged.slice(0, MAX_DRAFT_WHEN_EMPTY)
       }
       return merged

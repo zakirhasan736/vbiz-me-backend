@@ -66,7 +66,7 @@ Services: keep real titles; you may write missing benefit-focused descriptions.
 FAQ: only questions answerable from the profile (or realistic buyer questions grounded in the business); no meaningless filler.
 About: individual cards ALWAYS first person (I/my) — never third person; ~100–150 words with human story + Mission + Why Choose Us + CTA; match brand voice.
 Blog/News: evergreen educational content, never a fake company event.
-Reviews: keep every review found in sources. If none exist, leave reviews empty — never invent fictional customer quotes.`,
+Reviews: if the website has reviews, keep ALL of them (max 15). Only if none exist, draft at most 5 Example Client testimonials from the business. Never pad real reviews with invented ones.`,
     user: `Field: ${input.field.fieldLabel} (${input.field.fieldKey})
 Instruction: ${input.instruction || '(none)'}
 Current text: ${String(input.currentText || input.field.currentValue || '').slice(0, 4000)}

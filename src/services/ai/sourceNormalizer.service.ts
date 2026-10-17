@@ -102,12 +102,87 @@ function excerptForCard(text: string, max = 700): string {
 }
 
 /** If SOL missed real site articles/projects, copy them onto the card from the crawl. */
+/** Pull quote/author pairs from crawled review/testimonial page text. */
+export function extractReviewsFromCrawlText(
+  text: string,
+  sourceUrl = ''
+): Array<{ author: string; text: string; rating?: number; source: string; sourceUrl: string }> {
+  const out: Array<{ author: string; text: string; rating?: number; source: string; sourceUrl: string }> = []
+  const seen = new Set<string>()
+  const push = (author: string, quote: string) => {
+    const cleanQuote = quote.replace(/\s+/g, ' ').trim()
+    const cleanAuthor = author
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^[-–—\s]+/, '')
+    if (cleanQuote.length < 20 || cleanQuote.length > 800) return
+    if (/leave a review|write a review|google reviews|click here/i.test(cleanQuote)) return
+    const key = cleanQuote.toLowerCase().slice(0, 160)
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push({
+      author: cleanAuthor || 'Customer',
+      text: cleanQuote,
+      source: 'website',
+      sourceUrl,
+    })
+  }
+
+  for (const match of text.matchAll(
+    /REVIEW_TESTIMONIAL_BLOCK\s+\d+:\s*([\s\S]{20,1200}?)(?=REVIEW_TESTIMONIAL_BLOCK\s+\d+:|$)/gi
+  )) {
+    const block = match[1].replace(/\s+/g, ' ').trim()
+    const attributed =
+      block.match(/[“"]([^“"]{20,500})[”"]\s*[-–—]\s*([A-Za-z][A-Za-z .'-]{1,60})/) ||
+      block.match(/([A-Za-z][A-Za-z .'-]{1,60})\s*:\s*([A-Za-z][\s\S]{20,500})/)
+    if (attributed) {
+      if (attributed[1].length > attributed[2].length) push(attributed[2], attributed[1])
+      else push(attributed[1], attributed[2])
+    } else {
+      push('Customer', block.slice(0, 500))
+    }
+    if (out.length >= 15) return out
+  }
+
+  for (const match of text.matchAll(/[“"]([^“"]{20,500})[”"]\s*[-–—]\s*([A-Za-z][A-Za-z .'-]{1,60})/g)) {
+    push(match[2], match[1])
+    if (out.length >= 15) break
+  }
+
+  return out
+}
+
 export function seedProfileFromCrawledPages(
   profile: MasterBusinessProfile,
   pages: NormalizedSourceData['website']['pages'],
   crawlMode: WebsiteCrawlMode = 'full'
 ): MasterBusinessProfile {
   const next = { ...profile }
+  // Website reviews only (max 15). Do not hunt Google/Yelp/etc. for review text.
+  {
+    let crawledReviews = pages
+      .filter((page) => page.category === 'reviews' || /review|testimonial|feedback/i.test(`${page.url} ${page.title}`))
+      .flatMap((page) => extractReviewsFromCrawlText(page.text || '', page.url))
+    if (!crawledReviews.length) {
+      const homeCorpus = pages.map((page) => page.text || '').join('\n')
+      crawledReviews = extractReviewsFromCrawlText(homeCorpus, pages[0]?.url || '')
+    }
+    if (crawledReviews.length) {
+      const prior = [...(next.verifiedReviews || []), ...(next.existingTestimonials || [])]
+      const seen = new Set(
+        prior.map((row) => `${row.author || ''}|${row.text || ''}`.toLowerCase().replace(/\s+/g, ' ').slice(0, 180))
+      )
+      const merged = [...prior]
+      for (const row of crawledReviews) {
+        const key = `${row.author || ''}|${row.text || ''}`.toLowerCase().replace(/\s+/g, ' ').slice(0, 180)
+        if (seen.has(key)) continue
+        seen.add(key)
+        merged.push(row)
+        if (merged.length >= 15) break
+      }
+      next.verifiedReviews = merged.slice(0, 15)
+    }
+  }
   if (!(next.blogs || []).length) {
     const articles = pages
       .filter((page) => page.category === 'blog' && !isListingPath(page.url))

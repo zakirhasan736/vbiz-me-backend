@@ -42,7 +42,7 @@ import {
   selectFillSectionModel,
   selectModelForTask,
 } from '../modelRouter.service'
-import { seedProfileFromCrawledPages } from '../sourceNormalizer.service'
+import { extractReviewsFromCrawlText, seedProfileFromCrawledPages } from '../sourceNormalizer.service'
 import { decideRecommendedTabs } from '../tabDecision.service'
 import { filterRealReviews, looksLikeDateOnly, looksLikeEmail, sanitizeBlueprint } from '../validation.service'
 
@@ -552,10 +552,31 @@ describe('vBiz Me auto card builder', () => {
     )
   })
 
-  it('does not invent reviews when none were scraped', () => {
+  it('keeps all website reviews or drafts at most 5 when none exist', () => {
     const completion = readFileSync(resolve(process.cwd(), 'src/services/ai/fieldCompletion.service.ts'), 'utf8')
-    assert.match(completion, /Reviews: keep every review found in sources/)
-    assert.match(completion, /never invent fictional customer quotes/)
+    assert.match(completion, /keep ALL of them \(max 15\)/)
+    assert.match(completion, /draft at most 5 Example Client testimonials/)
+    assert.match(completion, /Never pad real reviews/)
+  })
+
+  it('always recommends the reviews tab even when none were scraped', () => {
+    const tabs = decideRecommendedTabs(profile({ verifiedReviews: [], existingTestimonials: [] }))
+    assert.ok(tabs.some((tab) => tab.navId === 'reviews'))
+  })
+
+  it('seeds verified reviews from crawled review page text', () => {
+    const seeded = seedProfileFromCrawledPages(profile({ verifiedReviews: [], existingTestimonials: [] }), [
+      {
+        url: 'https://acme.test/reviews',
+        category: 'reviews',
+        title: 'Customer Reviews',
+        text: 'REVIEW_TESTIMONIAL_BLOCK 1: "Acme fixed our leak the same day and left the kitchen spotless." — Pat Rivera',
+        imageUrls: [],
+      },
+    ])
+    assert.ok((seeded.verifiedReviews || []).length >= 1)
+    assert.match(String(seeded.verifiedReviews?.[0]?.text || ''), /fixed our leak/i)
+    assert.equal(extractReviewsFromCrawlText('"Great work on the install." — Sam Lee', 'https://x.test').length, 1)
   })
 
   it('21. award objects and zero ratings from the model still parse', () => {
@@ -866,10 +887,11 @@ describe('vBiz Me auto card builder', () => {
     }))
     normalized.extractedText = normalized.website.pages.map((page) => page.text).join('\n')
     const digest = buildArchitectureSource(normalized)
-    assert.ok(digest.length < 28_000)
+    assert.ok(digest.length < 110_000)
     assert.match(digest, /LARGE SITE DIGEST/)
     assert.match(digest, /car-16/)
     assert.match(digest, /The Paddock Cars/)
+    assert.match(digest, /PAGE INDEX/)
     const draft = fallbackArchitecture(normalized)
     assert.match(String(draft.masterBusinessProfile.businessName), /Paddock/)
     assert.ok((draft.masterBusinessProfile.products || []).length > 0)

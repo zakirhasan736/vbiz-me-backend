@@ -34,12 +34,28 @@ export type CrawledWebsitePage = {
   extractionStatus?: 'ok' | 'empty' | 'truncated' | 'blocked'
 }
 
-export const PAGE_FETCH_TIMEOUT_MS = 20_000
-export const DEFAULT_CRAWL_MAX_PAGES = 60
-export const FOCUSED_CRAWL_MAX_PAGES = 72
+export const PAGE_FETCH_TIMEOUT_MS = 25_000
+/** Full-site scrape budget — open as many pages as practical for the card builder. */
+export const DEFAULT_CRAWL_MAX_PAGES = 150
+export const FOCUSED_CRAWL_MAX_PAGES = 180
 export const STOREFRONT_CRAWL_MAX_PAGES = 10
+/** Per-page body kept for AI (home pages get a larger slice). */
+export const CRAWL_PAGE_TEXT_CHARS = 20_000
+export const CRAWL_HOME_TEXT_CHARS = 28_000
+/** Combined crawl corpus fed into normalization / AI. */
+export const CRAWL_COMBINED_TEXT_CHARS = 450_000
 /** Priority inner pages that must be fetched when linked from the site. */
-const PRIORITY_PAGE_FOCUSES = ['about', 'services', 'faqs', 'reviews', 'personal', 'portfolio', 'blogs'] as const
+const PRIORITY_PAGE_FOCUSES = [
+  'about',
+  'services',
+  'faqs',
+  'reviews',
+  'personal',
+  'portfolio',
+  'blogs',
+  'products',
+  'team',
+] as const
 
 const BROWSER_LIKE_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
@@ -606,16 +622,17 @@ async function discoverSitemapUrls(home: string): Promise<string[]> {
     const sitemapUrl = new URL('/sitemap.xml', origin).toString()
     const xml = await fetchHtml(sitemapUrl, 12_000)
     const locs = parseSitemapLocs(xml, origin.hostname)
-    const nested = locs.filter((loc) => /sitemap/i.test(loc)).slice(0, 12)
+    const nested = locs.filter((loc) => /sitemap/i.test(loc)).slice(0, 24)
     const nestedLocs: string[] = []
     for (const nestedUrl of nested) {
       try {
-        nestedLocs.push(...parseSitemapLocs(await fetchHtml(nestedUrl, 12_000), origin.hostname))
+        nestedLocs.push(...parseSitemapLocs(await fetchHtml(nestedUrl, 15_000), origin.hostname))
       } catch {
         /* ignore nested sitemap failures */
       }
     }
-    return [...locs, ...nestedLocs].filter((loc) => !/sitemap/i.test(loc))
+    // Cap sitemap discovery so huge sites still finish, but keep a large set for planning.
+    return [...locs, ...nestedLocs].filter((loc) => !/sitemap/i.test(loc)).slice(0, 2_500)
   } catch {
     return []
   }
@@ -785,13 +802,13 @@ export function planCatalogReads(
       classifyWebsitePage(url) === 'products'
     )
   })
-  const samples = groups.slice(0, 12).map((group) => group.sampleUrl)
-  const fetchUrls = [...new Set([...cores, ...categoryPages, ...samples, ...blogs.slice(0, 8), ...others])].slice(
-    0,
-    limit
-  )
+  const samples = groups.slice(0, 24).map((group) => group.sampleUrl)
+  const blogBudget = Math.min(24, Math.max(8, Math.floor(limit * 0.2)))
+  const fetchUrls = [
+    ...new Set([...cores, ...categoryPages, ...samples, ...blogs.slice(0, blogBudget), ...others]),
+  ].slice(0, limit)
   const listed = groups
-    .slice(0, 24)
+    .slice(0, 40)
     .map((group) => {
       const extra = group.count - 1
       const names = group.otherLabels.slice(0, 6).join(', ')
@@ -799,12 +816,12 @@ export function planCatalogReads(
     })
     .join('\n')
   const summary = [
-    `FULL WEBSITE: ${unique.length} pages discovered.`,
-    'Main pages (home, about, services, contact, team, and similar) are read in full.',
+    `FULL WEBSITE: ${unique.length} pages discovered; opening up to ${limit} pages for the card builder.`,
+    'Main pages (home, about, services, contact, team, FAQ, reviews, portfolio) are read in full.',
     'Long car or product lists are read by category: one example from each category, not every listing.',
     listed,
-    blogs.length > 8
-      ? `Articles discovered: ${blogs.length}. Opened ${Math.min(8, blogs.length)} and kept the rest as titles only.`
+    blogs.length > blogBudget
+      ? `Articles discovered: ${blogs.length}. Opened ${Math.min(blogBudget, blogs.length)} and kept the rest as titles only.`
       : '',
   ]
     .filter(Boolean)
@@ -823,7 +840,7 @@ export async function crawlWebsiteDeep(
 ): Promise<{ pages: CrawledWebsitePage[]; combined: string; mode: WebsiteCrawlMode; catalogSummary?: string }> {
   const mode: WebsiteCrawlMode = options?.mode === 'storefront' ? 'storefront' : 'full'
   const home = url.startsWith('http') ? url : `https://${url}`
-  const cacheId = cacheKey(['crawl-v4', home, focus || '', mode])
+  const cacheId = cacheKey(['crawl-v5', home, focus || '', mode])
   const cached = cacheGet<{
     pages: CrawledWebsitePage[]
     combined: string
@@ -840,7 +857,7 @@ export async function crawlWebsiteDeep(
   const pages: CrawledWebsitePage[] = [
     {
       url: home,
-      text: truncate(homeText, mode === 'storefront' ? 20000 : 16000),
+      text: truncate(homeText, mode === 'storefront' ? 20_000 : CRAWL_HOME_TEXT_CHARS),
       category: homeCategory,
       title: extractPageTitle(homeHtml),
       imageUrls: extractPageImageUrls(homeHtml, home, imageLimit),
@@ -858,7 +875,7 @@ export async function crawlWebsiteDeep(
     return {
       url: link,
       html,
-      text: truncate(htmlToText(html), focus || mode === 'storefront' ? 14000 : 12000),
+      text: truncate(htmlToText(html), focus || mode === 'storefront' ? 14_000 : CRAWL_PAGE_TEXT_CHARS),
       title: extractPageTitle(html),
       imageUrls: extractPageImageUrls(html, link, imageLimit),
     }
@@ -946,6 +963,8 @@ export async function crawlWebsiteDeep(
         ['reviews', 'reviews'],
         ['contact', 'personal'],
         ['team', 'personal'],
+        ['portfolio', 'portfolio'],
+        ['blog', 'blogs'],
       ] as const
     ).filter(([category]) => !haveCategories.has(category))
     if (missingPriority.length && pages.length < maxPages) {
@@ -962,12 +981,32 @@ export async function crawlWebsiteDeep(
         }
       }
     }
+
+    // Broad BFS: keep following same-origin links until the page budget is filled.
+    let frontier = [...extraLinks, ...more]
+    let waves = 0
+    while (pages.length < maxPages && frontier.length && waves < 4) {
+      waves += 1
+      const batch = frontier.filter((link) => remember(link)).slice(0, Math.max(0, maxPages - pages.length))
+      frontier = []
+      if (!batch.length) break
+      const waveResults = await fetchSettledInChunks(batch, 8, fetchPage)
+      for (const result of waveResults) {
+        if (result.status !== 'fulfilled') continue
+        const page = result.value as FetchedPage
+        acceptPage(page)
+        frontier.push(...extractSameOriginLinks(page.html, page.url, focus, 40))
+        for (const priorityFocus of PRIORITY_PAGE_FOCUSES) {
+          frontier.push(...extractSameOriginLinks(page.html, page.url, priorityFocus, 12))
+        }
+      }
+    }
   }
 
   const combinedPrefix = [
     mode === 'storefront'
       ? 'CRAWL MODE: storefront (seller/vendor page — focus on this URL, not the full marketplace)'
-      : '',
+      : `CRAWL MODE: full-site (${pages.length} pages opened; every area linked from the site was pursued up to the page budget)`,
     catalogSummary,
   ]
     .filter(Boolean)
@@ -987,7 +1026,7 @@ export async function crawlWebsiteDeep(
 
   const result = {
     pages,
-    combined: truncate(combined, mode === 'storefront' ? 90000 : focus ? 160000 : 180000),
+    combined: truncate(combined, mode === 'storefront' ? 90_000 : focus ? 320_000 : CRAWL_COMBINED_TEXT_CHARS),
     mode,
     catalogSummary: catalogSummary || undefined,
   }

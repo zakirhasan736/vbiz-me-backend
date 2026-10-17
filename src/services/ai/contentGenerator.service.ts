@@ -133,7 +133,7 @@ Operational constraints for this pass:
 - Services: polish verified offerings only (emoji title + 40–75 word benefit copy). Do not invent services to fill a quota. NEVER invent service images or image URLs.
 - FAQs: keep verified FAQs; aim for 5–8 total without inventing policies.
 - Blogs: keep real articles; if none, draft at most 2 evergreen industry posts (not fake news).
-- Reviews: real verified testimonials only. If none, return an empty reviews array.
+- Reviews: if the website has reviews, keep ALL of them (max 15). If the website has none, draft at most 5 Example Client testimonials from the business. Never invent extras when real reviews already exist.
 - Honor narrow user instructions — change only the requested section.
 - Return JSON matching the vCard blueprint shape.
 ${BLUEPRINT_JSON_INSTRUCTION}`
@@ -150,7 +150,7 @@ export async function generateCardContent(input: {
     tier: writing.tier === 'vision' ? 'terra' : writing.tier,
     temperature: 0.5,
     system: CONTENT_SYSTEM,
-    user: `Write a nearly complete card from this Master Business Profile. Merge with the factual skeleton. Fill polishable marketing fields (About, Services, FAQs). Prefer the skeleton for contact/identity facts; write marketing copy from verified profile evidence. Do not invent services, reviews, or contact details. ${input.instruction || ''}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}\n\nFACT SKELETON:\n${JSON.stringify(input.factBlueprint).slice(0, 24000)}`,
+    user: `Write a nearly complete card from this Master Business Profile. Merge with the factual skeleton. Fill polishable marketing fields (About, Services, FAQs, Reviews). Prefer the skeleton for contact/identity facts; write marketing copy from verified profile evidence. Do not invent services or contact details. Reviews: keep all website reviews (max 15); only if none, draft at most 5 Example Client testimonials. ${input.instruction || ''}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}\n\nFACT SKELETON:\n${JSON.stringify(input.factBlueprint).slice(0, 24000)}`,
   })
   await logChatMeta('content_generation', result.meta, {
     userId: input.userId,
@@ -172,7 +172,7 @@ export async function generateSectionFromProfile(input: {
   const schemaHint = FILL_SECTION_SCHEMA_HINTS[input.section]
   const reviewRule =
     input.section === 'reviews'
-      ? 'If verifiedReviews or existingTestimonials have real quotes, return those (up to 15). If empty, return { "reviews": [] }. Never invent fictional customer reviews or treat examples as authentic testimonials.'
+      ? 'If verifiedReviews or existingTestimonials have any real quotes from the website, return ALL of them (max 15) and do not invent more. Only if both are empty, draft exactly 5 Example Client testimonials from the business. Do not invent review-platform URLs, rating counts, licenses, or awards.'
       : input.section === 'faqs'
         ? 'If the profile or sources contain FAQs, return those. If empty or fewer than 5, draft helpful FAQs to reach exactly 5 total when the business is clear. Do not invent prices, hours, guarantees, or certifications.'
         : input.section === 'blogs'
