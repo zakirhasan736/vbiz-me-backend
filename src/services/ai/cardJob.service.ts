@@ -46,7 +46,10 @@ import { emptyNormalizedSources, normalizeSources, seedProfileFromCrawledPages }
 import { normalizeWebsiteUrl } from './sourceUrl'
 import { autoFillSelectedFields, capGeneratedSkills, topUpGeneratedList } from './tabBuild.service'
 import { resolveProfileThemeRecommendation } from './themeFromDocuments'
-import { themeConfigFromRecommendation } from './themeFromRecommendation'
+import {
+  shouldApplyBrandThemeConfig,
+  themeConfigFromRecommendation,
+} from './themeFromRecommendation'
 
 const running = new Set<string>()
 const pendingWork = new Map<
@@ -1125,10 +1128,12 @@ export async function applyJob(input: {
       themeRecommendation: themeProfile.themeRecommendation,
     }
   }
-  const recommendedTheme = themeConfigFromRecommendation(themeProfile.themeRecommendation)
-  const themeSource = themeProfile.themeRecommendation?.source || ''
-  const shouldApplyTheme =
-    Boolean(recommendedTheme) && (!isUpdate || ['document', 'website', 'logo', 'mixed'].includes(themeSource))
+  // Apply Global Color only for document/website/logo/mixed brand evidence.
+  // No URL + no PDF color guidance → leave system default themeConfig alone (never AI suggestion).
+  const shouldApplyTheme = shouldApplyBrandThemeConfig(themeProfile.themeRecommendation)
+  const recommendedTheme = shouldApplyTheme
+    ? themeConfigFromRecommendation(themeProfile.themeRecommendation)
+    : null
   const profilePayload = {
     name: applyName,
     email: applyEmail,
@@ -1149,9 +1154,9 @@ export async function applyJob(input: {
     linkedin: ready.blueprint.socialHandles?.linkedin,
     youtube: ready.blueprint.socialHandles?.youtube,
     tiktok: ready.blueprint.socialHandles?.tiktok,
-    // Apply light/dark Primary·Secondary·Accent into Card Settings → Theme → Global Color.
-    // Document/website colors also apply on update; pure AI suggestions only on create.
-    ...(shouldApplyTheme
+    // Brand-sourced light/dark P/S/A → Card Settings → Theme → Global Color.
+    // Suggestions never overwrite platform defaults.
+    ...(shouldApplyTheme && recommendedTheme
       ? {
           themeConfig: recommendedTheme,
           profileSettings: { themeConfig: recommendedTheme },

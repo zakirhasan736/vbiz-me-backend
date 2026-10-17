@@ -13,6 +13,7 @@ describe('AI Card Builder mission (v4.1)', () => {
     assert.match(CARD_BUILDER_MISSION, /LIGHT AND DARK BRAND THEMES/)
     assert.match(CARD_BUILDER_MISSION, /BRAND COLOR RESEARCH/)
     assert.match(CARD_BUILDER_MISSION, /Do NOT assign roles by raw frequency/)
+    assert.match(CARD_BUILDER_MISSION, /platform default Global Color/)
     assert.match(CARD_BUILDER_MISSION, /PARTIAL EDITING/)
     assert.match(CARD_BUILDER_MISSION, /FINAL QUALITY GATE/)
     assert.match(CARD_BUILDER_MISSION, /Creative facts are forbidden/)

@@ -60,7 +60,7 @@ Website brand-color flow (follow in order):
 1) If uploaded PDF/text lists Light/Dark Primary·Secondary·Accent, copy those HEX exactly (source "document").
 2) Else if BRAND COLOR RESEARCH / BUSINESS INTELLIGENCE SIGNALS already resolved website light+dark Primary·Secondary·Accent, USE those HEX (source "website"). Do not swap in unrelated fashion colors.
 3) Else derive from logo + high-confidence CSS brand tokens / CTA / nav colors supplied in the research block. Preserve the company's recognizable brand hues.
-4) Only when no brand evidence exists, provide harmonious accessible DESIGN RECOMMENDATIONS (source "suggestion") and say they are suggestions—not extracted official colors.
+4) When no website URL and no PDF/document color guidance exists, leave themeRecommendation empty/null or source "suggestion" only as optional design notes — the app KEEPS the platform default Global Color and will NOT apply suggestion colors.
 
 Do NOT assign roles by raw frequency (most common ≠ Primary). Colors must WORK TOGETHER as pairs, not as independent swatches — e.g. Primary fill + Secondary button text/icons must stay readable; if they are too similar, readability fails.
 PRIMARY: main buttons; Home description text; active navigation; banner tint; contact Call/Text/Email fills when no individual override.

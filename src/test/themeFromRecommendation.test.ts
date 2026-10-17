@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { themeConfigFromRecommendation } from '../services/ai/themeFromRecommendation'
+import { shouldApplyBrandThemeConfig, themeConfigFromRecommendation } from '../services/ai/themeFromRecommendation'
 
 describe('themeConfigFromRecommendation', () => {
   it('maps light and dark brand HEX into themeConfig colors', () => {
@@ -33,6 +33,29 @@ describe('themeConfigFromRecommendation', () => {
         notes: '',
       }),
       null
+    )
+  })
+
+  it('applies Global Color only for document/website/logo/mixed — not AI suggestion', () => {
+    const website = {
+      light: { primary: '#0f766e', secondary: '#0f2c4d', accent: '#f43f5e' },
+      dark: { primary: '#2dd4bf', secondary: '#e2e8f0', accent: '#fb7185' },
+      source: 'website' as const,
+      notes: '',
+    }
+    const suggestion = { ...website, source: 'suggestion' as const }
+    assert.equal(shouldApplyBrandThemeConfig(website), true)
+    assert.equal(shouldApplyBrandThemeConfig({ ...website, source: 'document' }), true)
+    assert.equal(shouldApplyBrandThemeConfig(suggestion), false)
+    assert.equal(shouldApplyBrandThemeConfig(null), false)
+    assert.equal(
+      shouldApplyBrandThemeConfig({
+        light: { primary: '', secondary: '', accent: '' },
+        dark: { primary: '', secondary: '', accent: '' },
+        source: 'website',
+        notes: '',
+      }),
+      false
     )
   })
 })

@@ -50,6 +50,40 @@ function resolveTriplet(
   return { primary, secondary, accent }
 }
 
+/** Sources that may overwrite Card Settings → Global Color. Pure AI "suggestion" never does. */
+export const BRAND_THEME_APPLY_SOURCES = ['document', 'website', 'logo', 'mixed'] as const
+
+export type BrandThemeApplySource = (typeof BRAND_THEME_APPLY_SOURCES)[number]
+
+export function isBrandThemeApplySource(source: string | null | undefined): source is BrandThemeApplySource {
+  return Boolean(source && (BRAND_THEME_APPLY_SOURCES as readonly string[]).includes(source))
+}
+
+function recommendationHasHex(
+  recommendation: MasterBusinessProfile['themeRecommendation'] | null | undefined
+): boolean {
+  if (!recommendation || typeof recommendation !== 'object') return false
+  return Boolean(
+    normalizeHex(recommendation.light?.primary) ||
+    normalizeHex(recommendation.light?.secondary) ||
+    normalizeHex(recommendation.light?.accent) ||
+    normalizeHex(recommendation.dark?.primary) ||
+    normalizeHex(recommendation.dark?.secondary) ||
+    normalizeHex(recommendation.dark?.accent)
+  )
+}
+
+/**
+ * Only apply Global Color when PDF/document, website CSS research, or logo evidence
+ * produced the palette. If no website URL and docs say nothing about colors, keep
+ * the platform's existing default themeConfig untouched.
+ */
+export function shouldApplyBrandThemeConfig(
+  recommendation: MasterBusinessProfile['themeRecommendation'] | null | undefined
+): boolean {
+  return isBrandThemeApplySource(recommendation?.source) && recommendationHasHex(recommendation)
+}
+
 /**
  * Map AI themeRecommendation (light+dark primary/secondary/accent) into vBiz Me themeConfig.
  * Preserves default backgrounds/surfaces/components; only brand role colors are replaced.

@@ -170,7 +170,7 @@ export function formatReputationBlock(links: ReputationLink[], hexColors: string
     )
   } else {
     lines.push(
-      '- No brand HEX colors found in sources; you MUST still recommend light+dark Primary/Secondary/Accent with themeRecommendation.source="suggestion".'
+      '- No brand HEX colors found in sources. Prefer themeRecommendation null/empty so Card Settings keep system default Global Color. If you include design notes, use source "suggestion" only — the app will not overwrite defaults with suggestions.'
     )
   }
   return lines.join('\n')
