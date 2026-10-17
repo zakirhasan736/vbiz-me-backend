@@ -92,8 +92,8 @@ function ensureOpenAiConfigured() {
 }
 
 function mergeBlueprint(base: Partial<CardBlueprint>, generated: CardBlueprint): CardBlueprint {
-  const basePersonal = base.personal || {}
-  const genPersonal = generated.personal || ({} as CardBlueprint['personal'])
+  const basePersonal: Partial<CardBlueprint['personal']> = base.personal || {}
+  const genPersonal: CardBlueprint['personal'] = generated.personal
   // Contact/identity facts from the factual skeleton win; polished About from the content pass wins.
   const contactKeys = new Set([
     'fullName',
