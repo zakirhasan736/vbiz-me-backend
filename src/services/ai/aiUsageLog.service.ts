@@ -1,3 +1,5 @@
+import logger from '../../utils/logger'
+import { CARD_BUILDER_MISSION_VERSION } from './cardBuilderMission'
 import type { ChatJsonMeta } from './openai.client'
 
 export type UsageLogInput = {
@@ -50,8 +52,34 @@ export async function logAiUsage(entry: UsageLogInput): Promise<void> {
 }
 
 export async function logChatMeta(task: string, meta: ChatJsonMeta, extra?: Partial<UsageLogInput>): Promise<void> {
+  if (meta.usedFallback || meta.preferredModel !== meta.model) {
+    logger.warn('card_agent_usage_fallback', {
+      task,
+      promptVersion: CARD_BUILDER_MISSION_VERSION,
+      preferredModel: meta.preferredModel,
+      actualModel: meta.model,
+      usedFallback: meta.usedFallback,
+      tier: meta.tier,
+      latencyMs: meta.latencyMs,
+      inputTokens: meta.inputTokens,
+      outputTokens: meta.outputTokens,
+      estimatedCost: meta.estimatedCost,
+    })
+  } else {
+    logger.info('card_agent_usage', {
+      task,
+      promptVersion: CARD_BUILDER_MISSION_VERSION,
+      model: meta.model,
+      preferredModel: meta.preferredModel,
+      tier: meta.tier,
+      latencyMs: meta.latencyMs,
+      inputTokens: meta.inputTokens,
+      outputTokens: meta.outputTokens,
+      estimatedCost: meta.estimatedCost,
+    })
+  }
   await logAiUsage({
-    task,
+    task: `${task}@${CARD_BUILDER_MISSION_VERSION}`,
     model: meta.model,
     tier: meta.tier,
     inputTokens: meta.inputTokens,
@@ -64,7 +92,7 @@ export async function logChatMeta(task: string, meta: ChatJsonMeta, extra?: Part
     sessionId: extra?.sessionId,
     jobId: extra?.jobId,
     stage: extra?.stage,
-    escalatedFrom: extra?.escalatedFrom,
+    escalatedFrom: meta.usedFallback ? meta.preferredModel : extra?.escalatedFrom,
     error: extra?.error,
   })
 }

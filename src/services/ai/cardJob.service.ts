@@ -18,6 +18,7 @@ import { builderError, logBuilderEvent, newRequestId, type BuilderErrorCode, typ
 import { summarizeExtraction } from './cardAgent.service'
 import { assembleAiCard } from './cardAssembler.service'
 import { TAB_CATALOG } from './cardBlueprint.schema'
+import { stripAiServiceImages } from './cardQuality.service'
 import {
   assertJobOwner,
   loadCardSession,
@@ -39,10 +40,12 @@ import {
   nextActionableField,
   type AiCardField,
 } from './fieldGraph.service'
+import { appendResearchToExtractedText, runExternalResearch } from './researchEnrichment.service'
 import { runSolArchitect } from './solArchitect.service'
 import { emptyNormalizedSources, normalizeSources, seedProfileFromCrawledPages } from './sourceNormalizer.service'
 import { normalizeWebsiteUrl } from './sourceUrl'
 import { autoFillSelectedFields, capGeneratedSkills, topUpGeneratedList } from './tabBuild.service'
+import { themeConfigFromRecommendation } from './themeFromRecommendation'
 
 const running = new Set<string>()
 const pendingWork = new Map<
@@ -147,6 +150,7 @@ function publicJob(session: CardBuildSession) {
     missingInformation: session.businessProfile?.missingInformation || [],
     conflicts: session.businessProfile?.conflicts || [],
     warnings: session.normalized?.warnings || [],
+    research: session.normalized?.research || null,
     errorMessage: session.errorMessage || null,
     errorCode: session.errorCode || null,
     errorStage: session.errorStage || null,
@@ -487,10 +491,36 @@ async function runExtractAndArchitecture(jobId: string) {
       )
     }
 
-    const extraction = summarizeExtraction(normalized)
+    // Phase 3: optional search enrichment (SerpAPI / Brave). Skipped cleanly without credentials.
+    const research = await runExternalResearch({
+      website: websiteUrl || normalized.website.url,
+      businessName: businessText.slice(0, 120) || undefined,
+      crawlText: normalized.extractedText,
+    })
+    const withResearch = {
+      ...normalized,
+      extractedText: appendResearchToExtractedText(normalized.extractedText, research),
+      research: {
+        status: research.status,
+        provider: research.provider,
+        queriesRun: research.queriesRun,
+        findingCount: research.findings.length,
+        linkCount: research.links.length,
+        errors: research.errors,
+      },
+      warnings:
+        research.status === 'skipped' && research.errors.length
+          ? [
+              ...normalized.warnings,
+              'External web search was skipped (no search API key). Card built from website/documents only.',
+            ]
+          : normalized.warnings,
+    }
+
+    const extraction = summarizeExtraction(withResearch)
     const next = await save(session, {
       status: 'ARCHITECTING',
-      normalized,
+      normalized: withResearch,
       websiteUrl,
       sourceHash: session.sourceHash,
       rawSources: {
@@ -570,11 +600,35 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       sessionId: session.id,
       existingCard: cardSnapshot,
     })
-    const profile = seedProfileFromCrawledPages(
+    let profile = seedProfileFromCrawledPages(
       applyExistingCardToProfile(architecture.masterBusinessProfile, cardSnapshot),
       session.normalized.website.pages,
       session.normalized.website.crawlMode || 'full'
     )
+    // Surface truthful research status on the profile for review UI / QC.
+    if (session.normalized.research) {
+      const r = session.normalized.research
+      profile = {
+        ...profile,
+        warnings: [
+          ...(profile.warnings || []),
+          r.status === 'skipped'
+            ? 'External search research was skipped (configure SERPAPI_API_KEY or BRAVE_SEARCH_API_KEY to enable).'
+            : r.status === 'failed'
+              ? 'External search research failed; card used website/documents only.'
+              : r.status === 'partial'
+                ? 'External search research completed partially; confirm discovered links before publishing.'
+                : '',
+        ].filter(Boolean),
+        missingInformation:
+          r.status === 'skipped' || r.status === 'failed'
+            ? [
+                ...(profile.missingInformation || []),
+                'External web research incomplete — LinkedIn/review discovery limited to website/document links.',
+              ]
+            : profile.missingInformation || [],
+      }
+    }
     await save(session, {
       status: 'MAPPING_FIELDS',
       businessProfile: profile,
@@ -1035,6 +1089,7 @@ export async function applyJob(input: {
     }
   }
 
+  const recommendedTheme = themeConfigFromRecommendation(ready.businessProfile?.themeRecommendation)
   const profilePayload = {
     name: applyName,
     email: applyEmail,
@@ -1055,6 +1110,13 @@ export async function applyJob(input: {
     linkedin: ready.blueprint.socialHandles?.linkedin,
     youtube: ready.blueprint.socialHandles?.youtube,
     tiktok: ready.blueprint.socialHandles?.tiktok,
+    // New cards only: apply AI light/dark brand colors. Updates keep the owner's theme.
+    ...(recommendedTheme && !isUpdate
+      ? {
+          themeConfig: recommendedTheme,
+          profileSettings: { themeConfig: recommendedTheme },
+        }
+      : {}),
     settings: input.seo
       ? seoMetadataToSettings({
           metaTitle: input.seo.metaTitle,
@@ -1102,12 +1164,13 @@ export async function applyJob(input: {
   > = [
     [
       'services',
-      ready.blueprint.services || [],
+      stripAiServiceImages(ready.blueprint.services || []),
       (item) => ({
         title: item.title,
         description: item.description,
         reviewUrl: item.url,
-        imageUrl: item.imageUrl || item.featuredImage,
+        // AI Card Builder never invents service images.
+        imageUrl: '',
         status: 1,
       }),
     ],

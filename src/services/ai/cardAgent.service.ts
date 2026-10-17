@@ -871,11 +871,31 @@ export async function regenerateSection(input: {
   if (!session?.businessProfile) {
     throw new AppError(400, 'No saved business profile for this card yet. Run analyze first.')
   }
-  return fillSection({
+  const { mergeSectionIntoDraft } = await import('./sectionPatch.service')
+  const section = String(input.section || '')
+    .trim()
+    .toLowerCase() as import('./cardBlueprint.schema').FillSectionId
+  const filled = await fillSection({
     section: input.section,
     text: input.instruction,
     currentDraft: input.currentDraft,
     sessionId: input.sessionId,
     userId: input.userId,
   })
+  let current: Record<string, unknown> = {}
+  if (input.currentDraft) {
+    try {
+      current = JSON.parse(input.currentDraft) as Record<string, unknown>
+    } catch {
+      current = {}
+    }
+  } else if (session.blueprint) {
+    current = session.blueprint as unknown as Record<string, unknown>
+  }
+  const sectionPayload =
+    filled && typeof filled === 'object' && 'payload' in filled
+      ? (filled as { payload: Record<string, unknown> }).payload || {}
+      : (filled as Record<string, unknown>)
+  const mergedDraft = mergeSectionIntoDraft(current, section, sectionPayload)
+  return { ...filled, mergedDraft }
 }

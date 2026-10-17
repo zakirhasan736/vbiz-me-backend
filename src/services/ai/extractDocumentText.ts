@@ -3,6 +3,8 @@ import mammoth from 'mammoth'
 import AppError from '../../error/AppError'
 import { cacheGet, cacheKey, cacheSet } from './extractionCache'
 import { MAX_DOCUMENT_EXTRACT_CHARS, MAX_FILES, MAX_UPLOAD_BYTES } from './openai.client'
+import { extractReputationLinksFromHtml } from './reputationFromSources'
+import { isBlockedFetchHostname, normalizeWebsiteUrl } from './sourceUrl'
 import type { WebsiteCrawlMode } from './websiteCrawlMode'
 
 export type WebsitePageCategory =
@@ -27,6 +29,9 @@ export type CrawledWebsitePage = {
   category: WebsitePageCategory
   title?: string
   imageUrls?: string[]
+  /** ISO timestamp when the page body was retrieved. */
+  retrievedAt?: string
+  extractionStatus?: 'ok' | 'empty' | 'truncated' | 'blocked'
 }
 
 export const PAGE_FETCH_TIMEOUT_MS = 20_000
@@ -274,10 +279,26 @@ export async function extractTextFromBuffer(file: UploadedPart): Promise<Extract
 }
 
 async function fetchHtml(url: string, timeoutMs = PAGE_FETCH_TIMEOUT_MS): Promise<string> {
+  let safeUrl: string
+  try {
+    safeUrl = normalizeWebsiteUrl(url)
+  } catch {
+    throw new AppError(400, `Blocked or invalid website URL: ${url}`)
+  }
+  let hostname = ''
+  try {
+    hostname = new URL(safeUrl).hostname
+  } catch {
+    throw new AppError(400, `Blocked or invalid website URL: ${url}`)
+  }
+  if (isBlockedFetchHostname(hostname)) {
+    throw new AppError(400, `Blocked or invalid website URL: ${url}`)
+  }
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetch(url, {
+    const res = await fetch(safeUrl, {
       signal: controller.signal,
       headers: {
         'User-Agent': BROWSER_LIKE_UA,
@@ -287,6 +308,17 @@ async function fetchHtml(url: string, timeoutMs = PAGE_FETCH_TIMEOUT_MS): Promis
       },
       redirect: 'follow',
     })
+    // Re-check final URL after redirects (SSRF).
+    if (res.url) {
+      try {
+        const finalHost = new URL(res.url).hostname
+        if (isBlockedFetchHostname(finalHost)) {
+          throw new AppError(400, `Blocked redirect target for ${url}`)
+        }
+      } catch (error) {
+        if (error instanceof AppError) throw error
+      }
+    }
     if (!res.ok) throw new AppError(400, `Website fetch failed (${res.status}) for ${url}`)
     return await res.text()
   } finally {
@@ -473,12 +505,18 @@ function htmlToText(html: string): string {
   const carouselBlocks = extractCarouselAndReviewBlocks(html)
   const embedded = extractEmbeddedDataText(html)
   const attributes = extractAttributeText(html)
+  const externalLinks = extractReputationLinksFromHtml(html)
+  const externalBlock = externalLinks.length
+    ? `EXTERNAL_LINKS:\n${externalLinks.map((link) => `${link.platform}: ${link.url}`).join('\n')}`
+    : ''
   const visible = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
-  return stripWebsiteBoilerplate(cleanText([carouselBlocks, visible, attributes, embedded].filter(Boolean).join(' ')))
+  return stripWebsiteBoilerplate(
+    cleanText([carouselBlocks, visible, attributes, embedded, externalBlock].filter(Boolean).join(' '))
+  )
 }
 
 const SECTION_LINK_RE =
@@ -796,6 +834,7 @@ export async function crawlWebsiteDeep(
   const homeHtml = await fetchHtml(home)
   const homeText = htmlToText(homeHtml)
   const homeCategory = mode === 'storefront' ? ('products' as WebsitePageCategory) : classifyWebsitePage(home, homeText)
+  const retrievedAt = new Date().toISOString()
   const pages: CrawledWebsitePage[] = [
     {
       url: home,
@@ -803,6 +842,8 @@ export async function crawlWebsiteDeep(
       category: homeCategory,
       title: extractPageTitle(homeHtml),
       imageUrls: extractPageImageUrls(homeHtml, home, imageLimit),
+      retrievedAt,
+      extractionStatus: homeText.trim().length > 80 ? 'ok' : 'empty',
     },
   ]
   const visited = new Set<string>([canonicalPageUrl(home), home])
@@ -838,6 +879,8 @@ export async function crawlWebsiteDeep(
           : classifyWebsitePage(page.url, `${page.title} ${page.text}`),
       title: page.title,
       imageUrls: page.imageUrls,
+      retrievedAt: new Date().toISOString(),
+      extractionStatus: page.text.trim().length > 80 ? 'ok' : 'empty',
     })
   }
 
@@ -899,7 +942,8 @@ export async function crawlWebsiteDeep(
           ? `\nIMAGES: ${p.imageUrls.slice(0, mode === 'storefront' ? 8 : 3).join(' | ')}`
           : ''
         const title = p.title ? `\nTITLE: ${p.title}` : ''
-        return `=== PAGE ${i + 1} [${p.category.toUpperCase()}]: ${p.url} ===${title}${media}\n${p.text}`
+        const meta = `\nPAGE_TYPE: ${p.category}\nRETRIEVED_AT: ${p.retrievedAt || ''}\nEXTRACTION_STATUS: ${p.extractionStatus || 'ok'}`
+        return `=== PAGE ${i + 1} [${p.category.toUpperCase()}]: ${p.url} ===${title}${meta}${media}\n${p.text}`
       })
       .join('\n\n')
 

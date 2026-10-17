@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { minCardAgeCutoffDate } from '../../utils/cardActivation'
 import type { MasterBusinessProfile } from './businessProfile.schema'
 import { TAB_CATALOG, cardBlueprintSchema, type CardBlueprint, type FillSectionId } from './cardBlueprint.schema'
+import { assessCardQuality } from './cardQuality.service'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const URL_RE = /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i
@@ -76,6 +77,9 @@ export function sanitizeBlueprint(raw: unknown): { blueprint: CardBlueprint; iss
 
   parsed = stripSampleReviews(parsed)
   parsed = dedupeServices(parsed)
+  const quality = assessCardQuality({ blueprint: parsed })
+  parsed = quality.blueprint
+  issues.push(...quality.issues)
 
   if (parsed.personal.email && !looksLikeEmail(parsed.personal.email)) {
     issues.push({ code: 'invalid_email', field: 'personal.email', message: 'Email format looks invalid.' })

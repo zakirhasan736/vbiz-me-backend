@@ -10,6 +10,12 @@ import {
   type WebsitePageCategory,
 } from './extractDocumentText'
 import { MAX_DOCUMENT_EXTRACT_CHARS } from './openai.client'
+import {
+  extractHexColorsFromText,
+  extractReputationLinksFromText,
+  filterReputationLinksForIdentity,
+  formatReputationBlock,
+} from './reputationFromSources'
 import { normalizeWebsiteUrl } from './sourceUrl'
 import { detectWebsiteCrawlMode, STOREFRONT_SOURCE_PREAMBLE, type WebsiteCrawlMode } from './websiteCrawlMode'
 
@@ -27,7 +33,15 @@ export type NormalizedSourceData = {
   manualText: string
   website: {
     url: string
-    pages: Array<{ url: string; category: WebsitePageCategory; text: string; title?: string; imageUrls?: string[] }>
+    pages: Array<{
+      url: string
+      category: WebsitePageCategory
+      text: string
+      title?: string
+      imageUrls?: string[]
+      retrievedAt?: string
+      extractionStatus?: 'ok' | 'empty' | 'truncated' | 'blocked'
+    }>
     scrapeFailed?: boolean
     scrapeError?: string
     crawlMode?: WebsiteCrawlMode
@@ -39,6 +53,15 @@ export type NormalizedSourceData = {
   extractedText: string
   images: Array<{ mimeType: string; base64: string }>
   warnings: string[]
+  /** Phase 3–4 external research (search APIs). Status is truthful when skipped. */
+  research?: {
+    status: 'complete' | 'partial' | 'skipped' | 'failed'
+    provider: string
+    queriesRun: string[]
+    findingCount: number
+    linkCount: number
+    errors: string[]
+  }
 }
 
 export function emptyNormalizedSources(websiteUrl = ''): NormalizedSourceData {
@@ -135,9 +158,63 @@ export function seedProfileFromCrawledPages(
       title: String(title).slice(0, 180),
       description: '',
       url: '',
+      imageUrl: '',
       source: 'website',
       sourceUrl: pages[0]?.url || '',
     }))
+  }
+
+  // Seed social / review URLs mined from crawl text when SOL left them empty.
+  const corpus = pages.map((page) => `${page.url}\n${page.text}`).join('\n')
+  const reputation = filterReputationLinksForIdentity(extractReputationLinksFromText(corpus), {
+    businessName: next.businessName,
+    ownerName: next.ownerName,
+    website: next.website || pages[0]?.url,
+  })
+  if (reputation.length) {
+    const social = { ...(next.socialMedia || {}) }
+    const socialKey: Record<string, keyof NonNullable<MasterBusinessProfile['socialMedia']>> = {
+      facebook: 'facebook',
+      instagram: 'instagram',
+      linkedin: 'linkedin',
+      youtube: 'youtube',
+      tiktok: 'tiktok',
+      x: 'x',
+    }
+    for (const link of reputation) {
+      if (link.kind !== 'social') continue
+      if (link.verification === 'needs_confirmation') continue
+      const key = socialKey[link.platform]
+      if (!key) continue
+      if (!social[key]) social[key] = link.url
+    }
+    next.socialMedia = social
+    if (!(next.reviewLinks || []).length) {
+      next.reviewLinks = reputation
+        .filter((link) => link.kind === 'review')
+        .map((link) => ({
+          platform: link.platform,
+          url: link.url,
+          verification: link.verification,
+        }))
+    }
+    const uncertain = reputation.filter((link) => link.verification === 'needs_confirmation')
+    if (uncertain.length) {
+      next.needsConfirmation = [
+        ...(next.needsConfirmation || []),
+        ...uncertain.map((link) => ({
+          field: `social.${link.platform}`,
+          value: link.url,
+          reason: 'Possible same-name match — confirm this is the correct person/business.',
+          status: 'needs_confirmation' as const,
+        })),
+      ]
+    }
+  }
+
+  // Never keep AI-hallucinated service images from architecture.
+  if (next.services?.length) {
+    next.services = next.services.map((service) => ({ ...service, imageUrl: '' }))
   }
 
   return next
@@ -316,6 +393,14 @@ export async function normalizeSources(input: {
     }
     textParts.push(`DOCUMENT “${extracted.label}” [${extracted.extractionMethod}]:\n${extracted.text}`)
   }
+
+  const corpus = textParts.join('\n')
+  const reputationLinks = filterReputationLinksForIdentity(extractReputationLinksFromText(corpus), {
+    website: websiteUrl,
+    businessName: manualText.slice(0, 120) || null,
+  })
+  const hexColors = extractHexColorsFromText(corpus)
+  textParts.unshift(formatReputationBlock(reputationLinks, hexColors))
 
   return {
     userInstructions,

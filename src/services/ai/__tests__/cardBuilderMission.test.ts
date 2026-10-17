@@ -1,21 +1,25 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { CARD_BUILDER_MISSION, CARD_BUILDER_MISSION_COMPACT } from '../cardBuilderMission'
+import { CARD_BUILDER_MISSION, CARD_BUILDER_MISSION_COMPACT, CARD_BUILDER_MISSION_VERSION } from '../cardBuilderMission'
 
-describe('AI Card Builder mission', () => {
-  it('includes the full operating brief for card creation', () => {
-    assert.match(CARD_BUILDER_MISSION, /You are the AI Card Builder for vBiz Me/)
-    assert.match(CARD_BUILDER_MISSION, /ABOUT SECTION/)
-    assert.match(CARD_BUILDER_MISSION, /SERVICES/)
-    assert.match(CARD_BUILDER_MISSION, /FAQs/)
-    assert.match(CARD_BUILDER_MISSION, /WHY CHOOSE US/)
-    assert.match(CARD_BUILDER_MISSION, /CALL TO ACTION/)
-    assert.match(CARD_BUILDER_MISSION, /BUSINESS INFORMATION/)
-    assert.match(CARD_BUILDER_MISSION, /BRAND VOICE/)
-    assert.match(CARD_BUILDER_MISSION, /SALES AND MARKETING/)
-    assert.match(CARD_BUILDER_MISSION, /ACCURACY/)
-    assert.match(CARD_BUILDER_MISSION, /COMPLETENESS/)
-    assert.match(CARD_BUILDER_MISSION, /Never invent factual claims/)
-    assert.match(CARD_BUILDER_MISSION_COMPACT, /fill as much as possible/)
+describe('AI Card Builder mission (v4.1.1 gaps)', () => {
+  it('exports versioned mission covering the ten non-negotiable standards', () => {
+    assert.equal(CARD_BUILDER_MISSION_VERSION, 'v4.1.1')
+    assert.match(CARD_BUILDER_MISSION, /TEN NON-NEGOTIABLE STANDARDS/)
+    assert.match(CARD_BUILDER_MISSION, /FIRST-PERSON BIOGRAPHIES/)
+    assert.match(CARD_BUILDER_MISSION, /Write AS the cardholder/)
+    assert.match(CARD_BUILDER_MISSION, /DEEP RESEARCH/)
+    assert.match(CARD_BUILDER_MISSION, /IDENTITY VERIFICATION/)
+    assert.match(CARD_BUILDER_MISSION, /PERSONAL BRANDING/)
+    assert.match(CARD_BUILDER_MISSION, /PREMIUM SERVICE WRITING/)
+    assert.match(CARD_BUILDER_MISSION, /ALWAYS recommend complete light AND dark/)
+    assert.match(CARD_BUILDER_MISSION, /source to "suggestion"/)
+    assert.match(CARD_BUILDER_MISSION, /MISSION, SEO, AND BLOGS/)
+    assert.match(CARD_BUILDER_MISSION, /SOURCE-BACKED CREDIBILITY/)
+    assert.match(CARD_BUILDER_MISSION, /SECTION REGENERATION/)
+    assert.match(CARD_BUILDER_MISSION, /QUALITY CONTROL/)
+    assert.match(CARD_BUILDER_MISSION, /Never generate service images/)
+    assert.match(CARD_BUILDER_MISSION_COMPACT, /ALWAYS first person/)
+    assert.match(CARD_BUILDER_MISSION_COMPACT, /source="suggestion"/)
   })
 })

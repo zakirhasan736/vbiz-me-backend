@@ -12,12 +12,8 @@ import {
 } from './modelRouter.service'
 
 /** Match reverse-proxy / media upload ceiling (see CUTOVER.md client_max_body_size 50m). */
-export const MAX_UPLOAD_BYTES = Math.max(
-  8,
-  Number.parseInt(process.env.AI_CARD_MAX_UPLOAD_MB || '50', 10) || 50
-) *
-  1024 *
-  1024
+export const MAX_UPLOAD_BYTES =
+  Math.max(8, Number.parseInt(process.env.AI_CARD_MAX_UPLOAD_MB || '50', 10) || 50) * 1024 * 1024
 export const MAX_FILES = 6
 /** Keep enough extracted PDF/txt for the planner (head + tail when longer). */
 export const MAX_DOCUMENT_EXTRACT_CHARS = Math.max(
@@ -46,6 +42,9 @@ export function createOpenAIClient(): OpenAI {
 
 export type ChatJsonMeta = {
   model: string
+  /** Preferred model for the tier before fallbacks. */
+  preferredModel: string
+  usedFallback: boolean
   tier: AiTier
   inputTokens: number
   outputTokens: number
@@ -140,8 +139,9 @@ export async function chatJson<T>(params: {
     { role: 'user', content: userContent },
   ]
 
+  const preferredModel = candidates[0]
   let completion: OpenAI.Chat.Completions.ChatCompletion | undefined
-  let model = candidates[0]
+  let model = preferredModel
   for (const candidate of candidates) {
     model = candidate
     try {
@@ -151,6 +151,14 @@ export async function chatJson<T>(params: {
         maxCompletionTokens: params.maxCompletionTokens,
         messages,
       })
+      if (candidate !== preferredModel) {
+        logger.warn('card_agent_model_fallback', {
+          tier,
+          preferredModel,
+          actualModel: candidate,
+          requestStage: 'chat_json',
+        })
+      }
       break
     } catch (error) {
       const message = error instanceof Error ? error.message : 'OpenAI request failed'
@@ -161,10 +169,20 @@ export async function chatJson<T>(params: {
         throw publicAiFailure(504, 'The AI request timed out. Try again with fewer documents.', 'AI_TIMEOUT')
       }
       if (isUnavailableModelError(error)) {
-        logger.error('card_agent_model_unavailable', { tier, requestStage: 'chat_json' })
+        logger.error('card_agent_model_unavailable', {
+          tier,
+          preferredModel,
+          attemptedModel: candidate,
+          requestStage: 'chat_json',
+        })
         continue
       }
-      logger.error('card_agent_openai_failed', { tier, requestStage: 'chat_json' })
+      logger.error('card_agent_openai_failed', {
+        tier,
+        preferredModel,
+        attemptedModel: candidate,
+        requestStage: 'chat_json',
+      })
       throw publicAiFailure(502, 'AI request failed. Please try again.', 'AI_REQUEST_FAILED')
     }
   }
@@ -208,6 +226,8 @@ export async function chatJson<T>(params: {
     data,
     meta: {
       model,
+      preferredModel,
+      usedFallback: model !== preferredModel,
       tier,
       inputTokens,
       outputTokens,

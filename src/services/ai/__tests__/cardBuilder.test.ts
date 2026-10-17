@@ -212,8 +212,8 @@ describe('vBiz Me auto card builder', () => {
     const facts = profileToBlueprintFacts(
       profile({
         services: [
-          { title: 'Repair', description: 'A', url: '' },
-          { title: 'Install', description: 'B', url: '' },
+          { title: 'Repair', description: 'A', url: '', imageUrl: '' },
+          { title: 'Install', description: 'B', url: '', imageUrl: '' },
         ],
       }),
       []

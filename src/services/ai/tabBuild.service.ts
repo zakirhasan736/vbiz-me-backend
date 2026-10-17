@@ -186,6 +186,10 @@ function shouldAutoFill(
     return listLength(field.currentValue) === 0
   }
   if (field.status !== 'EMPTY' && field.status !== 'PARTIAL') return false
+  // Preserve SOL/architect About copy when already substantial — do not rewrite via a second model.
+  if (field.fieldKey === 'about' && typeof field.currentValue === 'string' && field.currentValue.trim().length >= 80) {
+    return false
+  }
   return AUTO_FILL_KEYS.has(field.fieldKey)
 }
 
@@ -215,15 +219,15 @@ async function generateForField(input: {
     if (listSection && existingLen > 0) return input.field.currentValue
     const instruction =
       section === 'faqs'
-        ? `The sources had no FAQs. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} helpful FAQs from the business you understood. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas.`
+        ? 'The sources had no FAQs. Draft 5–8 helpful FAQs from the business you understood. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas.'
         : section === 'blogs'
-          ? `The sources had no articles. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} evergreen posts from the business you understood. Do not invent news events, dates, or awards.`
+          ? 'The sources had no articles. Draft exactly 2 evergreen industry posts from the business you understood. Do not invent news events, dates, or awards.'
           : section === 'reviews'
-            ? `The sources had no reviews. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} realistic example testimonials from the business you understood. Label them as examples. Do not invent licenses, prices, or awards.`
+            ? 'The sources had no reviews. Return { "reviews": [] }. Never invent fictional customer testimonials as real quotes.'
             : section === 'personal'
-              ? 'Write a professional About section from verified facts only.'
+              ? 'Write a professional About Me from verified facts only. Individuals = first person ~100–150 words with Mission + Why Choose Us + CTA.'
               : section === 'services'
-                ? `The sources had no services. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} realistic offerings this business would provide. Each item needs a title and a benefit-focused description. Do not invent prices, guarantees, or certifications.`
+                ? `The sources had no services. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} realistic offerings this business would provide. Each item needs an emoji-capable title and a 40–75 word benefit description. Do not invent prices, guarantees, certifications, or service images.`
                 : section === 'portfolio'
                   ? `The sources had no portfolio items. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} representative project examples. Describe the kind of work, not fake client metrics, awards, or named case studies.`
                   : 'Group skills from verified services and experience only.'
@@ -242,7 +246,12 @@ async function generateForField(input: {
       section === 'services' ||
       section === 'portfolio'
     ) {
-      return topUpGeneratedList(input.field.currentValue, generated)
+      if (section === 'reviews' && existingLen === 0) return []
+      const merged = topUpGeneratedList(input.field.currentValue, generated)
+      if (section === 'blogs' && existingLen === 0 && Array.isArray(merged)) {
+        return merged.slice(0, 2)
+      }
+      return merged
     }
     return generated
   }

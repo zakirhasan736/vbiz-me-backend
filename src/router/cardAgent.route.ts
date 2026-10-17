@@ -1,11 +1,13 @@
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import multer from 'multer'
+import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import { getRequestId } from '../middlewares/requestId'
 import * as cardAgentService from '../services/ai/cardAgent.service'
 import * as cardJobService from '../services/ai/cardJob.service'
 import { filesFromMulter } from '../services/ai/extractDocumentText'
+import { probeModelAvailability } from '../services/ai/modelAvailability.service'
 import { MAX_FILES, MAX_UPLOAD_BYTES } from '../services/ai/openai.client'
 import { checkAiRateLimit } from '../services/ai/rateLimit'
 import { assertUserPackageAccess } from '../services/entitlement.service'
@@ -329,6 +331,24 @@ router.post(
       seo: req.body?.seo,
     })
     sendResponse(res, { success: true, statusCode: 200, message: 'Card filled', data })
+  })
+)
+
+/** Admin diagnostics: preferred vs fallback model IDs (never shown to end customers). */
+router.get(
+  '/diagnostics/models',
+  catchAsyncError(async (req, res) => {
+    if (!req.user?.id || !isStaffRole(String(req.user.role || ''))) {
+      throw new AppError(403, 'Admin access required')
+    }
+    const force = String(req.query.force || '') === '1' || String(req.query.force || '') === 'true'
+    const data = await probeModelAvailability(force)
+    sendResponse(res, {
+      success: true,
+      statusCode: 200,
+      message: 'AI model availability',
+      data,
+    })
   })
 )
 

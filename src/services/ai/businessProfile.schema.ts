@@ -87,8 +87,52 @@ export const masterBusinessProfileSchema = z.object({
   businessType: nullableString,
   businessDescription: nullableString,
   whyChooseUs: nullableString,
+  /** 25–45 word mission grounded in verified business purpose. */
+  missionStatement: nullableString,
   suggestedCta: nullableString,
+  /** Up to two alternate CTA phrases. */
+  alternateCtas: stringListSchema,
   brandVoice: nullableString,
+  intendedAudience: nullableString,
+  uniqueAdvantages: stringListSchema,
+  customerBenefits: stringListSchema,
+  reviewLinks: z
+    .array(
+      z.object({
+        platform: z.string().optional().default(''),
+        url: z.string(),
+        verification: z
+          .enum(['verified_from_source', 'unverified', 'needs_confirmation'])
+          .optional()
+          .default('verified_from_source'),
+      })
+    )
+    .optional()
+    .default([]),
+  themeRecommendation: z
+    .object({
+      light: z
+        .object({
+          primary: z.string().optional().default(''),
+          secondary: z.string().optional().default(''),
+          accent: z.string().optional().default(''),
+        })
+        .optional()
+        .default({ primary: '', secondary: '', accent: '' }),
+      dark: z
+        .object({
+          primary: z.string().optional().default(''),
+          secondary: z.string().optional().default(''),
+          accent: z.string().optional().default(''),
+        })
+        .optional()
+        .default({ primary: '', secondary: '', accent: '' }),
+      source: z.enum(['website', 'logo', 'suggestion', 'mixed']).optional().default('suggestion'),
+      notes: z.string().optional().default(''),
+    })
+    .optional()
+    .nullable()
+    .default(null),
   phone: nullableString,
   email: nullableString,
   website: nullableString,
@@ -103,6 +147,8 @@ export const masterBusinessProfileSchema = z.object({
         title: z.string(),
         description: z.string().optional().default(''),
         url: z.string().optional().default(''),
+        /** Always empty for AI output — never invent service images. */
+        imageUrl: z.string().optional().default(''),
         source: z.string().optional(),
         sourceUrl: z.string().optional(),
       })
@@ -195,6 +241,21 @@ export const masterBusinessProfileSchema = z.object({
     .optional()
     .default([]),
   missingInformation: z.array(z.string()).optional().default([]),
+  /** Items that need owner approval before publishing (discovered links, suggested services, etc.). */
+  needsConfirmation: z
+    .array(
+      z.object({
+        field: z.string(),
+        value: z.string().optional().default(''),
+        reason: z.string().optional().default(''),
+        status: z
+          .enum(['verified', 'user_provided', 'needs_confirmation', 'conflicting', 'unavailable', 'suggested'])
+          .optional()
+          .default('needs_confirmation'),
+      })
+    )
+    .optional()
+    .default([]),
   warnings: z.array(z.string()).optional().default([]),
   conflicts: z.array(conflictSchema).optional().default([]),
   confidence: z
@@ -217,20 +278,23 @@ export const masterBusinessProfileSchema = z.object({
 
 export type MasterBusinessProfile = z.infer<typeof masterBusinessProfileSchema>
 
-export const MASTER_PROFILE_JSON_INSTRUCTION = `Return ONLY JSON for a Master Business Profile. FACT MODE:
-- Extract facts that appear in the sources. Do NOT invent names, birth dates, phones, emails, addresses, licenses, years in business, or reviews.
+export const MASTER_PROFILE_JSON_INSTRUCTION = `Return ONLY JSON for a Master Business Profile (Business Intelligence Profile). FACT MODE:
+- Extract facts that appear in the sources. Do NOT invent names, birth dates, phones, emails, addresses, licenses, years in business, reviews, or social profiles.
 - Set dateOfBirth only when the source explicitly states the owner's birth date. Format it as YYYY-MM-DD; otherwise use null.
 - Unknown facts must be null or [].
 - Never write fictional customer reviews into verifiedReviews or existingTestimonials.
 - If you find real testimonials/reviews in the source, put them in verifiedReviews or existingTestimonials with author/text when present.
 - If no real reviews exist, you MAY add suggestedTestimonialTemplates marked as DRAFT / SAMPLE — never as real reviews.
+- Put discovered Google/Yelp/BBB/Trustpilot/review URLs into reviewLinks[] only when present in sources (verification: verified_from_source).
 - If sources disagree, put the disagreement in conflicts and leave the field null rather than guessing.
-- Preserve source hints when obvious (website vs document vs owner-typed notes).
 - Owner-provided / pasted business text is high-trust. OCR document text is high-trust for contact and offerings.
-- Read every crawled page. If the site has blog/news/article pages, put real posts in blogs[]. If it has portfolio/project pages, put them in portfolio[]. Keep titles, excerpts, URLs, and image URLs when present. Do not invent extra articles.
-- If sources say SELLER / VENDOR / STOREFRONT MODE: treat the URL as that person's seller page. Prefer seller/owner identity over the parent marketplace brand. Put catalog items into services[] and products[], and authentic product photos into portfolio[] using IMAGES: URLs when present.
-- Also prepare marketing fields when facts allow: businessDescription (polished About draft), whyChooseUs (customer-benefit differentiators from verified strengths only), suggestedCta (best-fit CTA phrase), brandVoice (short label like "professional trustworthy" or "confident approachable").
-- Completeness: populate every field you can support from sources. Do not leave polishable marketing fields empty when the business is clear.
+- Read every crawled page. Real blogs → blogs[]. Real portfolio → portfolio[]. Keep titles, excerpts, URLs, images when present.
+- STOREFRONT MODE: prefer seller identity over marketplace brand; map catalog into services/products; authentic product photos → portfolio only.
+- Marketing fields: businessDescription (first-person About draft for individuals; company voice for companies; ~100–150 words), missionStatement (25–45 words), whyChooseUs, suggestedCta + alternateCtas (up to 2), brandVoice, intendedAudience, uniqueAdvantages, customerBenefits.
+- Services: title (emoji allowed) + 40–75 word benefit description. Always set services[].imageUrl to "".
+- themeRecommendation: light + dark primary/secondary/accent HEX. Prefer website/logo colors; else professional suggestions with source "suggestion".
+- needsConfirmation: uncertain discovered links, suggested services, or claims needing owner approval (status needs_confirmation|suggested).
+- Completeness: populate every field supportable from sources. Never invent service images.
 
 Shape:
 {
@@ -242,8 +306,20 @@ Shape:
   "businessType": null,
   "businessDescription": null,
   "whyChooseUs": null,
+  "missionStatement": null,
   "suggestedCta": null,
+  "alternateCtas": [],
   "brandVoice": null,
+  "intendedAudience": null,
+  "uniqueAdvantages": [],
+  "customerBenefits": [],
+  "reviewLinks": [{ "platform": "Google", "url": "", "verification": "verified_from_source" }],
+  "themeRecommendation": {
+    "light": { "primary": "#0f766e", "secondary": "#0f2c4d", "accent": "#f43f5e" },
+    "dark": { "primary": "#2dd4bf", "secondary": "#e2e8f0", "accent": "#fb7185" },
+    "source": "suggestion",
+    "notes": ""
+  },
   "phone": null,
   "email": null,
   "website": null,
@@ -252,7 +328,7 @@ Shape:
   "suggestedSlug": "",
   "serviceAreas": [],
   "businessHours": [],
-  "services": [{ "title": "", "description": "", "url": "", "source": "website", "sourceUrl": "" }],
+  "services": [{ "title": "", "description": "", "url": "", "imageUrl": "", "source": "website", "sourceUrl": "" }],
   "products": [],
   "credentials": [],
   "licenses": [],

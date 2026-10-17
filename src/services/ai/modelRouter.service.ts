@@ -49,19 +49,37 @@ export function getModelForTier(tier: AiTier): string {
   return TIER_ENV[tier]?.trim() || TIER_DEFAULTS[tier]
 }
 
-const TIER_FALLBACKS: Record<AiTier, string[]> = {
+const TIER_FALLBACK_DEFAULTS: Record<AiTier, string[]> = {
   sol: ['gpt-5.6-sol', 'gpt-5.2', 'gpt-4.1', 'gpt-4o'],
   terra: ['gpt-5.6-terra', 'gpt-5.2', 'gpt-4.1', 'gpt-4o'],
   luna: ['gpt-5.6-luna', 'gpt-4o-mini', 'gpt-4o'],
   vision: ['gpt-4o'],
 }
 
-/** Preferred model first, then compatible fallbacks. Never shown in the UI. */
+const TIER_FALLBACK_ENV: Record<AiTier, string | undefined> = {
+  luna: process.env.OPENAI_CARD_MODEL_LUNA_FALLBACKS,
+  terra: process.env.OPENAI_CARD_MODEL_TERRA_FALLBACKS,
+  sol: process.env.OPENAI_CARD_MODEL_SOL_FALLBACKS,
+  vision: process.env.OPENAI_CARD_MODEL_VISION_FALLBACKS,
+}
+
+function fallbacksForTier(tier: AiTier): string[] {
+  const raw = TIER_FALLBACK_ENV[tier]?.trim()
+  if (raw) {
+    return raw
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+  }
+  return TIER_FALLBACK_DEFAULTS[tier]
+}
+
+/** Preferred model first, then configurable fallbacks. Never shown in the UI. */
 export function modelCandidatesForTier(tier: AiTier): string[] {
   const preferred = getModelForTier(tier)
   const seen = new Set<string>()
   const list: string[] = []
-  for (const model of [preferred, ...TIER_FALLBACKS[tier]]) {
+  for (const model of [preferred, ...fallbacksForTier(tier)]) {
     const id = model.trim()
     if (!id || seen.has(id)) continue
     seen.add(id)

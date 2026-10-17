@@ -141,7 +141,7 @@ export const fillSectionSchemas = {
 export type FillSectionId = keyof typeof fillSectionSchemas
 
 export const FILL_SECTION_SCHEMA_HINTS: Record<FillSectionId, string> = {
-  services: `{ "services": [{ "type": "Web Development"|"App Design"|"SEO"|"Marketing"|"Other", "title": "", "description": "full write-up as HTML paragraphs", "url": "" }] }`,
+  services: `{ "services": [{ "type": "Web Development"|"App Design"|"SEO"|"Marketing"|"Other", "title": "emoji + title", "description": "40-75 word benefit HTML paragraphs", "url": "" }] }`,
   blogs: `{ "blogs": [{ "title": "", "description": "full article body as HTML paragraphs", "category": "News", "url": "", "imageUrl": "" }] }`,
   portfolio: `{ "portfolio": [{ "title": "", "description": "full project write-up as HTML paragraphs", "url": "", "imageUrl": "" }] }`,
   reviews: `{ "reviews": [{ "author": "", "text": "full quote as HTML paragraphs when multi-paragraph", "rating": 5, "imageUrl": "", "url": "" }] }`,
@@ -313,7 +313,7 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
   "education": [{ "institute": "", "degree": "", "fromDate": "YYYY-MM-DD", "toDate": "", "tillNow": false }],
   "experience": [{ "company": "", "jobTitle": "", "description": "", "fromDate": "", "toDate": "", "tillNow": false }],
   "skills": [{ "type": "Core", "skills": ["Skill"] }],
-  "services": [{ "type": "Web Development"|"App Design"|"SEO"|"Marketing"|"Other", "title": "", "description": "", "url": "" }],
+  "services": [{ "type": "Web Development"|"App Design"|"SEO"|"Marketing"|"Other", "title": "emoji + title", "description": "40-75 word benefit copy", "url": "" }],
   "portfolio": [{ "title": "", "description": "", "url": "", "imageUrl": "" }],
   "reviews": [{ "author": "", "text": "", "rating": 5 }],
   "blogs": [{ "title": "", "description": "", "category": "News", "url": "", "imageUrl": "" }],
@@ -325,7 +325,7 @@ export const BLUEPRINT_JSON_INSTRUCTION = `Return a single JSON object matching 
     "pushNotifications": true, "emailNotifications": true
   }
 }
-Only include arrays when you have credible content from the sources. When a website crawl includes services, portfolio, blog, FAQ, or review pages, populate those arrays with real extracted items, including page URLs and image URLs when present. For blogs, copy real article titles and excerpts onto the Blogs tab — do not invent company news. For reviews/testimonials, treat REVIEW_TESTIMONIAL_BLOCK and SLIDER_BLOCK labels as separate items and capture distinct items present in the crawl, up to 30. Never invent customer reviews. If no real reviews exist, return an empty reviews array. Creative wording is allowed and expected for about (include Why Choose Us + CTA close), FAQs, service benefit descriptions, headlines, and extra blog ideas when the owner asked to generate them, but never invent factual claims (years in business, licenses, awards, phone, email, prices, locations). Prefer a nearly complete marketing-ready card over leaving polishable fields blank. Missing contact facts stay empty. Dates as YYYY-MM-DD when known. Never infer a date of birth; include personal.dob only when a source explicitly provides it.
+Only include arrays when you have credible content from the sources. Keep real crawl items (services, portfolio, blogs, FAQs, reviews) with URLs/images when present for portfolio/blogs — but NEVER invent service images. Individual About Me = first person ~100–150 words with Mission + Why Choose Us + CTA. Aim for 5–8 FAQs without inventing policies. Real reviews only (empty array if none). Up to 2 evergreen blog drafts only when no real articles exist. Never invent factual claims (years, licenses, awards, phone, email, prices, locations). Prefer a marketing-ready card. Dates YYYY-MM-DD when known. Never infer date of birth.
 For services.type use ONLY: Web Development, App Design, SEO, Marketing, or Other.
 enabledTabs = ONLY tabs that have content (do NOT dump a full default tab set). Always imply Personal and About Me are present. Never put Public Cards or My Info in enabledTabs — those are fixed product tabs. My Info Call/Text/Email is filled from Personal Info (phone, WhatsApp, email). Use recommendedTabs for useful content tabs still missing data (Education, Experience, Skill, Services, Reviews, Blogs, Profile, Portfolio, Certifications/Licenses, FAQ).`
 

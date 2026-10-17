@@ -81,7 +81,12 @@ function mergeFacts(parts: DocumentChunkFacts[]): DocumentChunkFacts {
   }
 }
 
-function formatFactsBlock(label: string, facts: DocumentChunkFacts, chunksRead: number, originalLength: number): string {
+function formatFactsBlock(
+  label: string,
+  facts: DocumentChunkFacts,
+  chunksRead: number,
+  originalLength: number
+): string {
   const lines = [
     `FULL DOCUMENT READ COMPLETE for “${label}” (${originalLength} chars across ${chunksRead} section(s)).`,
     'These facts were extracted by reading the entire document in order — use them for the card.',
