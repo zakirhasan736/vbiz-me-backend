@@ -147,6 +147,8 @@ function publicJob(session: CardBuildSession) {
     assembledDraft: session.assembledDraft ?? session.blueprint,
     blueprint: session.blueprint,
     businessProfile: session.businessProfile,
+    // Surface brand palette for AI builder launch checklist (Global Color preview/edit).
+    themeRecommendation: session.businessProfile?.themeRecommendation || null,
     completion: buildCompletenessReport({ profile: session.businessProfile, blueprint: session.blueprint }),
     missingInformation: session.businessProfile?.missingInformation || [],
     conflicts: session.businessProfile?.conflicts || [],
