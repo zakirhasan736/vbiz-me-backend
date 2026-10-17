@@ -46,10 +46,7 @@ import { emptyNormalizedSources, normalizeSources, seedProfileFromCrawledPages }
 import { normalizeWebsiteUrl } from './sourceUrl'
 import { autoFillSelectedFields, capGeneratedSkills, topUpGeneratedList } from './tabBuild.service'
 import { resolveProfileThemeRecommendation } from './themeFromDocuments'
-import {
-  shouldApplyBrandThemeConfig,
-  themeConfigFromRecommendation,
-} from './themeFromRecommendation'
+import { shouldApplyBrandThemeConfig, themeConfigFromRecommendation } from './themeFromRecommendation'
 
 const running = new Set<string>()
 const pendingWork = new Map<
@@ -1131,9 +1128,7 @@ export async function applyJob(input: {
   // Apply Global Color only for document/website/logo/mixed brand evidence.
   // No URL + no PDF color guidance → leave system default themeConfig alone (never AI suggestion).
   const shouldApplyTheme = shouldApplyBrandThemeConfig(themeProfile.themeRecommendation)
-  const recommendedTheme = shouldApplyTheme
-    ? themeConfigFromRecommendation(themeProfile.themeRecommendation)
-    : null
+  const recommendedTheme = shouldApplyTheme ? themeConfigFromRecommendation(themeProfile.themeRecommendation) : null
   const profilePayload = {
     name: applyName,
     email: applyEmail,
