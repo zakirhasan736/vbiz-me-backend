@@ -6,6 +6,7 @@ import { getRequestId } from '../middlewares/requestId'
 import * as cardAgentService from '../services/ai/cardAgent.service'
 import * as cardJobService from '../services/ai/cardJob.service'
 import { filesFromMulter } from '../services/ai/extractDocumentText'
+import { MAX_FILES, MAX_UPLOAD_BYTES } from '../services/ai/openai.client'
 import { checkAiRateLimit } from '../services/ai/rateLimit'
 import { assertUserPackageAccess } from '../services/entitlement.service'
 import catchAsyncError, { type IUserInfoRequest } from '../utils/catchAsyncError'
@@ -13,7 +14,7 @@ import sendResponse from '../utils/sendResponse'
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024, files: 6 },
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: MAX_FILES },
 })
 
 const router = Router()
@@ -45,7 +46,7 @@ function rateLimitOrThrow(req: IUserInfoRequest, action: string, limit: number) 
 
 function optionalMultipart(req: Request, res: Response, next: NextFunction) {
   if (req.is('multipart/form-data')) {
-    return upload.array('files', 6)(req, res, next)
+    return upload.array('files', MAX_FILES)(req, res, next)
   }
   return next()
 }

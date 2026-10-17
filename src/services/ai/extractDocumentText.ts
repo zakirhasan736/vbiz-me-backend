@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import mammoth from 'mammoth'
 import AppError from '../../error/AppError'
 import { cacheGet, cacheKey, cacheSet } from './extractionCache'
-import { MAX_FILES, MAX_UPLOAD_BYTES } from './openai.client'
+import { MAX_DOCUMENT_EXTRACT_CHARS, MAX_FILES, MAX_UPLOAD_BYTES } from './openai.client'
 import type { WebsiteCrawlMode } from './websiteCrawlMode'
 
 export type WebsitePageCategory =
@@ -52,9 +52,14 @@ export type UploadedPart = {
   buffer: Buffer
 }
 
-function truncate(text: string, max = 24000): string {
+/** Prefer keeping the start (overview) and end (contact/footer) of long PDFs/text. */
+function truncate(text: string, max = MAX_DOCUMENT_EXTRACT_CHARS): string {
   if (text.length <= max) return text
-  return `${text.slice(0, max)}\n\n[Truncated…]`
+  const marker = '\n\n[…middle omitted for length; beginning and ending kept for full context…]\n\n'
+  const budget = max - marker.length
+  const head = Math.floor(budget * 0.72)
+  const tail = Math.max(2_000, budget - head)
+  return `${text.slice(0, head)}${marker}${text.slice(-tail)}`
 }
 
 function decodeHtmlEntities(text: string): string {

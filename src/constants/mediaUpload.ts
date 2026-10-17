@@ -1,6 +1,6 @@
-/** Builder media uploads are not size-capped in application code. */
+/** Shown when multer / proxy rejects an oversized body (Card Studio docs or media). */
 export const MEDIA_UPLOAD_TOO_LARGE_MESSAGE =
-  'Upload was rejected. The file may be too large for the server or network proxy.'
+  'Upload was rejected. The file may be too large for the server or network proxy. Card Studio accepts PDF/text up to 50MB when the API proxy body limit is set to 50m or higher.'
 
 export const MEDIA_UPLOAD_INTERRUPTED_MESSAGE =
   'Upload was interrupted before the file finished sending. Please try again.'

@@ -1,12 +1,15 @@
 import s3Utils from '../../utils/s3'
 import { extractWithOcrFallback, needsServerOcr } from '../documentOcr.service'
 import type { MasterBusinessProfile } from './businessProfile.schema'
+import { readDocumentFullyForCardBuilder } from './documentRead.service'
 import {
   crawlWebsiteDeep,
   extractTextFromBuffer,
+  isUnreadDocumentPlaceholder,
   type UploadedPart,
   type WebsitePageCategory,
 } from './extractDocumentText'
+import { MAX_DOCUMENT_EXTRACT_CHARS } from './openai.client'
 import { normalizeWebsiteUrl } from './sourceUrl'
 import { detectWebsiteCrawlMode, STOREFRONT_SOURCE_PREAMBLE, type WebsiteCrawlMode } from './websiteCrawlMode'
 
@@ -184,7 +187,7 @@ async function extractFileWithOcr(file: UploadedPart) {
     const text = await extractWithOcrFallback(file, purpose)
     return {
       ...extracted,
-      text: text.slice(0, 24_000),
+      text: text.slice(0, MAX_DOCUMENT_EXTRACT_CHARS),
       extractionMethod: 'ocr' as const,
       warning: undefined,
     }
@@ -195,6 +198,22 @@ async function extractFileWithOcr(file: UploadedPart) {
         extracted.warning ||
         (error instanceof Error ? error.message : 'OCR could not read this file. Other sources will still be used.'),
     }
+  }
+}
+
+/** Native/OCR extract first, then chunk-read long documents so Card Studio understands the full file. */
+async function extractAndFullyReadFile(file: UploadedPart) {
+  const extracted = await extractFileWithOcr(file)
+  const raw = (extracted.text || '').trim()
+  if (!raw || isUnreadDocumentPlaceholder(raw)) return extracted
+  const fullyRead = await readDocumentFullyForCardBuilder({
+    label: extracted.label || file.name,
+    text: raw,
+  })
+  return {
+    ...extracted,
+    text: fullyRead.text,
+    warning: extracted.warning,
   }
 }
 
@@ -226,7 +245,7 @@ export async function normalizeSources(input: {
       )
     : Promise.resolve(null)
 
-  const filesTask = Promise.all((input.files || []).map((file) => extractFileWithOcr(file)))
+  const filesTask = Promise.all((input.files || []).map((file) => extractAndFullyReadFile(file)))
 
   const [websiteResult, fileResults] = await Promise.all([websiteTask, filesTask])
 

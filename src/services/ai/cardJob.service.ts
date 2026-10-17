@@ -510,7 +510,9 @@ async function runExtractAndArchitecture(jobId: string) {
           id: 'understand',
           label: 'Understanding your business',
           status: 'active' as const,
-          detail: 'Taking extra time to understand the business from the full site, notes, and documents.',
+          detail: files.length
+            ? 'Finished reading your document(s) in full (long files are read section by section), then understanding the business.'
+            : 'Taking extra time to understand the business from the full site, notes, and documents.',
         },
         { id: 'design', label: 'Designing your card', status: 'pending' as const },
         { id: 'map', label: 'Matching what we found', status: 'pending' as const },

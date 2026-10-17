@@ -11,8 +11,19 @@ import {
   type AiTier,
 } from './modelRouter.service'
 
-export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+/** Match reverse-proxy / media upload ceiling (see CUTOVER.md client_max_body_size 50m). */
+export const MAX_UPLOAD_BYTES = Math.max(
+  8,
+  Number.parseInt(process.env.AI_CARD_MAX_UPLOAD_MB || '50', 10) || 50
+) *
+  1024 *
+  1024
 export const MAX_FILES = 6
+/** Keep enough extracted PDF/txt for the planner (head + tail when longer). */
+export const MAX_DOCUMENT_EXTRACT_CHARS = Math.max(
+  24_000,
+  Number.parseInt(process.env.AI_CARD_MAX_DOCUMENT_CHARS || '250000', 10) || 250_000
+)
 
 export function getOpenAiApiKey(): string {
   const key = process.env.OPENAI_API_KEY?.trim()

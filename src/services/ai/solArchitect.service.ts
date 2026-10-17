@@ -55,17 +55,23 @@ function isLargeSite(normalized: NormalizedSourceData): boolean {
 export function buildArchitectureSource(normalized: NormalizedSourceData, budget = ARCHITECTURE_SOURCE_BUDGET): string {
   const pages = normalized.website.pages
   if (!pages.length) {
-    const cap = budget < ARCHITECTURE_SOURCE_BUDGET ? budget : 70_000
+    // Document-only jobs: keep a large slice so long PDFs/text are understood before planning.
+    const cap = budget < ARCHITECTURE_SOURCE_BUDGET ? Math.max(budget, 40_000) : 150_000
+    const body = normalized.extractedText
+    const source =
+      body.length <= cap
+        ? body
+        : `${body.slice(0, Math.floor(cap * 0.72))}\n\n[…middle omitted…]\n\n${body.slice(-(cap - Math.floor(cap * 0.72) - 40))}`
     return [
       'NO WEBSITE URL. The uploaded PDF, Word, text, photos, and notes are the business source.',
       'Read them fully. Understand the business, then suggest the vBiz Me card and tabs. Do not wait for a website.',
-      normalized.extractedText.slice(0, cap),
+      source,
     ]
       .filter(Boolean)
       .join('\n\n')
   }
   if (!isLargeSite(normalized)) {
-    const cap = budget < ARCHITECTURE_SOURCE_BUDGET ? budget : 70_000
+    const cap = budget < ARCHITECTURE_SOURCE_BUDGET ? budget : 150_000
     return normalized.extractedText.slice(0, cap)
   }
 

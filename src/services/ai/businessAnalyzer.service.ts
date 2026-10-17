@@ -10,7 +10,8 @@ import { assessComplexity, routeAiTier, type AiTier } from './modelRouter.servic
 import { chatJson } from './openai.client'
 import type { NormalizedSourceData } from './sourceNormalizer.service'
 
-const PROFILE_SOURCE_CAP = 70000
+/** Large PDF/txt uploads need more than the old 70k website-oriented cap. */
+const PROFILE_SOURCE_CAP = 150_000
 
 function sourcePrompt(normalized: NormalizedSourceData): string {
   return normalized.extractedText.slice(0, PROFILE_SOURCE_CAP)
