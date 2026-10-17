@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import {
-  CARD_BUILDER_MISSION,
-  CARD_BUILDER_MISSION_COMPACT,
-  CARD_BUILDER_MISSION_VERSION,
-} from '../cardBuilderMission'
+import { CARD_BUILDER_MISSION, CARD_BUILDER_MISSION_COMPACT, CARD_BUILDER_MISSION_VERSION } from '../cardBuilderMission'
 
 describe('AI Card Builder mission (v4.0)', () => {
   it('exports the master mission and compact fill instructions', () => {

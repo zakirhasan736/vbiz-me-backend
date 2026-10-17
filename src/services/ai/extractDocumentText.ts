@@ -905,10 +905,7 @@ export async function crawlWebsiteDeep(
       extractSameOriginLinks(homeHtml, home, priorityFocus, 24)
     )
     const sitemapUrls = await discoverSitemapUrls(home)
-    const plan = planCatalogReads(
-      [...priorityLinks, ...homeLinks, ...sitemapUrls],
-      Math.max(12, maxPages - 1)
-    )
+    const plan = planCatalogReads([...priorityLinks, ...homeLinks, ...sitemapUrls], Math.max(12, maxPages - 1))
     catalogSummary = plan.summary
     const fetchList = plan.fetchUrls.filter((link) => !visited.has(link)).slice(0, Math.max(0, maxPages - pages.length))
     for (const link of fetchList) visited.add(link)

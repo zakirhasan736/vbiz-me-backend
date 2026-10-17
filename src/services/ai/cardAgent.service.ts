@@ -111,9 +111,7 @@ function mergeBlueprint(base: Partial<CardBlueprint>, generated: CardBlueprint):
     ...genPersonal,
     ...Object.fromEntries(Object.entries(basePersonal).filter(([k, v]) => Boolean(v) && contactKeys.has(k))),
     about:
-      (genPersonal.about || '').trim().length >= 80
-        ? genPersonal.about
-        : basePersonal.about || genPersonal.about || '',
+      (genPersonal.about || '').trim().length >= 80 ? genPersonal.about : basePersonal.about || genPersonal.about || '',
   }
   return cardBlueprintSchema.parse({
     ...generated,
