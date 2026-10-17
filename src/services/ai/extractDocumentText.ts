@@ -1,6 +1,11 @@
 import { createHash } from 'crypto'
 import mammoth from 'mammoth'
 import AppError from '../../error/AppError'
+import {
+  extractStylesheetUrls,
+  formatBrandColorResearchBlock,
+  themeRecommendationFromWebsite,
+} from './brandColorEngine'
 import { cacheGet, cacheKey, cacheSet } from './extractionCache'
 import { MAX_DOCUMENT_EXTRACT_CHARS, MAX_FILES, MAX_UPLOAD_BYTES } from './openai.client'
 import { extractReputationLinksFromHtml } from './reputationFromSources'
@@ -646,6 +651,36 @@ type FetchedPage = {
   imageUrls: string[]
 }
 
+/** Fetch a few same-origin stylesheets so brand CSS variables survive beyond inline <style>. */
+async function fetchLinkedStylesheets(html: string, pageUrl: string): Promise<string> {
+  let originHost = ''
+  try {
+    originHost = new URL(pageUrl).hostname
+  } catch {
+    return ''
+  }
+  const urls = extractStylesheetUrls(html, pageUrl, 3).filter((href) => {
+    try {
+      return new URL(href).hostname === originHost
+    } catch {
+      return false
+    }
+  })
+  if (!urls.length) return ''
+  const chunks: string[] = []
+  await Promise.all(
+    urls.map(async (href) => {
+      try {
+        const css = await fetchHtml(href, 12_000)
+        if (css && css.length < 400_000) chunks.push(css.slice(0, 120_000))
+      } catch {
+        /* ignore stylesheet failures */
+      }
+    })
+  )
+  return chunks.join('\n')
+}
+
 const CORE_READ_CATEGORIES = new Set<WebsitePageCategory>([
   'about',
   'services',
@@ -840,7 +875,7 @@ export async function crawlWebsiteDeep(
 ): Promise<{ pages: CrawledWebsitePage[]; combined: string; mode: WebsiteCrawlMode; catalogSummary?: string }> {
   const mode: WebsiteCrawlMode = options?.mode === 'storefront' ? 'storefront' : 'full'
   const home = url.startsWith('http') ? url : `https://${url}`
-  const cacheId = cacheKey(['crawl-v5', home, focus || '', mode])
+  const cacheId = cacheKey(['crawl-v6', home, focus || '', mode])
   const cached = cacheGet<{
     pages: CrawledWebsitePage[]
     combined: string
@@ -851,6 +886,12 @@ export async function crawlWebsiteDeep(
 
   const imageLimit = mode === 'storefront' ? 24 : 8
   const homeHtml = await fetchHtml(home)
+  const linkedCss = await fetchLinkedStylesheets(homeHtml, home)
+  const brandTheme = themeRecommendationFromWebsite(homeHtml, linkedCss)
+  const brandResearchBlock = formatBrandColorResearchBlock(
+    brandTheme?.recommendation || null,
+    brandTheme?.evidence || []
+  )
   const homeText = htmlToText(homeHtml)
   const homeCategory = mode === 'storefront' ? ('products' as WebsitePageCategory) : classifyWebsitePage(home, homeText)
   const retrievedAt = new Date().toISOString()
@@ -1008,6 +1049,7 @@ export async function crawlWebsiteDeep(
       ? 'CRAWL MODE: storefront (seller/vendor page — focus on this URL, not the full marketplace)'
       : `CRAWL MODE: full-site (${pages.length} pages opened; every area linked from the site was pursued up to the page budget)`,
     catalogSummary,
+    brandResearchBlock,
   ]
     .filter(Boolean)
     .join('\n')

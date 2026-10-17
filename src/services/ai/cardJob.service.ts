@@ -606,7 +606,7 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       session.normalized.website.pages,
       session.normalized.website.crawlMode || 'full'
     )
-    // PDF/text brand guidelines → Card Settings global colors (light + dark P/S/A).
+    // PDF/text + website BRAND COLOR RESEARCH → themeRecommendation (Global Color on apply).
     profile = resolveProfileThemeRecommendation(
       profile,
       [
@@ -1106,7 +1106,8 @@ export async function applyJob(input: {
     }
   }
 
-  // Re-resolve from session sources so PDF Light/Dark P/S/A always reach Card Settings.
+  // Re-resolve from session sources so PDF + website brand colors always reach Card Settings.
+  // Priority inside resolve: document guidelines → BRAND COLOR RESEARCH (website) → AI suggestion.
   const themeProfile = resolveProfileThemeRecommendation(
     ready.businessProfile || ({} as NonNullable<typeof ready.businessProfile>),
     [
@@ -1118,6 +1119,12 @@ export async function applyJob(input: {
       .filter(Boolean)
       .join('\n\n')
   )
+  if (themeProfile.themeRecommendation && ready.businessProfile) {
+    ready.businessProfile = {
+      ...ready.businessProfile,
+      themeRecommendation: themeProfile.themeRecommendation,
+    }
+  }
   const recommendedTheme = themeConfigFromRecommendation(themeProfile.themeRecommendation)
   const themeSource = themeProfile.themeRecommendation?.source || ''
   const shouldApplyTheme =

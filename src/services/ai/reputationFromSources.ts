@@ -116,19 +116,30 @@ export function filterReputationLinksForIdentity(
 
 /** HEX colors mentioned in CSS/HTML/text (verified from source markup). */
 export function extractHexColorsFromText(text: string, limit = 12): string[] {
-  const matches = text.match(/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g) || []
   const seen = new Set<string>()
   const out: string[] = []
-  for (const match of matches) {
+  const push = (raw: string) => {
     const hex =
-      match.length === 4
-        ? `#${match[1]}${match[1]}${match[2]}${match[2]}${match[3]}${match[3]}`.toLowerCase()
-        : match.toLowerCase()
-    if (seen.has(hex)) continue
-    // Skip near-white / near-black noise common in CSS resets
-    if (/^#(fff|000|ffffff|000000)$/i.test(hex)) continue
+      raw.length === 4 ? `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`.toLowerCase() : raw.toLowerCase()
+    if (seen.has(hex)) return
+    if (/^#(fff|000|ffffff|000000)$/i.test(hex)) return
     seen.add(hex)
     out.push(hex)
+  }
+
+  // Prefer deterministic BRAND COLOR RESEARCH recommendations first.
+  for (const match of text.matchAll(
+    /Recommended (?:light|dark) Primary\/Secondary\/Accent:\s*(#[0-9a-fA-F]{3,6})\s*\/\s*(#[0-9a-fA-F]{3,6})\s*\/\s*(#[0-9a-fA-F]{3,6})/gi
+  )) {
+    push(match[1])
+    push(match[2])
+    push(match[3])
+    if (out.length >= limit) return out.slice(0, limit)
+  }
+
+  const matches = text.match(/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g) || []
+  for (const match of matches) {
+    push(match)
     if (out.length >= limit) break
   }
   return out
@@ -150,6 +161,12 @@ export function formatReputationBlock(links: ReputationLink[], hexColors: string
     lines.push(`- Brand HEX candidates from website/documents: ${hexColors.join(', ')}`)
     lines.push(
       '- If PDF/text names Light/Dark Primary·Secondary·Accent, put those exact HEX into themeRecommendation (source "document").'
+    )
+    lines.push(
+      '- Else prefer the deterministic BRAND COLOR RESEARCH light/dark Primary·Secondary·Accent (source "website"). Do not invent different brand hues when research already resolved them.'
+    )
+    lines.push(
+      '- Role mapping: Primary=main CTA/nav/Home description; Secondary=section banners/Home name/text·icons on Primary&Accent buttons; Accent=My vCard + social circle fills. Keep contrast readable on light (#fff) and dark (#020914) surfaces.'
     )
   } else {
     lines.push(

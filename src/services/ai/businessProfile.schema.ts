@@ -292,7 +292,7 @@ export const MASTER_PROFILE_JSON_INSTRUCTION = `Return ONLY JSON for a Master Bu
 - STOREFRONT MODE: prefer seller identity over marketplace brand; map catalog into services/products; authentic product photos → portfolio only.
 - Marketing fields: businessDescription (first-person About draft for individuals; company voice for companies; ~100–150 words), missionStatement (25–45 words), whyChooseUs, suggestedCta + alternateCtas (up to 2), brandVoice, intendedAudience, uniqueAdvantages, customerBenefits.
 - Services: title (emoji allowed) + 40–75 word benefit description. Always set services[].imageUrl to "".
-- themeRecommendation: light + dark primary/secondary/accent HEX. Prefer colors stated in uploaded PDF/text brand guidelines, then website/logo HEX; else professional suggestions with source "suggestion". Use source "document" when taken from uploads.
+- themeRecommendation: light + dark primary/secondary/accent HEX. Prefer PDF/text Light/Dark roles (source "document"), then BRAND COLOR RESEARCH / website CSS brand HEX (source "website"), else professional suggestions (source "suggestion"). Roles: Primary=CTA/nav/Home description; Secondary=banners/Home name/button text·icons; Accent=My vCard + social fills. Preserve brand hues; keep contrast readable.
 - needsConfirmation: uncertain discovered links, suggested services, or claims needing owner approval (status needs_confirmation|suggested).
 - Completeness: populate every field supportable from sources. Never invent service images.
 

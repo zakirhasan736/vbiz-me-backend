@@ -64,20 +64,30 @@ function hasAny(t: Triplet): boolean {
 /**
  * Read light/dark Primary·Secondary·Accent HEX from PDF/text brand guidelines.
  * Deterministic — does not depend on the model returning themeRecommendation.
+ * Ignores the crawl's BRAND COLOR RESEARCH block (handled separately as website).
  */
 export function extractThemeRecommendationFromText(text: string): ThemeRec | null {
   if (!text?.trim()) return null
+  // Strip deterministic website research so "Recommended light Primary/..." is not
+  // misclassified as a PDF brand-guideline document.
+  const cleaned = text
+    .replace(
+      /BRAND COLOR RESEARCH[\s\S]*?(?=\n(?:WEBSITE URL|DOCUMENT |OWNER-PROVIDED|USER INSTRUCTIONS|CRAWL MODE|=== PAGE)|\n\n---|\s*$)/gi,
+      ' '
+    )
+    .replace(/Recommended (?:light|dark) Primary\/Secondary\/Accent:[^\n]*/gi, ' ')
+  if (!cleaned.trim()) return null
   const light: Triplet = { primary: '', secondary: '', accent: '' }
   const dark: Triplet = { primary: '', secondary: '', accent: '' }
 
-  const lightBlock = modeBlock(text, 'light')
-  const darkBlock = modeBlock(text, 'dark')
+  const lightBlock = modeBlock(cleaned, 'light')
+  const darkBlock = modeBlock(cleaned, 'dark')
   fillTripletFromBlock(lightBlock, light)
   fillTripletFromBlock(darkBlock, dark)
 
   // Prefixed keys anywhere in the document when section headers were missing.
   if (!hasAny(light) || !hasAny(dark)) {
-    for (const match of text.matchAll(
+    for (const match of cleaned.matchAll(
       /\b(light|dark)\s*[-_]?\s*(primary|secondary|accent)\s*(?:color|colour|hex)?\s*[:\-–—]?\s*(#[0-9a-fA-F]{3,6})\b/gi
     )) {
       const mode = match[1].toLowerCase() === 'dark' ? dark : light
@@ -89,7 +99,7 @@ export function extractThemeRecommendationFromText(text: string): ThemeRec | nul
 
   // Single palette named once — use for both modes if only one side filled.
   if (!hasAny(light) && !hasAny(dark)) {
-    fillTripletFromBlock(text, light)
+    fillTripletFromBlock(cleaned, light)
     if (hasAny(light)) {
       dark.primary = light.primary
       dark.secondary = light.secondary
@@ -114,6 +124,21 @@ export function extractThemeRecommendationFromText(text: string): ThemeRec | nul
   }
 }
 
+function roleFilled(side?: Partial<Triplet> | null, role?: keyof Triplet): boolean {
+  if (!side || !role) return false
+  return Boolean(String(side[role] || '').trim())
+}
+
+/** True when fallback supplies at least one role preferred left blank. */
+function fallbackContributedRoles(preferred: ThemeRec, fallback: ThemeRec): boolean {
+  for (const mode of ['light', 'dark'] as const) {
+    for (const role of ['primary', 'secondary', 'accent'] as const) {
+      if (!roleFilled(preferred[mode], role) && roleFilled(fallback[mode], role)) return true
+    }
+  }
+  return false
+}
+
 /** Document/logo/website colors win over empty AI slots; never wipe a filled role with blank. */
 export function mergeThemeRecommendations(
   preferred: ThemeRec | null | undefined,
@@ -132,12 +157,20 @@ export function mergeThemeRecommendations(
   if (!hasAny(light) && !hasAny(dark)) return null
   const preferredFilled = hasAny(mergeSide(preferred.light, null)) || hasAny(mergeSide(preferred.dark, null))
   const fallbackFilled = hasAny(mergeSide(fallback.light, null)) || hasAny(mergeSide(fallback.dark, null))
+  const contributed = fallbackContributedRoles(preferred, fallback)
   let source: ThemeRec['source'] = preferred.source || fallback.source || 'suggestion'
-  if (preferred.source === 'document' && preferredFilled) source = 'document'
-  else if (fallback.source === 'document' && fallbackFilled && !preferredFilled) source = 'document'
-  else if (
+  if (preferred.source === 'document' && preferredFilled) {
+    source = contributed && fallback.source && fallback.source !== 'document' ? 'mixed' : 'document'
+  } else if (preferred.source === 'website' && preferredFilled) {
+    source = contributed && fallback.source && fallback.source !== 'website' ? 'mixed' : 'website'
+  } else if (fallback.source === 'document' && fallbackFilled && !preferredFilled) {
+    source = 'document'
+  } else if (fallback.source === 'website' && fallbackFilled && !preferredFilled) {
+    source = 'website'
+  } else if (
     preferredFilled &&
     fallbackFilled &&
+    contributed &&
     preferred.source &&
     fallback.source &&
     preferred.source !== fallback.source
@@ -152,13 +185,46 @@ export function mergeThemeRecommendations(
   }
 }
 
-/** Prefer document/PDF theme text, then AI themeRecommendation. */
+/**
+ * Prefer PDF/document Light·Dark P/S/A, then deterministic website brand theme,
+ * then AI themeRecommendation. Never wipe filled roles with blanks.
+ */
 export function resolveProfileThemeRecommendation(
   profile: MasterBusinessProfile,
-  sourceText: string
+  sourceText: string,
+  websiteTheme?: ThemeRec | null
 ): MasterBusinessProfile {
   const fromDocs = extractThemeRecommendationFromText(sourceText)
-  const merged = mergeThemeRecommendations(fromDocs, profile.themeRecommendation)
+  const fromWebsite = websiteTheme || extractThemeRecommendationFromBrandResearchBlock(sourceText) || null
+  const withWebsite = mergeThemeRecommendations(fromDocs, fromWebsite)
+  const merged = mergeThemeRecommendations(withWebsite, profile.themeRecommendation)
   if (!merged) return profile
   return { ...profile, themeRecommendation: merged }
+}
+
+/** Parse BRAND COLOR RESEARCH block that the crawl injects into extracted text. */
+export function extractThemeRecommendationFromBrandResearchBlock(text: string): ThemeRec | null {
+  if (!text?.includes('BRAND COLOR RESEARCH')) return null
+  const light = text.match(
+    /Recommended light Primary\/Secondary\/Accent:\s*(#[0-9a-fA-F]{3,6})\s*\/\s*(#[0-9a-fA-F]{3,6})\s*\/\s*(#[0-9a-fA-F]{3,6})/i
+  )
+  const dark = text.match(
+    /Recommended dark Primary\/Secondary\/Accent:\s*(#[0-9a-fA-F]{3,6})\s*\/\s*(#[0-9a-fA-F]{3,6})\s*\/\s*(#[0-9a-fA-F]{3,6})/i
+  )
+  if (!light && !dark) return null
+  const norm = (v: string) => (v.length === 4 ? `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}` : v).toLowerCase()
+  return {
+    light: {
+      primary: light ? norm(light[1]) : dark ? norm(dark[1]) : '',
+      secondary: light ? norm(light[2]) : dark ? norm(dark[2]) : '',
+      accent: light ? norm(light[3]) : dark ? norm(dark[3]) : '',
+    },
+    dark: {
+      primary: dark ? norm(dark[1]) : light ? norm(light[1]) : '',
+      secondary: dark ? norm(dark[2]) : light ? norm(light[2]) : '',
+      accent: dark ? norm(dark[3]) : light ? norm(light[3]) : '',
+    },
+    source: 'website',
+    notes: 'Parsed from deterministic BRAND COLOR RESEARCH block.',
+  }
 }

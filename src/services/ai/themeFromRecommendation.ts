@@ -1,4 +1,5 @@
 import type { MasterBusinessProfile } from './businessProfile.schema'
+import { contrastRatio, ensureContrast, relativeLuminance } from './cssColorParse'
 
 type ThemeTriplet = { primary?: string; secondary?: string; accent?: string }
 
@@ -14,32 +15,26 @@ function normalizeHex(value: unknown): string | null {
   return trimmed.toLowerCase()
 }
 
-function relativeLuminance(hex: string): number {
-  const raw = hex.slice(1)
-  const n = (i: number) => Number.parseInt(raw.slice(i, i + 2), 16) / 255
-  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-  const r = lin(n(0))
-  const g = lin(n(2))
-  const b = lin(n(4))
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
-
-/** Prefer readable secondary against primary fill (dark-on-gold / light-on-dark). */
-function ensureReadableSecondary(primary: string, secondary: string): string {
-  const contrast =
-    (Math.max(relativeLuminance(primary), relativeLuminance(secondary)) + 0.05) /
-    (Math.min(relativeLuminance(primary), relativeLuminance(secondary)) + 0.05)
-  if (contrast >= 3) return secondary
-  return relativeLuminance(primary) > 0.5 ? '#0f2c4d' : '#f4f4f5'
+/** Prefer readable secondary against primary/accent fills (button text/icons). */
+function ensureReadableSecondary(fill: string, secondary: string): string {
+  if (contrastRatio(fill, secondary) >= 3) return secondary
+  return relativeLuminance(fill) > 0.5 ? '#0f2c4d' : '#f4f4f5'
 }
 
 function resolveTriplet(
   recommended: ThemeTriplet | undefined,
-  fallback: { primary: string; secondary: string; accent: string }
+  fallback: { primary: string; secondary: string; accent: string },
+  mode: 'light' | 'dark'
 ) {
-  const primary = normalizeHex(recommended?.primary) || fallback.primary
-  const secondary = ensureReadableSecondary(primary, normalizeHex(recommended?.secondary) || fallback.secondary)
-  const accent = normalizeHex(recommended?.accent) || fallback.accent
+  let primary = normalizeHex(recommended?.primary) || fallback.primary
+  let secondary = normalizeHex(recommended?.secondary) || fallback.secondary
+  let accent = normalizeHex(recommended?.accent) || fallback.accent
+  const pageBg = mode === 'light' ? '#ffffff' : '#020914'
+  // Primary is also Home description text; Secondary is Home name (light) / control chrome.
+  primary = ensureContrast(primary, pageBg, 4.5, mode === 'light')
+  secondary = ensureContrast(secondary, pageBg, mode === 'light' ? 4.5 : 3, mode === 'light')
+  secondary = ensureReadableSecondary(primary, secondary)
+  secondary = ensureReadableSecondary(accent, secondary)
   return { primary, secondary, accent }
 }
 
@@ -62,16 +57,24 @@ export function themeConfigFromRecommendation(
     Boolean(normalizeHex(darkRec?.accent))
   if (!hasAny) return null
 
-  const light = resolveTriplet(lightRec, {
-    primary: '#eed677',
-    secondary: '#0f2c4d',
-    accent: '#cca43b',
-  })
-  const dark = resolveTriplet(darkRec, {
-    primary: light.primary,
-    secondary: '#e2e8f0',
-    accent: light.accent,
-  })
+  const light = resolveTriplet(
+    lightRec,
+    {
+      primary: '#eed677',
+      secondary: '#0f2c4d',
+      accent: '#cca43b',
+    },
+    'light'
+  )
+  const dark = resolveTriplet(
+    darkRec,
+    {
+      primary: light.primary,
+      secondary: '#e2e8f0',
+      accent: light.accent,
+    },
+    'dark'
+  )
 
   return {
     version: 1,
