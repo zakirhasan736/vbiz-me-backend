@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { assemblePublicNavOrder } from '../../constants/publicNavOrder'
+import { toApiRole } from '../../constants/userRole'
 import AppError from '../../error/AppError'
 import {
   cardActivationIssueMessage,
@@ -10,6 +11,7 @@ import {
   normalizeCardEmail,
   normalizeCardPhone,
 } from '../../utils/cardActivation'
+import { prisma } from '../../utils/prisma'
 import profileService from '../profile.service'
 import { seoMetadataToSettings } from '../seoMetadata.service'
 import { builderError, logBuilderEvent, newRequestId, type BuilderErrorCode, type BuilderStage } from './builderErrors'
@@ -217,6 +219,37 @@ async function save(session: CardBuildSession, patch: Partial<CardBuildSession>)
   return next
 }
 
+/** Prefer Users-area account email/name over scraped website contact. Never invent users. */
+async function mergeAccountOwnerIntoExistingCard(input: {
+  existingCard?: unknown
+  ownerUserId?: string
+  actorUserId?: string
+  builderMode: 'create' | 'update'
+}): Promise<unknown> {
+  if (input.builderMode === 'update') return input.existingCard
+  const ownerId = (input.ownerUserId || input.actorUserId || '').trim()
+  if (!ownerId) return input.existingCard
+  const owner = await prisma.user.findFirst({
+    where: { id: ownerId, deletedAt: null },
+    select: { name: true, email: true },
+  })
+  if (!owner?.email) return input.existingCard
+  const root =
+    input.existingCard && typeof input.existingCard === 'object'
+      ? ({ ...(input.existingCard as Record<string, unknown>) } as Record<string, unknown>)
+      : {}
+  const personal =
+    root.personal && typeof root.personal === 'object'
+      ? ({ ...(root.personal as Record<string, unknown>) } as Record<string, unknown>)
+      : {}
+  personal.email = owner.email
+  if (owner.name?.trim() && !String(personal.fullName || '').trim()) {
+    personal.fullName = owner.name.trim()
+  }
+  root.personal = personal
+  return root
+}
+
 export async function startCardJob(input: {
   websiteUrl?: string
   businessText?: string
@@ -224,6 +257,7 @@ export async function startCardJob(input: {
   existingCard?: unknown
   userId?: string
   role?: string
+  ownerUserId?: string
   sessionId?: string
   profileId?: string
   builderMode?: 'create' | 'update'
@@ -237,6 +271,12 @@ export async function startCardJob(input: {
   const files = input.files || []
   const websiteUrl = input.websiteUrl?.trim() ? normalizeWebsiteUrl(input.websiteUrl, requestId) : ''
   const crawlMode = String(input.crawlMode || '').trim()
+  const existingCard = await mergeAccountOwnerIntoExistingCard({
+    existingCard: input.existingCard,
+    ownerUserId: input.ownerUserId,
+    actorUserId: input.userId,
+    builderMode,
+  })
 
   if (builderMode === 'update') {
     if (!profileId) {
@@ -256,7 +296,7 @@ export async function startCardJob(input: {
     await profileService.getOwnedForWrite(profileId, input.userId, input.role || 'user')
   }
 
-  if (!websiteUrl && !businessText && files.length === 0 && !input.existingCard) {
+  if (!websiteUrl && !businessText && files.length === 0 && !existingCard) {
     throw builderError(400, 'VALIDATION_FAILED', 'Provide a website URL, business text, and/or document uploads.', {
       requestId,
       stage: 'source_fetch',
@@ -287,7 +327,7 @@ export async function startCardJob(input: {
           websiteUrl,
           businessText,
           files,
-          existingCard: input.existingCard,
+          existingCard,
           crawlMode,
         })
         queueWorker(resumed.id, { architectureOnly: true })
@@ -303,7 +343,7 @@ export async function startCardJob(input: {
           websiteUrl,
           businessText,
           files,
-          existingCard: input.existingCard,
+          existingCard,
           crawlMode,
         })
         queueWorker(existing.id)
@@ -330,7 +370,7 @@ export async function startCardJob(input: {
     rawSources: {
       websiteUrl,
       businessText,
-      existingCard: input.existingCard,
+      existingCard,
       builderMode,
       requestId,
       profileId,
@@ -366,7 +406,7 @@ export async function startCardJob(input: {
   })
   await persistCardSession(session)
 
-  pendingWork.set(session.id, { websiteUrl, businessText, files, existingCard: input.existingCard, crawlMode })
+  pendingWork.set(session.id, { websiteUrl, businessText, files, existingCard, crawlMode })
   queueWorker(session.id)
   logBuilderEvent('AI_BUILDER_STAGE', {
     requestId,
@@ -890,6 +930,41 @@ export async function checkpointJob(input: {
   return publicJob(updated)
 }
 
+/**
+ * AI Builder must never invent Team Member users. If the acting/assigned account
+ * is a Corporate Team Owner, the applied card stays on that owner login even when
+ * the scraped website email differs from the corporate login email.
+ */
+async function ensureAiCardStaysOnCorporateOwner(input: {
+  profileId: string
+  actorUserId: string
+  actorRole: string
+  ownerUserId?: string
+}) {
+  const preferredOwnerId = (typeof input.ownerUserId === 'string' && input.ownerUserId.trim()) || input.actorUserId
+  const owner = await prisma.user.findFirst({
+    where: { id: preferredOwnerId, deletedAt: null },
+    select: { id: true, role: true },
+  })
+  if (!owner) return
+  const ownerApiRole = toApiRole(owner.role)
+  const actorIsCorporate = String(input.actorRole).trim().toLowerCase() === 'corporate-owner'
+  if (ownerApiRole !== 'corporate-owner' && !actorIsCorporate) return
+
+  const corporateId = ownerApiRole === 'corporate-owner' ? owner.id : input.actorUserId
+  const card = await prisma.profile.findUnique({
+    where: { id: input.profileId },
+    select: { id: true, userId: true, companyUserId: true },
+  })
+  if (!card) return
+  if (card.userId === corporateId && card.companyUserId === corporateId) return
+
+  await prisma.profile.update({
+    where: { id: card.id },
+    data: { userId: corporateId, companyUserId: corporateId },
+  })
+}
+
 export async function applyJob(input: {
   jobId: string
   userId: string
@@ -929,11 +1004,40 @@ export async function applyJob(input: {
   }
   await save(ready, { status: 'APPLYING' })
   const profileService = (await import('../profile.service')).default
+  const isUpdate = ready.builderMode === 'update'
+
+  // Create: Users-area account email/name win over scraped website contact.
+  // Update: keep card identity already on file — AI must not invent users or swap emails.
+  let applyName = personal.fullName || personal.company || 'My Card'
+  let applyEmail = personal.email
+  let applyPhone = personal.phone
+  if (!isUpdate) {
+    const accountOwnerId = (input.ownerUserId || input.userId || '').trim()
+    if (accountOwnerId) {
+      const accountOwner = await prisma.user.findFirst({
+        where: { id: accountOwnerId, deletedAt: null },
+        select: { name: true, email: true },
+      })
+      if (accountOwner?.email) applyEmail = accountOwner.email
+      if (accountOwner?.name?.trim()) applyName = accountOwner.name.trim()
+    }
+  } else if (ready.profileId) {
+    const existingProfile = await prisma.profile.findUnique({
+      where: { id: String(ready.profileId) },
+      select: { name: true, email: true, phone: true },
+    })
+    if (existingProfile?.email?.trim()) applyEmail = existingProfile.email
+    if (existingProfile?.phone?.trim()) applyPhone = existingProfile.phone
+    if (existingProfile?.name?.trim() && !String(personal.fullName || '').trim()) {
+      applyName = existingProfile.name
+    }
+  }
+
   const profilePayload = {
-    name: personal.fullName || personal.company || 'My Card',
-    email: personal.email,
+    name: applyName,
+    email: applyEmail,
     dob: personal.dob || undefined,
-    phone: personal.phone,
+    phone: applyPhone,
     whatsapp: personal.whatsapp,
     website: personal.website,
     address: personal.address,
@@ -957,15 +1061,14 @@ export async function applyJob(input: {
         })
       : undefined,
   }
-  const isUpdate = ready.builderMode === 'update'
   if (isUpdate && !ready.profileId) {
     throw new AppError(409, 'AI update session is missing its persisted profile ID.')
   }
+  // AI Builder never creates users. Cards stay on the acting / assigned owner.
+  // Corporate Team Member logins are only created via Duplicate → member popup.
   const persisted = isUpdate
     ? await profileService.update(String(ready.profileId), input.userId, input.role, {
         ...profilePayload,
-        // AI must never reassign a corporate owner card to a new team-member login
-        // just because the website email differs from the corporate login email.
         skipCorporateMemberProvision: true,
       })
     : await profileService.create(input.userId, input.role, {
@@ -973,12 +1076,21 @@ export async function applyJob(input: {
         ownerUserId: input.ownerUserId,
         creationKey: `ai-card-job:${ready.id}`,
         skipCreateContactRules: input.publish !== true,
-        // Keep AI-created cards on the acting corporate owner; team members are
-        // created only via explicit duplicate / member-login flows.
         skipCorporateMemberProvision: true,
       })
 
   const profileId = persisted.id as string
+
+  // Create-only: first/AI-created corporate cards stay on the Team Owner login.
+  // Updates must not steal an existing Team Member card back to the owner.
+  if (!isUpdate) {
+    await ensureAiCardStaysOnCorporateOwner({
+      profileId,
+      actorUserId: input.userId,
+      actorRole: input.role,
+      ownerUserId: input.ownerUserId,
+    })
+  }
   const collections: Array<
     [
       'services' | 'education' | 'experiences' | 'portfolios' | 'reviews' | 'skillTags',

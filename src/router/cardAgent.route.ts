@@ -209,6 +209,7 @@ router.post(
       existingCard,
       userId: req.user?.id,
       role: String(req.user?.role || ''),
+      ownerUserId: typeof req.body?.ownerUserId === 'string' ? req.body.ownerUserId.trim() : undefined,
       sessionId: String(req.body?.sessionId || ''),
       profileId: String(req.body?.profileId || req.body?.cardId || '').trim(),
       builderMode: String(req.body?.builderMode || '') === 'update' ? 'update' : 'create',

@@ -763,18 +763,9 @@ export async function linkCardsToCorporateAccount(options: {
     }
   }
 
-  // Never auto-provision member logins after a force-owner claim — that would undo the repair
-  // when the card email differs from the corporate login email (AI-builder case).
-  if (options.apply && !options.forceAsOwnerCard) {
-    await ensureCorporateMemberLoginsForParent({
-      corporateUserId: corporate.id,
-      actorUserId: options.actorUserId,
-      apply: true,
-      resetPasswords: false,
-    }).catch((error) => {
-      logger.error('ensureCorporateMemberLoginsForParent after link failed', error)
-    })
-  }
+  // Never auto-provision member logins after linking. Owner cards may use a different
+  // display email than the corporate login (AI Builder / website scrape). Team members
+  // are created only via Duplicate → member popup (or the explicit admin ensure action).
 
   for (const memberId of previousMemberIds) {
     const member = await prisma.user.findFirst({

@@ -38,11 +38,7 @@ import {
   normalizeCardStatusName,
   resolveInitialCardLifecycle,
 } from '../utils/cardStatus'
-import {
-  cardNeedsCorporateMemberLogin,
-  ensureCorporateMemberLoginsForParent,
-  provisionCorporateMemberUser,
-} from '../utils/corporateMemberUser'
+import { provisionCorporateMemberUser } from '../utils/corporateMemberUser'
 import {
   assertNotCorporateOwnedRow,
   corporateContentFingerprint,
@@ -1011,21 +1007,10 @@ const buildListFiltersWhere = async (
 }
 
 const listForUser = async (userId: string, role: string, scope?: ProfileListScope) => {
-  // Corporate team directory: auto-create missing member logins for linked cards.
-  try {
-    const entitlements =
-      role === 'corporate-owner' ? { ownerMode: 'corporate' as const } : await getEffectiveEntitlements(userId, role)
-    if (role === 'corporate-owner' || entitlements.ownerMode === 'corporate') {
-      await ensureCorporateMemberLoginsForParent({
-        corporateUserId: userId,
-        actorUserId: userId,
-        apply: true,
-        resetPasswords: false,
-      })
-    }
-  } catch (error) {
-    logger.error('Failed to ensure corporate team member logins before card list', error)
-  }
+  // Never auto-provision Team Member logins here. Members are created only via
+  // the explicit Duplicate → member popup (or admin ensure-member-logins tools).
+  // Auto-provision on list was stealing owner cards when the card email differed
+  // from the corporate login (e.g. AI Builder website email).
 
   const profiles = await prisma.profile.findMany({
     where: await resolveOwnershipWhere(userId, role, scope),
@@ -1336,7 +1321,10 @@ const create = async (
     linkedin?: string
     ownerUserId?: string
     creationKey?: string
-    /** Internal: duplicate() provisions the member itself before create. */
+    /**
+     * Legacy no-op on create/update (kept for callers). Member users are never
+     * auto-created here — only via duplicate() member popup.
+     */
     skipCorporateMemberProvision?: boolean
     settings?: Record<string, string>
     profileSettings?: {
@@ -1450,11 +1438,11 @@ const create = async (
     })
   }
 
-  // Corporate team cards: auto-create a login-ready member when the card email
-  // differs from the corporate account (single-card backoffice for that member).
-  let provisionedMemberUserId: string | null = null
-  const skipMemberProvision = Boolean(input.skipCorporateMemberProvision)
-  if (!skipMemberProvision && resolvedEmail) {
+  // Corporate parent link only — never invent Team Member users here.
+  // First card / AI Builder / card editor always stay on the Corporate Team Owner.
+  // Team members are created only via duplicate() with the member popup.
+  void input.skipCorporateMemberProvision
+  {
     const corporateCandidateId = companyUserId || profileOwnerId
     const corporateCandidate = await prisma.user.findFirst({
       where: { id: corporateCandidateId, deletedAt: null },
@@ -1467,25 +1455,8 @@ const create = async (
           ? { ownerMode: 'corporate' as const }
           : await getEffectiveEntitlements(corporateCandidate.id, corpApiRole)
       const isCorporateAccount = corpApiRole === 'corporate-owner' || corpEntitlements.ownerMode === 'corporate'
-      const cardEmail = resolvedEmail.trim().toLowerCase()
-      const corpEmail = corporateCandidate.email.trim().toLowerCase()
       const ownedByCorporate = profileOwnerId === corporateCandidate.id
-
-      if (isCorporateAccount && ownedByCorporate && cardEmail && cardEmail !== corpEmail) {
-        const provisioned = await provisionCorporateMemberUser({
-          name: String(raw.name || ''),
-          email: cardEmail,
-          phone: typeof raw.phone === 'string' ? raw.phone : null,
-          companyName: typeof raw.companyName === 'string' ? raw.companyName : null,
-          createdById: userId,
-          corporateUserId: corporateCandidate.id,
-        })
-        provisionedMemberUserId = provisioned.memberUserId
-        profileOwnerId = provisioned.ownership.userId
-        companyUserId = provisioned.ownership.companyUserId
-        createdById = provisioned.ownership.createdById
-      } else if (isCorporateAccount && ownedByCorporate && !companyUserId) {
-        // Keep corporate parent link even when the corporate owner keeps the card.
+      if (isCorporateAccount && ownedByCorporate && !companyUserId) {
         companyUserId = corporateCandidate.id
       }
     }
@@ -1543,9 +1514,6 @@ const create = async (
       select: { id: true },
     })
   } catch (error) {
-    if (provisionedMemberUserId) {
-      await prisma.user.delete({ where: { id: provisionedMemberUserId } }).catch(() => undefined)
-    }
     if (!creationKey || !isPrismaUniqueConstraint(error, 'creationKey')) throw error
     const existing = await prisma.profile.findFirst({
       where: { creationKey, createdById: userId },
@@ -2283,20 +2251,9 @@ const update = async (
     else if (currentProfile.maritalStatusId) profileData.maritalStatus = { disconnect: true }
   }
 
-  const nextEmail =
-    'email' in raw
-      ? typeof raw.email === 'string'
-        ? raw.email.trim()
-        : ''
-      : typeof currentProfile.email === 'string'
-        ? currentProfile.email.trim()
-        : ''
-  const nextName = 'name' in raw && typeof raw.name === 'string' ? raw.name.trim() : currentProfile.name || ''
-
-  // Backfill member login when a corporate-owned card gets a distinct email.
-  // Skipped for AI card builder / explicit callers so website emails cannot spawn
-  // a new Corporate Team Member user and steal ownership of the owner card.
-  let updateProvisionedMemberUserId: string | null = null
+  // Never spawn Team Member users on card update (AI Builder, editor, etc.).
+  // Distinct card emails are fine on the owner card; members come from Duplicate only.
+  void skipMemberProvisionOnUpdate
   const corporateParentId = await resolveCorporateParentUserId(
     {
       userId: currentProfile.userId,
@@ -2305,47 +2262,8 @@ const update = async (
     userId,
     role
   )
-  if (!skipMemberProvisionOnUpdate && corporateParentId && nextEmail) {
-    const corporateUser = await prisma.user.findFirst({
-      where: { id: corporateParentId, deletedAt: null },
-      select: { id: true, email: true },
-    })
-    if (
-      corporateUser &&
-      cardNeedsCorporateMemberLogin(
-        {
-          userId: currentProfile.userId,
-          companyUserId: currentProfile.companyUserId,
-          email: nextEmail,
-        },
-        corporateUser.id,
-        corporateUser.email
-      )
-    ) {
-      try {
-        const provisioned = await provisionCorporateMemberUser({
-          name: nextName,
-          email: nextEmail,
-          phone: 'phone' in raw && typeof raw.phone === 'string' ? raw.phone : currentProfile.phone,
-          companyName: currentProfile.companyName,
-          createdById: userId,
-          corporateUserId: corporateUser.id,
-        })
-        updateProvisionedMemberUserId = provisioned.memberUserId
-        Object.assign(profileData, {
-          userId: provisioned.ownership.userId,
-          companyUserId: provisioned.ownership.companyUserId,
-          createdById: provisioned.ownership.createdById,
-        })
-      } catch (error) {
-        if (updateProvisionedMemberUserId) {
-          await prisma.user.delete({ where: { id: updateProvisionedMemberUserId } }).catch(() => undefined)
-        }
-        throw error
-      }
-    } else if (corporateUser && currentProfile.userId === corporateUser.id && !currentProfile.companyUserId) {
-      Object.assign(profileData, { companyUserId: corporateUser.id })
-    }
+  if (corporateParentId && currentProfile.userId === corporateParentId && !currentProfile.companyUserId) {
+    Object.assign(profileData, { companyUserId: corporateParentId })
   }
 
   const nextDraft = 'isDraft' in raw ? Boolean(raw.isDraft) : currentProfile.isDraft
@@ -2455,9 +2373,6 @@ const update = async (
       data: profileData,
     })
   } catch (error) {
-    if (updateProvisionedMemberUserId) {
-      await prisma.user.delete({ where: { id: updateProvisionedMemberUserId } }).catch(() => undefined)
-    }
     if (!isPrismaUniqueConstraint(error, 'email')) throw error
     throw new AppError(409, 'This email is already used by another card.', {
       code: 'PROFILE_EMAIL_CONFLICT',
