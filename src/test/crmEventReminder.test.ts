@@ -18,8 +18,10 @@ describe('CRM Wish & Outreach event reminders', () => {
   it('includes wish description in email, inbox, and push payloads', () => {
     assert.match(reminderService, /description\?: string \| null/)
     assert.match(reminderService, /<strong>Message<\/strong>/)
-    assert.match(reminderService, /const pushBody = description/)
+    assert.match(reminderService, /wishLeadPush/)
+    assert.match(reminderService, /wishOwnerDeliveredPush/)
     assert.match(reminderService, /truncateForPush\(description/)
+    assert.match(reminderService, /description,/)
   })
 
   it('notifies sender via inbox/push with userId and excludes sender from Zoho email loop', () => {
