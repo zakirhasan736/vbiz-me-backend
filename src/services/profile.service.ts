@@ -119,6 +119,13 @@ import {
 } from '../utils/prismaErrors'
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
+import {
+  buildPublicCardPathWithTab,
+  pushAreaForCollection,
+  pushAreaForPostType,
+  pushAreaForProfileFields,
+  renderPushAreaBody,
+} from '../utils/pushAreaDeepLink'
 import { recordCardChange, recordCollectionChange } from '../utils/recordCardChange'
 import announcementService from './announcement.service'
 import {
@@ -1137,6 +1144,7 @@ const getOwnedLite = async (profileId: string, userId: string, role: string) => 
           companyUserId: true,
           name: true,
           companyName: true,
+          slug: true,
           status: { select: { id: true, name: true } },
         },
       }),
@@ -1158,6 +1166,7 @@ const getOwnedLite = async (profileId: string, userId: string, role: string) => 
     companyUserId: typeof row.companyUserId === 'string' ? row.companyUserId : null,
     name: typeof row.name === 'string' ? row.name : null,
     companyName: typeof row.companyName === 'string' ? row.companyName : null,
+    slug: typeof row.slug === 'string' ? row.slug : null,
     status: lookups.status,
   }
 }
@@ -2541,28 +2550,22 @@ const update = async (
     'countryCode',
   ]
   const contactTouched = contactKeys.some((key) => key in raw)
+  const avatarTouched = 'avatar' in raw || 'avatarUrl' in raw || 'profileImage' in raw || 'logo' in raw
+  const nameTouched = 'name' in raw || 'companyName' in raw || 'jobTitle' in raw || 'headline' in raw
   const lifecycleStatusChange = Boolean(requestedStatus)
 
   // Birthday / DOB is private — must not fire saver content preferences.
   const dobTouched = 'dob' in raw || 'dateOfBirth' in raw || 'birthDate' in raw
 
-  if (themeTouched) {
+  if (!lifecycleStatusChange && !dobTouched && (themeTouched || contactTouched || avatarTouched || nameTouched)) {
+    const area = pushAreaForProfileFields({ themeTouched, contactTouched, avatarTouched, nameTouched })
+    const businessName = updated.companyName || updated.name || 'A vBiz Me card'
+    const pushType = themeTouched ? 'theme_updates' : contactTouched ? 'contact_updates' : 'business_hours'
     pushService.notifyProfileUpdate(profileId, {
-      type: 'theme_updates',
-      title: 'Theme updated',
-      body: `${updated.companyName || updated.name} updated their card design.`,
-    })
-  } else if (contactTouched) {
-    pushService.notifyProfileUpdate(profileId, {
-      type: 'contact_updates',
-      title: 'Contact info updated',
-      body: `${updated.companyName || updated.name} updated their contact info.`,
-    })
-  } else if (!lifecycleStatusChange && !dobTouched) {
-    pushService.notifyProfileUpdate(profileId, {
-      type: 'business_hours',
-      title: 'Profile updated',
-      body: `${updated.companyName || updated.name} updated their profile.`,
+      type: pushType,
+      title: area.title,
+      body: renderPushAreaBody(area.bodyTemplate, businessName),
+      url: buildPublicCardPathWithTab(updated.slug, area.tabId),
     })
   }
 
@@ -2814,18 +2817,15 @@ const replaceCollection = async <T extends Record<string, unknown>>(
   const owned = await getOwnedLite(profileId, userId, role)
   const preferenceType = pushService.preferenceKeyForCollection(kind)
   if (preferenceType) {
-    const titles: Record<string, { title: string; action: string }> = {
-      service_updates: { title: 'Services updated', action: 'updated their services' },
-      portfolio_updates: { title: 'Portfolio updated', action: 'added new photos or videos' },
-      contact_updates: { title: 'Contact links updated', action: 'updated their contact links' },
-      business_hours: { title: 'Professional info updated', action: 'updated their professional info' },
-    }
-    const copy = titles[preferenceType] || { title: 'Card updated', action: 'has a new update' }
-    const businessName = owned.companyName || owned.name
+    const area = pushAreaForCollection(kind)
+    const businessName = owned.companyName || owned.name || 'A vBiz Me card'
     pushService.notifyProfileUpdate(profileId, {
       type: preferenceType,
-      title: copy.title,
-      body: `${businessName} ${copy.action}.`,
+      title: area?.title || 'Card updated',
+      body: area
+        ? renderPushAreaBody(area.bodyTemplate, businessName)
+        : `${businessName} has a new update on their card.`,
+      url: buildPublicCardPathWithTab(owned.slug, area?.tabId),
     })
   }
   return owned
@@ -3031,26 +3031,28 @@ const upsertAboutMe = async (
     })
     const profile = await prisma.profile.findUnique({
       where: { id: profileId },
-      select: { name: true, companyName: true },
+      select: { name: true, companyName: true, slug: true },
     })
     const businessName = profile?.companyName || profile?.name || 'vBiz Me'
     pushService.notifyProfileUpdate(profileId, {
       type: 'business_hours',
       title: 'About Me updated',
-      body: `${businessName} updated their About Me section.`,
+      body: `${businessName} updated their About Me tab.`,
+      url: buildPublicCardPathWithTab(profile?.slug, 'about'),
     })
     return fallback
   }
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
-    select: { name: true, companyName: true },
+    select: { name: true, companyName: true, slug: true },
   })
   const businessName = profile?.companyName || profile?.name || 'vBiz Me'
   pushService.notifyProfileUpdate(profileId, {
     type: 'business_hours',
     title: 'About Me updated',
-    body: `${businessName} updated their About Me section.`,
+    body: `${businessName} updated their About Me tab.`,
+    url: buildPublicCardPathWithTab(profile?.slug, 'about'),
   })
 
   await upsertAboutMeMediaFocusY(prisma, profileId, input.featuredMediaFocusY)
@@ -3184,13 +3186,18 @@ const createPost = async (
   if (preferenceType) {
     const profile = await prisma.profile.findUnique({
       where: { id: profileId },
-      select: { name: true, companyName: true },
+      select: { name: true, companyName: true, slug: true },
     })
     const businessName = profile?.companyName || profile?.name || 'vBiz Me'
+    const area = pushAreaForPostType(created.postType?.name || input.postTypeName)
+    const postTitle = created.title?.trim()
     pushService.notifyProfileUpdate(profileId, {
       type: preferenceType,
-      title: created.title?.trim() || 'New post',
-      body: `${businessName} published a new update.`,
+      title: postTitle || area?.title || 'New update',
+      body: area
+        ? `${renderPushAreaBody(area.bodyTemplate, businessName)}${postTitle ? ` “${postTitle}”` : ''}`
+        : `${businessName} published a new update${postTitle ? `: ${postTitle}` : ''}.`,
+      url: buildPublicCardPathWithTab(profile?.slug, area?.tabId),
     })
   }
 
@@ -3282,13 +3289,18 @@ const updatePost = async (
   if (preferenceType) {
     const profile = await prisma.profile.findUnique({
       where: { id: post.profileId },
-      select: { name: true, companyName: true },
+      select: { name: true, companyName: true, slug: true },
     })
     const businessName = profile?.companyName || profile?.name || 'vBiz Me'
+    const area = pushAreaForPostType(updatedPost.postType?.name)
+    const postTitle = updatedPost.title?.trim()
     pushService.notifyProfileUpdate(post.profileId, {
       type: preferenceType,
-      title: updatedPost.title?.trim() || 'Post updated',
-      body: `${businessName} updated a post.`,
+      title: postTitle || area?.title || 'Section updated',
+      body: area
+        ? `${renderPushAreaBody(area.bodyTemplate, businessName)}${postTitle ? ` “${postTitle}”` : ''}`
+        : `${businessName} updated ${postTitle ? `“${postTitle}”` : 'a section'} on their card.`,
+      url: buildPublicCardPathWithTab(profile?.slug, area?.tabId),
     })
   }
 

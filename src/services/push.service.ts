@@ -516,9 +516,10 @@ const buildProfilePayload = async (
     meetingExternalUrl ||
     normalizeFrontendPublicCardPath(partial.url?.trim() || (slug ? buildFrontendPublicCardPath(slug) : undefined), slug)
 
+  // Prefer caller-provided specific copy (e.g. “updated Services”) over generic defaults.
   const customCopy = keepsCustomPushCopy(partial.type)
-  const title = customCopy ? partial.title : partial.title?.trim() || 'Card updated'
-  const body = customCopy ? partial.body : `${businessName} ${actionPhraseForType(partial.type)}.`
+  const title = partial.title?.trim() || (customCopy ? 'Update' : 'Card updated')
+  const body = partial.body?.trim() || (customCopy ? title : `${businessName} ${actionPhraseForType(partial.type)}.`)
 
   return {
     ...partial,
