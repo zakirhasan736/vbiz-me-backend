@@ -13,6 +13,7 @@ import type {
   CompleteMeetingInput,
   ConfirmGuestSlotInput,
   CreatePublicRequestInput,
+  DeleteRequestInput,
   ListOpenRequestsQuery,
   RescheduleMeetingInput,
   ScheduleMeetingInput,
@@ -572,27 +573,7 @@ const createPublicRequest = async (input: CreatePublicRequestInput) => {
   const guestEmail = normalizeEmail(input.guestEmail)
   const guestPhone = input.guestPhone?.trim() || null
 
-  const existingActive = await prisma.oneOnOneRequest.findFirst({
-    where: {
-      profileId: profile.id,
-      status: { in: ['open', 'awaiting_guest'] },
-      OR: [{ guestEmail }, ...(guestPhone ? [{ guestPhone }] : [])],
-    },
-    orderBy: { createdAt: 'desc' },
-  })
-  if (existingActive) {
-    const byEmail = existingActive.guestEmail === guestEmail
-    throw new AppError(
-      409,
-      byEmail
-        ? 'This email already requested a 1-on-1 for this card. Please wait for a response or use a different email.'
-        : 'This phone number already has an open 1-on-1 request for this card. Please wait for a response or use different contact details.',
-      {
-        code: 'ONE_ON_ONE_ALREADY_REQUESTED',
-        data: { requestId: existingActive.id, status: existingActive.status },
-      }
-    )
-  }
+  // Same guest email/phone may request again — each submission is a new open request.
 
   const row = await prisma.oneOnOneRequest.create({
     data: {
@@ -1123,6 +1104,27 @@ const completeMeetingFromRequest = async (actor: Actor, input: CompleteMeetingIn
   return serializeMeeting(completed)
 }
 
+/** Hard-delete a 1-on-1 request (and cascaded meeting/slots) from the owner backoffice. */
+const deleteRequest = async (actor: Actor, input: DeleteRequestInput) => {
+  assertOneOnOneClientReady()
+  const request = await prisma.oneOnOneRequest.findUnique({ where: { id: input.requestId } })
+  if (!request) throw new AppError(404, '1-on-1 request not found')
+
+  await assertOwnerCanSchedule(actor, request)
+
+  const meeting = await prisma.oneOnOneMeeting.findUnique({ where: { requestId: request.id } })
+  if (meeting?.zohoCalendarEventId) {
+    try {
+      await calendarIntegrationService.deleteMeetingEvent(meeting.zohoCalendarEventId)
+    } catch (error) {
+      logger.error('Failed to delete Zoho calendar event for 1-on-1 request', error)
+    }
+  }
+
+  await prisma.oneOnOneRequest.delete({ where: { id: request.id } })
+  return { id: request.id, deleted: true as const }
+}
+
 const getMeetingForGuest = async (requestId: string) => {
   const request = await prisma.oneOnOneRequest.findUnique({ where: { id: requestId } })
   if (!request) throw new AppError(404, 'Meeting not found')
@@ -1214,6 +1216,7 @@ const oneOnOneService = {
   rescheduleMeetingFromRequest,
   cancelMeetingFromRequest,
   completeMeetingFromRequest,
+  deleteRequest,
   getMeetingForGuest,
   listOwnerMeetings,
   signGuestToken,

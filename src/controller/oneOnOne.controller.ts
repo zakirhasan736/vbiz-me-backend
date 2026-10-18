@@ -67,6 +67,14 @@ const completeMeeting = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Meeting completed', data })
 })
 
+const deleteRequest = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const body = OneOnOneZodSchema.deleteRequest.parse(req.body)
+  const actor = await resolveActor(req.user.id)
+  const data = await oneOnOneService.deleteRequest(actor, body)
+  sendResponse(res, { success: true, statusCode: 200, message: '1-on-1 request deleted', data })
+})
+
 const listOwnerMeetings = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const actor = await resolveActor(req.user.id)
@@ -107,6 +115,7 @@ const oneOnOneController = {
   rescheduleMeeting,
   cancelMeeting,
   completeMeeting,
+  deleteRequest,
   listOwnerMeetings,
   getMeetingForGuest,
   getMeetingByToken,

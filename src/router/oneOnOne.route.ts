@@ -38,6 +38,12 @@ router.post(
   validSchema(OneOnOneZodSchema.completeMeeting),
   oneOnOneController.completeMeeting
 )
+router.post(
+  '/delete',
+  authMiddleware.isAuthenticateUser,
+  validSchema(OneOnOneZodSchema.deleteRequest),
+  oneOnOneController.deleteRequest
+)
 
 /** Guest deep-link (tokenized) — public. */
 router.get('/guest/token/:token', oneOnOneController.getMeetingByToken)
