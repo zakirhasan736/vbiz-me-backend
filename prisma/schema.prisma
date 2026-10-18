@@ -2076,7 +2076,7 @@ model PushSubscription {
   browser      String?
   platform     String?
   /**
-   * follower = visitor who saved/allowed notifications on the public card
+   * follower = visitor who Allowed notifications on the public card (save-contact not required)
    * owner    = card owner / corporate member backoffice device for that card
    */
   audience     String    @default("follower")

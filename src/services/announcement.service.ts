@@ -484,7 +484,8 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
             type: 'announcement_updates',
           }
 
-          // Public announcements → owners + opted-in savers on those cards.
+          // Public announcements → owners + opted-in push subscribers on those cards.
+          // Save-contact is not required for Web Push (subscription alone).
           // Backoffice / personal inbox → owner devices only (never followers).
           const audiences = showPublic ? (['followers', 'owners'] as const) : (['owners'] as const)
           const seenEndpoints = new Set<string>()

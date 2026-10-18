@@ -586,8 +586,10 @@ const sendToProfile = async (
   const payload = await buildProfilePayload(profileId, partial, { allowPrivate })
   if (!payload) return { sent: 0, skipped: true as const }
 
-  // Staff admins: no routine browser push (inbox/email/SMS still apply elsewhere).
-  // Operational owner alerts on cards they own remain allowed.
+  // Staff admins must not receive routine OWNER browser push (matrix §13).
+  // Do NOT skip the whole card — public followers who only Allowed notifications
+  // (no save-contact required) must still receive content / announcement pushes.
+  let suppressOwnerSubsForStaff = false
   if (!staffAdminAllowsBrowserPush(payload.type)) {
     const ownerUser = await prisma.profile.findUnique({
       where: { id: profileId },
@@ -595,14 +597,17 @@ const sendToProfile = async (
     })
     const apiRole = ownerUser?.user?.role ? toApiRole(ownerUser.user.role) : ''
     if (isStaffRole(apiRole)) {
-      return { sent: 0, skipped: true as const }
+      suppressOwnerSubsForStaff = true
+      if (deliveryAudience === 'owners') {
+        return { sent: 0, skipped: true as const }
+      }
     }
   }
 
   const kinds = subscriberKindsForDelivery(deliveryAudience)
 
-  // Only active subscriptions on THIS card for the responsible audience.
-  // Followers never receive owner-only operational types (matrix enforced via kinds).
+  // Active subscriptions on THIS card for the responsible audience.
+  // Follower = opted-in push subscriber (Allow notifications). Save-contact is NOT required.
   const subscriptions = await prisma.pushSubscription.findMany({
     where: {
       profileId,
@@ -615,6 +620,7 @@ const sendToProfile = async (
   let sent = 0
   const seen = options?.seenEndpoints
   for (const sub of subscriptions) {
+    if (suppressOwnerSubsForStaff && sub.audience === 'owner') continue
     if (!preferenceAllows(sub.preferences, payload.type)) continue
     if (seen?.has(sub.endpoint)) continue
     const ok = await sendOne(sub, payload)

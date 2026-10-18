@@ -49,6 +49,13 @@ describe('notification matrix — admin browser push (Rule B)', () => {
     assert.equal(staffAdminAllowsBrowserPush('viewer_return'), true)
     assert.equal(staffAdminAllowsBrowserPush('meeting_alert'), true)
   })
+
+  it('does not require save-contact for follower push; staff card-owner must not block followers', () => {
+    const pushService = readFileSync(join(here, '../services/push.service.ts'), 'utf8')
+    assert.match(pushService, /suppressOwnerSubsForStaff/)
+    assert.match(pushService, /Save-contact is NOT required/)
+    assert.match(pushService, /suppressOwnerSubsForStaff && sub\.audience === 'owner'/)
+  })
 })
 
 describe('notification matrix — public contact isolation (Rule A)', () => {

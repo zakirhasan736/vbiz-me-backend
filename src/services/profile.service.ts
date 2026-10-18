@@ -4745,7 +4745,8 @@ const createTeamNotice = async (
       )
 
       if (shouldDeliver && targetProfileId) {
-        // Public card notice: opted-in savers + the card owner (same card only).
+        // Public card notice: opted-in push subscribers + the card owner (same card only).
+        // Followers = Allow notifications; save-contact / GuestUserData is not required for Web Push.
         const noticePush = {
           title: subject,
           body: text,

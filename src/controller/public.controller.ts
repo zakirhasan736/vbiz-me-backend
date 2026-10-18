@@ -263,7 +263,7 @@ const pushSubscribe = catchAsyncError(async (req, res) => {
     platform?: string
     preferences?: Parameters<typeof pushService.subscribe>[0]['preferences']
   }
-  // Public card subscribe is always a follower (saver who allowed notifications).
+  // Public card subscribe is always a follower (Allowed notifications — save-contact not required).
   const data = await pushService.subscribe({
     ...body,
     profile_slug: body.profile_slug || body.cardSlug,

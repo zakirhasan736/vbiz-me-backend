@@ -6,7 +6,8 @@ export type PushSubscriberKind = 'follower' | 'owner'
 
 /**
  * Who should receive a Web Push for this event type on a card.
- * - followers: visitors who saved contact + allowed notifications on that public card
+ * - followers: visitors who Allowed notifications (PushSubscription) on that public card.
+ *   Save-contact / GuestUserData is NOT required — subscription alone is enough.
  * - owners: exact card owner / corporate member backoffice devices for that card
  * - all: every active subscription on that card (rare; e.g. guest receiving on their own card)
  */
@@ -43,8 +44,8 @@ export function cardChangeAlsoReachesSavers(_type: string) {
  * Default Web Push audience for a push type.
  *
  * Responsibility matrix:
- * - Card content updates → followers (savers who allowed notifications)
- * - save_contact / viewer_return / meeting_alert → owners only (never public-card savers)
+ * - Card content updates → followers (notification subscribers; save-contact not required)
+ * - save_contact / viewer_return / meeting_alert → owners only (never public followers)
  * - announcement_updates → decided by caller (public → followers+owners, inbox → owners)
  *
  * Callers that need every subscription on a guest’s own card may pass audience: 'all'.
