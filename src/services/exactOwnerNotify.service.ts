@@ -6,6 +6,7 @@ import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
 import type { SmsTopic } from '../utils/smsMessage'
 import announcementService from './announcement.service'
+import { recordNotificationDeliveryAttempt } from './notificationDeliveryAudit.service'
 import pushService, { type PushPayload } from './push.service'
 import smsService from './sms.service'
 
@@ -86,6 +87,8 @@ export type NotifyExactCardOwnerOpts = {
   category?: string
   /** card backoffice vs CRM backoffice bell filtering */
   topic?: NotificationTopic
+  /** Stable key for delivery audit / idempotency across channels. */
+  eventKey?: string
   /** When true, announcement service also fans push via sendPush meta. Prefer explicit push below. */
   sendPushViaAnnouncement?: boolean
   push?: Pick<PushPayload, 'title' | 'body' | 'type' | 'url'>
@@ -94,27 +97,56 @@ export type NotifyExactCardOwnerOpts = {
   emailSubject?: string
   emailHtml?: string
   href?: string
+  /** SMS the card phone (owner channel), audited independently. */
+  sendSms?: boolean
+  smsTopic?: SmsTopic
+  smsDetail?: string
+}
+
+export type NotifyExactCardOwnerResult = {
+  sent: boolean
+  ownerUserId: string | null
+  emails: string[]
+  eventKey: string
+  channels: {
+    inbox: 'sent' | 'failed' | 'skipped'
+    push: 'queued' | 'skipped' | 'failed'
+    email: 'sent' | 'failed' | 'skipped' | 'pending'
+    sms: 'sent' | 'failed' | 'skipped' | 'pending'
+  }
 }
 
 /**
- * In-app (inbox) + optional Web Push + optional email to the exact card owner.
+ * In-app (inbox) + optional Web Push + optional email + optional SMS to the exact card owner.
  * Never fans out to corporate siblings or public-card savers.
+ * Channel failures are independent — inbox failure does not suppress push/email/SMS.
  */
-export async function notifyExactCardOwnerInbox(
-  opts: NotifyExactCardOwnerOpts
-): Promise<{ sent: boolean; ownerUserId: string | null; emails: string[] }> {
+export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts): Promise<NotifyExactCardOwnerResult> {
   const owner = await resolveExactCardOwner(opts.profileId)
+  const eventKey = opts.eventKey?.trim() || `exact_owner:${opts.profileId}:${opts.category || 'event'}:${Date.now()}`
+  const emptyChannels = {
+    inbox: 'skipped' as const,
+    push: 'skipped' as const,
+    email: 'skipped' as const,
+    sms: 'skipped' as const,
+  }
   if (!owner) {
-    return { sent: false, ownerUserId: null, emails: [] }
+    return { sent: false, ownerUserId: null, emails: [], eventKey, channels: emptyChannels }
   }
   // Push + in-app still go out when the card has an owner account but no contact email yet.
   if (!owner.ownerUserId && !owner.emails.length) {
-    return { sent: false, ownerUserId: null, emails: [] }
+    return { sent: false, ownerUserId: null, emails: [], eventKey, channels: emptyChannels }
   }
 
   const actor = opts.actor || (await systemActor())
   const topic = opts.topic || (opts.category === 'event' || opts.category === 'note' ? 'crm' : 'card')
   const href = opts.href || (topic === 'crm' ? '/crm' : owner.slug ? `/vcards/edit/home/${owner.profileId}` : '/')
+  const channels: NotifyExactCardOwnerResult['channels'] = {
+    inbox: 'skipped',
+    push: 'skipped',
+    email: 'skipped',
+    sms: 'skipped',
+  }
 
   try {
     await announcementService.create(actor, {
@@ -127,34 +159,81 @@ export async function notifyExactCardOwnerInbox(
       targetEmails: owner.emails,
       meta: {
         channel: 'inbox',
+        onlyBackoffice: '1',
+        showPublic: '0',
         category: opts.category || 'event',
         topic,
         href,
         profileId: owner.profileId,
+        eventKey,
         ...(owner.ownerUserId ? { userId: owner.ownerUserId } : {}),
         ...(owner.slug ? { slug: owner.slug } : {}),
         sendPush: opts.sendPushViaAnnouncement ? '1' : '0',
       },
     })
+    channels.inbox = 'sent'
+    void recordNotificationDeliveryAttempt({
+      eventKey,
+      channel: 'inbox',
+      status: 'sent',
+      profileId: owner.profileId,
+      recipientRole: 'card_owner',
+      recipientRef: owner.ownerUserId,
+      relatedRecordId: owner.profileId,
+    })
   } catch (error) {
     logger.error('Exact owner inbox notice failed', { profileId: opts.profileId, error })
-    return { sent: false, ownerUserId: owner.ownerUserId, emails: owner.emails }
+    channels.inbox = 'failed'
+    void recordNotificationDeliveryAttempt({
+      eventKey,
+      channel: 'inbox',
+      status: 'failed',
+      profileId: owner.profileId,
+      recipientRole: 'card_owner',
+      error: error instanceof Error ? error.message : 'inbox_failed',
+    })
+    // Continue — push / email / SMS must still run independently.
   }
 
   if (opts.push) {
-    pushService.notifyProfileUpdate(
-      owner.profileId,
-      {
-        title: opts.push.title,
-        body: opts.push.body,
-        type: opts.push.type,
-        url: opts.push.url,
-      },
-      { audience: 'owners', allowPrivate: true }
-    )
+    try {
+      const pushResult = await pushService.sendToProfile(
+        owner.profileId,
+        {
+          title: opts.push.title,
+          body: opts.push.body,
+          type: opts.push.type,
+          url: opts.push.url,
+        },
+        { audience: 'owners', allowPrivate: true, includeSavers: false }
+      )
+      const sentCount = pushResult?.sent ?? 0
+      channels.push = sentCount > 0 ? 'queued' : 'skipped'
+      void recordNotificationDeliveryAttempt({
+        eventKey,
+        channel: 'push',
+        status: sentCount > 0 ? 'queued' : 'skipped',
+        profileId: owner.profileId,
+        recipientRole: 'card_owner',
+        error: sentCount > 0 ? null : 'no_eligible_owner_subscription',
+        meta: { type: opts.push.type, sent: sentCount },
+      })
+    } catch (error) {
+      channels.push = 'failed'
+      void recordNotificationDeliveryAttempt({
+        eventKey,
+        channel: 'push',
+        status: 'failed',
+        profileId: owner.profileId,
+        recipientRole: 'card_owner',
+        error: error instanceof Error ? error.message : 'push_failed',
+        meta: { type: opts.push.type },
+      })
+    }
   }
 
   if (opts.sendEmail !== false && owner.emails.length && config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
+    channels.email = 'pending'
     const subject = opts.emailSubject?.trim() || opts.title
     const html =
       opts.emailHtml ||
@@ -162,11 +241,83 @@ export async function notifyExactCardOwnerInbox(
     for (const email of owner.emails) {
       void authUtils
         .sendEmail({ receiverMail: email, subject, html })
-        .catch((error) => logger.error('Exact owner email notify failed', { email, error }))
+        .then(() => {
+          channels.email = 'sent'
+          return recordNotificationDeliveryAttempt({
+            eventKey,
+            channel: 'email',
+            status: 'sent',
+            profileId: owner.profileId,
+            recipientRole: 'card_owner',
+            recipientRef: email,
+          })
+        })
+        .catch((error) => {
+          channels.email = 'failed'
+          logger.error('Exact owner email notify failed', { email, error })
+          void recordNotificationDeliveryAttempt({
+            eventKey,
+            channel: 'email',
+            status: 'failed',
+            profileId: owner.profileId,
+            recipientRole: 'card_owner',
+            recipientRef: email,
+            error: error instanceof Error ? error.message : 'email_failed',
+          })
+        })
+    }
+  } else if (opts.sendEmail !== false) {
+    channels.email = 'skipped'
+    void recordNotificationDeliveryAttempt({
+      eventKey,
+      channel: 'email',
+      status: 'skipped',
+      profileId: owner.profileId,
+      recipientRole: 'card_owner',
+      error: !owner.emails.length ? 'no_owner_email' : 'email_not_configured',
+    })
+  }
+
+  if (opts.sendSms) {
+    channels.sms = 'pending'
+    try {
+      const smsResult = await smsService.notifyProfilePhone(
+        owner.profileId,
+        opts.smsTopic || 'Notice',
+        opts.smsDetail || opts.body
+      )
+      channels.sms = smsResult.sent ? 'sent' : 'skipped'
+      void recordNotificationDeliveryAttempt({
+        eventKey,
+        channel: 'sms',
+        status: smsResult.sent ? 'sent' : 'skipped',
+        profileId: owner.profileId,
+        recipientRole: 'card_owner',
+        error: smsResult.sent ? null : smsResult.reason || 'sms_not_sent',
+        meta: { topic: opts.smsTopic || 'Notice' },
+      })
+    } catch (error) {
+      channels.sms = 'failed'
+      void recordNotificationDeliveryAttempt({
+        eventKey,
+        channel: 'sms',
+        status: 'failed',
+        profileId: owner.profileId,
+        recipientRole: 'card_owner',
+        error: error instanceof Error ? error.message : 'sms_failed',
+      })
     }
   }
 
-  return { sent: true, ownerUserId: owner.ownerUserId, emails: owner.emails }
+  const anyChannel =
+    channels.inbox === 'sent' ||
+    channels.push === 'queued' ||
+    channels.email === 'sent' ||
+    channels.email === 'pending' ||
+    channels.sms === 'sent' ||
+    channels.sms === 'pending'
+
+  return { sent: anyChannel, ownerUserId: owner.ownerUserId, emails: owner.emails, eventKey, channels }
 }
 
 /** In-app + email + owner push for a login user (assignee / partner), not tied to one card. */
@@ -208,6 +359,8 @@ export async function notifyUserInbox(opts: {
       targetEmails: email ? [email] : [],
       meta: {
         channel: 'inbox',
+        onlyBackoffice: '1',
+        showPublic: '0',
         category: opts.category || 'note',
         topic,
         href,

@@ -7,6 +7,7 @@ import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
 import { exactOwnerPushProfileIds } from '../utils/pushAudience'
+import { DEFAULT_CAMPAIGN_TIMEZONE, zonedLocalDateTimeToUtc } from '../utils/scheduleTimezone'
 import type {
   CancelMeetingInput,
   CompleteMeetingInput,
@@ -132,9 +133,10 @@ function normalizeTimeToHHmm(time: string): string {
   return `${String(h).padStart(2, '0')}:${m}`
 }
 
-function parseSlotDateTime(date: string, startTime: string) {
+function parseSlotDateTime(date: string, startTime: string, timeZone?: string | null) {
   const hhmm = normalizeTimeToHHmm(startTime)
-  return new Date(`${date}T${hhmm}:00`)
+  // IANA zone (slot/request) → UTC instant — never server-local Date parsing.
+  return zonedLocalDateTimeToUtc(date, hhmm, timeZone)
 }
 
 function guestPickUrl(requestId: string) {
@@ -840,9 +842,9 @@ const confirmGuestSlot = async (requestId: string, input: ConfirmGuestSlotInput)
 
   const ownerName =
     (await prisma.user.findUnique({ where: { id: ownerUserId }, select: { name: true } }))?.name || 'vCard owner'
-  const timezone = slot.timezone || request.proposedTimezone || 'UTC'
+  const timezone = slot.timezone || request.proposedTimezone || DEFAULT_CAMPAIGN_TIMEZONE
   const durationMinutes = slot.durationMinutes || request.proposedDurationMinutes || 30
-  const startsAt = parseSlotDateTime(slot.date, slot.startTime)
+  const startsAt = parseSlotDateTime(slot.date, slot.startTime, timezone)
   if (Number.isNaN(startsAt.getTime())) throw new AppError(400, 'Invalid selected date/time')
   const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
   const title = request.proposedTitle || `1-on-1 with ${request.guestName}`
@@ -991,10 +993,10 @@ const rescheduleMeetingFromRequest = async (actor: Actor, input: RescheduleMeeti
   if (!meeting) throw new AppError(404, 'No scheduled meeting for this request')
   if (meeting.status === 'cancelled') throw new AppError(400, 'Cancelled meetings cannot be rescheduled')
 
-  const startsAt = parseSlotDateTime(input.date, input.startTime)
+  const timezone = input.timezone || meeting.timezone || DEFAULT_CAMPAIGN_TIMEZONE
+  const startsAt = parseSlotDateTime(input.date, input.startTime, timezone)
   const durationMinutes = input.durationMinutes ?? 30
   const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
-  const timezone = input.timezone || meeting.timezone
 
   const calendar = await createOrUpdateZohoEvent({
     title: input.title || meeting.title,

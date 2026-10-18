@@ -176,7 +176,7 @@ export default {
   },
   CRM_REMINDER_CRON: {
     ENABLED: (CRM_REMINDER_CRON_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
-    TZ: (CRM_REMINDER_CRON_TZ || 'Asia/Dhaka').trim() || 'Asia/Dhaka',
+    TZ: (CRM_REMINDER_CRON_TZ || 'America/New_York').trim() || 'America/New_York',
     EXPR: (CRM_REMINDER_CRON_EXPR || '*/5 * * * *').trim() || '*/5 * * * *',
     LEAD_MINUTES: Number(CRM_REMINDER_LEAD_MINUTES) || 30,
   },
@@ -252,7 +252,7 @@ export default {
   CANVA_SCOPES,
   BIRTHDAY_CRON: {
     ENABLED: (BIRTHDAY_CRON_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
-    TZ: (BIRTHDAY_CRON_TZ || 'Asia/Dhaka').trim() || 'Asia/Dhaka',
+    TZ: (BIRTHDAY_CRON_TZ || 'America/New_York').trim() || 'America/New_York',
     EXPR: (BIRTHDAY_CRON_EXPR || '0 9 * * *').trim() || '0 9 * * *',
   },
   GOOGLE_WALLET: {

@@ -3181,16 +3181,18 @@ const createPost = async (
   })
 
   const preferenceType = pushService.preferenceKeyForPostType(created.postType?.name || input.postTypeName)
-  const profile = await prisma.profile.findUnique({
-    where: { id: profileId },
-    select: { name: true, companyName: true },
-  })
-  const businessName = profile?.companyName || profile?.name || 'vBiz Me'
-  pushService.notifyProfileUpdate(profileId, {
-    type: preferenceType,
-    title: created.title?.trim() || 'New post',
-    body: `${businessName} published a new update.`,
-  })
+  if (preferenceType) {
+    const profile = await prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { name: true, companyName: true },
+    })
+    const businessName = profile?.companyName || profile?.name || 'vBiz Me'
+    pushService.notifyProfileUpdate(profileId, {
+      type: preferenceType,
+      title: created.title?.trim() || 'New post',
+      body: `${businessName} published a new update.`,
+    })
+  }
 
   await safeSyncCorporateSiblingSharedContent(
     profileId,
@@ -3277,16 +3279,18 @@ const updatePost = async (
   })
 
   const preferenceType = pushService.preferenceKeyForPostType(updatedPost.postType?.name)
-  const profile = await prisma.profile.findUnique({
-    where: { id: post.profileId },
-    select: { name: true, companyName: true },
-  })
-  const businessName = profile?.companyName || profile?.name || 'vBiz Me'
-  pushService.notifyProfileUpdate(post.profileId, {
-    type: preferenceType,
-    title: updatedPost.title?.trim() || 'Post updated',
-    body: `${businessName} updated a post.`,
-  })
+  if (preferenceType) {
+    const profile = await prisma.profile.findUnique({
+      where: { id: post.profileId },
+      select: { name: true, companyName: true },
+    })
+    const businessName = profile?.companyName || profile?.name || 'vBiz Me'
+    pushService.notifyProfileUpdate(post.profileId, {
+      type: preferenceType,
+      title: updatedPost.title?.trim() || 'Post updated',
+      body: `${businessName} updated a post.`,
+    })
+  }
 
   await safeSyncCorporateSiblingSharedContent(
     post.profileId,

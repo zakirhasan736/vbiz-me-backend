@@ -85,20 +85,19 @@ function regionHint(profile: { countryCode?: string | null; addresses?: { countr
   return profile.countryCode?.trim() || profile.addresses?.[0]?.country?.trim() || null
 }
 
-const notifyProfilePhone = async (profileId: string, topic: SmsTopic, detail: string) => {
+const notifyProfilePhone = async (profileId: string, topic: SmsTopic, detail: string): Promise<SendResult> => {
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: phoneSelect,
   })
-  if (!profile?.phone) return
-  sendTopicSms({
-    to: profile.phone,
-    countryCode: regionHint(profile),
+  if (!profile?.phone?.trim()) return { sent: false, reason: 'missing_phone' }
+  const body = buildVbizSms({
     topic,
     cardName: profile.name?.trim() || 'vBiz card',
     cardUrl: cardUrl(profile.slug),
     detail,
   })
+  return deliverSms(profile.phone, body, regionHint(profile))
 }
 
 const notifyPhonesForEmails = async (

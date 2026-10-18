@@ -55,20 +55,41 @@ export function guestSaveOriginWhere(origin?: CrmLeadOrigin | null): Prisma.Gues
 }
 
 /**
- * CRM-only: exclude anonymous "Visitor" saves with no way to contact them.
- * Backoffice / admin leads keep those rows via {@link guestSaveDashboardVisibleWhere}.
+ * Real display name (not empty / anonymous "Visitor").
+ */
+export function isRealGuestFullName(fullName?: string | null): boolean {
+  const name = (fullName || '').trim()
+  if (!name) return false
+  return name.toLowerCase() !== 'visitor'
+}
+
+/**
+ * Qualified CRM lead: real name + (email and/or phone).
+ * Name-only saves are contact-save activity, not CRM leads.
+ */
+export function isQualifiedCrmLead(input: {
+  fullName?: string | null
+  email?: string | null
+  phone?: string | null
+}): boolean {
+  if (!isRealGuestFullName(input.fullName)) return false
+  const email = (input.email || '').trim()
+  const phone = (input.phone || '').trim()
+  return Boolean(email || phone)
+}
+
+/**
+ * CRM-only: require a real name plus email and/or phone.
+ * Name-only and anonymous Visitor rows stay on dashboards via {@link guestSaveDashboardVisibleWhere}.
  */
 export function guestSaveCrmContactableWhere(): Prisma.GuestUserDataWhereInput {
   return {
-    OR: [
-      { email: { not: null } },
-      { phone: { not: null } },
+    AND: [
+      { fullName: { not: null } },
+      { NOT: { fullName: { equals: 'Visitor', mode: 'insensitive' } } },
+      { NOT: { fullName: { equals: '' } } },
       {
-        AND: [
-          { fullName: { not: null } },
-          { NOT: { fullName: { equals: 'Visitor', mode: 'insensitive' } } },
-          { NOT: { fullName: { equals: '' } } },
-        ],
+        OR: [{ email: { not: null } }, { phone: { not: null } }],
       },
     ],
   }

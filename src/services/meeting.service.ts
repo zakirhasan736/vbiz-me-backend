@@ -9,6 +9,7 @@ import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
 import { exactOwnerPushProfileIds } from '../utils/pushAudience'
+import { computeStartsAt as computeStartsAtZoned, DEFAULT_CAMPAIGN_TIMEZONE } from '../utils/scheduleTimezone'
 import type {
   CreateMeetingInput,
   ListMeetingsQuery,
@@ -142,29 +143,12 @@ async function assertOwnerCanCreateMeeting(
   }
 }
 
-/** Parse display time like "10:00 AM" / "14:30" into hours/minutes. */
-function parseTimeParts(time: string): { hours: number; minutes: number } {
-  const trimmed = time.trim()
-  const ampm = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (ampm) {
-    let hours = Number(ampm[1])
-    const minutes = Number(ampm[2])
-    const period = ampm[3].toUpperCase()
-    if (period === 'PM' && hours < 12) hours += 12
-    if (period === 'AM' && hours === 12) hours = 0
-    return { hours, minutes }
-  }
-  const twentyFour = trimmed.match(/^(\d{1,2}):(\d{2})$/)
-  if (twentyFour) {
-    return { hours: Number(twentyFour[1]), minutes: Number(twentyFour[2]) }
-  }
-  return { hours: 0, minutes: 0 }
-}
-
-export function computeStartsAt(date: string, time: string): Date {
-  const { hours, minutes } = parseTimeParts(time)
-  const [y, m, d] = date.split('-').map(Number)
-  return new Date(y, m - 1, d, hours, minutes, 0, 0)
+export function computeStartsAt(
+  date: string,
+  time: string,
+  timeZone: string | null | undefined = DEFAULT_CAMPAIGN_TIMEZONE
+): Date {
+  return computeStartsAtZoned(date, time, timeZone)
 }
 
 function escapeHtml(value: string): string {
@@ -728,7 +712,8 @@ const create = async (actor: Actor, input: CreateMeetingInput, actorRole?: strin
   }
 
   const status = input.status ?? 'Scheduled'
-  const startsAt = computeStartsAt(input.date, input.time)
+  const timezone = DEFAULT_CAMPAIGN_TIMEZONE
+  const startsAt = computeStartsAt(input.date, input.time, timezone)
   const primaryProfileId = normalized.profileId
   const guestUserDataId = await resolveOptionalGuestUserDataId(input.guestUserDataId, primaryProfileId)
   const { emails: ownerEmails } = await resolveOwnerEmails(primaryProfileId)
@@ -741,6 +726,7 @@ const create = async (actor: Actor, input: CreateMeetingInput, actorRole?: strin
       date: input.date,
       time: input.time,
       startsAt,
+      timezone,
       location: input.location ?? null,
       notes: input.notes ?? null,
       status,
@@ -824,7 +810,12 @@ const update = async (id: string, actor: Actor, input: UpdateMeetingInput) => {
       ...(input.type !== undefined ? { type: input.type } : {}),
       ...(input.date !== undefined ? { date: input.date } : {}),
       ...(input.time !== undefined ? { time: input.time } : {}),
-      ...(dateOrTimeChanged ? { startsAt: computeStartsAt(nextDate, nextTime) } : {}),
+      ...(dateOrTimeChanged
+        ? {
+            startsAt: computeStartsAt(nextDate, nextTime, existing.timezone || DEFAULT_CAMPAIGN_TIMEZONE),
+            timezone: existing.timezone || DEFAULT_CAMPAIGN_TIMEZONE,
+          }
+        : {}),
       ...(input.location !== undefined ? { location: input.location } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),

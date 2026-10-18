@@ -12,6 +12,7 @@ import {
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
+import { DEFAULT_CAMPAIGN_TIMEZONE } from '../utils/scheduleTimezone'
 import type {
   CreateCrmEventInput,
   CrmEventAttachmentInput,
@@ -382,7 +383,8 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
   await assertCanCreateEvent(actor, access, normalized)
 
   const status = input.status ?? 'Scheduled'
-  const startsAt = computeStartsAt(input.date, input.time)
+  const timezone = DEFAULT_CAMPAIGN_TIMEZONE
+  const startsAt = computeStartsAt(input.date, input.time, timezone)
   const attachments = normalizeAttachments(input.attachments)
   const primaryProfileId = normalized.profileId
   const guestUserDataId = await resolveOptionalGuestUserDataId(input.guestUserDataId, primaryProfileId)
@@ -397,6 +399,7 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
       date: input.date,
       time: input.time,
       startsAt,
+      timezone,
       status,
       description: input.description.trim(),
       scope: normalized.scope,
@@ -571,7 +574,12 @@ const update = async (actor: CrmActor, access: CrmAccessContext, id: string, inp
       ...(input.type !== undefined ? { type: input.type } : {}),
       ...(input.date !== undefined ? { date: input.date } : {}),
       ...(input.time !== undefined ? { time: input.time } : {}),
-      ...(dateOrTimeChanged ? { startsAt: computeStartsAt(nextDate, nextTime) } : {}),
+      ...(dateOrTimeChanged
+        ? {
+            startsAt: computeStartsAt(nextDate, nextTime, existing.timezone || DEFAULT_CAMPAIGN_TIMEZONE),
+            timezone: existing.timezone || DEFAULT_CAMPAIGN_TIMEZONE,
+          }
+        : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
       ...(input.description !== undefined ? { description: input.description?.trim() || null } : {}),
       ...(input.profileId !== undefined ? { profileId: input.profileId } : {}),

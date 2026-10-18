@@ -3,6 +3,7 @@ import webpush from 'web-push'
 import type { PushNotificationPreference } from '../../generated/prisma/client'
 import config from '../configs/config'
 import { buildFrontendPublicCardPath, normalizeFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
+import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from '../utils/mediaUrl'
@@ -11,6 +12,7 @@ import {
   cardChangeAlsoReachesSavers,
   defaultPushDeliveryAudience,
   skipsPublicProfileGate,
+  staffAdminAllowsBrowserPush,
   subscriberKindsForDelivery,
   type PushDeliveryAudience,
   type PushSubscriberKind,
@@ -584,7 +586,13 @@ const sendToProfile = async (
   profileId: string,
   partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
     Partial<Pick<PushPayload, 'slug' | 'url' | 'businessName'>>,
-  options?: { includeSavers?: boolean; allowPrivate?: boolean; audience?: PushDeliveryAudience }
+  options?: {
+    includeSavers?: boolean
+    allowPrivate?: boolean
+    audience?: PushDeliveryAudience
+    /** Cross-card dedupe: skip endpoints already notified for this logical event. */
+    seenEndpoints?: Set<string>
+  }
 ) => {
   if (!config.VAPID.PUBLIC_KEY || !config.VAPID.PRIVATE_KEY) {
     logger.warn('Skipping push send: VAPID keys not configured')
@@ -596,9 +604,23 @@ const sendToProfile = async (
   const payload = await buildProfilePayload(profileId, partial, { allowPrivate })
   if (!payload) return { sent: 0, skipped: true as const }
 
+  // Staff admins: no routine browser push (inbox/email/SMS still apply elsewhere).
+  // Operational owner alerts on cards they own remain allowed.
+  if (!staffAdminAllowsBrowserPush(payload.type)) {
+    const ownerUser = await prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { user: { select: { role: true } } },
+    })
+    const apiRole = ownerUser?.user?.role ? toApiRole(ownerUser.user.role) : ''
+    if (isStaffRole(apiRole)) {
+      return { sent: 0, skipped: true as const }
+    }
+  }
+
   const kinds = subscriberKindsForDelivery(deliveryAudience)
 
   // Only active subscriptions on THIS card for the responsible audience.
+  // Followers never receive owner-only operational types (matrix enforced via kinds).
   const subscriptions = await prisma.pushSubscription.findMany({
     where: {
       profileId,
@@ -609,10 +631,15 @@ const sendToProfile = async (
   })
 
   let sent = 0
+  const seen = options?.seenEndpoints
   for (const sub of subscriptions) {
     if (!preferenceAllows(sub.preferences, payload.type)) continue
+    if (seen?.has(sub.endpoint)) continue
     const ok = await sendOne(sub, payload)
-    if (ok) sent += 1
+    if (ok) {
+      sent += 1
+      seen?.add(sub.endpoint)
+    }
   }
 
   // Optional legacy fan-out (disabled by cardChangeAlsoReachesSavers). If re-enabled,
@@ -634,6 +661,7 @@ const sendToProfile = async (
       const extra = await sendToProfile(saverProfileId, sourcePartial, {
         includeSavers: false,
         allowPrivate: true,
+        seenEndpoints: seen,
       })
       sent += extra.sent
     }
@@ -696,10 +724,14 @@ const sendTest = async (input: {
   return { sent: ok, message: ok ? 'Test notification sent.' : 'Failed to send test notification.' }
 }
 
-/** Map post type names to preference keys. */
-export const preferenceKeyForPostType = (postTypeName?: string | null): PushPreferenceKey => {
+/**
+ * Map post type names to follower preference keys.
+ * Event-named posts no longer fan out via public `event_updates`
+ * (meetings/CRM use participant `meeting_alert` instead).
+ */
+export const preferenceKeyForPostType = (postTypeName?: string | null): PushPreferenceKey | null => {
   const name = (postTypeName || '').toLowerCase()
-  if (name.includes('event')) return 'event_updates'
+  if (name.includes('event')) return null
   if (name.includes('announce')) return 'announcement_updates'
   if (name.includes('offer') || name.includes('promo')) return 'offers'
   return 'news'

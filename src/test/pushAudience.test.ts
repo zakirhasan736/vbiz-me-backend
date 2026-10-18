@@ -7,6 +7,7 @@ import {
   isOperationalPushType,
   mergeAnnouncementPushProfiles,
   skipsPublicProfileGate,
+  staffAdminAllowsBrowserPush,
   subscriberKindsForDelivery,
   userMatchesSpecificAnnouncement,
 } from '../utils/pushAudience'
@@ -17,7 +18,10 @@ describe('push audience', () => {
       assert.equal(isOperationalPushType(type), true)
       assert.equal(skipsPublicProfileGate(type), true)
       assert.equal(cardChangeAlsoReachesSavers(type), false)
+      assert.equal(staffAdminAllowsBrowserPush(type), true)
     }
+    assert.equal(staffAdminAllowsBrowserPush('announcement_updates'), false)
+    assert.equal(staffAdminAllowsBrowserPush('contact_updates'), false)
   })
 
   it('keeps card-edit pushes on the updated card only (no cross-card saver fan-out)', () => {

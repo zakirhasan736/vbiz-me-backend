@@ -16,6 +16,15 @@ export function isOperationalPushType(type: string) {
   return OPERATIONAL_PUSH_TYPES.has(type)
 }
 
+/**
+ * Staff admins (ADMIN / SUPER_ADMIN) must not receive routine browser push.
+ * They may still receive operational owner alerts on cards they personally own
+ * (save_contact, viewer_return, meeting_alert).
+ */
+export function staffAdminAllowsBrowserPush(type: string) {
+  return isOperationalPushType(type)
+}
+
 /** Notices and operational alerts still go to devices subscribed on an unpublished card. */
 export function skipsPublicProfileGate(type: string) {
   return isOperationalPushType(type) || type === 'announcement_updates'
