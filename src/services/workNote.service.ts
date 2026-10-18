@@ -265,18 +265,20 @@ export async function createWorkNote(actor: CrmActor, access: CrmAccessContext, 
   })
 
   const { default: exactOwnerNotifyService } = await import('./exactOwnerNotify.service')
+  const { noteAssigneePush, noteOwnerPush } = await import('../utils/pushRecipientCopy')
   const preview = (description || title).trim().slice(0, 180)
-  const noteTitle = `CRM note: ${title}`
-  const noteBody = preview || `A new CRM note was added: ${title}`
   const actorUser = await prisma.user.findUnique({
     where: { id: actor.id },
     select: { email: true, name: true },
   })
+  const actorName = actorUser?.name?.trim() || actorUser?.email || 'CRM'
   const notifyActor = {
     id: actor.id,
     email: actorUser?.email || 'system@vbizme.com',
     name: actorUser?.name || 'CRM',
   }
+  const ownerCopy = noteOwnerPush({ title, preview, actorName })
+  const assigneeCopy = noteAssigneePush({ title, preview, actorName })
 
   // Exact card owner gets CRM in-app + email + owner push when the note is on a card.
   if (profileId) {
@@ -284,16 +286,17 @@ export async function createWorkNote(actor: CrmActor, access: CrmAccessContext, 
       .notifyExactCardOwnerInbox({
         actor: notifyActor,
         profileId,
-        title: noteTitle,
-        body: noteBody,
+        title: ownerCopy.title,
+        body: ownerCopy.body,
         category: 'note',
         topic: 'crm',
         href: '/crm',
         sendEmail: true,
         push: {
-          title: noteTitle,
-          body: preview || 'Open CRM Notes to review.',
+          title: ownerCopy.title,
+          body: ownerCopy.body,
           type: 'meeting_alert',
+          url: '/crm',
         },
       })
       .catch(() => undefined)
@@ -306,16 +309,17 @@ export async function createWorkNote(actor: CrmActor, access: CrmAccessContext, 
       .notifyUserInbox({
         actor: notifyActor,
         userId: resolvedAssignee,
-        title: noteTitle,
-        body: noteBody,
+        title: assigneeCopy.title,
+        body: assigneeCopy.body,
         category: 'note',
         topic: 'crm',
         href: '/crm',
         sendEmail: true,
         push: {
-          title: noteTitle,
-          body: preview || 'Open CRM Notes to review.',
+          title: assigneeCopy.title,
+          body: assigneeCopy.body,
           type: 'meeting_alert',
+          url: '/crm',
         },
       })
       .catch(() => undefined)

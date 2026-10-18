@@ -415,7 +415,8 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
   try {
     const meta = input.meta ?? {}
     const showPublic = isShowPublic(meta)
-    const pushRequested = wantsSendPush(meta)
+    // Matrix §8.F / §18.1 #4 — back-office-only / inbox: never browser-push (public or owner).
+    const pushRequested = wantsSendPush(meta) && showPublic && !isInboxOnly(meta)
 
     if (pushRequested) {
       void (async () => {

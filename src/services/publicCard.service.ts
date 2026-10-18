@@ -2340,6 +2340,11 @@ const saveGuestUser = async (
   }
 
   if (existing) {
+    const wasQualified = isQualifiedCrmLead({
+      fullName: existing.fullName,
+      email: existing.email,
+      phone: existing.phone,
+    })
     const updated = await prisma.guestUserData.update({
       where: { id: existing.id },
       data: {
@@ -2347,6 +2352,58 @@ const saveGuestUser = async (
         meta,
       },
     })
+    const nowQualified = isQualifiedCrmLead({
+      fullName: updated.fullName,
+      email: updated.email,
+      phone: updated.phone,
+    })
+
+    // Matrix §2.A / §18 — name-only → name+email/phone upgrade must fire qualified-lead channels once.
+    if (!wasQualified && nowQualified) {
+      const displayName = updated.fullName?.trim() || 'Visitor'
+      const cardName = profile.name?.trim() || 'vBiz card'
+      const base = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
+      const cardUrl = profile.slug ? buildFrontendPublicCardUrl(base, profile.slug) : base
+      void exactOwnerNotifyService
+        .notifyExactCardOwnerInbox({
+          profileId: profile.id,
+          title: `New lead: ${displayName}`,
+          body: `${displayName}${updated.email ? ` · ${updated.email}` : ''}${
+            updated.phone ? ` · ${updated.phone}` : ''
+          } shared contact details on ${cardName}.`,
+          category: 'contact_save',
+          topic: 'card',
+          sendEmail: true,
+          push: {
+            title: 'New contact saved',
+            body: `${displayName} shared their details on your card.`,
+            type: 'save_contact',
+            url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
+          },
+        })
+        .catch((error) => logger.error('Owner contact-save upgrade notify failed', { profileId: profile.id, error }))
+      void smsService.notifyProfilePhone(
+        profile.id,
+        'Saved contact',
+        `${displayName} saved their details on your card.`
+      )
+      if (
+        hasFullSaveContactInfo({
+          name: displayName,
+          email: updated.email,
+          phone: updated.phone,
+        })
+      ) {
+        smsService.sendTopicSms({
+          to: updated.phone,
+          topic: 'Saved contact',
+          cardName,
+          cardUrl,
+          detail: `You saved ${profile.name?.trim() || 'this card'}. We'll text you about this card.`,
+        })
+      }
+    }
+
     return {
       id: updated.id,
       full_name: updated.fullName,
@@ -2358,6 +2415,7 @@ const saveGuestUser = async (
       meta: updated.meta,
       created_at: updated.createdAt.toISOString(),
       already_saved: true,
+      upgraded_to_lead: !wasQualified && nowQualified,
     }
   }
 
@@ -2588,6 +2646,8 @@ const saveContactCard = async (
     },
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
+  // Anonymous VCF download = unqualified contact-save activity (matrix §2.B / §18):
+  // push + card back-office only — no email, no lead SMS, no CRM lead.
   pushService.notifyProfileUpdate(profile.id, {
     type: 'save_contact',
     title: 'Contact saved',
@@ -2598,10 +2658,10 @@ const saveContactCard = async (
     .notifyExactCardOwnerInbox({
       profileId: profile.id,
       title: 'Contact saved to phone',
-      body: `Someone saved ${profile.name?.trim() || 'your card'} to their phone.`,
+      body: `Someone saved ${profile.name?.trim() || 'your card'} to their phone (not a CRM lead).`,
       category: 'contact_save',
       topic: 'card',
-      sendEmail: true,
+      sendEmail: false,
     })
     .catch((error) => logger.error('Owner VCF-save inbox notify failed', { profileId: profile.id, error }))
   // Do not emit dashboard:kpi save — that KPI tracks guest form submissions (GuestUserData), not VCF downloads.

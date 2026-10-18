@@ -1710,6 +1710,8 @@ model CrmEvent {
   /** Optional CRM lead (guest save) this event was created from. */
   guestUserDataId String?
   guestUserData   GuestUserData? @relation(fields: [guestUserDataId], references: [id], onDelete: SetNull)
+  /** Snapshot of CRM lead ids (GuestUserData) for global / single / grouped wish delivery. */
+  recipientLeadIds Json?
   createdById     String?
   createdBy       User?          @relation("CrmEventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   googleEventId   String?

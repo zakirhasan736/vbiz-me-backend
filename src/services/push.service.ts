@@ -17,6 +17,7 @@ import {
   type PushDeliveryAudience,
   type PushSubscriberKind,
 } from '../utils/pushAudience'
+import { fallbackPushBody, fallbackPushTitle } from '../utils/pushRecipientCopy'
 
 export type PushPreferenceKey =
   | 'service_updates'
@@ -460,30 +461,19 @@ const sendOne = async (sub: { id: string; endpoint: string; p256dh: string; auth
   }
 }
 
-/** Short action line for card-content pushes — always names the updated card owner. */
-const actionPhraseForType = (type: string): string => {
-  switch (type) {
-    case 'contact_updates':
-      return 'updated their contact info'
-    case 'theme_updates':
-      return 'updated their card design'
-    case 'service_updates':
-      return 'updated their services'
-    case 'portfolio_updates':
-      return 'added new photos or videos'
-    case 'news':
-      return 'published a new post'
-    case 'event_updates':
-      return 'shared a new event'
-    case 'business_hours':
-      return 'updated their profile'
-    default:
-      return 'has a new update on their card'
-  }
-}
-
-const keepsCustomPushCopy = (type: string) =>
+const isOperationalPushType = (type: string) =>
   type === 'meeting_alert' || type === 'viewer_return' || type === 'save_contact' || type === 'announcement_updates'
+
+/** Preserve CRM/backoffice deep links; never rewrite `/crm` into `/vCard/crm`. */
+const resolvePushOpenUrl = (partial: Pick<PushPayload, 'type' | 'url'>, slug?: string): string => {
+  const raw = typeof partial.url === 'string' ? partial.url.trim() : ''
+  if (/^https?:\/\//i.test(raw)) return raw
+  if (/^\/(crm|admin|dashboard|vcards|settings|notifications)\b/i.test(raw)) {
+    return raw.startsWith('/') ? raw : `/${raw}`
+  }
+  if (isOperationalPushType(partial.type) && !raw) return '/crm'
+  return normalizeFrontendPublicCardPath(raw || (slug ? buildFrontendPublicCardPath(slug) : undefined), slug)
+}
 
 const buildProfilePayload = async (
   profileId: string,
@@ -506,20 +496,11 @@ const buildProfilePayload = async (
   const badge = stillImageUrl(partial.badge) || icon
   const image = stillImageUrl(partial.image) || icon
 
-  const meetingExternalUrl =
-    partial.type === 'meeting_alert' && typeof partial.url === 'string' && /^https?:\/\//i.test(partial.url.trim())
-      ? partial.url.trim()
-      : ''
+  const url = resolvePushOpenUrl(partial, slug)
 
-  // Always public card path: /vCard/{slug} (never legacy /v/{slug}).
-  const url =
-    meetingExternalUrl ||
-    normalizeFrontendPublicCardPath(partial.url?.trim() || (slug ? buildFrontendPublicCardPath(slug) : undefined), slug)
-
-  // Prefer caller-provided specific copy (e.g. “updated Services”) over generic defaults.
-  const customCopy = keepsCustomPushCopy(partial.type)
-  const title = partial.title?.trim() || (customCopy ? 'Update' : 'Card updated')
-  const body = partial.body?.trim() || (customCopy ? title : `${businessName} ${actionPhraseForType(partial.type)}.`)
+  // Prefer caller-provided area/role-specific copy; never bare "Card updated" / "Update".
+  const title = partial.title?.trim() || fallbackPushTitle(partial.type, businessName)
+  const body = partial.body?.trim() || fallbackPushBody(partial.type, businessName)
 
   return {
     ...partial,

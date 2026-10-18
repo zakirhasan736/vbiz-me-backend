@@ -3,6 +3,7 @@ import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
+import { guestSaveCrmContactableWhere } from '../utils/crmLeadOrigin'
 import {
   assertRequestedProfileInScope,
   isProfileIdInCrmScope,
@@ -12,7 +13,7 @@ import {
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
-import { DEFAULT_CAMPAIGN_TIMEZONE } from '../utils/scheduleTimezone'
+import { DEFAULT_CAMPAIGN_TIMEZONE, normalizeIanaTimeZone } from '../utils/scheduleTimezone'
 import type {
   CreateCrmEventInput,
   CrmEventAttachmentInput,
@@ -33,6 +34,7 @@ type CrmEventRow = {
   date: string
   time: string
   startsAt: Date
+  timezone?: string | null
   status: string
   description: string | null
   scope: string
@@ -42,6 +44,7 @@ type CrmEventRow = {
   recipientEmail: string | null
   recipientName: string | null
   guestUserDataId?: string | null
+  recipientLeadIds?: Prisma.JsonValue | null
   createdById: string | null
   googleEventId: string | null
   meetLink: string | null
@@ -129,24 +132,83 @@ async function resolveGroupProfileIds(input: CreateCrmEventInput): Promise<strin
   return profiles.map((profile) => profile.id)
 }
 
+function parseRecipientLeadIds(value: Prisma.JsonValue | null | undefined): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) return value.map((entry) => String(entry || '').trim()).filter(Boolean)
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (Array.isArray(parsed)) return parsed.map((entry) => String(entry || '').trim()).filter(Boolean)
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 async function normalizeCreateInput(input: CreateCrmEventInput) {
   const scope = resolveCreateScope(input)
   const groupProfileIds = scope === 'group' ? await resolveGroupProfileIds(input) : []
+  const explicitLeads = [
+    ...new Set([...(input.recipientLeadIds || []), input.guestUserDataId || ''].map((id) => id.trim()).filter(Boolean)),
+  ]
+  const hasLeadTargets = explicitLeads.length > 0
 
-  if (scope === 'group' && !groupProfileIds.length) {
-    throw new AppError(400, 'Group events require at least one card')
+  // Grouped wish may target leads without corporate card fan-out.
+  if (scope === 'group' && !groupProfileIds.length && !hasLeadTargets) {
+    throw new AppError(400, 'Grouped wish requires at least one selected CRM lead')
   }
 
   return {
     scope,
     profileId:
-      scope === 'global'
-        ? null
-        : scope === 'one_to_one'
-          ? (input.profileId ?? null)
-          : (input.profileId ?? groupProfileIds[0] ?? null),
+      scope === 'one_to_one'
+        ? (input.profileId ?? null)
+        : scope === 'group'
+          ? (input.profileId ?? groupProfileIds[0] ?? null)
+          : (input.profileId ?? null),
     groupProfileIds: scope === 'group' ? groupProfileIds : [],
+    explicitLeadIds: explicitLeads,
   }
+}
+
+async function resolveWishLeadIds(
+  access: CrmAccessContext,
+  normalized: Awaited<ReturnType<typeof normalizeCreateInput>>,
+  input: CreateCrmEventInput
+): Promise<string[]> {
+  if (normalized.scope === 'global') {
+    const where: Prisma.GuestUserDataWhereInput = {
+      ...(access.profileIds === null
+        ? {}
+        : { profileId: { in: access.profileIds.length ? access.profileIds : ['__none__'] } }),
+      ...(normalized.profileId ? { profileId: normalized.profileId } : {}),
+      ...guestSaveCrmContactableWhere(),
+    }
+    const leads = await prisma.guestUserData.findMany({
+      where,
+      select: { id: true },
+      take: 500,
+      orderBy: { createdAt: 'desc' },
+    })
+    return leads.map((lead) => lead.id)
+  }
+
+  if (normalized.explicitLeadIds.length) {
+    const leads = await prisma.guestUserData.findMany({
+      where: {
+        id: { in: normalized.explicitLeadIds },
+        ...(access.profileIds === null ? {} : { profileId: { in: access.profileIds } }),
+        ...guestSaveCrmContactableWhere(),
+      },
+      select: { id: true, profileId: true },
+    })
+    if (!leads.length) throw new AppError(400, 'No valid CRM leads selected for this wish')
+    return leads.map((lead) => lead.id)
+  }
+
+  if (input.guestUserDataId?.trim()) return [input.guestUserDataId.trim()]
+  return []
 }
 
 async function assertCanCreateEvent(
@@ -154,16 +216,13 @@ async function assertCanCreateEvent(
   access: CrmAccessContext,
   normalized: Awaited<ReturnType<typeof normalizeCreateInput>>
 ) {
-  if (normalized.scope === 'global' && access.kind !== 'admin') {
-    throw new AppError(403, 'Only admins can create global events')
-  }
-
+  // Global wish = all leads in the actor's CRM scope (admin / corporate / single).
   const targetProfileIds =
     normalized.scope === 'group' ? normalized.groupProfileIds : normalized.profileId ? [normalized.profileId] : []
 
   for (const profileId of targetProfileIds) {
     if (!isProfileIdInCrmScope(access, profileId)) {
-      throw new AppError(403, 'You can only create events for cards in your CRM scope')
+      throw new AppError(403, 'You can only create wishes for cards in your CRM scope')
     }
   }
 
@@ -182,6 +241,7 @@ function serializeCrmEvent(row: CrmEventRow) {
     date: row.date,
     time: row.time,
     startsAt: row.startsAt.toISOString(),
+    timezone: row.timezone || DEFAULT_CAMPAIGN_TIMEZONE,
     status: row.status as CrmEventStatus,
     description: row.description,
     scope: row.scope as CrmEventScope,
@@ -191,6 +251,7 @@ function serializeCrmEvent(row: CrmEventRow) {
     recipientEmail: row.recipientEmail,
     recipientName: row.recipientName,
     guestUserDataId: row.guestUserDataId ?? null,
+    recipientLeadIds: parseRecipientLeadIds(row.recipientLeadIds),
     googleEventId: row.googleEventId,
     meetLink: row.meetLink,
     createdById: row.createdById,
@@ -383,14 +444,42 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
   await assertCanCreateEvent(actor, access, normalized)
 
   const status = input.status ?? 'Scheduled'
-  const timezone = DEFAULT_CAMPAIGN_TIMEZONE
+  const timezone = normalizeIanaTimeZone(input.timezone || DEFAULT_CAMPAIGN_TIMEZONE)
   const startsAt = computeStartsAt(input.date, input.time, timezone)
   const attachments = normalizeAttachments(input.attachments)
-  const primaryProfileId = normalized.profileId
-  const guestUserDataId = await resolveOptionalGuestUserDataId(input.guestUserDataId, primaryProfileId)
+  let primaryProfileId = normalized.profileId
+  const recipientLeadIds = await resolveWishLeadIds(access, normalized, input)
+  if (!recipientLeadIds.length && normalized.scope !== 'global') {
+    // Single/grouped must have leads; global may be empty if CRM has no leads yet.
+    throw new AppError(400, 'Select at least one CRM lead for this wish')
+  }
+  if (normalized.scope === 'global' && !recipientLeadIds.length) {
+    throw new AppError(400, 'No CRM leads found to include in this global wish')
+  }
+
+  // Anchor card from first lead when not explicitly provided.
+  if (!primaryProfileId && recipientLeadIds[0]) {
+    const firstLead = await prisma.guestUserData.findUnique({
+      where: { id: recipientLeadIds[0] },
+      select: { profileId: true },
+    })
+    primaryProfileId = firstLead?.profileId || null
+  }
+
+  const guestUserDataId =
+    (await resolveOptionalGuestUserDataId(input.guestUserDataId || recipientLeadIds[0], primaryProfileId)) ||
+    recipientLeadIds[0] ||
+    null
   const { emails: ownerEmails } = await resolveOwnerEmails(primaryProfileId)
-  const recipientEmail = input.recipientEmail?.trim().toLowerCase() || ownerEmails[0] || null
-  const recipientName = input.recipientName?.trim() || input.host.trim() || null
+  const primaryLead = guestUserDataId
+    ? await prisma.guestUserData.findUnique({
+        where: { id: guestUserDataId },
+        select: { email: true, fullName: true },
+      })
+    : null
+  const recipientEmail =
+    input.recipientEmail?.trim().toLowerCase() || primaryLead?.email?.trim().toLowerCase() || ownerEmails[0] || null
+  const recipientName = input.recipientName?.trim() || primaryLead?.fullName?.trim() || input.host.trim() || null
 
   let row = await prisma.crmEvent.create({
     data: {
@@ -409,6 +498,7 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
       recipientEmail,
       recipientName,
       guestUserDataId,
+      recipientLeadIds: recipientLeadIds.length ? recipientLeadIds : undefined,
       createdById: actor.id,
     },
   })
@@ -465,7 +555,9 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
     },
   })
 
-  // Always notify the exact target card owner(s): in-app + email + owner Web Push.
+  // On create: schedule only. Wish email goes out at startsAt via crmReminder.
+  // Card owner gets CRM in-app confirmation that it is scheduled (no delivery push yet).
+  // Saved contacts / guests must NOT receive browser push for wish / outreach / schedule.
   const targetProfileIds = new Set<string>()
   if (row.profileId) targetProfileIds.add(row.profileId)
   if (row.scope === 'group') {
@@ -473,68 +565,39 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
   }
 
   const messagePreview = (row.description || '').trim().slice(0, 220)
-  const wishBody = messagePreview
-    ? `${actorLabel} sent “${row.type}” for ${row.date} at ${row.time}: ${messagePreview}`
-    : `${actorLabel} sent “${row.type}” for ${row.date} at ${row.time}.`
+  const leadCountLabel = recipientLeadIds.length === 1 ? '1 lead' : `${recipientLeadIds.length} leads`
+  const scheduledBody = messagePreview
+    ? `${actorLabel} scheduled “${row.type}” for ${leadCountLabel} on ${row.date} at ${row.time} (${timezone}). Auto-send runs at that time. Preview: ${messagePreview}`
+    : `${actorLabel} scheduled “${row.type}” for ${leadCountLabel} on ${row.date} at ${row.time} (${timezone}). Auto-send runs at that time.`
 
   for (const profileId of targetProfileIds) {
     void exactOwnerNotifyService
       .notifyExactCardOwnerInbox({
         actor: { id: actor.id, email: actorUser?.email || 'system@vbizme.com', name: actorUser?.name },
         profileId,
-        title: `${row.type}`,
-        body: wishBody,
+        title: `Scheduled: ${row.type}`,
+        body: scheduledBody,
         category: 'event',
         topic: 'crm',
         href: '/crm',
+        // Confirmation email to owner that the job is queued — not the public wish delivery.
         sendEmail: true,
-        emailSubject: `${row.type} — ${row.date} ${row.time}`,
-        emailHtml: `<div style="font-family:sans-serif;line-height:1.5"><p>${wishBody
+        emailSubject: `Scheduled: ${row.type} — ${row.date} ${row.time}`,
+        emailHtml: `<div style="font-family:sans-serif;line-height:1.5"><p>${scheduledBody
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')}</p><p>Open your CRM Wish &amp; Outreach to review.</p><p>vBiz Me</p></div>`,
-        push: {
-          title: row.type,
-          body: wishBody.slice(0, 160),
-          type: 'meeting_alert',
-        },
+          .replace(
+            />/g,
+            '&gt;'
+          )}</p><p>Open CRM Wish &amp; Outreach to review. Delivery runs at the scheduled time.</p><p>vBiz Me</p></div>`,
+        // No browser push on create — delivery + owner confirm push fire at startsAt.
       })
-      .catch((error) => logger.error('CRM wish owner notify failed', { profileId, error }))
+      .catch((error) => logger.error('CRM wish owner schedule confirm failed', { profileId, error }))
   }
 
-  // Optional extra recipient (saved guest) who is not the card owner login.
+  // Do not email/push guests on create. Delivery (email) runs at startsAt in crmReminder.
+  // Optional SMS schedule notice may still text the lead phone (not a public saver Web Push).
   if (status === 'Scheduled') {
-    const guest = guestUserDataId
-      ? await prisma.guestUserData.findUnique({
-          where: { id: guestUserDataId },
-          select: { email: true, fullName: true, phone: true },
-        })
-      : null
-    const personEmail = guest?.email?.trim() || recipientEmail
-    const personName = guest?.fullName?.trim() || recipientName || 'there'
-    const ownerEmailSet = new Set(
-      (
-        await Promise.all(
-          [...targetProfileIds].map(
-            async (id) => (await exactOwnerNotifyService.resolveExactCardOwner(id))?.emails || []
-          )
-        )
-      ).flat()
-    )
-    if (personEmail && !ownerEmailSet.has(personEmail.toLowerCase())) {
-      void exactOwnerNotifyService
-        .notifyVisitorChannels({
-          email: personEmail,
-          phone: guest?.phone,
-          title: `${row.type} — ${row.date}`,
-          body: `${actorLabel} scheduled ${row.type} with you on ${row.date} at ${row.time}.`,
-          emailHtml: `<p>Hello ${personName.replace(/</g, '')},</p><p>${actorLabel} scheduled ${row.type} with you on ${row.date} at ${row.time}.</p><p>vBiz Me</p>`,
-          smsTopic: 'Schedule',
-          pushType: 'meeting_alert',
-        })
-        .catch((error) => logger.error('CRM wish guest notify failed', error))
-    }
-
     void smsService.notifyScheduleCreated({
       guestUserDataId,
       profileId: row.profileId,

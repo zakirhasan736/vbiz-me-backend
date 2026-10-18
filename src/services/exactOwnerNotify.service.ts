@@ -203,7 +203,8 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
           title: opts.push.title,
           body: opts.push.body,
           type: opts.push.type,
-          url: opts.push.url,
+          // Prefer explicit push URL, then CRM/backoffice href — never silent public-card fallback.
+          url: opts.push.url || opts.href || '/crm',
         },
         { audience: 'owners', allowPrivate: true, includeSavers: false }
       )
@@ -386,7 +387,7 @@ export async function notifyUserInbox(opts: {
           title: opts.push.title,
           body: opts.push.body,
           type: opts.push.type,
-          url: opts.push.url,
+          url: opts.push.url || opts.href || '/crm',
         },
         { audience: 'owners', allowPrivate: true }
       )
@@ -408,7 +409,7 @@ export async function notifyUserInbox(opts: {
   return { sent: true }
 }
 
-/** Notify a visitor/requester by email + push on their own cards + SMS when phone present. */
+/** Notify a visitor/requester by email (+ optional push/SMS). */
 export async function notifyVisitorChannels(opts: {
   email?: string | null
   phone?: string | null
@@ -419,6 +420,11 @@ export async function notifyVisitorChannels(opts: {
   cardName?: string
   cardUrl?: string
   pushType?: string
+  /**
+   * When true, push to devices on cards the recipient directly owns (owner audience).
+   * Used for scheduled wish delivery to selected leads — not for public card-saver fan-out.
+   */
+  allowPush?: boolean
 }): Promise<void> {
   const email = opts.email?.trim().toLowerCase() || ''
   const phone = opts.phone?.trim() || ''
@@ -433,17 +439,19 @@ export async function notifyVisitorChannels(opts: {
         })
         .catch((error) => logger.error('Visitor email notify failed', { email, error }))
     }
-    // Guest’s own owner devices only — never follower/saver subscriptions on those cards.
-    for (const profileId of await pushService.profileIdsMatchingEmails([email])) {
-      pushService.notifyProfileUpdate(
-        profileId,
-        {
-          title: opts.title,
-          body: opts.body,
-          type: opts.pushType || 'meeting_alert',
-        },
-        { audience: 'owners', allowPrivate: true }
-      )
+    if (opts.allowPush) {
+      // Recipient's own owner devices only — never follower/saver subscriptions on the card owner's card.
+      for (const profileId of await pushService.profileIdsMatchingEmails([email])) {
+        pushService.notifyProfileUpdate(
+          profileId,
+          {
+            title: opts.title,
+            body: opts.body,
+            type: opts.pushType || 'meeting_alert',
+          },
+          { audience: 'owners', allowPrivate: true }
+        )
+      }
     }
   }
 

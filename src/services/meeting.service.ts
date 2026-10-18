@@ -9,6 +9,7 @@ import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
 import { exactOwnerPushProfileIds } from '../utils/pushAudience'
+import { scheduleOwnerPush } from '../utils/pushRecipientCopy'
 import { computeStartsAt as computeStartsAtZoned, DEFAULT_CAMPAIGN_TIMEZONE } from '../utils/scheduleTimezone'
 import type {
   CreateMeetingInput,
@@ -354,12 +355,19 @@ async function sendMeetingEmails(input: {
 }
 
 function meetingAlertPayload(meeting: MeetingRow) {
-  const meetSuffix = meeting.meetLink ? ' Open the notification to join.' : ''
+  const copy = scheduleOwnerPush({
+    type: meeting.type,
+    host: meeting.host,
+    date: meeting.date,
+    time: meeting.time,
+    meetLink: meeting.meetLink,
+    phase: 'booked',
+  })
   return {
-    title: `Upcoming session: ${meeting.type}`,
-    body: `${meeting.type} on ${meeting.date} at ${meeting.time}.${meetSuffix}`,
+    title: copy.title,
+    body: copy.body,
     type: 'meeting_alert' as const,
-    url: meeting.meetLink || undefined,
+    url: meeting.meetLink || '/crm',
   }
 }
 
@@ -385,34 +393,16 @@ async function profileIdsForMeetingPush(meeting: MeetingRow, guestEmails: string
   return [...ids]
 }
 
-async function notifyOwnerPush(meeting: MeetingRow, emails: string[] = []) {
+async function notifyOwnerPush(meeting: MeetingRow, _emails: string[] = []) {
   if (meeting.scope === 'global') return
 
   const payload = meetingAlertPayload(meeting)
-  const ownerEmailSet = new Set<string>()
-  if (meeting.scope === 'group') {
-    for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) {
-      const resolved = await resolveOwnerEmails(profileId)
-      for (const email of resolved.emails) ownerEmailSet.add(email)
-    }
-  } else if (meeting.profileId) {
-    const resolved = await resolveOwnerEmails(meeting.profileId)
-    for (const email of resolved.emails) ownerEmailSet.add(email)
-  }
-
-  // Owner cards → owner devices only. Guest email-matched cards → their devices (all kinds).
-  const guestEmails = emails.filter((email) => !ownerEmailSet.has(email.trim().toLowerCase()))
+  // Owner cards → owner devices only.
+  // Guests / saved contacts: email + SMS only — never public Web Push for schedules/events.
   const ownerProfileIds = await profileIdsForMeetingPush(meeting, [])
-  const ownerSet = new Set(ownerProfileIds)
-  const guestProfileIds = guestEmails.length
-    ? (await pushService.profileIdsMatchingEmails(guestEmails)).filter((id) => !ownerSet.has(id))
-    : []
 
   for (const profileId of ownerProfileIds) {
     pushService.notifyProfileUpdate(profileId, payload, { audience: 'owners', allowPrivate: true })
-  }
-  for (const profileId of guestProfileIds) {
-    pushService.notifyProfileUpdate(profileId, payload, { audience: 'all', allowPrivate: true })
   }
 }
 
@@ -558,7 +548,9 @@ async function notifySenderAnnouncement(actor: Actor, meeting: MeetingRow, meetL
         meetLink: meeting.meetLink || '',
         category: 'event',
         channel: 'inbox',
-        sendPush: '1',
+        onlyBackoffice: '1',
+        showPublic: '0',
+        sendPush: '0',
         userId: actor.id,
       },
     })

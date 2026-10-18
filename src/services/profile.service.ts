@@ -2821,11 +2821,11 @@ const replaceCollection = async <T extends Record<string, unknown>>(
     const businessName = owned.companyName || owned.name || 'A vBiz Me card'
     pushService.notifyProfileUpdate(profileId, {
       type: preferenceType,
-      title: area?.title || 'Card updated',
+      title: area?.title || `${area?.areaLabel || 'Card section'} updated`,
       body: area
         ? renderPushAreaBody(area.bodyTemplate, businessName)
-        : `${businessName} has a new update on their card.`,
-      url: buildPublicCardPathWithTab(owned.slug, area?.tabId),
+        : `${businessName} updated a card section. Tap to open their public card.`,
+      url: buildPublicCardPathWithTab(owned.slug, area?.tabId || 'home'),
     })
   }
   return owned
@@ -3037,7 +3037,7 @@ const upsertAboutMe = async (
     pushService.notifyProfileUpdate(profileId, {
       type: 'business_hours',
       title: 'About Me updated',
-      body: `${businessName} updated their About Me tab.`,
+      body: `${businessName} updated About Me. Tap to open that tab on their public card.`,
       url: buildPublicCardPathWithTab(profile?.slug, 'about'),
     })
     return fallback
@@ -3051,7 +3051,7 @@ const upsertAboutMe = async (
   pushService.notifyProfileUpdate(profileId, {
     type: 'business_hours',
     title: 'About Me updated',
-    body: `${businessName} updated their About Me tab.`,
+    body: `${businessName} updated About Me. Tap to open that tab on their public card.`,
     url: buildPublicCardPathWithTab(profile?.slug, 'about'),
   })
 
@@ -3193,7 +3193,7 @@ const createPost = async (
     const postTitle = created.title?.trim()
     pushService.notifyProfileUpdate(profileId, {
       type: preferenceType,
-      title: postTitle || area?.title || 'New update',
+      title: postTitle || area?.title || `${area?.areaLabel || 'Card section'} updated`,
       body: area
         ? `${renderPushAreaBody(area.bodyTemplate, businessName)}${postTitle ? ` “${postTitle}”` : ''}`
         : `${businessName} published a new update${postTitle ? `: ${postTitle}` : ''}.`,
@@ -3296,7 +3296,7 @@ const updatePost = async (
     const postTitle = updatedPost.title?.trim()
     pushService.notifyProfileUpdate(post.profileId, {
       type: preferenceType,
-      title: postTitle || area?.title || 'Section updated',
+      title: postTitle || area?.title || `${area?.areaLabel || 'Card section'} updated`,
       body: area
         ? `${renderPushAreaBody(area.bodyTemplate, businessName)}${postTitle ? ` “${postTitle}”` : ''}`
         : `${businessName} updated ${postTitle ? `“${postTitle}”` : 'a section'} on their card.`,
@@ -3933,6 +3933,8 @@ const patchContact = async (
         cardName,
         cardUrl,
         pushType: 'contact_updates',
+        // Matrix §10.B — requesting guest gets push when subscribed (own devices only).
+        allowPush: true,
       })
       .catch((error) => logger.error('Visitor reply notify failed', { contactId, error }))
 
@@ -4663,23 +4665,13 @@ const createTeamNotice = async (
             profileId: targetProfileId,
             source: 'card_notice',
             onlyBackoffice: '1',
-            sendPush: '1',
+            // Matrix §8.F — back-office only: in-app + email; no browser push.
+            sendPush: '0',
             channel: 'inbox',
+            topic: 'card',
           },
         })
         .catch((error) => logger.error('Card owner backoffice notice failed', { targetProfileId, error }))
-
-      // Owner devices on this card only (never savers / never corporate siblings).
-      pushService.notifyProfileUpdate(
-        targetProfileId,
-        {
-          title: subject,
-          body: text,
-          type: 'announcement_updates',
-          url: targetProfile?.slug ? buildFrontendPublicCardPath(targetProfile.slug) : undefined,
-        },
-        { audience: 'owners', allowPrivate: true }
-      )
     }
 
     const row = await prisma.teamNotice.create({

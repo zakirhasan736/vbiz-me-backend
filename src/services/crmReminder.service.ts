@@ -3,8 +3,10 @@ import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
+import { noteOwnerPush, scheduleOwnerPush, wishLeadPush, wishOwnerDeliveredPush } from '../utils/pushRecipientCopy'
 import announcementService from './announcement.service'
 import crmEventService from './crmEvent.service'
+import exactOwnerNotifyService from './exactOwnerNotify.service'
 import pushService from './push.service'
 import smsService from './sms.service'
 
@@ -32,10 +34,19 @@ async function systemActor(): Promise<SystemActor> {
   return { id: 'system', role: 'super-admin', name: 'System', email: 'system@vbizme.com' }
 }
 
-async function notifyEmails(emails: string[], title: string, body: string, meta: Record<string, string>) {
+async function notifyEmails(
+  emails: string[],
+  title: string,
+  body: string,
+  meta: Record<string, string>,
+  options?: { sendPush?: boolean }
+) {
   const unique = [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))]
   if (!unique.length) return
   const actor = await systemActor()
+  // Default: inbox for internal recipients. Browser push only when explicitly allowed
+  // (card owner / sender). Never public-saver push for wish / schedule / event.
+  const allowPush = options?.sendPush === true
   try {
     await announcementService.create(
       { id: actor.id, email: actor.email || 'system@vbizme.com', name: actor.name },
@@ -47,7 +58,14 @@ async function notifyEmails(emails: string[], title: string, body: string, meta:
         status: 'active',
         targetType: 'specific',
         targetEmails: unique,
-        meta: { ...meta, sendPush: '1', category: 'event', channel: 'inbox' },
+        meta: {
+          ...meta,
+          category: 'event',
+          channel: 'inbox',
+          onlyBackoffice: '1',
+          showPublic: '0',
+          sendPush: allowPush ? '1' : '0',
+        },
       }
     )
   } catch (error) {
@@ -228,12 +246,18 @@ async function processWorkNoteReminders(leadMinutes: number) {
 
     if (note.profileId) {
       // Owner devices only — never content preference / saver fan-out (event_updates).
+      const notePush = noteOwnerPush({
+        title: note.title,
+        preview: body,
+        overdue,
+      })
       pushService.notifyProfileUpdate(
         note.profileId,
         {
-          title: overdue ? 'Overdue note' : 'Note reminder',
-          body: note.title,
+          title: notePush.title,
+          body: notePush.body,
           type: 'meeting_alert',
+          url: '/crm',
         },
         { audience: 'owners', allowPrivate: true }
       )
@@ -352,11 +376,19 @@ async function processMeetingReminders() {
       }
     }
 
+    const schedulePush = scheduleOwnerPush({
+      type: meeting.type,
+      host: meeting.host,
+      date: meeting.date,
+      time: meeting.time,
+      meetLink: meeting.meetLink,
+      phase: 'starting',
+    })
     const pushPayload = {
-      title: `Upcoming: ${meeting.type}`,
-      body: `${meeting.date} ${meeting.time}`,
+      title: schedulePush.title,
+      body: schedulePush.body,
       type: 'meeting_alert' as const,
-      url: meeting.meetLink || undefined,
+      url: meeting.meetLink || '/crm',
     }
 
     if (meeting.scope === 'group') {
@@ -406,86 +438,73 @@ async function processCrmEventReminders() {
     take: 50,
     include: {
       createdBy: { select: { id: true, email: true, name: true } },
+      guestUserData: { select: { email: true, fullName: true, phone: true } },
     },
   })
 
   for (const event of events) {
     const attachments = crmEventService.parseAttachments(event.attachments)
-    const emails = new Set<string>()
-    let displayName = event.recipientName?.trim() || event.host
     const description = event.description?.trim() || ''
+    const tz = event.timezone || 'America/New_York'
 
-    if (event.recipientEmail?.trim()) {
-      emails.add(event.recipientEmail.trim().toLowerCase())
-    }
-
+    const ownerProfileIds: string[] = []
     if (event.scope === 'group') {
-      const ids = parseGroupProfileIds(event.groupProfileIds)
-      for (const profileId of ids) {
-        const resolved = await resolveProfileEmails(profileId)
-        for (const email of resolved.emails) emails.add(email)
-        if (!event.recipientName && resolved.displayName) displayName = resolved.displayName
-      }
-    } else if (event.profileId) {
-      const resolved = await resolveProfileEmails(event.profileId)
-      for (const email of resolved.emails) emails.add(email)
-      if (!event.recipientName && resolved.displayName) displayName = resolved.displayName
+      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) ownerProfileIds.push(profileId)
     }
+    if (event.profileId && !ownerProfileIds.includes(event.profileId)) ownerProfileIds.push(event.profileId)
 
-    const recipientList = [...emails]
+    const leadIds = (() => {
+      const raw = (event as { recipientLeadIds?: unknown }).recipientLeadIds
+      if (Array.isArray(raw)) return raw.map((id) => String(id || '').trim()).filter(Boolean)
+      if (event.guestUserDataId) return [event.guestUserDataId]
+      return []
+    })()
+
+    const leads = leadIds.length
+      ? await prisma.guestUserData.findMany({
+          where: { id: { in: leadIds } },
+          select: { id: true, email: true, fullName: true, phone: true, profileId: true },
+        })
+      : event.guestUserData
+        ? [
+            {
+              id: event.guestUserDataId || '',
+              email: event.guestUserData.email,
+              fullName: event.guestUserData.fullName,
+              phone: null as string | null,
+              profileId: event.profileId,
+            },
+          ]
+        : []
+
     const attachmentSummary = attachments.length
       ? ` Includes ${attachments.length} attachment${attachments.length === 1 ? '' : 's'}.`
       : ''
     const messageSummary = description ? ` ${truncateForPush(description, 180)}` : ''
-    const receiverBody = `${event.type} for ${event.host} — ${event.date} ${event.time}.${messageSummary}${attachmentSummary}`
-    const pushBody = description ? truncateForPush(description) : `${event.date} ${event.time}`
+    const ownerWishPush = wishOwnerDeliveredPush({
+      type: event.type,
+      leadCount: leads.length || 1,
+      date: event.date,
+      time: event.time,
+      timezone: tz,
+      description,
+    })
+    const confirmBody = `${ownerWishPush.body}${attachmentSummary}`
 
-    // Inbox: exact card owner(s) with userId; external recipientEmail keeps email-only match.
-    if (event.scope === 'group') {
-      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) {
-        const resolved = await resolveProfileEmails(profileId)
-        if (resolved.emails.length) {
-          await notifyEmails(resolved.emails, `CRM event: ${event.type}`, receiverBody, {
-            crmEventId: event.id,
-            href: '/crm',
-            profileId,
-            ...(resolved.ownerUserId ? { userId: resolved.ownerUserId } : {}),
-          })
-        }
-      }
-    } else if (event.profileId) {
-      const resolved = await resolveProfileEmails(event.profileId)
-      if (resolved.emails.length) {
-        await notifyEmails(resolved.emails, `CRM event: ${event.type}`, receiverBody, {
-          crmEventId: event.id,
-          href: '/crm',
-          profileId: event.profileId,
-          ...(resolved.ownerUserId ? { userId: resolved.ownerUserId } : {}),
-        })
-      }
-    }
-
-    const ownerEmailSet = new Set<string>()
-    if (event.profileId) {
-      for (const email of (await resolveProfileEmails(event.profileId)).emails) ownerEmailSet.add(email)
-    }
-    if (event.scope === 'group') {
-      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) {
-        for (const email of (await resolveProfileEmails(profileId)).emails) ownerEmailSet.add(email)
-      }
-    }
-    const externalEmail = event.recipientEmail?.trim().toLowerCase() || ''
-    if (externalEmail && !ownerEmailSet.has(externalEmail)) {
-      await notifyEmails([externalEmail], `CRM event: ${event.type}`, receiverBody, {
-        crmEventId: event.id,
-        href: '/crm',
+    // Selected leads: email + push at scheduled USA local time (their own owner devices only).
+    for (const lead of leads) {
+      const email = lead.email?.trim().toLowerCase() || ''
+      const name = lead.fullName?.trim() || event.recipientName?.trim() || 'there'
+      if (!email && !lead.phone) continue
+      const leadPush = wishLeadPush({
+        type: event.type,
+        host: event.host,
+        date: event.date,
+        time: event.time,
+        description,
       })
-    }
-
-    // Email channel unchanged — every intended address still receives Zoho mail.
-    if (config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
       const html = crmEventEmailHtml({
-        recipientName: displayName || 'there',
+        recipientName: name,
         type: event.type,
         host: event.host,
         date: event.date,
@@ -493,40 +512,48 @@ async function processCrmEventReminders() {
         description,
         attachments,
       })
-      const subject = `${event.type} — ${event.date} ${event.time}`
-      for (const email of recipientList) {
-        void authUtils
-          .sendEmail({
-            receiverMail: email,
-            subject,
-            html,
-          })
-          .catch((error) => logger.error('CRM event reminder email failed', { error, email, crmEventId: event.id }))
-      }
+      void exactOwnerNotifyService
+        .notifyVisitorChannels({
+          email: email || null,
+          phone: lead.phone,
+          title: leadPush.title,
+          body: leadPush.body,
+          emailHtml: html,
+          smsTopic: 'Schedule',
+          pushType: 'meeting_alert',
+          allowPush: true,
+        })
+        .catch((error) => logger.error('CRM wish lead notify failed', { error, leadId: lead.id, crmEventId: event.id }))
     }
 
-    if (event.profileId) {
+    // Card owner: CRM in-app + owner-only Web Push confirmation.
+    for (const profileId of ownerProfileIds) {
+      const resolved = await resolveProfileEmails(profileId)
+      if (resolved.emails.length) {
+        await notifyEmails(
+          resolved.emails,
+          ownerWishPush.title,
+          confirmBody,
+          {
+            crmEventId: event.id,
+            href: '/crm',
+            profileId,
+            topic: 'crm',
+            ...(resolved.ownerUserId ? { userId: resolved.ownerUserId } : {}),
+          },
+          { sendPush: false }
+        )
+      }
       pushService.notifyProfileUpdate(
-        event.profileId,
+        profileId,
         {
-          title: `CRM event: ${event.type}`,
-          body: pushBody,
+          title: ownerWishPush.title,
+          body: ownerWishPush.body,
           type: 'meeting_alert',
+          url: '/crm',
         },
         { audience: 'owners', allowPrivate: true }
       )
-    } else if (event.scope === 'group') {
-      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) {
-        pushService.notifyProfileUpdate(
-          profileId,
-          {
-            title: `CRM event: ${event.type}`,
-            body: pushBody,
-            type: 'meeting_alert',
-          },
-          { audience: 'owners', allowPrivate: true }
-        )
-      }
     }
 
     const senderEmail = event.createdBy?.email?.trim().toLowerCase()
@@ -534,12 +561,14 @@ async function processCrmEventReminders() {
       await notifyEmails(
         [senderEmail],
         `Your wish was delivered: ${event.type}`,
-        `Your ${event.type} for ${event.host} was sent at ${event.date} ${event.time}.${messageSummary}`,
+        `Your ${event.type} was sent at ${event.date} ${event.time} (${tz}) to ${leads.length || 1} lead(s).${messageSummary}`,
         {
           crmEventId: event.id,
           href: '/crm',
+          topic: 'crm',
           userId: event.createdBy.id,
-        }
+        },
+        { sendPush: false }
       )
     }
 

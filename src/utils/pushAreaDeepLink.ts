@@ -36,49 +36,56 @@ export function pushAreaForCollection(
         tabId: 'services',
         areaLabel: 'Services',
         title: 'Services updated',
-        bodyTemplate: '{{name}} updated or added services on their vBiz Me card.',
+        bodyTemplate: '{{name}} updated or added services. Tap to open Services on their public card.',
       }
     case 'portfolios':
       return {
         tabId: 'gallery',
         areaLabel: 'Photos',
         title: 'Photos updated',
-        bodyTemplate: '{{name}} updated photos in their Gallery tab.',
+        bodyTemplate: '{{name}} updated photos. Tap to open Gallery on their public card.',
       }
     case 'socialLinks':
       return {
         tabId: 'profile',
         areaLabel: 'Contact links',
         title: 'Contact links updated',
-        bodyTemplate: '{{name}} updated contact links on their card.',
+        bodyTemplate: '{{name}} updated contact links. Tap to open Contact on their public card.',
       }
     case 'experiences':
       return {
         tabId: 'work',
         areaLabel: 'Work experience',
         title: 'Work experience updated',
-        bodyTemplate: '{{name}} updated their Work Experience tab.',
+        bodyTemplate: '{{name}} updated Work Experience. Tap to open that tab on their public card.',
       }
     case 'education':
       return {
         tabId: 'education',
         areaLabel: 'Education',
         title: 'Education updated',
-        bodyTemplate: '{{name}} updated their Education tab.',
+        bodyTemplate: '{{name}} updated Education. Tap to open that tab on their public card.',
       }
     case 'skillTags':
       return {
         tabId: 'skills',
         areaLabel: 'Skills',
         title: 'Skills updated',
-        bodyTemplate: '{{name}} updated their Skills tab.',
+        bodyTemplate: '{{name}} updated Skills. Tap to open that tab on their public card.',
       }
     case 'reviews':
       return {
         tabId: 'reviews',
         areaLabel: 'Reviews',
         title: 'Reviews updated',
-        bodyTemplate: '{{name}} updated their Reviews tab.',
+        bodyTemplate: '{{name}} updated their Reviews tab. Tap to open Reviews on their public card.',
+      }
+    case 'addresses':
+      return {
+        tabId: 'profile',
+        areaLabel: 'Addresses',
+        title: 'Addresses updated',
+        bodyTemplate: '{{name}} updated addresses on their card. Tap to open Contact.',
       }
     default:
       return null
@@ -96,7 +103,7 @@ export function pushAreaForProfileFields(input: {
       tabId: 'home',
       areaLabel: 'Theme & design',
       title: 'Theme & design updated',
-      bodyTemplate: '{{name}} updated the theme and design on their card.',
+      bodyTemplate: '{{name}} updated theme and design. Tap to open their public card home.',
     }
   }
   if (input.avatarTouched) {
@@ -104,7 +111,7 @@ export function pushAreaForProfileFields(input: {
       tabId: 'home',
       areaLabel: 'Profile picture',
       title: 'Profile picture updated',
-      bodyTemplate: '{{name}} updated their profile picture.',
+      bodyTemplate: '{{name}} updated their profile picture. Tap to open their public card.',
     }
   }
   if (input.contactTouched) {
@@ -112,22 +119,22 @@ export function pushAreaForProfileFields(input: {
       tabId: 'profile',
       areaLabel: 'Contact info',
       title: 'Contact info updated',
-      bodyTemplate: '{{name}} updated contact information on their card.',
+      bodyTemplate: '{{name}} updated contact information. Tap to open Contact on their public card.',
     }
   }
   if (input.nameTouched) {
     return {
       tabId: 'home',
-      areaLabel: 'Profile',
-      title: 'Profile updated',
-      bodyTemplate: '{{name}} updated their profile details.',
+      areaLabel: 'Name & headline',
+      title: 'Name & headline updated',
+      bodyTemplate: '{{name}} updated their name or headline. Tap to open their public card home.',
     }
   }
   return {
     tabId: 'home',
-    areaLabel: 'Profile',
-    title: 'Profile updated',
-    bodyTemplate: '{{name}} updated their profile.',
+    areaLabel: 'Card details',
+    title: 'Card details updated',
+    bodyTemplate: '{{name}} updated card details. Tap to open their public card.',
   }
 }
 
@@ -146,7 +153,7 @@ export function pushAreaForPostType(postTypeName?: string | null): PushAreaMeta 
       tabId: navId || 'announcement',
       areaLabel: areaLabel || 'Announcements',
       title: 'New announcement',
-      bodyTemplate: `{{name}} posted a new update in ${areaLabel || 'Announcements'}.`,
+      bodyTemplate: `{{name}} posted in ${areaLabel || 'Announcements'}. Tap to open that section on their public card.`,
     }
   }
   if (lower.includes('offer') || lower.includes('promo')) {
@@ -154,7 +161,7 @@ export function pushAreaForPostType(postTypeName?: string | null): PushAreaMeta 
       tabId: navId || 'services',
       areaLabel: areaLabel || 'Offers',
       title: 'New offer',
-      bodyTemplate: `{{name}} added an offer in ${areaLabel || 'Offers'}.`,
+      bodyTemplate: `{{name}} added an offer in ${areaLabel || 'Offers'}. Tap to open that section.`,
     }
   }
   if (lower.includes('video')) {
@@ -162,7 +169,7 @@ export function pushAreaForPostType(postTypeName?: string | null): PushAreaMeta 
       tabId: navId || 'videos',
       areaLabel: areaLabel || 'Videos',
       title: 'Videos updated',
-      bodyTemplate: `{{name}} updated their ${areaLabel || 'Videos'} tab.`,
+      bodyTemplate: `{{name}} updated ${areaLabel || 'Videos'}. Tap to open that tab on their public card.`,
     }
   }
   if (lower.includes('blog') || lower.includes('news')) {
@@ -170,7 +177,7 @@ export function pushAreaForPostType(postTypeName?: string | null): PushAreaMeta 
       tabId: navId || 'blog',
       areaLabel: areaLabel || 'Blog',
       title: 'New blog post',
-      bodyTemplate: `{{name}} published a new post in ${areaLabel || 'Blog'}.`,
+      bodyTemplate: `{{name}} published in ${areaLabel || 'Blog'}. Tap to open that section on their public card.`,
     }
   }
   if (lower.includes('service')) {
@@ -178,7 +185,7 @@ export function pushAreaForPostType(postTypeName?: string | null): PushAreaMeta 
       tabId: navId || 'services',
       areaLabel: areaLabel || 'Services',
       title: 'Services updated',
-      bodyTemplate: `{{name}} updated or added items in ${areaLabel || 'Services'}.`,
+      bodyTemplate: `{{name}} updated ${areaLabel || 'Services'}. Tap to open that tab on their public card.`,
     }
   }
   if (lower.includes('gallery') || lower.includes('photo') || lower.includes('portfolio')) {
@@ -186,7 +193,7 @@ export function pushAreaForPostType(postTypeName?: string | null): PushAreaMeta 
       tabId: navId || 'gallery',
       areaLabel: areaLabel || 'Photos',
       title: 'Photos updated',
-      bodyTemplate: `{{name}} updated photos in ${areaLabel || 'Gallery'}.`,
+      bodyTemplate: `{{name}} updated photos in ${areaLabel || 'Gallery'}. Tap to open that tab.`,
     }
   }
 
@@ -194,7 +201,7 @@ export function pushAreaForPostType(postTypeName?: string | null): PushAreaMeta 
     tabId: navId || 'home',
     areaLabel,
     title: `${areaLabel} updated`,
-    bodyTemplate: `{{name}} updated their ${areaLabel} tab.`,
+    bodyTemplate: `{{name}} updated their ${areaLabel} tab. Tap to open that section on their public card.`,
   }
 }
 

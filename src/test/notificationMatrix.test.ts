@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import config from '../configs/config'
 import { guestSaveCrmContactableWhere, isQualifiedCrmLead, isRealGuestFullName } from '../utils/crmLeadOrigin'
 import {
@@ -9,6 +12,12 @@ import {
   staffAdminAllowsBrowserPush,
 } from '../utils/pushAudience'
 import { DEFAULT_CAMPAIGN_TIMEZONE, normalizeIanaTimeZone, zonedLocalDateTimeToUtc } from '../utils/scheduleTimezone'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const publicCardService = readFileSync(join(here, '../services/publicCard.service.ts'), 'utf8')
+const oneOnOneService = readFileSync(join(here, '../services/oneOnOne.service.ts'), 'utf8')
+const announcementService = readFileSync(join(here, '../services/announcement.service.ts'), 'utf8')
+const profileService = readFileSync(join(here, '../services/profile.service.ts'), 'utf8')
 
 describe('notification matrix — CRM lead qualification', () => {
   it('rejects name-only and anonymous visitor saves as qualified leads', () => {
@@ -83,6 +92,33 @@ describe('notification matrix — public contact isolation (Rule A)', () => {
       activeSubscriptionProfileIds: ['saver-a', 'owner-b'],
     })
     assert.deepEqual(publicGlobal.sort(), ['owner-b', 'saver-a'])
+  })
+})
+
+describe('notification matrix — Section 18 routing contracts', () => {
+  it('upgrades name-only saves to qualified leads with owner notify (no silent CRM)', () => {
+    assert.match(publicCardService, /wasQualified/)
+    assert.match(publicCardService, /nowQualified/)
+    assert.match(publicCardService, /upgraded_to_lead/)
+  })
+
+  it('anonymous VCF save never emails the owner (unqualified contact-save)', () => {
+    assert.match(publicCardService, /Anonymous VCF download = unqualified/)
+    assert.match(publicCardService, /sendEmail: false/)
+  })
+
+  it('routes guest 1-on-1 inbox notices to card back-office topic, not CRM', () => {
+    assert.match(oneOnOneService, /topic: 'card'/)
+    assert.match(oneOnOneService, /Card back-office \(not CRM lead feed\)/)
+  })
+
+  it('blocks browser push for back-office-only announcements', () => {
+    assert.match(announcementService, /pushRequested = wantsSendPush\(meta\) && showPublic && !isInboxOnly\(meta\)/)
+  })
+
+  it('owner→guest note reply enables visitor push when subscribed', () => {
+    assert.match(profileService, /allowPush: true/)
+    assert.match(profileService, /Matrix §10\.B/)
   })
 })
 

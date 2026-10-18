@@ -419,7 +419,10 @@ async function createStakeholderInboxNotice(opts: {
         targetEmails: emails,
         meta: {
           channel: 'inbox',
+          // Card back-office (not CRM lead feed) — matrix §3 / §18 guest 1-on-1.
           category: 'event',
+          topic: 'card',
+          href: opts.slug ? `/vcards/edit/home/${opts.profileId}` : '/',
           profileId: opts.profileId,
           ...(userId ? { userId } : {}),
           ...(opts.slug ? { slug: opts.slug } : {}),
