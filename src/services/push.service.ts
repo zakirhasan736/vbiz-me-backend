@@ -608,7 +608,7 @@ const sendToProfile = async (
 
   // Active subscriptions on THIS card for the responsible audience.
   // Follower = opted-in push subscriber (Allow notifications). Save-contact is NOT required.
-  let subscriptions = await prisma.pushSubscription.findMany({
+  const subscriptions = await prisma.pushSubscription.findMany({
     where: {
       profileId,
       isActive: true,
