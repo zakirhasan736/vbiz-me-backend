@@ -40,10 +40,6 @@ async function systemActor(): Promise<Actor> {
   return { id: 'system', email: 'system@vbizme.com', name: 'System' }
 }
 
-function escapeHtml(value: string) {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-
 /** Resolve the direct card owner only — never the corporate parent of a member card. */
 export async function resolveExactCardOwner(profileId: string): Promise<ExactCardOwner | null> {
   const id = profileId.trim()
