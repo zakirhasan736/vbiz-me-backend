@@ -211,21 +211,28 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
         url: opts.push.url || opts.href || buildOwnerBackofficePath('calendar'),
       }
       // Web Push + SW: delivers after first Allow even when backoffice/card tab is closed.
+      // Hit the event card plus every card tied to the direct owner and corporate parent so
+      // a device registered on HQ (or any sibling) still receives OS push without reopening.
       const pushTargets = new Set<string>([owner.profileId])
-      if (owner.companyUserId) {
-        const corpCards = await prisma.profile.findMany({
-          where: { userId: owner.companyUserId },
+      const ownerUserIds = [owner.ownerUserId, owner.companyUserId].filter((id): id is string => Boolean(id))
+      if (ownerUserIds.length) {
+        const relatedCards = await prisma.profile.findMany({
+          where: {
+            OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }],
+          },
           select: { id: true },
-          take: 20,
+          take: 80,
         })
-        for (const row of corpCards) pushTargets.add(row.id)
+        for (const row of relatedCards) pushTargets.add(row.id)
       }
       let sentCount = 0
+      const seenEndpoints = new Set<string>()
       for (const targetProfileId of pushTargets) {
         const pushResult = await pushService.sendToProfile(targetProfileId, pushPayload, {
           audience: 'owners',
           allowPrivate: true,
           includeSavers: false,
+          seenEndpoints,
         })
         sentCount += pushResult?.sent ?? 0
       }

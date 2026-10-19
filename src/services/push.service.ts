@@ -617,9 +617,10 @@ const sendToProfile = async (
     include: { preferences: true },
   })
 
-  // Owner devices may have been registered on another owned card (or HQ). Still deliver
-  // closed-browser Web Push without requiring the owner to reopen that card's backoffice.
-  if (deliveryAudience === 'owners' && subscriptions.length === 0) {
+  // Owner devices may have been registered on another owned card (or HQ). Always merge
+  // those endpoints so closed-browser Web Push works after the first Allow — even when
+  // this card already has a stale/dead owner row that would otherwise block the fallback.
+  if (deliveryAudience === 'owners') {
     const ownerRow = await prisma.profile.findUnique({
       where: { id: profileId },
       select: { userId: true, companyUserId: true },
@@ -631,11 +632,11 @@ const sendToProfile = async (
           OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }],
         },
         select: { id: true },
-        take: 50,
+        take: 80,
       })
       const siblingProfileIds = siblingIds.map((row) => row.id).filter((id) => id !== profileId)
       if (siblingProfileIds.length) {
-        subscriptions = await prisma.pushSubscription.findMany({
+        const siblingSubs = await prisma.pushSubscription.findMany({
           where: {
             profileId: { in: siblingProfileIds },
             isActive: true,
@@ -643,6 +644,14 @@ const sendToProfile = async (
           },
           include: { preferences: true },
         })
+        if (siblingSubs.length) {
+          const seenSubIds = new Set(subscriptions.map((row) => row.id))
+          for (const sub of siblingSubs) {
+            if (seenSubIds.has(sub.id)) continue
+            subscriptions.push(sub)
+            seenSubIds.add(sub.id)
+          }
+        }
       }
     }
   }
