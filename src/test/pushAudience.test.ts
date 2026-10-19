@@ -97,6 +97,18 @@ describe('push audience', () => {
       }),
       true
     )
+    // Corporate parent sees linked member-card notices via ownedProfileIds scope.
+    assert.equal(
+      userMatchesSpecificAnnouncement({
+        userId: 'corp-parent',
+        userEmail: 'corp@vbizme.com',
+        targetEmails: ['julie@vbizme.com'],
+        metaUserId: 'julie',
+        metaProfileId: 'julie-card',
+        ownedProfileIds: ['corp-hq', 'julie-card'],
+      }),
+      true
+    )
     assert.equal(
       userMatchesSpecificAnnouncement({
         userId: 'corp-parent',

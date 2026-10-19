@@ -2376,6 +2376,12 @@ const saveGuestUser = async (
           topic: 'card',
           href: buildOwnerBackofficePath('leads'),
           sendEmail: true,
+          emailSubject: `CRM Leads: New lead — ${displayName}`,
+          emailDetails: [
+            { label: 'Contact', value: displayName },
+            ...(updated.email?.trim() ? [{ label: 'Email', value: updated.email.trim() }] : []),
+            ...(updated.phone?.trim() ? [{ label: 'Phone', value: updated.phone.trim() }] : []),
+          ],
           push: {
             title: `${displayName} became a lead`,
             body: `${displayName}${updated.email ? ` · ${updated.email}` : ''}${
@@ -2470,6 +2476,14 @@ const saveGuestUser = async (
       topic: 'card',
       href: ownerArea,
       sendEmail: qualifiedLead,
+      emailSubject: qualifiedLead
+        ? `CRM Leads: New lead — ${displayName}`
+        : `Contact Saves: ${displayName} saved your card`,
+      emailDetails: [
+        { label: 'Contact', value: displayName },
+        ...(email?.trim() ? [{ label: 'Email', value: email.trim() }] : []),
+        ...(phone?.trim() ? [{ label: 'Phone', value: phone.trim() }] : []),
+      ],
       push: {
         title: qualifiedLead ? `New lead: ${displayName}` : `${displayName} saved your card`,
         body: qualifiedLead
@@ -2602,6 +2616,11 @@ const saveNote = async (profileId: string, content: string, options: PublicNoteO
       topic: 'card',
       href: buildOwnerBackofficePath('contact_notes'),
       sendEmail: true,
+      emailSubject: `Lead Notes: New note from ${authorLabel}`,
+      emailDetails: [
+        { label: 'From', value: authorLabel },
+        ...(notePreview ? [{ label: 'Note', value: notePreview }] : []),
+      ],
       push: {
         title: `Note from ${authorLabel}`,
         body: notePreview ? `${authorLabel}: “${notePreview}”` : `${authorLabel} left a note on your public card.`,

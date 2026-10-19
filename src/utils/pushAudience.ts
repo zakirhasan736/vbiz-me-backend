@@ -105,6 +105,11 @@ export function exactOwnerPushProfileIds(input: {
 /**
  * Whether a logged-in user should see a specific-targeted inbox notice.
  * Global (`targetType === 'all'`) is handled separately as a banner for everyone.
+ *
+ * Identity rules:
+ * - Direct card owner: meta.userId matches login, or meta.profileId is in ownedProfileIds
+ * - Corporate owner: ownedProfileIds includes own cards + linked member cards (companyUserId)
+ * - Shared corporate email alone is never enough when meta tags a different user/card
  */
 export function userMatchesSpecificAnnouncement(input: {
   userId: string
@@ -112,16 +117,20 @@ export function userMatchesSpecificAnnouncement(input: {
   targetEmails: string[]
   metaUserId?: string | null
   metaProfileId?: string | null
-  /** Profile ids where this user is the direct card owner (`profile.userId`). */
+  /**
+   * Profile ids in this user's back-office scope:
+   * direct owner cards (`profile.userId`) and linked cards (`profile.companyUserId`).
+   */
   ownedProfileIds: string[]
 }) {
   const email = input.userEmail.trim().toLowerCase()
   const targetEmails = input.targetEmails.map((value) => value.trim().toLowerCase()).filter(Boolean)
   const metaUserId = input.metaUserId?.trim() || ''
   const metaProfileId = input.metaProfileId?.trim() || ''
-  const owned = new Set(input.ownedProfileIds)
+  const owned = new Set(input.ownedProfileIds.filter(Boolean))
 
-  if (metaUserId) return metaUserId === input.userId
-  if (metaProfileId) return owned.has(metaProfileId)
+  if (metaUserId && metaUserId === input.userId) return true
+  if (metaProfileId && owned.has(metaProfileId)) return true
+  if (metaUserId || metaProfileId) return false
   return Boolean(email && targetEmails.includes(email))
 }

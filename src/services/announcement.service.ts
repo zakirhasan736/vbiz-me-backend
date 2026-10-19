@@ -702,7 +702,8 @@ const getActiveForUser = async (user: { id: string; email: string; role?: string
       take: 40,
     }),
     prisma.profile.findMany({
-      where: { userId },
+      // Direct-owned cards + corporate-linked member cards (companyUserId = this login).
+      where: { OR: [{ userId }, { companyUserId: userId }] },
       select: { id: true },
     }),
   ])

@@ -2,6 +2,7 @@ import config from '../configs/config'
 import AppError from '../error/AppError'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
+import { buildOwnerNotifyEmailHtml, type OwnerNotifyEmailDetail } from '../utils/ownerNotifyEmail'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
 import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
@@ -20,6 +21,9 @@ export type ExactCardOwner = {
   slug: string | null
   cardName: string
   ownerUserId: string | null
+  /** Corporate parent login when this is a linked member card. */
+  companyUserId: string | null
+  /** Direct owner + corporate parent emails for linked-card responsible parties. */
   emails: string[]
   displayName: string
 }
@@ -64,10 +68,12 @@ export async function resolveExactCardOwner(profileId: string): Promise<ExactCar
     userId: profile.userId,
     companyUserId: profile.companyUserId,
   })
+  // Include corporate parent email on linked member cards so HQ gets responsible email too.
   const emails = collectProfileNotificationEmails({
     profileEmail: profile.email,
     userEmail: profile.user?.email,
     companyUserEmail: profile.companyUser?.email,
+    includeCompanyUser: Boolean(profile.companyUserId && profile.userId && profile.companyUserId !== profile.userId),
   })
 
   return {
@@ -75,6 +81,7 @@ export async function resolveExactCardOwner(profileId: string): Promise<ExactCar
     slug: profile.slug,
     cardName: profile.name?.trim() || profile.slug || 'your card',
     ownerUserId,
+    companyUserId: profile.companyUserId?.trim() || null,
     emails,
     displayName: profile.user?.name?.trim() || profile.name?.trim() || 'vCard owner',
   }
@@ -97,6 +104,8 @@ export type NotifyExactCardOwnerOpts = {
   sendEmail?: boolean
   emailSubject?: string
   emailHtml?: string
+  /** Extra identity rows in the default owner email (name, phone, etc.). */
+  emailDetails?: OwnerNotifyEmailDetail[]
   href?: string
   /** SMS the card phone (owner channel), audited independently. */
   sendSms?: boolean
@@ -198,18 +207,32 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
 
   if (opts.push) {
     try {
-      const pushResult = await pushService.sendToProfile(
-        owner.profileId,
-        {
-          title: opts.push.title,
-          body: opts.push.body,
-          type: opts.push.type,
-          // Prefer explicit push URL, then CRM/backoffice href — never silent public-card fallback.
-          url: opts.push.url || opts.href || buildOwnerBackofficePath('calendar'),
-        },
-        { audience: 'owners', allowPrivate: true, includeSavers: false }
-      )
-      const sentCount = pushResult?.sent ?? 0
+      const pushPayload = {
+        title: opts.push.title,
+        body: opts.push.body,
+        type: opts.push.type,
+        // Prefer explicit push URL, then CRM/backoffice href — never silent public-card fallback.
+        url: opts.push.url || opts.href || buildOwnerBackofficePath('calendar'),
+      }
+      // Web Push + SW: delivers after first Allow even when backoffice/card tab is closed.
+      const pushTargets = new Set<string>([owner.profileId])
+      if (owner.companyUserId) {
+        const corpCards = await prisma.profile.findMany({
+          where: { userId: owner.companyUserId },
+          select: { id: true },
+          take: 20,
+        })
+        for (const row of corpCards) pushTargets.add(row.id)
+      }
+      let sentCount = 0
+      for (const targetProfileId of pushTargets) {
+        const pushResult = await pushService.sendToProfile(targetProfileId, pushPayload, {
+          audience: 'owners',
+          allowPrivate: true,
+          includeSavers: false,
+        })
+        sentCount += pushResult?.sent ?? 0
+      }
       channels.push = sentCount > 0 ? 'queued' : 'skipped'
       void recordNotificationDeliveryAttempt({
         eventKey,
@@ -218,7 +241,7 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
         profileId: owner.profileId,
         recipientRole: 'card_owner',
         error: sentCount > 0 ? null : 'no_eligible_owner_subscription',
-        meta: { type: opts.push.type, sent: sentCount },
+        meta: { type: opts.push.type, sent: sentCount, targets: [...pushTargets] },
       })
     } catch (error) {
       channels.push = 'failed'
@@ -239,7 +262,15 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
     const subject = opts.emailSubject?.trim() || opts.title
     const html =
       opts.emailHtml ||
-      `<div style="font-family:sans-serif;line-height:1.5"><p>Hello ${escapeHtml(owner.displayName)},</p><p>${escapeHtml(opts.body)}</p><p>vBiz Me</p></div>`
+      buildOwnerNotifyEmailHtml({
+        greetingName: owner.displayName,
+        title: opts.title,
+        body: opts.body,
+        topic,
+        href,
+        cardName: owner.cardName,
+        details: opts.emailDetails,
+      })
     for (const email of owner.emails) {
       void authUtils
         .sendEmail({ receiverMail: email, subject, html })
@@ -334,6 +365,7 @@ export async function notifyUserInbox(opts: {
   sendEmail?: boolean
   emailSubject?: string
   emailHtml?: string
+  emailDetails?: OwnerNotifyEmailDetail[]
   push?: Pick<PushPayload, 'title' | 'body' | 'type' | 'url'>
 }): Promise<{ sent: boolean }> {
   const userId = opts.userId.trim()
@@ -399,9 +431,14 @@ export async function notifyUserInbox(opts: {
     const subject = opts.emailSubject?.trim() || opts.title
     const html =
       opts.emailHtml ||
-      `<div style="font-family:sans-serif;line-height:1.5"><p>Hello ${escapeHtml(
-        user.name?.trim() || 'there'
-      )},</p><p>${escapeHtml(opts.body)}</p><p>vBiz Me</p></div>`
+      buildOwnerNotifyEmailHtml({
+        greetingName: user.name?.trim() || 'there',
+        title: opts.title,
+        body: opts.body,
+        topic,
+        href,
+        details: opts.emailDetails,
+      })
     void authUtils
       .sendEmail({ receiverMail: email, subject, html })
       .catch((error) => logger.error('User email notify failed', { email, error }))
