@@ -608,7 +608,7 @@ const sendToProfile = async (
 
   // Active subscriptions on THIS card for the responsible audience.
   // Follower = opted-in push subscriber (Allow notifications). Save-contact is NOT required.
-  const subscriptions = await prisma.pushSubscription.findMany({
+  let subscriptions = await prisma.pushSubscription.findMany({
     where: {
       profileId,
       isActive: true,
@@ -616,6 +616,38 @@ const sendToProfile = async (
     },
     include: { preferences: true },
   })
+
+  // Owner devices may have been registered on another owned card (or HQ). Still deliver
+  // closed-browser Web Push without requiring the owner to reopen that card's backoffice.
+  if (deliveryAudience === 'owners' && subscriptions.length === 0) {
+    const ownerRow = await prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { userId: true, companyUserId: true },
+    })
+    const ownerUserIds = [ownerRow?.userId, ownerRow?.companyUserId].filter(
+      (id): id is string => Boolean(id)
+    )
+    if (ownerUserIds.length) {
+      const siblingIds = await prisma.profile.findMany({
+        where: {
+          OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }],
+        },
+        select: { id: true },
+        take: 50,
+      })
+      const siblingProfileIds = siblingIds.map((row) => row.id).filter((id) => id !== profileId)
+      if (siblingProfileIds.length) {
+        subscriptions = await prisma.pushSubscription.findMany({
+          where: {
+            profileId: { in: siblingProfileIds },
+            isActive: true,
+            audience: 'owner',
+          },
+          include: { preferences: true },
+        })
+      }
+    }
+  }
 
   let sent = 0
   const seen = options?.seenEndpoints
