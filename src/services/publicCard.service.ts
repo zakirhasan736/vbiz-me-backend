@@ -19,7 +19,7 @@ import { readAboutMeFeaturedMediaUrl, readAboutMeMediaFocusY } from '../utils/ab
 import { PUBLIC_ATTACHMENT_KIND_ALIASES, sameMediaUrl, scoreAttachmentTypeName } from '../utils/attachmentTypeMatch'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { isCorporateEditUnlockedCard } from '../utils/corporateSiblingSync'
-import { CRM_LEAD_ORIGIN_GUEST, isQualifiedCrmLead } from '../utils/crmLeadOrigin'
+import { CRM_LEAD_ORIGIN_GUEST, crmLeadDisplayName, isQualifiedCrmLead } from '../utils/crmLeadOrigin'
 import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { enrichGuestSaveMeta, mergeGuestSaveMeta } from '../utils/guestSaveMeta'
 import { resolveLiveAgentGreetingHostName } from '../utils/liveAgentGreeting'
@@ -2298,7 +2298,7 @@ const saveGuestUser = async (
     submittedAt,
   }
 
-  // Prefer returning an existing save for this guest/email so visitors aren't duplicated.
+  // Prefer an existing save for this guest/contact method so visitors aren't duplicated.
   const existingByGuest = guestId
     ? await prisma.guestUserData.findFirst({
         where: {
@@ -2330,8 +2330,19 @@ const saveGuestUser = async (
           orderBy: { createdAt: 'desc' },
         })
       : null)
+  const existingByPhone =
+    existingByEmail ||
+    (phone
+      ? await prisma.guestUserData.findFirst({
+          where: {
+            profileId: profile.id,
+            phone,
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+      : null)
 
-  const existing = existingByEmail
+  const existing = existingByPhone
   const meta = mergeGuestSaveMeta(existing?.meta, metaBase) as Prisma.InputJsonValue
 
   const guestFields = {
@@ -2361,7 +2372,7 @@ const saveGuestUser = async (
 
     // Matrix §2.A / §18 — name-only → name+email/phone upgrade must fire qualified-lead channels once.
     if (!wasQualified && nowQualified) {
-      const displayName = updated.fullName?.trim() || 'Visitor'
+      const displayName = crmLeadDisplayName(updated)
       const cardName = profile.name?.trim() || 'vBiz card'
       const base = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
       const cardUrl = profile.slug ? buildFrontendPublicCardUrl(base, profile.slug) : base
@@ -2369,11 +2380,11 @@ const saveGuestUser = async (
         .notifyExactCardOwnerInbox({
           profileId: profile.id,
           title: `New lead: ${displayName}`,
-          body: `${displayName}${updated.email ? ` · ${updated.email}` : ''}${
-            updated.phone ? ` · ${updated.phone}` : ''
-          } shared contact details on ${cardName}. Open CRM Leads to review.`,
+          body: `${displayName} shared contact details through ${cardName}.${updated.email ? ` Email: ${updated.email}.` : ''}${
+            updated.phone ? ` Phone: ${updated.phone}.` : ''
+          } Open CRM Leads to follow up.`,
           category: 'contact_save',
-          topic: 'card',
+          topic: 'crm',
           href: buildOwnerBackofficePath('leads'),
           sendEmail: true,
           emailSubject: `CRM Leads: New lead — ${displayName}`,
@@ -2384,9 +2395,9 @@ const saveGuestUser = async (
           ],
           push: {
             title: `${displayName} became a lead`,
-            body: `${displayName}${updated.email ? ` · ${updated.email}` : ''}${
-              updated.phone ? ` · ${updated.phone}` : ''
-            } shared contact details on ${cardName}.`,
+            body: `${displayName} is now a CRM lead from ${cardName}.${updated.email ? ` Email: ${updated.email}.` : ''}${
+              updated.phone ? ` Phone: ${updated.phone}.` : ''
+            }`,
             type: 'save_contact',
             url: buildOwnerBackofficePath('leads'),
           },
@@ -2459,7 +2470,7 @@ const saveGuestUser = async (
   const base = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
   const cardUrl = profile.slug ? buildFrontendPublicCardUrl(base, profile.slug) : base
   const cardName = profile.name?.trim() || 'vBiz card'
-  const displayName = fullName || guestFields.fullName || 'Visitor'
+  const displayName = crmLeadDisplayName({ fullName: guestFields.fullName, email, phone })
   const qualifiedLead = isQualifiedCrmLead({ fullName: displayName, email, phone })
 
   // Exact card owner only. Qualified leads: push + inbox + email + owner SMS.
@@ -2468,12 +2479,14 @@ const saveGuestUser = async (
   void exactOwnerNotifyService
     .notifyExactCardOwnerInbox({
       profileId: profile.id,
-      title: qualifiedLead ? `New lead: ${displayName}` : `${displayName} saved your card`,
+      title: qualifiedLead ? `New CRM lead: ${displayName}` : `${displayName} viewed your contact details`,
       body: qualifiedLead
-        ? `${displayName}${email ? ` · ${email}` : ''}${phone ? ` · ${phone}` : ''} saved their details on ${cardName}. Open CRM Leads to review.`
-        : `${displayName} saved ${cardName} (name only — not a CRM lead yet). Open Contact Saves to review.`,
+        ? `${displayName} shared contact details through ${cardName}.${email ? ` Email: ${email}.` : ''}${
+            phone ? ` Phone: ${phone}.` : ''
+          } Open CRM Leads to follow up.`
+        : `${displayName} interacted with ${cardName}, but did not provide an email address or phone number. This activity stays in Contact Saves.`,
       category: 'contact_save',
-      topic: 'card',
+      topic: qualifiedLead ? 'crm' : 'card',
       href: ownerArea,
       sendEmail: qualifiedLead,
       emailSubject: qualifiedLead
@@ -2485,10 +2498,12 @@ const saveGuestUser = async (
         ...(phone?.trim() ? [{ label: 'Phone', value: phone.trim() }] : []),
       ],
       push: {
-        title: qualifiedLead ? `New lead: ${displayName}` : `${displayName} saved your card`,
+        title: qualifiedLead ? `New CRM lead: ${displayName}` : `New contact activity on ${cardName}`,
         body: qualifiedLead
-          ? `${displayName}${email ? ` · ${email}` : ''}${phone ? ` · ${phone}` : ''} shared contact details on ${cardName}.`
-          : `${displayName} saved ${cardName} from the public card.`,
+          ? `${displayName} shared contact details through ${cardName}.${email ? ` Email: ${email}.` : ''}${
+              phone ? ` Phone: ${phone}.` : ''
+            }`
+          : `${displayName} interacted with ${cardName} without providing an email address or phone number.`,
         type: 'save_contact',
         url: ownerArea,
       },
@@ -2686,15 +2701,15 @@ const saveContactCard = async (
   void exactOwnerNotifyService
     .notifyExactCardOwnerInbox({
       profileId: profile.id,
-      title: 'Visitor saved your card',
-      body: `A visitor downloaded ${cardLabel} to their phone contacts (name unknown — not a CRM lead). Open Contact Saves to review.`,
+      title: `Contact details downloaded from ${cardLabel}`,
+      body: `An anonymous visitor downloaded the contact details from ${cardLabel}. No email address or phone number was provided, so this activity stays in Contact Saves.`,
       category: 'contact_save',
       topic: 'card',
       href: buildOwnerBackofficePath('contacts'),
       sendEmail: false,
       push: {
-        title: 'Visitor saved your card',
-        body: `A visitor downloaded ${cardLabel} to their phone contacts.`,
+        title: `New contact activity on ${cardLabel}`,
+        body: `An anonymous visitor downloaded contact details from ${cardLabel}. No contact information was provided.`,
         type: 'save_contact',
         url: buildOwnerBackofficePath('contacts'),
       },

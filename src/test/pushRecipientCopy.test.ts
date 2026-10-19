@@ -15,7 +15,7 @@ describe('pushRecipientCopy', () => {
     assert.notEqual(fallbackPushTitle('meeting_alert', 'WD'), 'Update')
     assert.match(fallbackPushTitle('service_updates', 'WD'), /Services updated/)
     assert.match(fallbackPushTitle('meeting_alert', 'WD'), /CRM alert/)
-    assert.match(fallbackPushTitle('save_contact', 'WD'), /Visitor saved your card/)
+    assert.match(fallbackPushTitle('save_contact', 'WD'), /New contact activity/)
     assert.match(fallbackPushTitle('viewer_return', 'WD'), /viewed your card again/)
   })
 
@@ -23,6 +23,7 @@ describe('pushRecipientCopy', () => {
     const lead = wishLeadPush({
       type: 'Birthday Wish',
       host: 'Acme',
+      recipientName: 'Jordan',
       date: '2026-10-18',
       time: '10:00 AM',
     })
@@ -33,9 +34,9 @@ describe('pushRecipientCopy', () => {
       time: '10:00 AM',
       timezone: 'America/New_York',
     })
-    assert.match(lead.title, /Wish for you/)
-    assert.match(lead.body, /CRM lead/)
-    assert.match(owner.title, /Card owner/)
+    assert.match(lead.title, /Acme sent you/)
+    assert.match(lead.body, /Hi Jordan/)
+    assert.match(owner.title, /Wish delivered/)
     assert.match(owner.body, /2 leads/)
   })
 
@@ -47,7 +48,7 @@ describe('pushRecipientCopy', () => {
       time: '3:00 PM',
       phase: 'starting',
     })
-    assert.match(schedule.title, /Card owner/)
+    assert.match(schedule.title, /Starting now/)
     assert.match(schedule.body, /Sam/)
 
     const ownerNote = noteOwnerPush({ title: 'Follow up', actorName: 'Alex' })

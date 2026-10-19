@@ -1,6 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
-import { crmOriginFromMeta, guestSaveDashboardVisibleWhere } from '../utils/crmLeadOrigin'
+import { crmLeadDisplayName, crmOriginFromMeta, guestSaveDashboardVisibleWhere } from '../utils/crmLeadOrigin'
 import { leadMetadataFromGuestMeta } from '../utils/guestSaveMeta'
 import { prisma } from '../utils/prisma'
 import type { ListLeadsQuery, PatchLeadBody } from '../zodValidation/adminLeads.zod'
@@ -148,7 +148,7 @@ export function mapGuestSave(row: {
     typeof metaRec.submittedAt === 'string' && metaRec.submittedAt.trim() ? metaRec.submittedAt.trim() : ''
   return {
     id: row.id,
-    fullName: row.fullName || 'Unnamed',
+    fullName: crmLeadDisplayName({ fullName: row.fullName, email: row.email, phone: row.phone }),
     phoneNumber: row.phone || '',
     email: row.email || '',
     privateNotes: admin.privateNotes,

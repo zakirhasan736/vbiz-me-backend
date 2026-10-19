@@ -447,13 +447,14 @@ async function notifyOwnerAnnouncement(
   const notesLine = meeting.notes?.trim() ? `\n\n${meeting.notes.trim()}` : ''
   const scopeLine = meeting.scope === 'group' ? '\n\nThis is a group session for your team cards.' : ''
   const profileId = meeting.profileId || parseGroupProfileIds(meeting.groupProfileIds)[0] || ''
+  const senderName = actor.name?.trim() || actor.email?.trim() || 'vBiz Me'
 
   try {
     await announcementService.create(actor, {
       type: 'info',
       kind: 'announcement',
-      title: `Upcoming session: ${meeting.type}`,
-      body: `You have a ${meeting.type} with admin on ${meeting.date} at ${meeting.time}.${scopeLine}${notesLine}${meetLine}`,
+      title: `Scheduled: ${meeting.type}`,
+      body: `${senderName} scheduled ${meeting.type} with ${meeting.host} for ${meeting.date} at ${meeting.time}.${scopeLine}${notesLine}${meetLine}`,
       status: 'active',
       targetType: 'specific',
       targetEmails: ownerEmails,

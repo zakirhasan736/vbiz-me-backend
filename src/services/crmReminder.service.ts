@@ -500,6 +500,7 @@ async function processCrmEventReminders() {
       const leadPush = wishLeadPush({
         type: event.type,
         host: event.host,
+        recipientName: name === 'there' ? null : name,
         date: event.date,
         time: event.time,
         description,

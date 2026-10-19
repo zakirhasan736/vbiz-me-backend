@@ -3922,16 +3922,22 @@ const patchContact = async (
     const cardName = row.profile?.name?.trim() || 'a vBiz card'
     const frontendBase = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
     const cardUrl = row.profile?.slug ? buildFrontendPublicCardUrl(frontendBase, row.profile.slug) : ''
+    const replyPreview = replyText.length > 160 ? `${replyText.slice(0, 157).trimEnd()}…` : replyText
     void exactOwnerNotifyService
       .notifyVisitorChannels({
         email: row.email,
         phone: row.phone,
-        title: `Reply from ${cardName}`,
-        body: replyText.slice(0, 200),
-        emailHtml: `<div style="font-family:sans-serif;line-height:1.5"><p><strong>${escapeHtml(cardName)}</strong> replied:</p><p>${escapeHtml(replyText)}</p></div>`,
+        title: `${cardName} replied to your message`,
+        body: `${cardName} replied: “${replyPreview}”${cardUrl ? ' Tap to open the card.' : ''}`,
+        emailHtml: `<div style="font-family:sans-serif;line-height:1.5"><p><strong>${escapeHtml(cardName)}</strong> replied to your message:</p><p>${escapeHtml(replyText)}</p>${
+          cardUrl
+            ? `<p><a href="${escapeHtml(cardUrl)}" style="display:inline-block;padding:10px 16px;background:#0f766e;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">Open ${escapeHtml(cardName)}</a></p>`
+            : ''
+        }</div>`,
         smsTopic: 'Note',
         cardName,
         cardUrl,
+        pushUrl: cardUrl || undefined,
         pushType: 'contact_updates',
         // Matrix §10.B — requesting guest gets push when subscribed (own devices only).
         allowPush: true,

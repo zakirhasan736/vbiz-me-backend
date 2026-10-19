@@ -3,6 +3,7 @@ import config from '../configs/config'
 import AppError from '../error/AppError'
 import {
   buildCrmExternalLeadMeta,
+  crmLeadDisplayName,
   guestSaveCrmContactableWhere,
   guestSaveExternalWhere,
   guestSaveOriginWhere,
@@ -174,7 +175,7 @@ export async function listCrmLeads(
   const where: Prisma.GuestUserDataWhereInput = {
     ...scopedProfileFilter(access.profileIds, query.profileId),
     ...guestSaveOriginWhere(query.origin),
-    // Anonymous "Visitor" saves (no name/email/phone) stay on backoffice only.
+    // Submissions without email or phone stay in Contact Saves only; either contact method qualifies for CRM.
     ...guestSaveCrmContactableWhere(),
     ...(tokens.length
       ? {
@@ -723,7 +724,7 @@ export async function searchSchedulePeople(
     results.push({
       id: `guest:${guest.id}`,
       kind: 'guest',
-      name: guest.fullName || 'Guest',
+      name: crmLeadDisplayName(guest),
       email: guest.email || '',
       phone: guest.phone || '',
       profileId: guest.profileId,

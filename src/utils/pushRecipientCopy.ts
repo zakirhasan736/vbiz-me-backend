@@ -30,17 +30,21 @@ export function publicCardAreaPush(input: {
 export function wishLeadPush(input: {
   type: string
   host: string
+  recipientName?: string | null
   date: string
   time: string
   description?: string | null
 }): { title: string; body: string } {
   const type = input.type.trim() || 'Wish'
   const preview = input.description?.trim()
+  const host = input.host.trim() || 'Your contact'
+  const greeting = input.recipientName?.trim() ? `Hi ${input.recipientName.trim()}, ` : ''
   return {
-    title: `Wish for you: ${type}`,
+    title: `${host} sent you a ${type}`,
     body: truncate(
-      preview ||
-        `${input.host.trim() || 'Your contact'} sent you a ${type} (scheduled ${input.date} ${input.time}). This alert is for you as the selected CRM lead.`
+      preview
+        ? `${greeting}${host} sent you a ${type} message: “${preview}”`
+        : `${greeting}${host} sent you a ${type} message on ${input.date} at ${input.time}. Open it to view the details.`
     ),
   }
 }
@@ -58,11 +62,11 @@ export function wishOwnerDeliveredPush(input: {
   const leads = input.leadCount === 1 ? '1 lead' : `${input.leadCount} leads`
   const preview = input.description?.trim()
   return {
-    title: `Card owner · Wish sent: ${type}`,
+    title: `Wish delivered: ${type}`,
     body: truncate(
       preview
-        ? `Your card’s ${type} was delivered to ${leads} at ${input.date} ${input.time} (${input.timezone}). ${preview}`
-        : `Your card’s ${type} was delivered to ${leads} at ${input.date} ${input.time} (${input.timezone}). Open CRM Wish & Outreach for details.`
+        ? `Your ${type} message was delivered to ${leads} on ${input.date} at ${input.time} (${input.timezone}). Message: “${preview}”`
+        : `Your ${type} message was delivered to ${leads} on ${input.date} at ${input.time} (${input.timezone}). Open Wish & Outreach for delivery details.`
     ),
   }
 }
@@ -81,12 +85,12 @@ export function scheduleOwnerPush(input: {
   const join = input.meetLink ? ' Tap to join the meeting.' : ' Open CRM to review.'
   if (input.phase === 'booked') {
     return {
-      title: `Card owner · Session booked: ${type}`,
-      body: truncate(`${type} with ${host} on ${input.date} at ${input.time}.${join}`),
+      title: `Scheduled: ${type}`,
+      body: truncate(`${type} with ${host} is scheduled for ${input.date} at ${input.time}.${join}`),
     }
   }
   return {
-    title: `Card owner · Session starting: ${type}`,
+    title: `Starting now: ${type}`,
     body: truncate(`${type} with ${host} starts now (${input.date} ${input.time}).${join}`),
   }
 }
@@ -148,7 +152,7 @@ export function fallbackPushTitle(type: string, businessName: string): string {
     case 'event_updates':
       return `${name} · Event update`
     case 'business_hours':
-      return `${name} · Profile details updated`
+      return `${name} · Card details updated`
     case 'announcement_updates':
       return `${name} · Announcement`
     case 'meeting_alert':
@@ -156,7 +160,7 @@ export function fallbackPushTitle(type: string, businessName: string): string {
     case 'viewer_return':
       return 'Visitor viewed your card again'
     case 'save_contact':
-      return 'Visitor saved your card'
+      return `${name} · New contact activity`
     default:
       return `${name} · Card section updated`
   }
@@ -178,13 +182,13 @@ export function fallbackPushBody(type: string, businessName: string): string {
     case 'event_updates':
       return `${name} shared an event update. Tap to open their card.`
     case 'business_hours':
-      return `${name} updated profile details. Tap to open their card.`
+      return `${name} updated card details. Tap to open the updated area.`
     case 'meeting_alert':
       return 'Open CRM for details. This alert is for the responsible card owner or assignee — not public followers.'
     case 'viewer_return':
       return 'A visitor opened your card again. Open Contact Saves to review.'
     case 'save_contact':
-      return 'A visitor saved your card to their phone contacts. Open Contact Saves to review.'
+      return `Someone interacted with ${name}'s contact details. Open Contact Saves or CRM Leads for the submitted information.`
     default:
       return `${name} updated a section on their public card. Tap to open it.`
   }

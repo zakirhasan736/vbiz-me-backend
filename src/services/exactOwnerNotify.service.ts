@@ -453,6 +453,8 @@ export async function notifyVisitorChannels(opts: {
   smsTopic?: SmsTopic
   cardName?: string
   cardUrl?: string
+  /** Destination opened from recipient Web Push (usually the source public card). */
+  pushUrl?: string
   pushType?: string
   /**
    * When true, push to devices on cards the recipient directly owns (owner audience).
@@ -482,6 +484,7 @@ export async function notifyVisitorChannels(opts: {
             title: opts.title,
             body: opts.body,
             type: opts.pushType || 'meeting_alert',
+            ...(opts.pushUrl ? { url: opts.pushUrl } : {}),
           },
           { audience: 'owners', allowPrivate: true }
         )

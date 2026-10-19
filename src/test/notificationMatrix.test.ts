@@ -4,7 +4,12 @@ import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import config from '../configs/config'
-import { guestSaveCrmContactableWhere, isQualifiedCrmLead, isRealGuestFullName } from '../utils/crmLeadOrigin'
+import {
+  crmLeadDisplayName,
+  guestSaveCrmContactableWhere,
+  isQualifiedCrmLead,
+  isRealGuestFullName,
+} from '../utils/crmLeadOrigin'
 import {
   cardChangeAlsoReachesSavers,
   defaultPushDeliveryAudience,
@@ -20,23 +25,27 @@ const announcementService = readFileSync(join(here, '../services/announcement.se
 const profileService = readFileSync(join(here, '../services/profile.service.ts'), 'utf8')
 
 describe('notification matrix — CRM lead qualification', () => {
-  it('rejects name-only and anonymous visitor saves as qualified leads', () => {
+  it('rejects name-only but accepts anonymous submissions with a contact method', () => {
     assert.equal(isQualifiedCrmLead({ fullName: 'Alex Buyer', email: null, phone: null }), false)
-    assert.equal(isQualifiedCrmLead({ fullName: 'Visitor', email: 'a@b.com', phone: null }), false)
+    assert.equal(isQualifiedCrmLead({ fullName: 'Visitor', email: 'a@b.com', phone: null }), true)
     assert.equal(isRealGuestFullName('Visitor'), false)
   })
 
-  it('qualifies name + email, name + phone, and name + both', () => {
+  it('qualifies every supported email/phone combination', () => {
     assert.equal(isQualifiedCrmLead({ fullName: 'Alex Buyer', email: 'a@b.com', phone: null }), true)
     assert.equal(isQualifiedCrmLead({ fullName: 'Alex Buyer', email: null, phone: '+15551234567' }), true)
     assert.equal(isQualifiedCrmLead({ fullName: 'Alex Buyer', email: 'a@b.com', phone: '+15551234567' }), true)
+    assert.equal(isQualifiedCrmLead({ fullName: '', email: 'a@b.com', phone: null }), true)
+    assert.equal(isQualifiedCrmLead({ fullName: '', email: null, phone: '+15551234567' }), true)
+    assert.equal(crmLeadDisplayName({ fullName: 'Visitor', email: 'a@b.com' }), 'a@b.com')
+    assert.equal(crmLeadDisplayName({ fullName: '', phone: '+15551234567' }), '+15551234567')
   })
 
-  it('CRM contactable filter requires name plus email or phone', () => {
+  it('CRM contactable filter requires email or phone', () => {
     const where = guestSaveCrmContactableWhere()
-    assert.ok(where.AND)
-    const and = where.AND as unknown[]
-    assert.ok(and.length >= 2)
+    assert.ok(where.OR)
+    const or = where.OR as unknown[]
+    assert.equal(or.length, 2)
   })
 })
 

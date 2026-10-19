@@ -64,33 +64,44 @@ export function isRealGuestFullName(fullName?: string | null): boolean {
 }
 
 /**
- * Qualified CRM lead: real name + (email and/or phone).
- * Name-only saves are contact-save activity, not CRM leads.
+ * Qualified CRM lead: at least one usable contact method.
+ * A name improves presentation but is not required; email-only and phone-only
+ * submissions are actionable leads. Name-only saves remain card activity.
  */
 export function isQualifiedCrmLead(input: {
   fullName?: string | null
   email?: string | null
   phone?: string | null
 }): boolean {
-  if (!isRealGuestFullName(input.fullName)) return false
   const email = (input.email || '').trim()
   const phone = (input.phone || '').trim()
   return Boolean(email || phone)
 }
 
+/** Best human-readable identity for notification titles and CRM rows. */
+export function crmLeadDisplayName(input: {
+  fullName?: string | null
+  email?: string | null
+  phone?: string | null
+}): string {
+  const fullName = (input.fullName || '').trim()
+  if (isRealGuestFullName(fullName)) return fullName
+  const email = (input.email || '').trim()
+  if (email) return email
+  const phone = (input.phone || '').trim()
+  if (phone) return phone
+  return fullName || 'Visitor'
+}
+
 /**
- * CRM-only: require a real name plus email and/or phone.
- * Name-only and anonymous Visitor rows stay on dashboards via {@link guestSaveDashboardVisibleWhere}.
+ * CRM-only: require email and/or phone. Name-only rows stay on the card
+ * dashboard via {@link guestSaveDashboardVisibleWhere}.
  */
 export function guestSaveCrmContactableWhere(): Prisma.GuestUserDataWhereInput {
   return {
-    AND: [
-      { fullName: { not: null } },
-      { NOT: { fullName: { equals: 'Visitor', mode: 'insensitive' } } },
-      { NOT: { fullName: { equals: '' } } },
-      {
-        OR: [{ email: { not: null } }, { phone: { not: null } }],
-      },
+    OR: [
+      { AND: [{ email: { not: null } }, { NOT: { email: { equals: '' } } }] },
+      { AND: [{ phone: { not: null } }, { NOT: { phone: { equals: '' } } }] },
     ],
   }
 }

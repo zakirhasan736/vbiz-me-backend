@@ -613,16 +613,20 @@ const createPublicRequest = async (input: CreatePublicRequestInput) => {
   notifyCardPush(
     profile.id,
     {
-      title: 'New 1-on-1 request',
-      body: `${guestName} requested a 1-on-1 meeting.`,
+      title: `New 1-on-1 request from ${guestName}`,
+      body: `${guestName} requested a 1-on-1 through ${stakeholders.cardName}.${guestEmail ? ` Email: ${guestEmail}.` : ''}${
+        guestPhone ? ` Phone: ${guestPhone}.` : ''
+      }${messageLine ? ` Message: “${messageLine.slice(0, 120)}”` : ' Open 1-on-1 Requests to respond.'}`,
     },
     stakeholders.slug
   )
 
   await createStakeholderInboxNotice({
     emails: stakeholders.emails,
-    title: `New 1-on-1: ${guestName}`,
-    body: `${guestName} (${guestEmail})${guestPhone ? ` · ${guestPhone}` : ''} requested a 1-on-1${messageLine ? `: ${messageLine}` : '.'}`,
+    title: `New 1-on-1 request from ${guestName}`,
+    body: `${guestName} requested a 1-on-1 through ${stakeholders.cardName}. Email: ${guestEmail}.${
+      guestPhone ? ` Phone: ${guestPhone}.` : ''
+    }${messageLine ? ` Message: “${messageLine}”` : ' Open 1-on-1 Requests to propose a time.'}`,
     profileId: profile.id,
     slug: stakeholders.slug,
     requestId: row.id,
