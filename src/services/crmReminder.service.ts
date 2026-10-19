@@ -3,6 +3,7 @@ import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
+import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
 import { noteOwnerPush, scheduleOwnerPush, wishLeadPush, wishOwnerDeliveredPush } from '../utils/pushRecipientCopy'
 import announcementService from './announcement.service'
 import crmEventService from './crmEvent.service'
@@ -238,7 +239,7 @@ async function processWorkNoteReminders(leadMinutes: number) {
     for (const recipient of recipients) {
       await notifyEmails([recipient.email], title, body, {
         workNoteId: note.id,
-        href: '/crm',
+        href: buildOwnerBackofficePath('crm_notes'),
         ...(recipient.userId ? { userId: recipient.userId } : {}),
         ...(recipient.profileId || note.profileId ? { profileId: recipient.profileId || note.profileId || '' } : {}),
       })
@@ -257,7 +258,7 @@ async function processWorkNoteReminders(leadMinutes: number) {
           title: notePush.title,
           body: notePush.body,
           type: 'meeting_alert',
-          url: '/crm',
+          url: buildOwnerBackofficePath('crm_notes'),
         },
         { audience: 'owners', allowPrivate: true }
       )
@@ -351,7 +352,7 @@ async function processMeetingReminders() {
 
     await notifyEmails(recipientList, `Upcoming: ${meeting.type}`, receiverBody, {
       meetingId: meeting.id,
-      href: '/crm',
+      href: buildOwnerBackofficePath('calendar'),
     })
 
     if (config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
@@ -388,7 +389,7 @@ async function processMeetingReminders() {
       title: schedulePush.title,
       body: schedulePush.body,
       type: 'meeting_alert' as const,
-      url: meeting.meetLink || '/crm',
+      url: meeting.meetLink || buildOwnerBackofficePath('calendar'),
     }
 
     if (meeting.scope === 'group') {
@@ -410,7 +411,7 @@ async function processMeetingReminders() {
         `Your ${meeting.type} with ${meeting.host} starts at ${meeting.date} ${meeting.time}.${joinHint}`,
         {
           meetingId: meeting.id,
-          href: '/crm',
+          href: buildOwnerBackofficePath('calendar'),
           userId: meeting.createdBy.id,
         }
       )
@@ -536,7 +537,7 @@ async function processCrmEventReminders() {
           confirmBody,
           {
             crmEventId: event.id,
-            href: '/crm',
+            href: buildOwnerBackofficePath('wish'),
             profileId,
             topic: 'crm',
             ...(resolved.ownerUserId ? { userId: resolved.ownerUserId } : {}),
@@ -550,7 +551,7 @@ async function processCrmEventReminders() {
           title: ownerWishPush.title,
           body: ownerWishPush.body,
           type: 'meeting_alert',
-          url: '/crm',
+          url: buildOwnerBackofficePath('wish'),
         },
         { audience: 'owners', allowPrivate: true }
       )
@@ -564,7 +565,7 @@ async function processCrmEventReminders() {
         `Your ${event.type} was sent at ${event.date} ${event.time} (${tz}) to ${leads.length || 1} lead(s).${messageSummary}`,
         {
           crmEventId: event.id,
-          href: '/crm',
+          href: buildOwnerBackofficePath('wish'),
           topic: 'crm',
           userId: event.createdBy.id,
         },

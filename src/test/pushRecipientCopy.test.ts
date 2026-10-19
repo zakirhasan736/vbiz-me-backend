@@ -15,6 +15,8 @@ describe('pushRecipientCopy', () => {
     assert.notEqual(fallbackPushTitle('meeting_alert', 'WD'), 'Update')
     assert.match(fallbackPushTitle('service_updates', 'WD'), /Services updated/)
     assert.match(fallbackPushTitle('meeting_alert', 'WD'), /CRM alert/)
+    assert.match(fallbackPushTitle('save_contact', 'WD'), /Visitor saved your card/)
+    assert.match(fallbackPushTitle('viewer_return', 'WD'), /viewed your card again/)
   })
 
   it('labels wish lead vs card-owner delivery roles', () => {

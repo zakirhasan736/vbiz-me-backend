@@ -4,6 +4,7 @@ import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
+import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
 import type { SmsTopic } from '../utils/smsMessage'
 import announcementService from './announcement.service'
 import { recordNotificationDeliveryAttempt } from './notificationDeliveryAudit.service'
@@ -204,7 +205,7 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
           body: opts.push.body,
           type: opts.push.type,
           // Prefer explicit push URL, then CRM/backoffice href — never silent public-card fallback.
-          url: opts.push.url || opts.href || '/crm',
+          url: opts.push.url || opts.href || buildOwnerBackofficePath('calendar'),
         },
         { audience: 'owners', allowPrivate: true, includeSavers: false }
       )
@@ -387,7 +388,7 @@ export async function notifyUserInbox(opts: {
           title: opts.push.title,
           body: opts.push.body,
           type: opts.push.type,
-          url: opts.push.url || opts.href || '/crm',
+          url: opts.push.url || opts.href || buildOwnerBackofficePath('crm_notes'),
         },
         { audience: 'owners', allowPrivate: true }
       )

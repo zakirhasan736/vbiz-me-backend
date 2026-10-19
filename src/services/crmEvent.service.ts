@@ -13,6 +13,7 @@ import {
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
+import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
 import { DEFAULT_CAMPAIGN_TIMEZONE, normalizeIanaTimeZone } from '../utils/scheduleTimezone'
 import type {
   CreateCrmEventInput,
@@ -579,7 +580,7 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
         body: scheduledBody,
         category: 'event',
         topic: 'crm',
-        href: '/crm',
+        href: buildOwnerBackofficePath('wish'),
         // Confirmation email to owner that the job is queued — not the public wish delivery.
         sendEmail: true,
         emailSubject: `Scheduled: ${row.type} — ${row.date} ${row.time}`,

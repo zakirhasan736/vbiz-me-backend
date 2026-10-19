@@ -33,6 +33,7 @@ import { formatProfileLocation, hasProfileLocationParts } from '../utils/persona
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
 import { resolveStoredProductPricing } from '../utils/productPricing'
+import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
 import {
   buildReturningViewCopy,
   formatReturningViewWhen,
@@ -48,7 +49,7 @@ import { hasFullSaveContactInfo } from '../utils/smsMessage'
 import exactOwnerNotifyService from './exactOwnerNotify.service'
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
-import pushService, { mediaFromProfile } from './push.service'
+import { mediaFromProfile } from './push.service'
 import { mergeSeoSettingsWithDefaults } from './seoMetadata.service'
 import smsService from './sms.service'
 
@@ -2370,22 +2371,25 @@ const saveGuestUser = async (
           title: `New lead: ${displayName}`,
           body: `${displayName}${updated.email ? ` · ${updated.email}` : ''}${
             updated.phone ? ` · ${updated.phone}` : ''
-          } shared contact details on ${cardName}.`,
+          } shared contact details on ${cardName}. Open CRM Leads to review.`,
           category: 'contact_save',
           topic: 'card',
+          href: buildOwnerBackofficePath('leads'),
           sendEmail: true,
           push: {
-            title: 'New contact saved',
-            body: `${displayName} shared their details on your card.`,
+            title: `${displayName} became a lead`,
+            body: `${displayName}${updated.email ? ` · ${updated.email}` : ''}${
+              updated.phone ? ` · ${updated.phone}` : ''
+            } shared contact details on ${cardName}.`,
             type: 'save_contact',
-            url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
+            url: buildOwnerBackofficePath('leads'),
           },
         })
         .catch((error) => logger.error('Owner contact-save upgrade notify failed', { profileId: profile.id, error }))
       void smsService.notifyProfilePhone(
         profile.id,
         'Saved contact',
-        `${displayName} saved their details on your card.`
+        `${displayName} shared contact details on your card.`
       )
       if (
         hasFullSaveContactInfo({
@@ -2454,27 +2458,35 @@ const saveGuestUser = async (
 
   // Exact card owner only. Qualified leads: push + inbox + email + owner SMS.
   // Name-only / unqualified: contact-save push + card inbox — never CRM lead email/SMS.
+  const ownerArea = qualifiedLead ? buildOwnerBackofficePath('leads') : buildOwnerBackofficePath('contacts')
   void exactOwnerNotifyService
     .notifyExactCardOwnerInbox({
       profileId: profile.id,
-      title: qualifiedLead ? `New lead: ${displayName}` : `Contact saved: ${displayName}`,
+      title: qualifiedLead ? `New lead: ${displayName}` : `${displayName} saved your card`,
       body: qualifiedLead
-        ? `${displayName}${email ? ` · ${email}` : ''}${phone ? ` · ${phone}` : ''} saved their details on ${cardName}.`
-        : `${displayName} saved your card (name only — not a CRM lead).`,
+        ? `${displayName}${email ? ` · ${email}` : ''}${phone ? ` · ${phone}` : ''} saved their details on ${cardName}. Open CRM Leads to review.`
+        : `${displayName} saved ${cardName} (name only — not a CRM lead yet). Open Contact Saves to review.`,
       category: 'contact_save',
       topic: 'card',
+      href: ownerArea,
       sendEmail: qualifiedLead,
       push: {
-        title: qualifiedLead ? 'New contact saved' : 'Card saved',
-        body: qualifiedLead ? `${displayName} shared their details on your card.` : `${displayName} saved your card.`,
+        title: qualifiedLead ? `New lead: ${displayName}` : `${displayName} saved your card`,
+        body: qualifiedLead
+          ? `${displayName}${email ? ` · ${email}` : ''}${phone ? ` · ${phone}` : ''} shared contact details on ${cardName}.`
+          : `${displayName} saved ${cardName} from the public card.`,
         type: 'save_contact',
-        url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
+        url: ownerArea,
       },
     })
     .catch((error) => logger.error('Owner contact-save inbox notify failed', { profileId: profile.id, error }))
 
   if (qualifiedLead) {
-    void smsService.notifyProfilePhone(profile.id, 'Saved contact', `${displayName} saved their details on your card.`)
+    void smsService.notifyProfilePhone(
+      profile.id,
+      'Saved contact',
+      `${displayName} shared contact details on your card.`
+    )
   }
 
   if (qualifiedLead && hasFullSaveContactInfo({ name: displayName, email, phone })) {
@@ -2583,15 +2595,18 @@ const saveNote = async (profileId: string, content: string, options: PublicNoteO
     .notifyExactCardOwnerInbox({
       profileId: profile.id,
       title: `New note from ${authorLabel}`,
-      body: notePreview || `${authorLabel} left a note on your card.`,
+      body: notePreview
+        ? `${authorLabel} wrote: “${notePreview}”. Open Contact Saves → Lead Notes to reply.`
+        : `${authorLabel} left a note on your card. Open Contact Saves → Lead Notes to reply.`,
       category: 'note',
       topic: 'card',
+      href: buildOwnerBackofficePath('contact_notes'),
       sendEmail: true,
       push: {
         title: `Note from ${authorLabel}`,
-        body: notePreview || 'Open your card to read and reply.',
-        type: 'contact_updates',
-        url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
+        body: notePreview ? `${authorLabel}: “${notePreview}”` : `${authorLabel} left a note on your public card.`,
+        type: 'save_contact',
+        url: buildOwnerBackofficePath('contact_notes'),
       },
     })
     .catch((error) => logger.error('Owner note inbox notify failed', { profileId: profile.id, error }))
@@ -2648,20 +2663,22 @@ const saveContactCard = async (
   )
   // Anonymous VCF download = unqualified contact-save activity (matrix §2.B / §18):
   // push + card back-office only — no email, no lead SMS, no CRM lead.
-  pushService.notifyProfileUpdate(profile.id, {
-    type: 'save_contact',
-    title: 'Contact saved',
-    body: `Someone saved ${profile.name?.trim() || 'your card'} to their phone.`,
-    url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
-  })
+  const cardLabel = profile.name?.trim() || profile.companyName?.trim() || 'your card'
   void exactOwnerNotifyService
     .notifyExactCardOwnerInbox({
       profileId: profile.id,
-      title: 'Contact saved to phone',
-      body: `Someone saved ${profile.name?.trim() || 'your card'} to their phone (not a CRM lead).`,
+      title: 'Visitor saved your card',
+      body: `A visitor downloaded ${cardLabel} to their phone contacts (name unknown — not a CRM lead). Open Contact Saves to review.`,
       category: 'contact_save',
       topic: 'card',
+      href: buildOwnerBackofficePath('contacts'),
       sendEmail: false,
+      push: {
+        title: 'Visitor saved your card',
+        body: `A visitor downloaded ${cardLabel} to their phone contacts.`,
+        type: 'save_contact',
+        url: buildOwnerBackofficePath('contacts'),
+      },
     })
     .catch((error) => logger.error('Owner VCF-save inbox notify failed', { profileId: profile.id, error }))
   // Do not emit dashboard:kpi save — that KPI tracks guest form submissions (GuestUserData), not VCF downloads.
@@ -2837,11 +2854,11 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
     .notifyExactCardOwnerInbox({
       profileId: profile.id,
       title,
-      body,
+      body: `${body} Open Contact Saves to review.`,
       category: 'contact_save',
       topic: 'card',
       eventKey,
-      href: profile.slug ? `/vcards/edit/home/${profile.id}` : '/',
+      href: buildOwnerBackofficePath('contacts'),
       sendEmail: true,
       sendSms: true,
       smsTopic: 'Repeat view',
@@ -2850,7 +2867,7 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
         title,
         body,
         type: 'viewer_return',
-        url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
+        url: buildOwnerBackofficePath('contacts'),
       },
     })
     .then(async (result) => {

@@ -15,9 +15,9 @@ export function formatReturningViewWhen(at: Date = new Date(), timeZone = RETURN
 }
 
 export function buildReturningViewCopy(input: { guestName: string; when: string }) {
-  const guestName = input.guestName.trim() || 'A saved contact'
-  const title = 'Returning contact viewed your card again'
-  const body = `${guestName} viewed your vBiz Me card again on ${input.when}.`
+  const guestName = input.guestName.trim() || 'A visitor'
+  const title = `${guestName} viewed your card again`
+  const body = `${guestName} opened your vBiz Me card again on ${input.when}.`
   return { title, body, guestName }
 }
 

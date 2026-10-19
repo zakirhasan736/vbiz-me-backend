@@ -154,9 +154,9 @@ export function fallbackPushTitle(type: string, businessName: string): string {
     case 'meeting_alert':
       return 'CRM alert'
     case 'viewer_return':
-      return 'Returning contact'
+      return 'Visitor viewed your card again'
     case 'save_contact':
-      return 'Contact saved'
+      return 'Visitor saved your card'
     default:
       return `${name} · Card section updated`
   }
@@ -182,9 +182,9 @@ export function fallbackPushBody(type: string, businessName: string): string {
     case 'meeting_alert':
       return 'Open CRM for details. This alert is for the responsible card owner or assignee — not public followers.'
     case 'viewer_return':
-      return 'A saved contact viewed your card again.'
+      return 'A visitor opened your card again. Open Contact Saves to review.'
     case 'save_contact':
-      return 'Someone saved your card to their phone.'
+      return 'A visitor saved your card to their phone contacts. Open Contact Saves to review.'
     default:
       return `${name} updated a section on their public card. Tap to open it.`
   }

@@ -22,8 +22,8 @@ const announcementService = readFileSync(join(here, '../services/announcement.se
 describe('returning saved guest — copy and claim helpers', () => {
   it('builds the required owner-facing message', () => {
     const copy = buildReturningViewCopy({ guestName: 'AB', when: 'Oct 18, 2026, 9:00 AM' })
-    assert.equal(copy.title, 'Returning contact viewed your card again')
-    assert.match(copy.body, /AB viewed your vBiz Me card again on Oct 18, 2026, 9:00 AM/)
+    assert.equal(copy.title, 'AB viewed your card again')
+    assert.match(copy.body, /AB opened your vBiz Me card again on Oct 18, 2026, 9:00 AM/)
   })
 
   it('formats timestamps in America/New_York, not server-local', () => {

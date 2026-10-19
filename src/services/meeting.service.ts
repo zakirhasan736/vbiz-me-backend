@@ -9,6 +9,7 @@ import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
 import { exactOwnerPushProfileIds } from '../utils/pushAudience'
+import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
 import { scheduleOwnerPush } from '../utils/pushRecipientCopy'
 import { computeStartsAt as computeStartsAtZoned, DEFAULT_CAMPAIGN_TIMEZONE } from '../utils/scheduleTimezone'
 import type {
@@ -367,7 +368,7 @@ function meetingAlertPayload(meeting: MeetingRow) {
     title: copy.title,
     body: copy.body,
     type: 'meeting_alert' as const,
-    url: meeting.meetLink || '/crm',
+    url: meeting.meetLink || buildOwnerBackofficePath('calendar'),
   }
 }
 

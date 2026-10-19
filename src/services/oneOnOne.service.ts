@@ -1,5 +1,5 @@
 import config from '../configs/config'
-import { buildFrontendPublicCardPath, buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
+import { buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
 import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import authUtils from '../utils/auth.utils'
@@ -7,6 +7,7 @@ import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
 import { exactOwnerPushProfileIds } from '../utils/pushAudience'
+import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
 import { DEFAULT_CAMPAIGN_TIMEZONE, zonedLocalDateTimeToUtc } from '../utils/scheduleTimezone'
 import type {
   CancelMeetingInput,
@@ -423,7 +424,7 @@ async function createStakeholderInboxNotice(opts: {
           // Card back-office (not CRM lead feed) — matrix §3 / §18 guest 1-on-1.
           category: 'event',
           topic: 'card',
-          href: opts.slug ? `/vcards/edit/home/${opts.profileId}` : '/',
+          href: buildOwnerBackofficePath('one_on_one', opts.profileId),
           profileId: opts.profileId,
           ...(userId ? { userId } : {}),
           ...(opts.slug ? { slug: opts.slug } : {}),
@@ -450,7 +451,7 @@ function notifyCardPush(
       title: payload.title,
       body: payload.body,
       type: 'meeting_alert',
-      url: payload.url || (slug ? buildFrontendPublicCardPath(slug) : undefined),
+      url: payload.url || buildOwnerBackofficePath('one_on_one', profileId),
     },
     { audience: 'owners', allowPrivate: true }
   )
@@ -532,7 +533,7 @@ async function notifyOwnerMeetingPush(
         title: payload.title,
         body: payload.body,
         type: 'meeting_alert',
-        url: payload.url || (slug ? buildFrontendPublicCardPath(slug) : undefined),
+        url: payload.url || buildOwnerBackofficePath('one_on_one', profileId),
       },
       { audience: 'owners', allowPrivate: true }
     )

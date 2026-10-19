@@ -266,6 +266,8 @@ export async function createWorkNote(actor: CrmActor, access: CrmAccessContext, 
 
   const { default: exactOwnerNotifyService } = await import('./exactOwnerNotify.service')
   const { noteAssigneePush, noteOwnerPush } = await import('../utils/pushRecipientCopy')
+  const { buildOwnerBackofficePath } = await import('../utils/pushOwnerDeepLink')
+  const crmNotesPath = buildOwnerBackofficePath('crm_notes')
   const preview = (description || title).trim().slice(0, 180)
   const actorUser = await prisma.user.findUnique({
     where: { id: actor.id },
@@ -290,13 +292,13 @@ export async function createWorkNote(actor: CrmActor, access: CrmAccessContext, 
         body: ownerCopy.body,
         category: 'note',
         topic: 'crm',
-        href: '/crm',
+        href: crmNotesPath,
         sendEmail: true,
         push: {
           title: ownerCopy.title,
           body: ownerCopy.body,
           type: 'meeting_alert',
-          url: '/crm',
+          url: crmNotesPath,
         },
       })
       .catch(() => undefined)
@@ -313,13 +315,13 @@ export async function createWorkNote(actor: CrmActor, access: CrmAccessContext, 
         body: assigneeCopy.body,
         category: 'note',
         topic: 'crm',
-        href: '/crm',
+        href: crmNotesPath,
         sendEmail: true,
         push: {
           title: assigneeCopy.title,
           body: assigneeCopy.body,
           type: 'meeting_alert',
-          url: '/crm',
+          url: crmNotesPath,
         },
       })
       .catch(() => undefined)
