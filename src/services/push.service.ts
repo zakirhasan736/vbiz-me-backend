@@ -624,9 +624,7 @@ const sendToProfile = async (
       where: { id: profileId },
       select: { userId: true, companyUserId: true },
     })
-    const ownerUserIds = [ownerRow?.userId, ownerRow?.companyUserId].filter(
-      (id): id is string => Boolean(id)
-    )
+    const ownerUserIds = [ownerRow?.userId, ownerRow?.companyUserId].filter((id): id is string => Boolean(id))
     if (ownerUserIds.length) {
       const siblingIds = await prisma.profile.findMany({
         where: {
