@@ -442,7 +442,7 @@ async function createStakeholderInboxNotice(opts: {
 function notifyCardPush(
   profileId: string,
   payload: { title: string; body: string; url?: string },
-  slug?: string | null
+  _slug?: string | null
 ) {
   // Owner-device only — savers who follow this public card must not get owner CRM/1-on-1 alerts.
   pushService.notifyProfileUpdate(
@@ -523,7 +523,7 @@ async function notifyOwnerMeetingPush(
   profileId: string,
   _ownerEmails: string[],
   payload: { title: string; body: string; url?: string },
-  slug?: string | null
+  _slug?: string | null
 ) {
   // Exact card only — never fan out to sibling corporate cards by email.
   for (const id of exactOwnerPushProfileIds({ primaryProfileId: profileId })) {
