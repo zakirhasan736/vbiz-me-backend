@@ -273,16 +273,6 @@ async function notifyGuestScheduleSms(input: {
   return sent
 }
 
-/** @deprecated Use notifyGuestScheduleSms — kept name for existing call sites. */
-async function notifySchedulePerson(input: {
-  guestUserDataId?: string | null
-  profileId?: string | null
-  groupProfileIds?: unknown
-  detail: string
-}) {
-  return notifyGuestScheduleSms(input)
-}
-
 /**
  * Guest/lead only: “someone scheduled with you…”.
  * Card owner is notified separately via notifyOwnerScheduleAlert (tier quota).
