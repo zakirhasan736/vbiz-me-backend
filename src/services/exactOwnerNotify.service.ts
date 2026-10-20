@@ -107,6 +107,8 @@ export type NotifyExactCardOwnerOpts = {
   sendSms?: boolean
   smsTopic?: SmsTopic
   smsDetail?: string
+  /** Optional deep link in the SMS body (wish view, calendar, etc.) — keeps MMS out. */
+  smsLinkUrl?: string
 }
 
 export type NotifyExactCardOwnerResult = {
@@ -320,7 +322,8 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
       const smsResult = await smsService.notifyProfilePhone(
         owner.profileId,
         opts.smsTopic || 'Notice',
-        opts.smsDetail || opts.body
+        opts.smsDetail || opts.body,
+        { linkUrl: opts.smsLinkUrl || opts.href || opts.push?.url }
       )
       channels.sms = smsResult.sent ? 'sent' : 'skipped'
       void recordNotificationDeliveryAttempt({

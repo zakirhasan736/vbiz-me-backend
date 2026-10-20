@@ -1,10 +1,13 @@
-/** Same-visit dedupe window. Later visits (same day or another day) still notify. */
-export const RETURNING_SAVED_GUEST_COOLDOWN_MS = 30 * 60 * 1000
+/** Calendar-day dedupe (Eastern). Same viewer → one owner alert per day; next day can notify again. */
+export const RETURNING_VIEW_DISPLAY_TZ = 'America/New_York'
 
 export const RETURNING_SAVED_GUEST_EVENT = 'returning_saved_guest'
 
-/** Display timezone for return-view copy (USA business default). */
-export const RETURNING_VIEW_DISPLAY_TZ = 'America/New_York'
+/**
+ * Short race window only — same-day uniqueness is enforced with `returningGuestDayKey`.
+ * @deprecated Prefer day-key claims; kept for concurrent create races.
+ */
+export const RETURNING_SAVED_GUEST_COOLDOWN_MS = 2 * 60 * 1000
 
 export function formatReturningViewWhen(at: Date = new Date(), timeZone = RETURNING_VIEW_DISPLAY_TZ): string {
   return at.toLocaleString('en-US', {
@@ -12,6 +15,16 @@ export function formatReturningViewWhen(at: Date = new Date(), timeZone = RETURN
     dateStyle: 'medium',
     timeStyle: 'short',
   })
+}
+
+/** YYYY-MM-DD in the display timezone — one owner alert (SMS/email/push/inbox) per viewer per this day. */
+export function returningGuestDayKey(at: Date = new Date(), timeZone = RETURNING_VIEW_DISPLAY_TZ): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(at)
 }
 
 export function buildReturningViewCopy(input: { guestName: string; when: string }) {
@@ -26,7 +39,7 @@ export function returningGuestEventKey(profileId: string, guestId: string, event
 }
 
 /**
- * After concurrent creates, keep only the earliest claim in the cooldown window.
+ * After concurrent creates, keep only the earliest claim for that day.
  * Returns true when `claimId` won the race.
  */
 export function wonReturningGuestClaim(claimId: string, siblingIdsOldestFirst: string[]): boolean {

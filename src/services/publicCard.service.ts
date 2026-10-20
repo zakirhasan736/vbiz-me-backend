@@ -39,6 +39,7 @@ import {
   formatReturningViewWhen,
   RETURNING_SAVED_GUEST_COOLDOWN_MS,
   RETURNING_SAVED_GUEST_EVENT,
+  returningGuestDayKey,
   returningGuestEventKey,
   wonReturningGuestClaim,
 } from '../utils/returningSavedGuest'
@@ -2794,13 +2795,14 @@ type ReturningGuestProfile = {
 /**
  * Notify the exact card owner when a recognized saved contact returns.
  * Recognition: GuestUserData guestId OR prior save_guest_user / save_contact_download.
- * Cooldown prevents refresh spam; later genuine visits (same day or next) still notify.
+ * Same viewer → one owner alert per Eastern calendar day; next day can notify again.
  * Four channels (push, email, SMS, inbox) are dispatched independently with audit rows.
  */
 const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId: string, _firstViewAt: Date) => {
-  const cooldownCutoff = new Date(Date.now() - RETURNING_SAVED_GUEST_COOLDOWN_MS)
+  const dayKey = returningGuestDayKey()
+  const raceCutoff = new Date(Date.now() - RETURNING_SAVED_GUEST_COOLDOWN_MS)
 
-  const [savedGuest, saveFormEvent, saveVcfEvent, recentNotice] = await Promise.all([
+  const [savedGuest, saveFormEvent, saveVcfEvent, sameDayNotice] = await Promise.all([
     prisma.guestUserData.findFirst({
       where: {
         profileId: profile.id,
@@ -2825,32 +2827,33 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
       },
       select: { id: true },
     }),
+    // One owner alert per saved viewer per Eastern calendar day (not per refresh / not 10 texts).
     prisma.eventLog.findFirst({
       where: {
         profileId: profile.id,
         eventType: RETURNING_SAVED_GUEST_EVENT,
-        createdAt: { gt: cooldownCutoff },
-        payload: { path: ['guestId'], equals: guestId },
+        AND: [{ payload: { path: ['guestId'], equals: guestId } }, { payload: { path: ['dayKey'], equals: dayKey } }],
       },
       select: { id: true },
     }),
   ])
 
   const recognized = Boolean(savedGuest || saveFormEvent || saveVcfEvent)
-  if (!recognized || recentNotice) return
+  if (!recognized || sameDayNotice) return
 
   const { title, body, guestName } = buildReturningViewCopy({
     guestName: savedGuest?.fullName?.trim() || 'A saved contact',
     when: formatReturningViewWhen(),
   })
 
-  // Claim the visit first, then resolve concurrent races by keeping the oldest claim.
+  // Claim the visit first, then resolve concurrent races by keeping the oldest claim for this day.
   const claim = await prisma.eventLog.create({
     data: {
       profileId: profile.id,
       eventType: RETURNING_SAVED_GUEST_EVENT,
       payload: {
         guestId,
+        dayKey,
         guestUserId: savedGuest?.id || null,
         guestName,
         guestEmail: savedGuest?.email || null,
@@ -2865,8 +2868,16 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
     where: {
       profileId: profile.id,
       eventType: RETURNING_SAVED_GUEST_EVENT,
-      createdAt: { gt: cooldownCutoff },
-      payload: { path: ['guestId'], equals: guestId },
+      OR: [
+        {
+          AND: [{ payload: { path: ['guestId'], equals: guestId } }, { payload: { path: ['dayKey'], equals: dayKey } }],
+        },
+        // Race: two tabs before dayKey is readable — keep oldest in the short window.
+        {
+          createdAt: { gt: raceCutoff },
+          payload: { path: ['guestId'], equals: guestId },
+        },
+      ],
     },
     orderBy: { createdAt: 'asc' },
     select: { id: true },

@@ -492,7 +492,16 @@ async function processCrmEventReminders() {
     })
     const confirmBody = `${ownerWishPush.body}${attachmentSummary}`
 
-    // Selected leads: email + push at scheduled USA local time (their own owner devices only).
+    // Selected leads: email + SMS with a view link (never MMS photo/video — cheaper SMS rate).
+    const firstMediaUrl = attachments.find((row) => /^https?:\/\//i.test(row.url || ''))?.url || ''
+    const wishCard = event.profileId
+      ? await prisma.profile.findUnique({ where: { id: event.profileId }, select: { slug: true, name: true } })
+      : null
+    const wishCardUrl = wishCard?.slug
+      ? `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}/vCard/${encodeURIComponent(wishCard.slug)}`
+      : `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}`
+    const leadWishLink = firstMediaUrl || wishCardUrl
+
     for (const lead of leads) {
       const email = lead.email?.trim().toLowerCase() || ''
       const name = lead.fullName?.trim() || event.recipientName?.trim() || 'there'
@@ -519,59 +528,64 @@ async function processCrmEventReminders() {
           email: email || null,
           phone: lead.phone,
           title: leadPush.title,
-          body: leadPush.body,
+          body: `${leadPush.body} View: ${leadWishLink}`,
           emailHtml: html,
-          smsTopic: 'Schedule',
+          smsTopic: 'Wish',
+          cardName: wishCard?.name || event.host || 'vBiz card',
+          cardUrl: leadWishLink,
           pushType: 'meeting_alert',
           allowPush: true,
         })
         .catch((error) => logger.error('CRM wish lead notify failed', { error, leadId: lead.id, crmEventId: event.id }))
     }
 
-    // Card owner: CRM in-app + owner-only Web Push confirmation.
+    // Card owner only: inbox + email + push + SMS (link to view wish — no MMS media).
+    const wishHref = buildOwnerBackofficePath('wish')
+    const wishAbsoluteUrl = `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}${wishHref}`
     for (const profileId of ownerProfileIds) {
-      const resolved = await resolveProfileEmails(profileId)
-      if (resolved.emails.length) {
+      void exactOwnerNotifyService
+        .notifyExactCardOwnerInbox({
+          profileId,
+          title: ownerWishPush.title,
+          body: confirmBody,
+          category: 'event',
+          topic: 'crm',
+          eventKey: `crm_wish_delivered:${event.id}:${profileId}`,
+          href: wishHref,
+          sendEmail: true,
+          sendSms: true,
+          smsTopic: 'Wish',
+          smsDetail: `${event.type} wish was sent. Open the link to view it.`,
+          smsLinkUrl: wishAbsoluteUrl,
+          push: {
+            title: ownerWishPush.title,
+            body: ownerWishPush.body,
+            type: 'meeting_alert',
+            url: wishHref,
+          },
+        })
+        .catch((error) => logger.error('CRM wish owner notify failed', { error, profileId, crmEventId: event.id }))
+    }
+
+    // Confirm the booker only when they are the responsible card owner — never staff admin copies.
+    const senderEmail = event.createdBy?.email?.trim().toLowerCase() || ''
+    if (senderEmail && event.createdBy) {
+      const ownerEmailSets = await Promise.all(ownerProfileIds.map((profileId) => resolveProfileEmails(profileId)))
+      const ownerEmails = new Set(ownerEmailSets.flatMap((entry) => entry.emails))
+      if (ownerEmails.has(senderEmail)) {
         await notifyEmails(
-          resolved.emails,
-          ownerWishPush.title,
-          confirmBody,
+          [senderEmail],
+          `Your wish was delivered: ${event.type}`,
+          `Your ${event.type} was sent at ${event.date} ${event.time} (${tz}) to ${leads.length || 1} lead(s).${messageSummary}`,
           {
             crmEventId: event.id,
-            href: buildOwnerBackofficePath('wish'),
-            profileId,
+            href: wishHref,
             topic: 'crm',
-            ...(resolved.ownerUserId ? { userId: resolved.ownerUserId } : {}),
+            userId: event.createdBy.id,
           },
           { sendPush: false }
         )
       }
-      pushService.notifyProfileUpdate(
-        profileId,
-        {
-          title: ownerWishPush.title,
-          body: ownerWishPush.body,
-          type: 'meeting_alert',
-          url: buildOwnerBackofficePath('wish'),
-        },
-        { audience: 'owners', allowPrivate: true }
-      )
-    }
-
-    const senderEmail = event.createdBy?.email?.trim().toLowerCase()
-    if (senderEmail && event.createdBy) {
-      await notifyEmails(
-        [senderEmail],
-        `Your wish was delivered: ${event.type}`,
-        `Your ${event.type} was sent at ${event.date} ${event.time} (${tz}) to ${leads.length || 1} lead(s).${messageSummary}`,
-        {
-          crmEventId: event.id,
-          href: buildOwnerBackofficePath('wish'),
-          topic: 'crm',
-          userId: event.createdBy.id,
-        },
-        { sendPush: false }
-      )
     }
 
     await prisma.crmEvent.update({

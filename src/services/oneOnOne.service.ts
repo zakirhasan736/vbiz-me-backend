@@ -1,5 +1,4 @@
 import config from '../configs/config'
-import { buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
 import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import authUtils from '../utils/auth.utils'
@@ -603,11 +602,15 @@ const createPublicRequest = async (input: CreatePublicRequestInput) => {
     footer: 'You are receiving this because you own this card.',
   })
 
+  // A requested → only card owner B (phone/email/push/inbox). Not admin.
   await sendEmailsSafe(stakeholders.emails, `New 1-on-1 request from ${guestName}`, emailHtml, '1-on-1 request owner')
   void smsService.notifyProfilePhone(
     profile.id,
     '1-on-1',
-    `${guestName} requested a 1-on-1. Reply from your backoffice.`
+    `${guestName} requested a 1-on-1. Reply from your backoffice.`,
+    {
+      linkUrl: `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}${buildOwnerBackofficePath('one_on_one', profile.id)}`,
+    }
   )
 
   notifyCardPush(
@@ -773,14 +776,13 @@ const scheduleMeetingFromRequest = async (actor: Actor, input: ScheduleMeetingIn
     }),
     '1-on-1 propose guest'
   )
-  smsService.sendTopicSms({
+  // B replied with times → only guest A (not admin, not other cards). Outside owner SMS quota.
+  smsService.notifyGuestPhone({
     to: request.guestPhone,
     topic: '1-on-1',
     cardName: profile.name?.trim() || ownerName,
-    cardUrl: profile.slug
-      ? buildFrontendPublicCardUrl((config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, ''), profile.slug)
-      : (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, ''),
-    detail: `${ownerName} proposed times. Open the card to choose one.`,
+    cardUrl: pickUrl,
+    detail: `${ownerName} proposed times. Open the link to choose one.`,
   })
 
   const guestProfileId = await findGuestPushProfile(request.guestEmail)
@@ -946,10 +948,16 @@ const confirmGuestSlot = async (requestId: string, input: ConfirmGuestSlotInput)
     }),
     '1-on-1 confirm stakeholders'
   )
+  // A confirmed → only card owner B.
   void smsService.notifyProfilePhone(
     profile.id,
     '1-on-1',
-    `${request.guestName} confirmed ${dateLabel} at ${timeLabel}.`
+    `${request.guestName} confirmed ${dateLabel} at ${timeLabel}.`,
+    {
+      linkUrl:
+        calendar.meetLink ||
+        `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}${buildOwnerBackofficePath('calendar')}`,
+    }
   )
 
   await createStakeholderInboxNotice({

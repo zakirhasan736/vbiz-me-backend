@@ -20,13 +20,14 @@ describe('CRM Wish & Outreach delivery timing', () => {
     assert.match(crmEventService, /resolveWishLeadIds/)
   })
 
-  it('at startsAt delivers lead email+push and confirms the card owner with CRM + owner-only push', () => {
+  it('at startsAt delivers lead email+SMS link and confirms the card owner (inbox/email/push/SMS)', () => {
     assert.match(reminderService, /startsAt:\s*\{\s*gte:\s*catchupFloor,\s*lte:\s*now\s*\}/)
     assert.match(reminderService, /wishOwnerDeliveredPush|Wish sent:/)
     assert.match(reminderService, /wishLeadPush|Wish for you:/)
-    assert.match(reminderService, /audience:\s*'owners'/)
+    assert.match(reminderService, /notifyExactCardOwnerInbox/)
+    assert.match(reminderService, /smsTopic:\s*'Wish'/)
     assert.match(reminderService, /notifyVisitorChannels/)
-    assert.match(reminderService, /allowPush:\s*true/)
+    assert.match(reminderService, /leadWishLink/)
     assert.match(reminderService, /recipientLeadIds/)
   })
 

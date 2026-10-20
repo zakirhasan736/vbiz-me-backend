@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url'
 import { isQualifiedCrmLead } from '../utils/crmLeadOrigin'
 import { defaultPushDeliveryAudience, staffAdminAllowsBrowserPush } from '../utils/pushAudience'
 import {
-  RETURNING_SAVED_GUEST_COOLDOWN_MS,
   RETURNING_SAVED_GUEST_EVENT,
   buildReturningViewCopy,
   formatReturningViewWhen,
+  returningGuestDayKey,
   returningGuestEventKey,
   wonReturningGuestClaim,
 } from '../utils/returningSavedGuest'
@@ -33,9 +33,10 @@ describe('returning saved guest — copy and claim helpers', () => {
     assert.match(when, /10:00 AM/)
   })
 
-  it('keeps a 30-minute same-visit cooldown so later-day returns still qualify', () => {
-    assert.equal(RETURNING_SAVED_GUEST_COOLDOWN_MS, 30 * 60 * 1000)
+  it('dedupes the same viewer to one owner alert per Eastern calendar day', () => {
     assert.equal(RETURNING_SAVED_GUEST_EVENT, 'returning_saved_guest')
+    const day = returningGuestDayKey(new Date('2026-10-20T18:00:00.000Z'), 'America/New_York')
+    assert.equal(day, '2026-10-20')
   })
 
   it('resolves concurrent claim races to the oldest eventLog id', () => {
@@ -56,6 +57,7 @@ describe('returning saved guest — wiring contract', () => {
     assert.match(publicCardService, /type:\s*'viewer_return'/)
     assert.match(publicCardService, /topic:\s*'card'/)
     assert.match(publicCardService, /eventKey/)
+    assert.match(publicCardService, /returningGuestDayKey/)
     assert.match(publicCardService, /wonReturningGuestClaim/)
     assert.doesNotMatch(publicCardService, /void smsService\.notifyProfilePhone\(profile\.id, 'Repeat view'/)
   })

@@ -8,6 +8,7 @@ export type SmsTopic =
   | 'Notice'
   | 'Saved contact'
   | 'Schedule'
+  | 'Wish'
 
 const MAX_SMS_CHARS = 320
 

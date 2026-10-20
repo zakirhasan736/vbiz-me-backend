@@ -46,19 +46,20 @@ describe('Schedule / Book Discussion meeting notifications', () => {
     assert.match(reminderService, /Session starting:/)
   })
 
-  it('texts the schedule person on create and both sides about 30 minutes before', () => {
+  it('texts guest + card owner on schedule (not admin); reminder ~30 minutes before', () => {
     assert.match(reminderService, /processScheduleSmsReminders\(leadMinutes\)/)
     assert.match(reminderService, /schedule_sms_reminder/)
     assert.match(meetingService, /notifyScheduleCreated/)
+    assert.match(meetingService, /notifyOwnerScheduleAlert/)
     assert.match(reminderService, /notifyScheduleReminder/)
     assert.match(readFileSync(join(here, '../services/crmEvent.service.ts'), 'utf8'), /notifyScheduleCreated/)
   })
 
-  it('notifies meeting sender via inbox/push at due time and on create', () => {
+  it('notifies meeting sender via inbox only when they are the responsible card owner', () => {
     assert.match(reminderService, /Your session is starting:/)
     assert.match(reminderService, /userId:\s*meeting\.createdBy\.id/)
     assert.match(meetingService, /notifySenderAnnouncement/)
+    assert.match(meetingService, /actorIsResponsibleOwner/)
     assert.match(meetingService, /Session booked:/)
-    assert.match(meetingService, /userId:\s*actor\.id/)
   })
 })

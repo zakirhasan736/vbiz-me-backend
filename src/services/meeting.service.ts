@@ -333,14 +333,18 @@ async function sendMeetingEmails(input: {
       .catch((error) => logger.error('Meeting owner email failed', { error, email }))
   }
 
-  const adminEmail = input.actor.email?.trim()
-  if (adminEmail) {
+  // Staff admins do not get a copy unless they are the responsible card owner on this meeting.
+  const actorEmail = input.actor.email?.trim().toLowerCase() || ''
+  const actorIsOwner = Boolean(
+    actorEmail && input.ownerEmails.some((email) => email.trim().toLowerCase() === actorEmail)
+  )
+  if (actorEmail && actorIsOwner) {
     void authUtils
       .sendEmail({
-        receiverMail: adminEmail,
+        receiverMail: actorEmail,
         subject: adminSubject,
         html: meetingEmailHtml({
-          recipientName: input.actor.name?.trim() || 'Admin',
+          recipientName: input.actor.name?.trim() || 'Card owner',
           type: input.meeting.type,
           host: input.meeting.host,
           date: input.meeting.date,
@@ -351,7 +355,7 @@ async function sendMeetingEmails(input: {
           isAdminCopy: true,
         }),
       })
-      .catch((error) => logger.error('Meeting admin email failed', { error, adminEmail }))
+      .catch((error) => logger.error('Meeting owner self-copy email failed', { error, actorEmail }))
   }
 }
 
@@ -497,10 +501,9 @@ async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel
     ownerUserIds,
   } = await resolveOwnerEmailsForMeeting(meeting)
   const guest = await resolveGuestContact(meeting.guestUserDataId)
-  const receiverEmails = [...new Set([...ownerEmails, ...(guest.email ? [guest.email] : [])])]
   const displayName = guest.name || ownerDisplayName
 
-  // Inbox is owner-identity scoped; guest still gets email/push via notifyOwnerPush + sendMeetingEmails.
+  // Inbox / email / push / SMS are responsible-owner scoped — not staff admin broadcast.
   await notifyOwnerAnnouncement(
     actor,
     meeting,
@@ -509,17 +512,36 @@ async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel
     onlyBackoffice,
     ownerUserIds.length === 1 ? ownerUserIds[0] : null
   )
-  await notifyOwnerPush(meeting, receiverEmails)
-  if (receiverEmails.length) {
+  await notifyOwnerPush(meeting, ownerEmails)
+  if (ownerEmails.length) {
     void sendMeetingEmails({
       meeting,
-      ownerEmails: receiverEmails,
-      ownerDisplayName: displayName,
+      ownerEmails,
+      ownerDisplayName: ownerDisplayName || displayName,
       actor,
       meetLabel,
     })
   }
-  await notifySenderAnnouncement(actor, meeting, meetLabel)
+  // Guest gets their own schedule email/SMS when present — never as "owner".
+  if (guest.email && !ownerEmails.includes(guest.email)) {
+    void sendMeetingEmails({
+      meeting,
+      ownerEmails: [guest.email],
+      ownerDisplayName: guest.name || displayName,
+      actor,
+      meetLabel,
+    })
+  }
+  const actorEmail = actor.email?.trim().toLowerCase() || ''
+  const actorIsResponsibleOwner = Boolean(
+    actorEmail && ownerEmails.some((email) => email.trim().toLowerCase() === actorEmail)
+  )
+  // Staff who book on a client's card do not get an admin inbox/email copy.
+  if (actorIsResponsibleOwner) {
+    await notifySenderAnnouncement(actor, meeting, meetLabel)
+  }
+  // Conversation SMS only: guest ↔ card owner. Never staff admin fan-out.
+  // Guest (if a lead is attached):
   void smsService.notifyScheduleCreated({
     guestUserDataId: meeting.guestUserDataId,
     profileId: meeting.profileId,
@@ -528,6 +550,16 @@ async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel
     type: meeting.type,
     date: meeting.date,
     time: meeting.time,
+    linkUrl: meeting.meetLink || undefined,
+  })
+  // Card owner (tier quota — Free skips SMS, keeps push/email/inbox):
+  void smsService.notifyOwnerScheduleAlert({
+    profileId: meeting.profileId,
+    groupProfileIds: meeting.groupProfileIds,
+    detail: `${meeting.type} scheduled with ${meeting.host} on ${meeting.date} at ${meeting.time}.`,
+    linkUrl:
+      meeting.meetLink ||
+      `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}${buildOwnerBackofficePath('calendar')}`,
   })
 }
 

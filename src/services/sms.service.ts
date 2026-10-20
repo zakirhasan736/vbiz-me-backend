@@ -3,6 +3,7 @@ import { buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { buildVbizSms, toE164, type SmsTopic } from '../utils/smsMessage'
+import smsQuotaService from './smsQuota.service'
 
 type SendResult = { sent: boolean; reason?: string }
 
@@ -85,19 +86,50 @@ function regionHint(profile: { countryCode?: string | null; addresses?: { countr
   return profile.countryCode?.trim() || profile.addresses?.[0]?.country?.trim() || null
 }
 
-const notifyProfilePhone = async (profileId: string, topic: SmsTopic, detail: string): Promise<SendResult> => {
+const notifyProfilePhone = async (
+  profileId: string,
+  topic: SmsTopic,
+  detail: string,
+  options?: { linkUrl?: string | null; skipQuota?: boolean }
+): Promise<SendResult> => {
+  if (!options?.skipQuota) {
+    const quota = await smsQuotaService.evaluateOwnerSmsQuota(profileId)
+    if (!quota.allowed) {
+      return { sent: false, reason: quota.reason || 'sms_not_included' }
+    }
+  }
+
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: phoneSelect,
   })
   if (!profile?.phone?.trim()) return { sent: false, reason: 'missing_phone' }
+  const link = options?.linkUrl?.trim() || cardUrl(profile.slug)
   const body = buildVbizSms({
     topic,
     cardName: profile.name?.trim() || 'vBiz card',
-    cardUrl: cardUrl(profile.slug),
+    cardUrl: link,
     detail,
   })
   return deliverSms(profile.phone, body, regionHint(profile))
+}
+
+/** Owner text when a back-office meeting/schedule is booked — never texts staff admins. */
+const notifyOwnerScheduleAlert = async (input: {
+  profileId?: string | null
+  groupProfileIds?: unknown
+  detail: string
+  linkUrl?: string | null
+}): Promise<{ sent: number }> => {
+  const ids = scheduleProfileIds(input.profileId, input.groupProfileIds)
+  let sent = 0
+  for (const profileId of ids) {
+    const result = await notifyProfilePhone(profileId, 'Schedule', input.detail, {
+      linkUrl: input.linkUrl,
+    })
+    if (result.sent) sent += 1
+  }
+  return { sent }
 }
 
 const notifyPhonesForEmails = async (
@@ -206,79 +238,55 @@ async function loadScheduleCards(profileId?: string | null, groupProfileIds?: un
   })
 }
 
-function sendScheduleText(
-  card: ScheduleCard,
-  phone: string | null | undefined,
-  countryCode: string | null | undefined,
+/**
+ * Text only the guest/lead phone for a schedule conversation.
+ * Never falls back to the card-owner phone — owners use notifyOwnerScheduleAlert (quota).
+ */
+async function notifyGuestScheduleSms(input: {
+  guestUserDataId?: string | null
+  profileId?: string | null
+  groupProfileIds?: unknown
   detail: string
-) {
-  if (!phone) return
+  linkUrl?: string | null
+}): Promise<Set<string>> {
+  const sent = new Set<string>()
+  if (!input.guestUserDataId?.trim()) return sent
+
+  const cards = await loadScheduleCards(input.profileId, input.groupProfileIds)
+  const card = cards[0] || { name: 'vBiz card', slug: null, phone: null, countryCode: null }
+  const guest = await prisma.guestUserData.findUnique({
+    where: { id: input.guestUserDataId },
+    select: { phone: true },
+  })
+  const phone = toE164(guest?.phone, regionHint(card))
+  if (!phone) return sent
+
   sendTopicSms({
     to: phone,
-    countryCode: countryCode || regionHint(card),
+    countryCode: regionHint(card),
     topic: 'Schedule',
     cardName: card.name?.trim() || 'vBiz card',
-    cardUrl: cardUrl(card.slug),
-    detail,
+    cardUrl: input.linkUrl?.trim() || cardUrl(card.slug),
+    detail: input.detail,
   })
+  sent.add(phone)
+  return sent
 }
 
-/** The saved contact, or the scheduled card when there is no lead. Returns the numbers texted. */
+/** @deprecated Use notifyGuestScheduleSms — kept name for existing call sites. */
 async function notifySchedulePerson(input: {
   guestUserDataId?: string | null
   profileId?: string | null
   groupProfileIds?: unknown
   detail: string
 }) {
-  const sent = new Set<string>()
-  const cards = await loadScheduleCards(input.profileId, input.groupProfileIds)
-  const card = cards[0] || { name: 'vBiz card', slug: null, phone: null, countryCode: null }
-  if (input.guestUserDataId) {
-    const guest = await prisma.guestUserData.findUnique({
-      where: { id: input.guestUserDataId },
-      select: { phone: true },
-    })
-    const phone = toE164(guest?.phone, regionHint(card))
-    if (phone) {
-      sendScheduleText(card, phone, card.countryCode, input.detail)
-      sent.add(phone)
-      return sent
-    }
-  }
-  for (const profile of cards) {
-    const phone = toE164(profile.phone, regionHint(profile))
-    if (!phone || sent.has(phone)) continue
-    sent.add(phone)
-    sendScheduleText(profile, phone, profile.countryCode, input.detail)
-  }
-  return sent
+  return notifyGuestScheduleSms(input)
 }
 
-async function notifyScheduleSender(
-  createdById: string | null | undefined,
-  card: ScheduleCard,
-  detail: string,
-  skip: Set<string> = new Set()
-) {
-  if (!createdById) return
-  const profiles = await prisma.profile.findMany({
-    where: {
-      phone: { not: null },
-      OR: [{ userId: createdById }, { companyUserId: createdById }],
-    },
-    select: scheduleCardSelect,
-    take: 5,
-  })
-  const seen = new Set<string>()
-  const label = card.name?.trim() ? card : profiles[0] || card
-  for (const profile of profiles) {
-    const phone = toE164(profile.phone, regionHint(profile))
-    if (!phone || seen.has(phone) || skip.has(phone)) continue
-    seen.add(phone)
-    sendScheduleText(label, phone, profile.countryCode, detail)
-  }
-}
-
+/**
+ * Guest/lead only: “someone scheduled with you…”.
+ * Card owner is notified separately via notifyOwnerScheduleAlert (tier quota).
+ */
 const notifyScheduleCreated = async (input: {
   guestUserDataId?: string | null
   profileId?: string | null
@@ -287,13 +295,22 @@ const notifyScheduleCreated = async (input: {
   type: string
   date: string
   time: string
+  linkUrl?: string | null
 }) => {
-  await notifySchedulePerson({
-    ...input,
+  if (!input.guestUserDataId?.trim()) return
+  await notifyGuestScheduleSms({
+    guestUserDataId: input.guestUserDataId,
+    profileId: input.profileId,
+    groupProfileIds: input.groupProfileIds,
+    linkUrl: input.linkUrl,
     detail: `${input.senderName} scheduled ${input.type} with you on ${input.date} at ${input.time}.`,
   })
 }
 
+/**
+ * ~30 min reminder: guest + card owner only (owner quota-gated).
+ * Never texts a staff admin booker who is not the card owner.
+ */
 const notifyScheduleReminder = async (input: {
   guestUserDataId?: string | null
   profileId?: string | null
@@ -304,16 +321,39 @@ const notifyScheduleReminder = async (input: {
   date: string
   time: string
 }) => {
+  void input.createdById
   const when = `${input.type} with ${input.host} is in about 30 minutes, ${input.date} at ${input.time}.`
-  const personPhones = await notifySchedulePerson({ ...input, detail: `Reminder. ${when}` })
-  const cards = await loadScheduleCards(input.profileId, input.groupProfileIds)
-  const card = cards[0] || { name: input.host, slug: null, phone: null, countryCode: null }
-  await notifyScheduleSender(input.createdById, card, `Reminder. Your ${when}`, personPhones)
+  await notifyGuestScheduleSms({
+    guestUserDataId: input.guestUserDataId,
+    profileId: input.profileId,
+    groupProfileIds: input.groupProfileIds,
+    detail: `Reminder. ${when}`,
+  })
+  await notifyOwnerScheduleAlert({
+    profileId: input.profileId,
+    groupProfileIds: input.groupProfileIds,
+    detail: `Reminder. Your ${when}`,
+  })
+}
+
+/** Guest/requester SMS outside owner quota (1-on-1 propose, etc.). */
+const notifyGuestPhone = (input: {
+  to?: string | null
+  countryCode?: string | null
+  topic: SmsTopic
+  cardName: string
+  cardUrl: string
+  detail: string
+}) => {
+  if (!input.to?.trim()) return
+  sendTopicSms(input)
 }
 
 const smsService = {
   sendTopicSms,
+  notifyGuestPhone,
   notifyProfilePhone,
+  notifyOwnerScheduleAlert,
   notifyPhonesForEmails,
   notifyGlobalCardPhones,
   notifyScheduleCreated,
