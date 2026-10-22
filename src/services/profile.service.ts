@@ -736,8 +736,8 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
             })
           : await tx.customTab.create({
               data: {
-                // Stable editor keys are unique enough to use as the Prisma PK when present.
-                ...(nextKey.startsWith('custom-tab-') || nextKey.startsWith('ct_') ? { id: nextKey } : {}),
+                // Never set Prisma `id` from the editor key — ids are global and collide on
+                // duplicate/create when the same `ct_*` / `custom-tab-*` key is reused.
                 profileId,
                 key: nextKey,
                 label,
@@ -1931,9 +1931,10 @@ const clonePrimaryProfileCollections = async (
           (await tx.customTab.create({
             data: {
               profileId: targetProfileId,
-              key: sourceTab.key.startsWith('custom-tab-')
-                ? `custom-tab-${randomBytes(6).toString('hex')}`
-                : sourceTab.key,
+              key:
+                sourceTab.key.startsWith('custom-tab-') || sourceTab.key.startsWith('ct_')
+                  ? `ct_${randomBytes(6).toString('hex')}`
+                  : sourceTab.key,
               label: sourceTab.label,
               slug: sourceTab.slug,
               description: sourceTab.description,
