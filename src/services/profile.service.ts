@@ -436,6 +436,48 @@ const listPortfoliosSafe = async (profileId: string) => {
   }))
 }
 
+/** Service cards stored on this tab before the Service table was filled. Same tab only. */
+async function legacyServiceRows(profileId: string) {
+  const tabItems = await prisma.tabItem
+    .findMany({
+      where: { profileId, tabKey: 'services', deletedAt: null },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+    })
+    .catch(() => [])
+  const posts = tabItems.length
+    ? []
+    : await prisma.post
+        .findMany({
+          where: {
+            profileId,
+            deletedAt: null,
+            OR: [
+              { postType: { name: { equals: 'services', mode: 'insensitive' } } },
+              { postType: { title: { equals: 'services', mode: 'insensitive' } } },
+              { postType: { name: { equals: 'Services', mode: 'insensitive' } } },
+              { postType: { title: { equals: 'Services', mode: 'insensitive' } } },
+            ],
+          },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        })
+        .catch(() => [])
+  const source = tabItems.length ? tabItems : posts
+  return source.map((row) => ({
+    id: row.id,
+    legacyId: null,
+    profileId,
+    title: row.title,
+    description: row.description,
+    status: Number(row.status) === 0 ? 0 : 1,
+    sortOrder: row.sortOrder,
+    reviewUrl: row.url,
+    imageUrl: row.featuredImage,
+    mediaFrame: null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }))
+}
+
 const loadProfileCollections = async (profileId: string) => {
   const [education, experiences, services, portfolios, reviews, skillTags, galleries, ownedMap, isOwnerCard] =
     await Promise.all([
@@ -502,11 +544,12 @@ const loadProfileCollections = async (profileId: string) => {
 
   const mark = <T extends { id: string }>(rows: T[], owned: Set<string>) =>
     rows.map((row) => ({ ...row, corporateOwned: !isOwnerCard && owned.has(row.id) }))
+  const serviceRows = services.length ? services : await legacyServiceRows(profileId)
   return {
     corporateMemberCard: !isOwnerCard,
     education: mark(education, seeded.education),
     experiences: mark(experiences, seeded.experience),
-    services: mark(services, seeded.service),
+    services: mark(serviceRows, seeded.service),
     portfolios: mark(portfolios, seeded.portfolio),
     reviews: mark(reviews, seeded.review),
     skillTags: mark(skillTags, seeded.skillTag),

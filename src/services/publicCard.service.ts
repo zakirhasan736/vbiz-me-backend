@@ -1925,7 +1925,6 @@ const getDynamicSection = async (
       OR: [
         { postType: { name: { equals: name, mode: 'insensitive' } } },
         { postType: { title: { equals: name, mode: 'insensitive' } } },
-        { title: { equals: name, mode: 'insensitive' } },
       ],
     },
     include: {

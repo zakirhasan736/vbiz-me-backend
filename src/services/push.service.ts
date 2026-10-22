@@ -83,6 +83,7 @@ const ensureVapid = () => {
   }
   webpush.setVapidDetails(config.VAPID.SUBJECT, publicKey, privateKey)
   vapidConfigured = true
+  logger.info(`Web push VAPID ready (public key suffix …${publicKey.slice(-8)})`)
 }
 
 /** Public half only — safe to expose to browsers for PushManager.subscribe. */
@@ -424,11 +425,26 @@ const unsubscribe = async (input: { profile_slug?: string; profile_id?: string; 
   return { unsubscribed: true, count: result.count }
 }
 
-const deactivateSubscription = async (id: string) => {
-  await prisma.pushSubscription.update({
-    where: { id },
+/** Same push endpoint under any profile — key mismatch / gone is device-wide. */
+const deactivateEndpointEverywhere = async (endpoint: string, reason: string) => {
+  const endpointHash = hashEndpoint(endpoint)
+  const result = await prisma.pushSubscription.updateMany({
+    where: { endpointHash, isActive: true },
     data: { isActive: false },
   })
+  if (result.count > 0) {
+    logger.info(`Deactivated ${result.count} push subscription(s) for endpoint (${reason})`)
+  }
+  return result.count
+}
+
+const isDeadPushStatus = (statusCode: number | undefined, body: string) => {
+  if (statusCode === 404 || statusCode === 410 || statusCode === 403) return true
+  if (statusCode === 400 && /VapidPkHashMismatch|BadJwtToken|Invalid|Expired|Unauthorized/i.test(body)) {
+    return true
+  }
+  if (statusCode === 401 && /Vapid|Unauthorized|Jwt/i.test(body)) return true
+  return false
 }
 
 const sendOne = async (sub: { id: string; endpoint: string; p256dh: string; auth: string }, payload: PushPayload) => {
@@ -451,9 +467,14 @@ const sendOne = async (sub: { id: string; endpoint: string; p256dh: string; auth
       typeof error === 'object' && error && 'statusCode' in error
         ? Number((error as { statusCode?: number }).statusCode)
         : undefined
-    if (statusCode === 404 || statusCode === 410) {
-      await deactivateSubscription(sub.id)
-      logger.info(`Deactivated dead push subscription ${sub.id}`)
+    const body =
+      typeof error === 'object' && error && 'body' in error ? String((error as { body?: unknown }).body ?? '') : ''
+    // Apple returns 400 VapidPkHashMismatch when the subscription was created with a
+    // different VAPID public key than the server is signing with — treat as dead.
+    const vapidMismatch = Boolean(statusCode === 400 && /VapidPkHashMismatch/i.test(body))
+    if (isDeadPushStatus(statusCode, body)) {
+      const reason = vapidMismatch ? 'VAPID key mismatch' : `HTTP ${statusCode ?? 'unknown'}`
+      await deactivateEndpointEverywhere(sub.endpoint, reason)
       return false
     }
     logger.error('Failed to send web push', error)

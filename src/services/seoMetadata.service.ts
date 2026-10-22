@@ -3,6 +3,8 @@ export const SEO_META_DESCRIPTION_SETTING_KEY = 'seo_meta_description'
 export const SEO_META_KEYWORDS_SETTING_KEY = 'seo_meta_keywords_json'
 export const SEO_IMAGE_SETTING_KEY = 'seo_image_url'
 export const SEO_FAVICON_SETTING_KEY = 'seo_favicon_url'
+/** Add to Home Screen / PWA install icon (square still). */
+export const PWA_HOME_SCREEN_ICON_SETTING_KEY = 'pwa_home_screen_icon_url'
 export const MAX_OWNER_SEO_KEYWORDS = 10
 export const MAX_SEO_TITLE_LENGTH = 70
 export const MAX_SEO_DESCRIPTION_LENGTH = 160
@@ -26,6 +28,8 @@ export type SeoMetadata = {
   seoImage: string
   /** Optional browser-tab favicon URL. Empty → platform vBiz Me icon on the public card. */
   faviconUrl: string
+  /** Optional Add to Home Screen / PWA install icon URL. */
+  pwaHomeScreenIconUrl: string
 }
 
 function cleanKeyword(value: unknown): string {
@@ -80,6 +84,9 @@ export function normalizeSeoMetadata(input: Partial<SeoMetadata> | null | undefi
     faviconUrl: String(input?.faviconUrl || '')
       .trim()
       .replace(/^blob:/i, ''),
+    pwaHomeScreenIconUrl: String(input?.pwaHomeScreenIconUrl || '')
+      .trim()
+      .replace(/^blob:/i, ''),
   }
 }
 
@@ -91,6 +98,7 @@ export function normalizeSeoSettings(settings: Record<string, string>): Record<s
     SEO_META_KEYWORDS_SETTING_KEY,
     SEO_IMAGE_SETTING_KEY,
     SEO_FAVICON_SETTING_KEY,
+    PWA_HOME_SCREEN_ICON_SETTING_KEY,
   ].some((key) => Object.prototype.hasOwnProperty.call(next, key))
   if (Object.prototype.hasOwnProperty.call(next, SEO_META_TITLE_SETTING_KEY)) {
     next[SEO_META_TITLE_SETTING_KEY] = String(next[SEO_META_TITLE_SETTING_KEY] || '')
@@ -109,6 +117,10 @@ export function normalizeSeoSettings(settings: Record<string, string>): Record<s
   if (Object.prototype.hasOwnProperty.call(next, SEO_FAVICON_SETTING_KEY)) {
     const favicon = String(next[SEO_FAVICON_SETTING_KEY] || '').trim()
     next[SEO_FAVICON_SETTING_KEY] = favicon.toLowerCase().startsWith('blob:') ? '' : favicon
+  }
+  if (Object.prototype.hasOwnProperty.call(next, PWA_HOME_SCREEN_ICON_SETTING_KEY)) {
+    const pwaIcon = String(next[PWA_HOME_SCREEN_ICON_SETTING_KEY] || '').trim()
+    next[PWA_HOME_SCREEN_ICON_SETTING_KEY] = pwaIcon.toLowerCase().startsWith('blob:') ? '' : pwaIcon
   }
   if (Object.prototype.hasOwnProperty.call(next, SEO_META_KEYWORDS_SETTING_KEY)) {
     let raw: unknown = next[SEO_META_KEYWORDS_SETTING_KEY]
@@ -132,6 +144,7 @@ export function seoMetadataToSettings(input: Partial<SeoMetadata> | null | undef
     [SEO_META_KEYWORDS_SETTING_KEY]: JSON.stringify(seo.keywords),
     [SEO_IMAGE_SETTING_KEY]: seo.seoImage,
     [SEO_FAVICON_SETTING_KEY]: seo.faviconUrl,
+    [PWA_HOME_SCREEN_ICON_SETTING_KEY]: seo.pwaHomeScreenIconUrl,
   })
 }
 
@@ -171,6 +184,7 @@ export function deriveDefaultSeoFromProfile(input: {
     keywords: [name, company, role].filter(Boolean),
     seoImage: '',
     faviconUrl: '',
+    pwaHomeScreenIconUrl: '',
   })
 }
 

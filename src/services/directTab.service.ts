@@ -452,6 +452,151 @@ const isSchemaGap = (error: unknown) => isPrismaMissingTable(error) || isPrismaC
 const schemaGapError = (tab: TabRegistryEntry) =>
   new AppError(503, `Cannot save ${tab.label} until the database migration for this tab is applied.`)
 
+/** Names that identify this tab's own post type. A row title is never a match. */
+function tabPostTypeNames(tab: TabRegistryEntry): string[] {
+  return [...new Set([tab.publicSectionName, tab.label].map((name) => name.trim()).filter(Boolean))]
+}
+
+/**
+ * Rows that still live in TabItem or Post for this tab only.
+ * Used when the tab's own table is empty, so the builder shows the same items as the public card.
+ */
+async function listSameTabLegacyRows(
+  profileId: string,
+  tab: TabRegistryEntry,
+  skip: number,
+  take: number
+): Promise<{ rows: DirectRow[]; total: number }> {
+  const generic = await listGenericTabItemRows(profileId, tab.key, skip, take)
+  if (generic.total > 0) return generic
+
+  const names = tabPostTypeNames(tab)
+  if (!names.length) return { rows: [], total: 0 }
+  const where = {
+    profileId,
+    deletedAt: null,
+    OR: names.flatMap((name) => [
+      { postType: { name: { equals: name, mode: 'insensitive' as const } } },
+      { postType: { title: { equals: name, mode: 'insensitive' as const } } },
+    ]),
+  }
+  try {
+    const [posts, total] = await Promise.all([
+      prisma.post.findMany({
+        where,
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        skip,
+        take,
+        select: {
+          id: true,
+          profileId: true,
+          title: true,
+          description: true,
+          url: true,
+          featuredImage: true,
+          status: true,
+          sortOrder: true,
+          legacyId: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.post.count({ where }),
+    ])
+    const rows: DirectRow[] = posts.map((post) => ({
+      id: post.id,
+      profileId: post.profileId,
+      title: post.title,
+      description: post.description,
+      url: post.url,
+      featuredImage: post.featuredImage,
+      status: post.status,
+      sortOrder: post.sortOrder,
+      legacyPostId: post.legacyId,
+      createdAt: post.createdAt,
+      updatedAt: post.updatedAt,
+    }))
+    return { rows, total }
+  } catch (error) {
+    if (!isSchemaGap(error)) throw error
+    return { rows: [], total: 0 }
+  }
+}
+
+async function updateLegacyTabRow(tab: TabRegistryEntry, profileId: string, itemId: string, input: TabItemInput) {
+  const generic = await prisma.tabItem
+    .findFirst({ where: { id: itemId, profileId, tabKey: tab.key, deletedAt: null } })
+    .catch((error) => {
+      if (!isSchemaGap(error)) throw error
+      return null
+    })
+  if (generic) return updateGenericTabItem(tab, profileId, itemId, input)
+
+  const names = tabPostTypeNames(tab)
+  const post = await prisma.post.findFirst({
+    where: {
+      id: itemId,
+      profileId,
+      deletedAt: null,
+      OR: names.flatMap((name) => [
+        { postType: { name: { equals: name, mode: 'insensitive' as const } } },
+        { postType: { title: { equals: name, mode: 'insensitive' as const } } },
+      ]),
+    },
+  })
+  if (!post) return null
+  const row = await prisma.post.update({
+    where: { id: post.id },
+    data: {
+      ...(input.title !== undefined ? { title: str(input.title) } : {}),
+      ...(input.description !== undefined ? { description: str(input.description) } : {}),
+      ...(input.url !== undefined ? { url: str(input.url) } : {}),
+      ...(input.featuredImage !== undefined ? { featuredImage: str(input.featuredImage) } : {}),
+      ...(input.status !== undefined ? { status: statusOf(input.status) } : {}),
+      ...(typeof input.sortOrder === 'number' ? { sortOrder: input.sortOrder } : {}),
+    },
+  })
+  return serializeDedicatedRow(tab, {
+    id: row.id,
+    profileId: row.profileId,
+    title: row.title,
+    description: row.description,
+    url: row.url,
+    featuredImage: row.featuredImage,
+    status: row.status,
+    sortOrder: row.sortOrder,
+    legacyPostId: row.legacyId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  })
+}
+
+async function deleteLegacyTabRow(tab: TabRegistryEntry, profileId: string, itemId: string) {
+  const generic = await prisma.tabItem
+    .findFirst({ where: { id: itemId, profileId, tabKey: tab.key, deletedAt: null } })
+    .catch((error) => {
+      if (!isSchemaGap(error)) throw error
+      return null
+    })
+  if (generic) return deleteGenericTabItem(tab, profileId, itemId)
+
+  const names = tabPostTypeNames(tab)
+  const post = await prisma.post.findFirst({
+    where: {
+      id: itemId,
+      profileId,
+      deletedAt: null,
+      OR: names.flatMap((name) => [
+        { postType: { name: { equals: name, mode: 'insensitive' as const } } },
+        { postType: { title: { equals: name, mode: 'insensitive' as const } } },
+      ]),
+    },
+  })
+  if (!post) return null
+  await prisma.post.delete({ where: { id: post.id } })
+  return { deleted: true as const }
+}
+
 async function listGenericTabItemRows(profileId: string, tabKey: string, skip: number, take: number) {
   const where = { profileId, tabKey, deletedAt: null }
   try {
@@ -598,6 +743,11 @@ const queryTabItems = async (profileId: string, tabKey: string, skip = 0, limit 
       rows = fallback.rows
       total = fallback.total
     }
+  }
+  if (rows.length === 0 && tab.storage !== 'about_me' && tab.storage !== 'gallery') {
+    const legacy = await listSameTabLegacyRows(profileId, tab, start, take)
+    rows = legacy.rows
+    total = legacy.total
   }
   const ownedModel = ownedModelForTab(tab)
   const [ownedIdsRaw, isOwnerCard] = await Promise.all([
@@ -773,7 +923,11 @@ const updateTabItem = async (
               : listModel(tab)
   try {
     const existing = await model.findFirst({ where: { id: itemId, profileId } })
-    if (!existing) throw new AppError(404, 'Item not found')
+    if (!existing) {
+      const legacy = await updateLegacyTabRow(tab, profileId, itemId, input)
+      if (legacy) return legacy
+      throw new AppError(404, 'Item not found')
+    }
     if (memberOneFormLocked(tab.storage, isOwnerCard)) {
       return serializeDedicatedRow(tab, existing)
     }
@@ -893,7 +1047,11 @@ const deleteTabItem = async (profileId: string, tabKey: string, itemId: string, 
               : listModel(tab)
   try {
     const existing = await model.findFirst({ where: { id: itemId, profileId } })
-    if (!existing) throw new AppError(404, 'Item not found')
+    if (!existing) {
+      const legacy = await deleteLegacyTabRow(tab, profileId, itemId)
+      if (legacy) return legacy
+      throw new AppError(404, 'Item not found')
+    }
     const singleton = tab.storage === 'about_me' || isSingletonSectionStorage(tab.storage)
     if (singleton) {
       await model.update({ where: { id: itemId }, data: { status: '0' } })

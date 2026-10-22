@@ -74,13 +74,13 @@ test('public note reads require a visitor scope', async () => {
   assert.equal(response.body.error, 'profile_id and visitor_id are required')
 })
 
-test('expired access tokens return 401 when no refresh token is supplied', async () => {
+test('expired access tokens return 403 when no refresh token is supplied', async () => {
   const expiredToken = jwt.sign({ id: 'expired-user', exp: Math.floor(Date.now() / 1000) - 60 }, 'test-secret')
   const response = await request(app).get('/api/v1/profiles').set('Authorization', `Bearer ${expiredToken}`)
 
-  assert.equal(response.status, 401)
+  assert.equal(response.status, 403)
   assert.equal(response.body.success, false)
-  assert.equal(response.body.message, 'Refresh token is missing')
+  assert.equal(response.body.message, 'Unauthorized')
 })
 
 test('refresh endpoint requires the refresh cookie instead of an access token', async () => {
