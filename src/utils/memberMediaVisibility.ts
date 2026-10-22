@@ -4,15 +4,68 @@ import { prisma } from './prisma'
 /** Member-only. Not a shared setting, so it never copies onto the owner or other cards. */
 export const HIDE_OWNER_PHOTOS_SETTING_KEY = 'hide_owner_photos'
 export const HIDE_OWNER_VIDEOS_SETTING_KEY = 'hide_owner_videos'
+/** JSON map of section keys → hide corporate-owner list items on this member card. */
+export const HIDE_OWNER_SECTIONS_SETTING_KEY = 'hide_owner_sections_json'
+
+export type HideOwnerSectionsMap = Record<string, boolean>
 
 export function isHideOwnerMediaEnabled(value: string | null | undefined): boolean {
   const normalized = (value || '').trim().toLowerCase()
   return normalized === '1' || normalized === 'true' || normalized === 'yes'
 }
 
+export function parseHideOwnerSections(raw: string | null | undefined): HideOwnerSectionsMap {
+  if (!raw?.trim()) return {}
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const out: HideOwnerSectionsMap = {}
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const section = key.trim()
+      if (!section) continue
+      if (value === true || value === 1 || value === '1' || value === 'true') out[section] = true
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+export function isHideOwnerSectionEnabled(map: HideOwnerSectionsMap, sectionKey: string): boolean {
+  return Boolean(map[sectionKey.trim()])
+}
+
+export function customTabHideOwnerSectionKey(tabId: string): string {
+  return `custom:${tabId.trim()}`
+}
+
 export function withoutOwnedIds<T extends { id: string }>(rows: T[], ownedIds: ReadonlySet<string>): T[] {
   if (!ownedIds.size) return rows
   return rows.filter((row) => !ownedIds.has(row.id))
+}
+
+async function readHideOwnerSections(profileId: string): Promise<HideOwnerSectionsMap> {
+  const row = await prisma.setting.findUnique({
+    where: { profileId_key: { profileId, key: HIDE_OWNER_SECTIONS_SETTING_KEY } },
+    select: { value: true },
+  })
+  return parseHideOwnerSections(row?.value)
+}
+
+/**
+ * Drop corporate-owner rows from a public list when this member enabled
+ * "Only show my items" for the section.
+ */
+export async function withoutHiddenOwnerSectionRows<T extends { id: string }>(args: {
+  profileId: string
+  sectionKey: string
+  model: string
+  rows: T[]
+}): Promise<T[]> {
+  const map = await readHideOwnerSections(args.profileId)
+  if (!isHideOwnerSectionEnabled(map, args.sectionKey)) return args.rows
+  const owned = await getCorporateOwnedIds(args.profileId, args.model)
+  return withoutOwnedIds(args.rows, owned)
 }
 
 async function readHideFlags(profileId: string): Promise<{ hideOwnerPhotos: boolean; hideOwnerVideos: boolean }> {
