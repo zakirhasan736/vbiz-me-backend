@@ -28,7 +28,13 @@ import logger from '../utils/logger'
 import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
 import { metasWithoutMediaFrame, readRowMediaFrame } from '../utils/mediaFrame'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl, looksLikeMediaAssetUrl } from '../utils/mediaUrl'
-import { idsHiddenOnMemberPublicCard, withoutOwnedIds, type OwnerMediaRow } from '../utils/memberMediaVisibility'
+import {
+  customTabHideOwnerSectionKey,
+  idsHiddenOnMemberPublicCard,
+  withoutHiddenOwnerSectionRows,
+  withoutOwnedIds,
+  type OwnerMediaRow,
+} from '../utils/memberMediaVisibility'
 import { formatProfileLocation, hasProfileLocationParts } from '../utils/personalAddress'
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
@@ -840,7 +846,7 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
 
   const navIds = mergeEnabledNavOrder(
     editorNavIds,
-    customTabs.map((tab) => tab.id),
+    customTabs.map((tab) => tab.slug || tab.key || tab.id),
     { preserveCustom: shouldPreserveCustomNavOrder(profile.slug, parseDisplayNavState(map).customized) }
   )
 
@@ -874,14 +880,15 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
     }
     const custom = customTabs.find((tab) => tab.id === navId || tab.key === navId || tab.slug === navId)
     if (custom) {
+      const publicId = custom.slug || custom.key || custom.id
       return {
-        id: custom.id,
-        key: custom.id,
-        name: custom.id,
+        id: publicId,
+        key: publicId,
+        name: publicId,
         title: custom.label,
         status: 'active',
         type_id: null,
-        slug: custom.id,
+        slug: publicId,
         type: 'custom',
       }
     }
@@ -930,19 +937,25 @@ const getPostTypesForProfile = async (profileId: string, profileAlreadyValidated
   }
 
   for (const tab of customTabs) {
-    if (seenKeys.has(tab.key) || seenKeys.has(tab.id) || seenKeys.has(tab.slug)) continue
-    if (!enabledTabKeys.has(tab.key) && !enabledTabKeys.has(tab.id) && !enabledTabKeys.has(tab.slug)) {
+    const publicId = tab.slug || tab.key || tab.id
+    if (seenKeys.has(tab.key) || seenKeys.has(tab.id) || seenKeys.has(tab.slug) || seenKeys.has(publicId)) continue
+    if (
+      !enabledTabKeys.has(tab.key) &&
+      !enabledTabKeys.has(tab.id) &&
+      !enabledTabKeys.has(tab.slug) &&
+      !enabledTabKeys.has(publicId)
+    ) {
       continue
     }
-    seenKeys.add(tab.key)
+    seenKeys.add(publicId)
     post_types.push({
-      id: tab.id,
-      key: tab.id,
-      name: tab.id,
+      id: publicId,
+      key: publicId,
+      name: publicId,
       title: tab.label,
       status: 'active',
       type_id: null,
-      slug: tab.id,
+      slug: publicId,
       type: 'custom',
     })
   }
@@ -1162,10 +1175,16 @@ const getDynamicSection = async (
   const registryTab = getTabByPublicSectionName(name)
 
   if (registryTab?.storage === 'service') {
-    const items = await prisma.service.findMany({
+    const itemsRaw = await prisma.service.findMany({
       where: { profileId, status: 1 },
       orderBy: { sortOrder: 'asc' },
       take: takeOverride ?? 200,
+    })
+    const items = await withoutHiddenOwnerSectionRows({
+      profileId,
+      sectionKey: 'services',
+      model: 'service',
+      rows: itemsRaw,
     })
     if (items.length) {
       return {
@@ -1189,10 +1208,16 @@ const getDynamicSection = async (
   }
 
   if (registryTab?.storage === 'blog') {
-    const blogs = await prisma.blog.findMany({
+    const blogsRaw = await prisma.blog.findMany({
       where: { profileId, deletedAt: null, status: '1' },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
       take: takeOverride ?? 100,
+    })
+    const blogs = await withoutHiddenOwnerSectionRows({
+      profileId,
+      sectionKey: 'blog',
+      model: 'blog',
+      rows: blogsRaw,
     })
     if (blogs.length) {
       const missingCopy = blogs.filter((row) => !String(row.description || '').trim())
@@ -1820,10 +1845,16 @@ const getDynamicSection = async (
       return null
     })
   if (customTab) {
-    const rows = await prisma.customTabItem.findMany({
+    const rowsRaw = await prisma.customTabItem.findMany({
       where: { customTabId: customTab.id, profileId, status: '1' },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
       take: takeOverride ?? 200,
+    })
+    const rows = await withoutHiddenOwnerSectionRows({
+      profileId,
+      sectionKey: customTabHideOwnerSectionKey(customTab.key.startsWith('custom-tab-') ? customTab.key : customTab.id),
+      model: 'customTabItem',
+      rows: rowsRaw,
     })
     return {
       type: customTab.id,

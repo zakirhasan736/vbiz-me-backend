@@ -657,6 +657,9 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
   }
   if (!Array.isArray(parsed)) throw new AppError(400, 'custom_tabs_json must be an array')
   const tabs = parsed.filter((tab): tab is Record<string, unknown> => Boolean(tab && typeof tab === 'object'))
+  const isOwnerCard = await isCorporateEditUnlockedCard(profileId)
+  const ownedTabIds = isOwnerCard ? new Set<string>() : await getCorporateOwnedIds(profileId, 'customTab')
+  const ownedItemIds = isOwnerCard ? new Set<string>() : await getCorporateOwnedIds(profileId, 'customTabItem')
   try {
     await prisma.$transaction(async (tx) => {
       const existing = await tx.customTab.findMany({ where: { profileId }, select: { id: true, key: true } })
@@ -670,40 +673,55 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
       }
       const retainedIds: string[] = []
       const usedItemIds = new Set<string>()
+      const claimedExistingIds = new Set<string>()
       for (let tabIndex = 0; tabIndex < tabs.length; tabIndex += 1) {
         const input = tabs[tabIndex]
         const inputId = typeof input.id === 'string' ? input.id.trim() : ''
-        const editorId = inputId.startsWith('custom-tab-') ? inputId : ''
-        const matched =
-          (editorId && existing.some((row) => row.id === editorId || row.key === editorId)) ||
-          existing.some((row) => row.id === inputId)
-        const matchedId = matched
-          ? existing.find((row) => row.id === editorId || row.key === editorId || row.id === inputId)?.id || editorId
-          : ''
+        const inputKey = typeof input.key === 'string' ? input.key.trim() : ''
+        // Stable sync key survives public id renames (`events` → `pricing`); public id is `inputId`.
+        const stableKey = inputKey || inputId
+        const publicId = inputId || stableKey
+        const matchRow = existing.find((row) => {
+          if (claimedExistingIds.has(row.id)) return false
+          if (stableKey && (row.key === stableKey || row.id === stableKey)) return true
+          if (publicId && (row.key === publicId || row.id === publicId || row.key === inputId)) return true
+          return false
+        })
+        const matchedId = matchRow?.id || ''
+        if (matchedId) claimedExistingIds.add(matchedId)
         const label = String(input.label || 'Custom tab').trim() || 'Custom tab'
-        const slug = slugify(label) || 'custom-tab'
+        const labelSlug = slugify(label) || 'custom-tab'
+        // `slug` stores the public nav/hash id; `key` stays stable for rename matching.
+        const publicSlug = publicId || labelSlug
+        const tabIsOwned = Boolean(matchedId && ownedTabIds.has(matchedId))
+        const nextKey = stableKey || `custom-${labelSlug}-${randomBytes(4).toString('hex')}`
         const tab = matchedId
           ? await tx.customTab.update({
               where: { id: matchedId },
               data: {
-                label,
+                ...(tabIsOwned
+                  ? {}
+                  : {
+                      label,
+                      slug: publicSlug,
+                      ...(nextKey && !existing.some((row) => row.key === nextKey && row.id !== matchedId)
+                        ? { key: nextKey }
+                        : {}),
+                    }),
                 sortOrder: tabIndex,
-                slug,
                 isEnabled: true,
                 isPublic: true,
                 status: '1',
-                ...(editorId && !existing.some((row) => row.key === editorId && row.id !== matchedId)
-                  ? { key: editorId }
-                  : {}),
               },
             })
           : await tx.customTab.create({
               data: {
-                ...(editorId ? { id: editorId } : {}),
+                // Stable editor keys are unique enough to use as the Prisma PK when present.
+                ...(nextKey.startsWith('custom-tab-') || nextKey.startsWith('ct_') ? { id: nextKey } : {}),
                 profileId,
-                key: editorId || `custom-${slug}-${randomBytes(4).toString('hex')}`,
+                key: nextKey,
                 label,
-                slug,
+                slug: publicSlug,
                 sortOrder: tabIndex,
                 isEnabled: true,
                 isPublic: true,
@@ -711,17 +729,37 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
               },
             })
         retainedIds.push(tab.id)
-        // Soft-retire prior items; keep DB history for restore.
+
+        // Soft-retire prior items; keep owner-synced rows on member cards.
         await tx.customTabItem.updateMany({
-          where: { customTabId: tab.id, status: { not: '0' } },
+          where: {
+            customTabId: tab.id,
+            status: { not: '0' },
+            ...(ownedItemIds.size ? { id: { notIn: [...ownedItemIds] } } : {}),
+          },
           data: { status: '0' },
         })
+        // Ensure owned items stay live even if the member payload omitted them.
+        if (ownedItemIds.size) {
+          await tx.customTabItem.updateMany({
+            where: { customTabId: tab.id, id: { in: [...ownedItemIds] } },
+            data: { status: '1' },
+          })
+        }
+
         const items = Array.isArray(input.items) ? input.items : []
         for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
           const item = items[itemIndex]
           if (!item || typeof item !== 'object') continue
           const row = item as Record<string, unknown>
           const itemId = typeof row.id === 'string' && row.id.trim() ? row.id.trim() : undefined
+          if (itemId && ownedItemIds.has(itemId)) {
+            // Keep owner content unchanged.
+            continue
+          }
+          if (row.corporateOwned === true && itemId && !isClientDraftCollectionId(itemId)) {
+            continue
+          }
           const mediaUrl = typeof row.mediaUrl === 'string' ? row.mediaUrl.trim() : ''
           const linkUrl = typeof row.url === 'string' ? row.url.trim() : ''
           const itemData = {
@@ -748,6 +786,7 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
             cardProfileId: profileId,
             alreadyUsed: Boolean(itemId && usedItemIds.has(itemId)),
           })
+          if (plan.id && ownedItemIds.has(plan.id)) continue
           if (plan.id) usedItemIds.add(plan.id)
           if (plan.mode === 'update' && plan.id) {
             await tx.customTabItem.update({ where: { id: plan.id }, data: itemData })
@@ -762,13 +801,20 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
         }
       }
       // Soft-disable tabs removed from the editor payload (never hard-delete).
+      // Member cards cannot retire owner-synced tabs.
+      const keepTabIds = [...new Set([...retainedIds, ...ownedTabIds])]
       await tx.customTab.updateMany({
-        where: retainedIds.length ? { profileId, id: { notIn: retainedIds } } : { profileId },
+        where: keepTabIds.length ? { profileId, id: { notIn: keepTabIds } } : { profileId },
         data: { status: '0', isEnabled: false, isPublic: false },
       })
-      if (retainedIds.length) {
+      if (keepTabIds.length) {
         await tx.customTabItem.updateMany({
-          where: { profileId, customTabId: { notIn: retainedIds }, status: { not: '0' } },
+          where: {
+            profileId,
+            customTabId: { notIn: keepTabIds },
+            status: { not: '0' },
+            ...(ownedItemIds.size ? { id: { notIn: [...ownedItemIds] } } : {}),
+          },
           data: { status: '0' },
         })
       }
@@ -776,10 +822,79 @@ const syncCustomTabsJson = async (profileId: string, rawJson: string) => {
   } catch (error) {
     if (!isPrismaMissingTable(error)) throw error
   }
+
+  // Rebuild JSON so owner items omitted by a member hide-toggle still persist.
+  let persistedJson = rawJson
+  if (!isOwnerCard && ownedItemIds.size) {
+    try {
+      const liveTabs = await prisma.customTab.findMany({
+        where: { profileId, status: '1', isEnabled: true },
+        orderBy: { sortOrder: 'asc' },
+        include: {
+          items: {
+            where: { status: '1' },
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+      })
+      const byId = new Map(
+        tabs.map((tab) => {
+          const id = typeof tab.id === 'string' ? tab.id.trim() : ''
+          return [id, tab] as const
+        })
+      )
+      persistedJson = JSON.stringify(
+        liveTabs.map((tab) => {
+          const input = byId.get(tab.id) || byId.get(tab.key) || {}
+          const inputItems = Array.isArray(input.items) ? input.items : []
+          const inputByItemId = new Map(
+            inputItems
+              .filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+              .map((row) => [typeof row.id === 'string' ? row.id.trim() : '', row] as const)
+              .filter(([id]) => Boolean(id))
+          )
+          return {
+            id:
+              (typeof input.id === 'string' && input.id.trim()) ||
+              tab.slug ||
+              (tab.key.startsWith('custom-tab-') ? tab.key : tab.id),
+            key: tab.key,
+            label: tab.label,
+            items: tab.items.map((item) => {
+              const fromPayload = inputByItemId.get(item.id)
+              const owned = ownedItemIds.has(item.id)
+              const data =
+                item.data && typeof item.data === 'object' && !Array.isArray(item.data)
+                  ? (item.data as Record<string, unknown>)
+                  : {}
+              if (!owned && fromPayload) {
+                const { corporateOwned: _flag, ...rest } = fromPayload
+                return rest
+              }
+              return {
+                id: item.id,
+                title: item.title || '',
+                description: item.description || '',
+                url: item.url || '',
+                mediaUrl: item.featuredImage || '',
+                mediaName: typeof data.mediaName === 'string' ? data.mediaName : '',
+                mediaKind: data.mediaKind ?? 'upload',
+                gallery: Array.isArray(data.gallery) ? data.gallery : [],
+                active: item.status !== '0',
+              }
+            }),
+          }
+        })
+      )
+    } catch (error) {
+      if (!isPrismaMissingTable(error)) throw error
+    }
+  }
+
   await prisma.setting.upsert({
     where: { profileId_key: { profileId, key: 'custom_tabs_json' } },
-    create: { profileId, key: 'custom_tabs_json', value: rawJson },
-    update: { value: rawJson },
+    create: { profileId, key: 'custom_tabs_json', value: persistedJson },
+    update: { value: persistedJson },
   })
 }
 
