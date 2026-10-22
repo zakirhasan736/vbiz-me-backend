@@ -92,8 +92,13 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     ownerUserId: req.body?.ownerUserId,
   }
   const logLine = `${req.method} ${req.originalUrl} ${message}`
-  const isAnonymousAuthorCheck =
-    statusCode === 403 && req.method === 'GET' && req.originalUrl.split('?')[0].endsWith('/auth/author')
+  // Expected unauthenticated / expired-session noise — browsers with stale tabs keep polling.
+  const isExpectedAuthNoise =
+    (statusCode === 403 && message === 'Unauthorized') ||
+    (statusCode === 401 &&
+      (message === 'Refresh token is missing' ||
+        message === 'Refresh token is invalid or expired' ||
+        message === 'Refresh session was not found'))
 
   if (statusCode >= 500) {
     logger.error(logLine, logPayload)
@@ -103,7 +108,7 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
       statusCode,
       requestId,
     })
-  } else if (!isAnonymousAuthorCheck) {
+  } else if (!isExpectedAuthNoise) {
     logger.warn(logLine, logPayload)
   }
 

@@ -64,7 +64,8 @@ const isAuthenticateUser = catchAsyncError(async (req, res, next) => {
   if (isTokenExpired(accessToken)) {
     const refreshToken = req.cookies.refreshToken as string | undefined
     if (!refreshToken) {
-      throw new AppError(401, 'Refresh token is missing')
+      // No cookie to rotate — same as unauthenticated; avoid 401 so clients don't spam /refresh-token.
+      throw new AppError(403, 'Unauthorized')
     }
 
     const decryptedJwt = jwt.verify(refreshToken, config.REFRESH_TOKEN.SECRET as string) as { id: string }
