@@ -374,6 +374,24 @@ describe('remapDuplicatedCardSettings', () => {
     assert.equal(remapped.duplicated_from, 'src-profile')
   })
 
+  it('remints opaque sync keys while keeping smart public slug ids', () => {
+    const remapped = remapDuplicatedCardSettings({
+      custom_tabs_json: JSON.stringify([
+        { id: 'events-2', key: 'ct_sourcekey', label: 'Events' },
+        { id: 'pricing', key: 'custom-tab-legacy', label: 'Pricing' },
+      ]),
+      display_settings_json: JSON.stringify({ editorNavOrder: ['home', 'events-2', 'pricing'] }),
+    })
+    const tabs = JSON.parse(remapped.custom_tabs_json) as Array<{ id: string; key: string; label: string }>
+    assert.equal(tabs[0]?.id, 'events-2')
+    assert.equal(tabs[0]?.label, 'Events')
+    assert.notEqual(tabs[0]?.key, 'ct_sourcekey')
+    assert.match(tabs[0]?.key || '', /^ct_/)
+    assert.equal(tabs[1]?.id, 'pricing')
+    assert.notEqual(tabs[1]?.key, 'custom-tab-legacy')
+    assert.match(tabs[1]?.key || '', /^ct_/)
+  })
+
   it('clears personal contact snapshots from copied My Info settings', () => {
     const remapped = remapDuplicatedCardSettings({
       my_info_json: JSON.stringify({

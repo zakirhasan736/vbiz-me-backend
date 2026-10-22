@@ -821,7 +821,10 @@ const replaceCustomTabs = async (
       (await prisma.customTab.create({
         data: {
           profileId: targetProfileId,
-          key: sourceTab.key.startsWith('custom-tab-') ? `custom-tab-${randomBytes(6).toString('hex')}` : sourceTab.key,
+          key:
+            sourceTab.key.startsWith('custom-tab-') || sourceTab.key.startsWith('ct_')
+              ? `ct_${randomBytes(6).toString('hex')}`
+              : sourceTab.key,
           label: sourceTab.label,
           slug: sourceTab.slug,
           description: sourceTab.description,

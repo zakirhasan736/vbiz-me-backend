@@ -419,9 +419,17 @@ function newCustomTabId(): string {
   return `custom-tab-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 }
 
+function newCustomTabStableKey(): string {
+  return `ct_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+}
+
+function isOpaqueCustomTabKey(value: string): boolean {
+  return value.startsWith('custom-tab-') || value.startsWith('ct_')
+}
+
 /**
- * Custom tab ids are globally unique. Rewrite them in copied settings so the draft
- * does not collide with the source card, and keep editor nav order in sync.
+ * Custom tab editor keys must not collide across cards. Remint opaque keys / legacy
+ * `custom-tab-*` public ids in copied settings; keep smart public slugs (`events-2`).
  */
 export function remapDuplicatedCardSettings(
   settings: Record<string, string>,
@@ -439,9 +447,15 @@ export function remapDuplicatedCardSettings(
           if (!tab || typeof tab !== 'object') return tab
           const row = { ...(tab as Record<string, unknown>) }
           const oldId = typeof row.id === 'string' ? row.id.trim() : ''
-          const nextId = oldId.startsWith('custom-tab-') ? newCustomTabId() : oldId || newCustomTabId()
+          const oldKey = typeof row.key === 'string' ? row.key.trim() : ''
+          // Public nav/hash id: remint only legacy opaque ids (were also used as Prisma PKs).
+          const nextId = isOpaqueCustomTabKey(oldId) || !oldId ? newCustomTabId() : oldId
+          const sourceKey = oldKey || oldId
+          const nextKey = isOpaqueCustomTabKey(sourceKey) || !sourceKey ? newCustomTabStableKey() : sourceKey
           if (oldId) idMap.set(oldId, nextId)
+          if (oldKey && oldKey !== oldId) idMap.set(oldKey, nextKey)
           row.id = nextId
+          row.key = nextKey
           if (Array.isArray(row.items)) {
             row.items = row.items.map((item) => {
               if (!item || typeof item !== 'object') return item
