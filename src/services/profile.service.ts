@@ -95,6 +95,7 @@ import {
   unknownPrismaCreateArgs,
   unknownPrismaSelectFields,
 } from '../utils/duplicateCard'
+import { applyDuplicatedMediaUrlRemap, copySingletonMediaForDuplicate } from '../utils/duplicateCardMedia'
 import { fillMissingGalleryMedia, listGalleriesForProfile, toGalleryWriteData } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
@@ -1837,6 +1838,10 @@ const clonePrimaryProfileCollections = async (
     }
   }
 
+  // Copy intro/profile/background/etc. to new S3 keys before the DB transaction so each
+  // linked card owns its own files (shared keys caused AccessDenied when one card replaced media).
+  const mediaRemap = await copySingletonMediaForDuplicate(sourceProfileId)
+
   await prisma.$transaction(
     async (tx) => {
       const client = tx as unknown as Record<string, ListDelegate>
@@ -2032,6 +2037,7 @@ const clonePrimaryProfileCollections = async (
         if (postId && type !== 'Post' && typeKey !== 'Post') {
           postId = attachableIdMap.Post.get(postId) || null
         }
+        const clonedMedia = mediaRemap.byAttachmentId.get(attachment.id)
         try {
           await tx.attachment.create({
             data: {
@@ -2041,11 +2047,11 @@ const clonePrimaryProfileCollections = async (
               profileId: targetProfileId,
               postId: type === 'Post' || typeKey === 'Post' ? attachableId : postId,
               docName: attachment.docName,
-              url: attachment.url,
-              publicId: attachment.publicId,
-              resourceType: attachment.resourceType,
-              format: attachment.format,
-              bytes: attachment.bytes,
+              url: clonedMedia?.url || attachment.url,
+              publicId: clonedMedia?.publicId || attachment.publicId,
+              resourceType: clonedMedia?.resourceType || attachment.resourceType,
+              format: clonedMedia?.format || attachment.format,
+              bytes: clonedMedia?.bytes ?? attachment.bytes,
               extension: attachment.extension,
               mimeType: attachment.mimeType,
             },
@@ -2090,6 +2096,8 @@ const clonePrimaryProfileCollections = async (
     },
     { timeout: 60_000, maxWait: 15_000 }
   )
+
+  await applyDuplicatedMediaUrlRemap(targetProfileId, mediaRemap.urlMap)
 }
 
 const duplicate = async (

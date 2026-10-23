@@ -46,16 +46,22 @@ export const PERSONAL_COLLECTION_KINDS = new Set(['socialLinks', 'addresses'])
 /** About Me stays unique on each linked card. */
 export const PERSONAL_STORAGES = new Set(['about_me'])
 
-/** Each linked card keeps its own portrait / profile video. */
+/**
+ * Each linked card keeps its own portrait / intro / home background.
+ * Duplicate may seed the same S3 URL once; live sync must never overwrite these.
+ */
 export const PERSONAL_PROFILE_MEDIA_SETTING_KEYS = [
   'profile_media_url',
   'profile_image',
   'profile_image_url',
   'avatar',
   'avatar_url',
+  'intro_video_url',
+  'intro_youtube_url',
+  'background_media_url',
 ] as const
 
-const PERSONAL_DISPLAY_MEDIA_FIELDS = ['Profile Image/Video'] as const
+const PERSONAL_DISPLAY_MEDIA_FIELDS = ['Profile Image/Video', 'Intro vCard Video', 'Background Video/Image'] as const
 
 /**
  * Only these Setting keys fan out across linked corporate cards.

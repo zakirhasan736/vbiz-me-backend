@@ -1,4 +1,10 @@
-import { DeleteObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
 import { randomUUID } from 'crypto'
 import path from 'path'
 import config from '../configs/config'
@@ -167,6 +173,51 @@ const headObject = async (key: string): Promise<boolean> => {
   }
 }
 
+/** Server-side copy within the bucket — used when duplicating linked cards so each owns its file. */
+const copyObject = async (
+  sourceKey: string,
+  options?: {
+    folder?: string
+    filename?: string
+    contentType?: string
+    resourceType?: 'image' | 'video' | 'raw' | 'auto'
+  }
+): Promise<S3UploadResult> => {
+  const s3 = ensureConfigured()
+  const src = sourceKey.replace(/^\/+/, '').trim()
+  if (!src) throw new AppError(400, 'S3 source key is required')
+
+  const folder = options?.folder || config.S3.KEY_PREFIX
+  const format = options?.filename ? path.extname(options.filename).replace(/^\./, '') || undefined : undefined
+  const destKey = buildKey(folder, options?.filename, format)
+  const copySource = `${config.S3.BUCKET}/${src
+    .split('/')
+    .map((seg) => encodeURIComponent(seg))
+    .join('/')}`
+
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: config.S3.BUCKET,
+      CopySource: copySource,
+      Key: destKey,
+      ContentType: options?.contentType || undefined,
+      MetadataDirective: options?.contentType ? 'REPLACE' : 'COPY',
+    })
+  )
+
+  const resourceType =
+    options?.resourceType && options.resourceType !== 'auto'
+      ? options.resourceType
+      : guessResourceType(options?.contentType, format)
+
+  return {
+    url: publicUrlForKey(destKey),
+    publicId: destKey,
+    resourceType,
+    format,
+  }
+}
+
 const destroy = async (key: string) => {
   const s3 = ensureConfigured()
   await s3.send(
@@ -180,6 +231,7 @@ const destroy = async (key: string) => {
 const s3Utils = {
   uploadBuffer,
   uploadFromUrl,
+  copyObject,
   headObject,
   destroy,
   ensureConfigured,

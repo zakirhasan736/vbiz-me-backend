@@ -13,6 +13,7 @@ import { bindCardChangeContext } from '../utils/cardChangeHistory'
 import catchAsyncError from '../utils/catchAsyncError'
 import { prisma } from '../utils/prisma'
 import s3Utils from '../utils/s3'
+import { destroyS3IfUnreferenced } from '../utils/s3MediaRefCount'
 import sendResponse from '../utils/sendResponse'
 
 const upload = multer({
@@ -83,12 +84,23 @@ router.post(
             where: { profileId },
             include: { attachmentType: true },
           })
-          for (const att of existing) {
-            if (!isSameBuilderAttachmentType(att.attachmentType?.name, attachmentTypeName)) continue
+          const matched = existing.filter((att) =>
+            isSameBuilderAttachmentType(att.attachmentType?.name, attachmentTypeName)
+          )
+          const matchedIds = matched.map((att) => att.id)
+          for (const att of matched) {
             const key = att.publicId?.trim()
             if (key) {
               try {
-                await s3Utils.destroy(key)
+                // Linked/corporate duplicates share the same S3 key — never delete
+                // while another card still references it (prevents AccessDenied XML).
+                await destroyS3IfUnreferenced({
+                  publicId: key,
+                  url: att.url,
+                  exceptProfileId: profileId,
+                  exceptAttachmentIds: matchedIds,
+                  destroy: (k) => s3Utils.destroy(k),
+                })
               } catch {
                 /* best-effort */
               }
@@ -143,20 +155,20 @@ router.post(
       include: { attachmentType: true },
     })
 
-    const byType = attachments.filter((att) => isSameBuilderAttachmentType(att.attachmentType?.name, attachmentType))
-    // Multi-item types (Service Featured, Blog Featured, …) must scope delete by URL —
-    // clearing by type alone would wipe every item's media on the card.
-    const matched = targetUrl
-      ? byType.filter((att) => sameMediaUrl(att.url, targetUrl))
-      : isSingletonBuilderAttachmentType(attachmentType)
-        ? byType
-        : []
+    const matched = attachments.filter((att) => isSameBuilderAttachmentType(att.attachmentType?.name, attachmentType))
+    const matchedIds = matched.map((att) => att.id)
 
     for (const att of matched) {
       const key = att.publicId?.trim()
       if (key) {
         try {
-          await s3Utils.destroy(key)
+          await destroyS3IfUnreferenced({
+            publicId: key,
+            url: att.url,
+            exceptProfileId: profileId,
+            exceptAttachmentIds: matchedIds,
+            destroy: (k) => s3Utils.destroy(k),
+          })
         } catch {
           /* best-effort S3 delete */
         }
