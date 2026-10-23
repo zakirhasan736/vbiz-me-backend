@@ -92,6 +92,7 @@ import {
   remapDuplicatedCardSettings,
   settingsMapFromRows,
   stripAboutMeSettings,
+  stripSeoSettings,
   unknownPrismaCreateArgs,
   unknownPrismaSelectFields,
 } from '../utils/duplicateCard'
@@ -2162,7 +2163,10 @@ const duplicate = async (
   const customTabIdMap = new Map<string, string>()
   const remappedSettings = remapDuplicatedCardSettings(settingsMapFromRows(source.settings), profileId, customTabIdMap)
   const settings = corporateParentId
-    ? { ...stripAboutMeSettings(remappedSettings), member_nav_customized: '1' }
+    ? {
+        ...stripSeoSettings(stripAboutMeSettings(remappedSettings)),
+        member_nav_customized: '1',
+      }
     : remappedSettings
   const ownership =
     memberUserId && corporateParentId

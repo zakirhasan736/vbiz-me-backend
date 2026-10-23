@@ -17,6 +17,7 @@ import {
   settingsMapFromRows,
   SHARED_DUPLICATE_LIST_MODELS,
   stripAboutMeSettings,
+  stripSeoSettings,
   unknownPrismaCreateArgs,
   unknownPrismaSelectFields,
 } from '../utils/duplicateCard'
@@ -82,6 +83,22 @@ describe('duplicate vs linked-card identity contract', () => {
     })
     assert.equal(stripped.about_me_title, undefined)
     assert.equal(stripped.about_me_featured_media_url, undefined)
+    assert.equal(stripped.extra_fields_json, '[]')
+  })
+
+  it('strips Card Settings SEO so a linked duplicate does not inherit owner SEO / Home Screen icon', () => {
+    const stripped = stripSeoSettings({
+      seo_meta_title: 'Owner Corp',
+      seo_meta_description: 'Owner blurb',
+      seo_meta_keywords_json: '["owner"]',
+      seo_image_url: 'https://cdn.example.com/owner-og.jpg',
+      seo_favicon_url: 'https://cdn.example.com/owner-fav.png',
+      pwa_home_screen_icon_url: 'https://cdn.example.com/owner-pwa.png',
+      extra_fields_json: '[]',
+    })
+    assert.equal(stripped.seo_meta_title, undefined)
+    assert.equal(stripped.seo_image_url, undefined)
+    assert.equal(stripped.pwa_home_screen_icon_url, undefined)
     assert.equal(stripped.extra_fields_json, '[]')
   })
 })
