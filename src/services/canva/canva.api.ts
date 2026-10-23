@@ -8,6 +8,8 @@ export type CanvaDesignSummary = {
   updated_at?: number
   page_count?: number
   thumbnail?: { url?: string }
+  urls?: { edit_url?: string; view_url?: string }
+  owner?: { user_id?: string; team_id?: string }
 }
 
 export type CanvaExportJob = {
@@ -19,22 +21,75 @@ export type CanvaExportJob = {
 
 type CanvaErrorBody = { code?: string; message?: string }
 
+export class CanvaApiError extends Error {
+  status: number
+  code?: string
+
+  constructor(status: number, message: string, code?: string) {
+    super(message)
+    this.name = 'CanvaApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+async function sleep(ms: number) {
+  await new Promise((r) => setTimeout(r, ms))
+}
+
 async function canvaFetch<T>(accessToken: string, path: string, init?: RequestInit): Promise<T> {
   const { apiBaseUrl } = getCanvaConfig()
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init?.headers || {}),
-    },
-  })
+  const maxAttempts = 4
 
-  const data = (await response.json().catch(() => ({}))) as T & CanvaErrorBody
-  if (!response.ok) {
-    throw new Error(data.message || data.code || `Canva API error (${response.status})`)
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const response = await fetch(`${apiBaseUrl}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init?.headers || {}),
+      },
+    })
+
+    const data = (await response.json().catch(() => ({}))) as T & CanvaErrorBody
+
+    if (response.status === 429 && attempt < maxAttempts - 1) {
+      const retryAfter = Number(response.headers.get('retry-after') || 0)
+      await sleep(Math.max(retryAfter * 1000, 1000 * 2 ** attempt))
+      continue
+    }
+
+    if (!response.ok) {
+      throw new CanvaApiError(
+        response.status,
+        data.message || data.code || `Canva API error (${response.status})`,
+        data.code
+      )
+    }
+    return data
   }
-  return data
+
+  throw new CanvaApiError(429, 'Canva API rate limited')
+}
+
+export async function createCanvaDesign(accessToken: string, input: { title: string; width: number; height: number }) {
+  const data = await canvaFetch<{ design: CanvaDesignSummary }>(accessToken, '/designs', {
+    method: 'POST',
+    body: JSON.stringify({
+      design_type: {
+        type: 'custom',
+        width: input.width,
+        height: input.height,
+      },
+      title: input.title.slice(0, 255),
+    }),
+  })
+  return data.design
+}
+
+export async function getCanvaDesign(accessToken: string, designId: string) {
+  const data = await canvaFetch<{ design: CanvaDesignSummary }>(accessToken, `/designs/${encodeURIComponent(designId)}`)
+  return data.design
 }
 
 export async function listCanvaDesigns(
@@ -79,15 +134,25 @@ export async function getCanvaExportJob(accessToken: string, exportId: string) {
 }
 
 export async function waitForCanvaExport(accessToken: string, exportId: string) {
-  const timeoutMs = 90_000
-  const intervalMs = 1_500
+  const timeoutMs = 120_000
+  let delayMs = 1_200
   const started = Date.now()
 
   while (Date.now() - started < timeoutMs) {
     const job = await getCanvaExportJob(accessToken, exportId)
     if (job.status === 'success') return job
-    if (job.status === 'failed') throw new Error(job.error?.message || 'Canva export failed')
-    await new Promise((r) => setTimeout(r, intervalMs))
+    if (job.status === 'failed') {
+      const code = job.error?.code || ''
+      const message = job.error?.message || 'Canva export failed'
+      if (/premium|license|payment/i.test(`${code} ${message}`)) {
+        throw new Error(
+          'Export failed because this design uses premium Canva elements that cannot be exported with the current account. Remove premium elements or upgrade in Canva, then retry.'
+        )
+      }
+      throw new Error(message)
+    }
+    await sleep(delayMs)
+    delayMs = Math.min(8_000, Math.round(delayMs * 1.35))
   }
 
   throw new Error('Canva export timed out — try again in a moment')
