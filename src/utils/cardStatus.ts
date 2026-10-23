@@ -7,8 +7,12 @@ export type CardLifecycleStatus = (typeof CARD_LIFECYCLE_STATUSES)[number]
 export const CARD_STATUS_SEED_NAMES = ['active', 'inactive', 'paused', 'suspended', 'draft'] as const
 
 const HIDDEN_PUBLIC_STATUS_NAMES = ['paused', 'suspended', 'inactive', 'draft'] as const
-/** Blocked even when someone already has the /v/{slug} link. */
-const BLOCKED_DIRECT_STATUS_NAMES = ['paused', 'suspended'] as const
+/**
+ * Direct /v/{slug} (and wallet / assistant) must not open unpublished cards.
+ * Visibility OFF sets status=inactive + isPublic=false — those URLs must 404.
+ * Draft / paused / suspended are also blocked for live browsing.
+ */
+const BLOCKED_DIRECT_STATUS_NAMES = ['paused', 'suspended', 'inactive', 'draft'] as const
 
 export type AccountLockSnapshot = {
   statusName: string
@@ -86,8 +90,15 @@ export const publicVisibleWhere = (): Prisma.ProfileWhereInput => ({
   },
 })
 
-/** Direct /v/{slug} links, wallet passes, and card sections. Drafts stay reachable by URL. */
+/**
+ * Direct /v/{slug} links, wallet passes, and card sections.
+ * Only fully published cards (Visibility ON / active + public) are readable.
+ * Turning Visibility OFF keeps the card in the dashboard Active list (isDraft=false)
+ * but the live slug returns 404 until Visibility is turned ON again.
+ */
 export const publicReadableWhere = (): Prisma.ProfileWhereInput => ({
+  isPublic: true,
+  isDraft: false,
   NOT: {
     status: {
       name: {
