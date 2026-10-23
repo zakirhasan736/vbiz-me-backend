@@ -177,6 +177,28 @@ export function stripAboutMeSettings(settings: Record<string, string>): Record<s
   return next
 }
 
+/**
+ * Card Settings → SEO — unique per linked card.
+ * Do not copy the corporate owner's title/images/Home Screen icon onto team member cards.
+ */
+export const SEO_SETTING_KEYS = [
+  'seo_meta_title',
+  'seo_meta_description',
+  'seo_meta_keywords_json',
+  'seo_image_url',
+  'seo_favicon_url',
+  'pwa_home_screen_icon_url',
+] as const
+
+export function stripSeoSettings(settings: Record<string, string>): Record<string, string> {
+  const next = { ...settings }
+  for (const key of SEO_SETTING_KEYS) delete next[key]
+  for (const key of Object.keys(next)) {
+    if (key.startsWith('seo_') || key === 'pwa_home_screen_icon_url') delete next[key]
+  }
+  return next
+}
+
 /** My Info contact values that stay on the card owner. WhatsApp and chrome copy. */
 export const MY_INFO_PERSONAL_CONTACT_KEYS = ['phone', 'email'] as const
 

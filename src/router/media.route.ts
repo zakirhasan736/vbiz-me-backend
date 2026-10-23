@@ -7,7 +7,6 @@ import {
   BUILDER_ATTACHMENT_TYPE_ALIASES,
   attachmentTypeNameMatches,
   isSingletonBuilderAttachmentType,
-  sameMediaUrl,
 } from '../utils/attachmentTypeMatch'
 import { bindCardChangeContext } from '../utils/cardChangeHistory'
 import catchAsyncError from '../utils/catchAsyncError'
