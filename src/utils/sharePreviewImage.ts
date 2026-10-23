@@ -55,8 +55,11 @@ export async function resolveProfileSharePreviewImageUrl(
     VIDEO_MEDIA_RE.test(profileMedia?.url || '') ||
     VIDEO_MEDIA_RE.test(profileMedia?.video_url || '')
 
-  // Owner SEO image first, then avatar / profile / About Me fallbacks.
+  const linked = Boolean(String(settings.duplicated_from || '').trim())
+
+  // This card's SEO / Home Screen first (never copied from the corporate owner onto linked cards).
   pushStillShareCandidate(seen, candidates, settings[SEO_IMAGE_SETTING_KEY], legacyId)
+  pushStillShareCandidate(seen, candidates, settings.pwa_home_screen_icon_url, legacyId)
   pushStillShareCandidate(seen, candidates, settings[SHARE_PREVIEW_IMAGE_SETTING_KEY], legacyId)
 
   if (profileMediaIsVideo) {
@@ -71,17 +74,29 @@ export async function resolveProfileSharePreviewImageUrl(
   pushStillShareCandidate(seen, candidates, settings.profile_media_url, legacyId)
   pushStillShareCandidate(seen, candidates, settings.profile_image, legacyId)
   pushStillShareCandidate(seen, candidates, settings.profile_image_url, legacyId)
-  pushStillShareCandidate(seen, candidates, card.profile?.avatar, legacyId)
 
   if (!profileMediaIsVideo) {
     const aboutFeatured = await readAboutMeFeaturedMediaUrl(prisma, profileId, settings, legacyId)
     pushStillShareCandidate(seen, candidates, aboutFeatured, legacyId)
   }
 
-  pushStillShareCandidate(seen, candidates, settings.company_logo, legacyId)
-  pushStillShareCandidate(seen, candidates, settings.company_icon_url, legacyId)
-  pushStillShareCandidate(seen, candidates, settings.featured_image, legacyId)
-  pushStillShareCandidate(seen, candidates, settings.featured_image_url, legacyId)
+  if (!linked) {
+    pushStillShareCandidate(seen, candidates, card.profile?.avatar, legacyId)
+    pushStillShareCandidate(seen, candidates, settings.company_logo, legacyId)
+    pushStillShareCandidate(seen, candidates, settings.company_icon_url, legacyId)
+    pushStillShareCandidate(seen, candidates, settings.featured_image, legacyId)
+    pushStillShareCandidate(seen, candidates, settings.featured_image_url, legacyId)
+  } else {
+    const ownPortrait =
+      settings.profile_media_url?.trim() ||
+      settings.profile_image?.trim() ||
+      settings.profile_image_url?.trim() ||
+      (!profileMediaIsVideo ? profileMedia?.url?.trim() || '' : '')
+    const avatar = card.profile?.avatar?.trim() || ''
+    if (avatar && ownPortrait && avatar === ownPortrait) {
+      pushStillShareCandidate(seen, candidates, avatar, legacyId)
+    }
+  }
 
   return candidates[0] || null
 }

@@ -5,8 +5,11 @@ import { prisma } from './prisma'
 const VIDEO_MEDIA_RE = /\.(mp4|webm|mov|m4v|ogv|ogg|avi|mkv)(\?|#|$)/i
 const VIDEO_PATH_RE = /\/(backgroundVideos|videoExplainers|videos)\//i
 const IMAGE_SETTING_KEY_RE =
-  /logo|avatar|profile.?media|profile.?image|featured.?image|company.?icon|profile.?pic|about.?me/i
-const AVATAR_SETTING_KEYS = ['avatar', 'avatar_url', 'profile_image', 'profile_image_url', 'profile_media_url']
+  /logo|avatar|profile.?media|profile.?image|featured.?image|company.?icon|profile.?pic|about.?me|seo_|pwa_home/i
+/** This card's portrait settings (Profile Image/Video). */
+const PROFILE_PHOTO_SETTING_KEYS = ['profile_media_url', 'profile_image', 'profile_image_url'] as const
+/** Card Settings → SEO: Home Screen then Open Graph (unique per linked card). */
+const SEO_AREA_PHOTO_KEYS = ['pwa_home_screen_icon_url', 'seo_image_url'] as const
 const OTHER_SETTING_KEYS = ['company_logo', 'company_icon_url', 'featured_image', 'featured_image_url']
 
 export type SaveContactPhotoSource = {
@@ -71,7 +74,14 @@ function isImageAttachment(attachment: NonNullable<SaveContactPhotoSource['attac
 }
 
 /**
- * Phone contact photo candidates: avatar first, then About Me screen, then any other still profile image.
+ * Phone contact / VCF photo candidates, in order:
+ * 1. This card's profile image
+ * 2. About Me featured image
+ * 3. Card Settings → Add to Home Screen icon
+ * 4. Card Settings → SEO / Open Graph image
+ *
+ * Linked corporate cards stop after that list — never the owner's avatar, logos,
+ * featured images, or cloned attachments.
  */
 export function collectSaveContactPhotoCandidates(
   input: SaveContactPhotoSource & { aboutMeFeaturedUrl?: string | null }
@@ -81,19 +91,33 @@ export function collectSaveContactPhotoCandidates(
   const map = settingsMap(input.settings)
   const legacyId = input.legacyId ?? null
   const attachments = input.attachments || []
+  const linked = Boolean(map.duplicated_from?.trim())
+
+  // 1) Profile image
+  for (const key of PROFILE_PHOTO_SETTING_KEYS) {
+    pushStillPhoto(seen, out, map[key], legacyId)
+  }
+  // 2) About Me
+  pushStillPhoto(seen, out, input.aboutMeFeaturedUrl, legacyId)
+  pushStillPhoto(seen, out, map.about_me_featured_media_url, legacyId)
+  // 3–4) SEO area: Home Screen icon, then Open Graph
+  for (const key of SEO_AREA_PHOTO_KEYS) {
+    pushStillPhoto(seen, out, map[key], legacyId)
+  }
+
+  if (linked) {
+    return out
+  }
 
   pushStillPhoto(seen, out, input.avatar, legacyId)
-  for (const key of AVATAR_SETTING_KEYS) {
+  for (const key of ['avatar', 'avatar_url']) {
     pushStillPhoto(seen, out, map[key], legacyId)
   }
   for (const attachment of attachments) {
     if (!isImageAttachment(attachment) || !isProfileAvatarAttachment(attachment)) continue
     pushStillPhoto(seen, out, attachment.url || attachment.docName, legacyId)
   }
-
-  pushStillPhoto(seen, out, input.aboutMeFeaturedUrl, legacyId)
-  pushStillPhoto(seen, out, map.about_me_featured_media_url, legacyId)
-
+  pushStillPhoto(seen, out, map.share_preview_image_url, legacyId)
   for (const key of OTHER_SETTING_KEYS) {
     pushStillPhoto(seen, out, map[key], legacyId)
   }

@@ -94,11 +94,13 @@ describe('duplicate vs linked-card identity contract', () => {
       seo_image_url: 'https://cdn.example.com/owner-og.jpg',
       seo_favicon_url: 'https://cdn.example.com/owner-fav.png',
       pwa_home_screen_icon_url: 'https://cdn.example.com/owner-pwa.png',
+      share_preview_image_url: 'https://cdn.example.com/owner-share.jpg',
       extra_fields_json: '[]',
     })
     assert.equal(stripped.seo_meta_title, undefined)
     assert.equal(stripped.seo_image_url, undefined)
     assert.equal(stripped.pwa_home_screen_icon_url, undefined)
+    assert.equal(stripped.share_preview_image_url, undefined)
     assert.equal(stripped.extra_fields_json, '[]')
   })
 })

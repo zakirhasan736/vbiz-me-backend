@@ -188,13 +188,16 @@ export const SEO_SETTING_KEYS = [
   'seo_image_url',
   'seo_favicon_url',
   'pwa_home_screen_icon_url',
+  'share_preview_image_url',
 ] as const
 
 export function stripSeoSettings(settings: Record<string, string>): Record<string, string> {
   const next = { ...settings }
   for (const key of SEO_SETTING_KEYS) delete next[key]
   for (const key of Object.keys(next)) {
-    if (key.startsWith('seo_') || key === 'pwa_home_screen_icon_url') delete next[key]
+    if (key.startsWith('seo_') || key === 'pwa_home_screen_icon_url' || key === 'share_preview_image_url') {
+      delete next[key]
+    }
   }
   return next
 }

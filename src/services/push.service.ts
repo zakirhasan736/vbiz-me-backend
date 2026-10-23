@@ -210,31 +210,41 @@ export const mediaFromProfile = (profile: ProfileMediaSource) => {
   }
 
   const settingMap = Object.fromEntries(profile.settings.map((s) => [s.key, s.value]))
+  const linked = Boolean(String(settingMap.duplicated_from || '').trim())
+
+  // Same priority as VCF: profile → About Me → Home Screen → SEO Open Graph.
   pushUrl(settingMap.profile_media_url)
-  pushUrl(settingMap.company_logo)
-  pushUrl(settingMap.company_icon_url)
-  pushUrl(profile.avatar)
-  pushUrl(settingMap.featured_image)
-  pushUrl(settingMap.featured_image_url)
   pushUrl(settingMap.profile_image)
   pushUrl(settingMap.profile_image_url)
-  pushUrl(settingMap.avatar)
-  pushUrl(settingMap.avatar_url)
+  pushUrl(settingMap.about_me_featured_media_url)
+  pushUrl(settingMap.pwa_home_screen_icon_url)
+  pushUrl(settingMap.seo_image_url)
+  if (!linked) pushUrl(settingMap.share_preview_image_url)
 
-  for (const setting of profile.settings) {
-    if (!IMAGE_SETTING_KEY_RE.test(setting.key)) continue
-    pushUrl(setting.value)
-  }
+  if (!linked) {
+    pushUrl(settingMap.company_logo)
+    pushUrl(settingMap.company_icon_url)
+    pushUrl(profile.avatar)
+    pushUrl(settingMap.featured_image)
+    pushUrl(settingMap.featured_image_url)
+    pushUrl(settingMap.avatar)
+    pushUrl(settingMap.avatar_url)
 
-  for (const attachment of profile.attachments || []) {
-    const mime = `${attachment.mimeType || ''} ${attachment.resourceType || ''}`.toLowerCase()
-    if (mime.includes('video') || mime.includes('audio')) continue
-    pushUrl(attachment.url, {
-      docName: attachment.docName,
-      attachmentTypeLegacyId: attachment.attachmentType?.legacyId ?? null,
-      attachmentTypeName: attachment.attachmentType?.name ?? null,
-      profileLegacyId: profile.legacyId ?? null,
-    })
+    for (const setting of profile.settings) {
+      if (!IMAGE_SETTING_KEY_RE.test(setting.key)) continue
+      pushUrl(setting.value)
+    }
+
+    for (const attachment of profile.attachments || []) {
+      const mime = `${attachment.mimeType || ''} ${attachment.resourceType || ''}`.toLowerCase()
+      if (mime.includes('video') || mime.includes('audio')) continue
+      pushUrl(attachment.url, {
+        docName: attachment.docName,
+        attachmentTypeLegacyId: attachment.attachmentType?.legacyId ?? null,
+        attachmentTypeName: attachment.attachmentType?.name ?? null,
+        profileLegacyId: profile.legacyId ?? null,
+      })
+    }
   }
 
   const icon = candidates[0]
