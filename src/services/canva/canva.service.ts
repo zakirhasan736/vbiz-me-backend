@@ -248,10 +248,19 @@ function createCorrelationState() {
   return randomBytes(24).toString('base64url').slice(0, 32)
 }
 
+/**
+ * Append correlation_state without parsing via `new URL()`.
+ * Canva edit_url paths contain opaque encrypted tokens; URL normalize/re-encode
+ * can alter the path and Canva then returns Cloudflare 403 on open.
+ */
 function appendCorrelationState(editUrl: string, correlationState: string) {
-  const url = new URL(editUrl)
-  url.searchParams.set('correlation_state', correlationState)
-  return url.toString()
+  const trimmed = editUrl.trim()
+  if (!trimmed) return trimmed
+  const hashIndex = trimmed.indexOf('#')
+  const withoutHash = hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed
+  const hash = hashIndex >= 0 ? trimmed.slice(hashIndex) : ''
+  const sep = withoutHash.includes('?') ? '&' : '?'
+  return `${withoutHash}${sep}correlation_state=${encodeURIComponent(correlationState)}${hash}`
 }
 
 function grantedScopes(scope: string | null | undefined) {
