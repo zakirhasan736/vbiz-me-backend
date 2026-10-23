@@ -1,16 +1,19 @@
 import config from '../configs/config'
-import { buildFrontendPublicCardPath, buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
 import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
-import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
+import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
+import { exactOwnerPushProfileIds } from '../utils/pushAudience'
+import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
+import { DEFAULT_CAMPAIGN_TIMEZONE, zonedLocalDateTimeToUtc } from '../utils/scheduleTimezone'
 import type {
   CancelMeetingInput,
   CompleteMeetingInput,
   ConfirmGuestSlotInput,
   CreatePublicRequestInput,
+  DeleteRequestInput,
   ListOpenRequestsQuery,
   RescheduleMeetingInput,
   ScheduleMeetingInput,
@@ -131,9 +134,10 @@ function normalizeTimeToHHmm(time: string): string {
   return `${String(h).padStart(2, '0')}:${m}`
 }
 
-function parseSlotDateTime(date: string, startTime: string) {
+function parseSlotDateTime(date: string, startTime: string, timeZone?: string | null) {
   const hhmm = normalizeTimeToHHmm(startTime)
-  return new Date(`${date}T${hhmm}:00`)
+  // IANA zone (slot/request) → UTC instant — never server-local Date parsing.
+  return zonedLocalDateTimeToUtc(date, hhmm, timeZone)
 }
 
 function guestPickUrl(requestId: string) {
@@ -299,8 +303,9 @@ async function findGuestPushProfile(guestEmail: string) {
     select: { id: true },
   })
   if (!user) return null
+  // Guest/requester push: only cards they directly own — never corporate children.
   const profiles = await prisma.profile.findMany({
-    where: { OR: [{ userId: user.id }, { companyUserId: user.id }] },
+    where: { userId: user.id },
     select: { id: true },
   })
   if (!profiles.length) return null
@@ -321,6 +326,7 @@ async function resolveCardStakeholderEmails(profileId: string): Promise<{
   slug: string | null
   companyUserId: string | null
   userId: string | null
+  ownerUserId: string | null
 }> {
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
@@ -350,6 +356,10 @@ async function resolveCardStakeholderEmails(profileId: string): Promise<{
     slug: profile.slug,
     companyUserId: profile.companyUserId,
     userId: profile.userId,
+    ownerUserId: resolveDirectOwnerUserId({
+      userId: profile.userId,
+      companyUserId: profile.companyUserId,
+    }),
   }
 }
 
@@ -393,9 +403,11 @@ async function createStakeholderInboxNotice(opts: {
   profileId: string
   slug?: string | null
   requestId?: string
+  userId?: string | null
 }) {
   const emails = [...new Set(opts.emails.map((e) => e.trim().toLowerCase()).filter(Boolean))]
   if (!emails.length) return
+  const userId = opts.userId?.trim() || null
   try {
     await prisma.announcement.create({
       data: {
@@ -408,8 +420,12 @@ async function createStakeholderInboxNotice(opts: {
         targetEmails: emails,
         meta: {
           channel: 'inbox',
+          // Card back-office (not CRM lead feed) — matrix §3 / §18 guest 1-on-1.
           category: 'event',
+          topic: 'card',
+          href: buildOwnerBackofficePath('one_on_one', opts.profileId),
           profileId: opts.profileId,
+          ...(userId ? { userId } : {}),
           ...(opts.slug ? { slug: opts.slug } : {}),
           ...(opts.requestId ? { oneOnOneRequestId: opts.requestId } : {}),
           sendPush: '0',
@@ -425,14 +441,19 @@ async function createStakeholderInboxNotice(opts: {
 function notifyCardPush(
   profileId: string,
   payload: { title: string; body: string; url?: string },
-  slug?: string | null
+  _slug?: string | null
 ) {
-  pushService.notifyProfileUpdate(profileId, {
-    title: payload.title,
-    body: payload.body,
-    type: 'meeting_alert',
-    url: payload.url || (slug ? buildFrontendPublicCardPath(slug) : undefined),
-  })
+  // Owner-device only — savers who follow this public card must not get owner CRM/1-on-1 alerts.
+  pushService.notifyProfileUpdate(
+    profileId,
+    {
+      title: payload.title,
+      body: payload.body,
+      type: 'meeting_alert',
+      url: payload.url || buildOwnerBackofficePath('one_on_one', profileId),
+    },
+    { audience: 'owners', allowPrivate: true }
+  )
 }
 
 async function sendEmailsSafe(emails: string[], subject: string, html: string, context: string) {
@@ -483,31 +504,38 @@ async function pushGuestMeetingNotification(opts: {
   }
 
   for (const profileId of profileIds) {
-    pushService.notifyProfileUpdate(profileId, {
-      title,
-      body,
-      type: 'meeting_alert',
-      url: opts.meetingUrl || undefined,
-    })
+    pushService.notifyProfileUpdate(
+      profileId,
+      {
+        title,
+        body,
+        type: 'meeting_alert',
+        url: opts.meetingUrl || undefined,
+      },
+      { audience: 'owners', allowPrivate: true }
+    )
   }
   return { sent: true as const, reason: 'ok' as const }
 }
 
 async function notifyOwnerMeetingPush(
   profileId: string,
-  ownerEmails: string[],
+  _ownerEmails: string[],
   payload: { title: string; body: string; url?: string },
-  slug?: string | null
+  _slug?: string | null
 ) {
-  const matched = await pushService.profileIdsMatchingEmails(ownerEmails)
-  const profileIds = [...new Set([profileId, ...matched])]
-  for (const id of profileIds) {
-    pushService.notifyProfileUpdate(id, {
-      title: payload.title,
-      body: payload.body,
-      type: 'meeting_alert',
-      url: payload.url || (slug ? buildFrontendPublicCardPath(slug) : undefined),
-    })
+  // Exact card only — never fan out to sibling corporate cards by email.
+  for (const id of exactOwnerPushProfileIds({ primaryProfileId: profileId })) {
+    pushService.notifyProfileUpdate(
+      id,
+      {
+        title: payload.title,
+        body: payload.body,
+        type: 'meeting_alert',
+        url: payload.url || buildOwnerBackofficePath('one_on_one', profileId),
+      },
+      { audience: 'owners', allowPrivate: true }
+    )
   }
 }
 
@@ -545,27 +573,7 @@ const createPublicRequest = async (input: CreatePublicRequestInput) => {
   const guestEmail = normalizeEmail(input.guestEmail)
   const guestPhone = input.guestPhone?.trim() || null
 
-  const existingActive = await prisma.oneOnOneRequest.findFirst({
-    where: {
-      profileId: profile.id,
-      status: { in: ['open', 'awaiting_guest'] },
-      OR: [{ guestEmail }, ...(guestPhone ? [{ guestPhone }] : [])],
-    },
-    orderBy: { createdAt: 'desc' },
-  })
-  if (existingActive) {
-    const byEmail = existingActive.guestEmail === guestEmail
-    throw new AppError(
-      409,
-      byEmail
-        ? 'This email already requested a 1-on-1 for this card. Please wait for a response or use a different email.'
-        : 'This phone number already has an open 1-on-1 request for this card. Please wait for a response or use different contact details.',
-      {
-        code: 'ONE_ON_ONE_ALREADY_REQUESTED',
-        data: { requestId: existingActive.id, status: existingActive.status },
-      }
-    )
-  }
+  // Same guest email/phone may request again — each submission is a new open request.
 
   const row = await prisma.oneOnOneRequest.create({
     data: {
@@ -591,34 +599,41 @@ const createPublicRequest = async (input: CreatePublicRequestInput) => {
       { label: 'Phone', value: guestPhone || '—' },
       { label: 'Message', value: messageLine || '—' },
     ],
-    footer: stakeholders.companyUserId
-      ? 'You are receiving this because you own or manage this card (including corporate).'
-      : 'You are receiving this because you own this card.',
+    footer: 'You are receiving this because you own this card.',
   })
 
+  // A requested → only card owner B (phone/email/push/inbox). Not admin.
   await sendEmailsSafe(stakeholders.emails, `New 1-on-1 request from ${guestName}`, emailHtml, '1-on-1 request owner')
   void smsService.notifyProfilePhone(
     profile.id,
     '1-on-1',
-    `${guestName} requested a 1-on-1. Reply from your backoffice.`
+    `${guestName} requested a 1-on-1. Reply from your backoffice.`,
+    {
+      linkUrl: `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}${buildOwnerBackofficePath('one_on_one', profile.id)}`,
+    }
   )
 
   notifyCardPush(
     profile.id,
     {
-      title: 'New 1-on-1 request',
-      body: `${guestName} requested a 1-on-1 meeting.`,
+      title: `New 1-on-1 request from ${guestName}`,
+      body: `${guestName} requested a 1-on-1 through ${stakeholders.cardName}.${guestEmail ? ` Email: ${guestEmail}.` : ''}${
+        guestPhone ? ` Phone: ${guestPhone}.` : ''
+      }${messageLine ? ` Message: “${messageLine.slice(0, 120)}”` : ' Open 1-on-1 Requests to respond.'}`,
     },
     stakeholders.slug
   )
 
   await createStakeholderInboxNotice({
     emails: stakeholders.emails,
-    title: `New 1-on-1: ${guestName}`,
-    body: `${guestName} (${guestEmail})${guestPhone ? ` · ${guestPhone}` : ''} requested a 1-on-1${messageLine ? `: ${messageLine}` : '.'}`,
+    title: `New 1-on-1 request from ${guestName}`,
+    body: `${guestName} requested a 1-on-1 through ${stakeholders.cardName}. Email: ${guestEmail}.${
+      guestPhone ? ` Phone: ${guestPhone}.` : ''
+    }${messageLine ? ` Message: “${messageLine}”` : ' Open 1-on-1 Requests to propose a time.'}`,
     profileId: profile.id,
     slug: stakeholders.slug,
     requestId: row.id,
+    userId: stakeholders.ownerUserId,
   })
 
   return serializeRequest(row)
@@ -761,14 +776,13 @@ const scheduleMeetingFromRequest = async (actor: Actor, input: ScheduleMeetingIn
     }),
     '1-on-1 propose guest'
   )
-  smsService.sendTopicSms({
+  // B replied with times → only guest A (not admin, not other cards). Outside owner SMS quota.
+  smsService.notifyGuestPhone({
     to: request.guestPhone,
     topic: '1-on-1',
     cardName: profile.name?.trim() || ownerName,
-    cardUrl: profile.slug
-      ? buildFrontendPublicCardUrl((config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, ''), profile.slug)
-      : (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, ''),
-    detail: `${ownerName} proposed times. Open the card to choose one.`,
+    cardUrl: pickUrl,
+    detail: `${ownerName} proposed times. Open the link to choose one.`,
   })
 
   const guestProfileId = await findGuestPushProfile(request.guestEmail)
@@ -819,9 +833,9 @@ const confirmGuestSlot = async (requestId: string, input: ConfirmGuestSlotInput)
 
   const ownerName =
     (await prisma.user.findUnique({ where: { id: ownerUserId }, select: { name: true } }))?.name || 'vCard owner'
-  const timezone = slot.timezone || request.proposedTimezone || 'UTC'
+  const timezone = slot.timezone || request.proposedTimezone || DEFAULT_CAMPAIGN_TIMEZONE
   const durationMinutes = slot.durationMinutes || request.proposedDurationMinutes || 30
-  const startsAt = parseSlotDateTime(slot.date, slot.startTime)
+  const startsAt = parseSlotDateTime(slot.date, slot.startTime, timezone)
   if (Number.isNaN(startsAt.getTime())) throw new AppError(400, 'Invalid selected date/time')
   const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
   const title = request.proposedTitle || `1-on-1 with ${request.guestName}`
@@ -930,16 +944,20 @@ const confirmGuestSlot = async (requestId: string, input: ConfirmGuestSlotInput)
       ],
       ctaLabel: calendar.meetLink ? 'Open join link' : undefined,
       ctaUrl: calendar.meetLink,
-      footer: stakeholders.companyUserId
-        ? 'Sent to the card owner and linked corporate manager.'
-        : 'Sent to the card owner.',
+      footer: 'Sent to the card owner.',
     }),
     '1-on-1 confirm stakeholders'
   )
+  // A confirmed → only card owner B.
   void smsService.notifyProfilePhone(
     profile.id,
     '1-on-1',
-    `${request.guestName} confirmed ${dateLabel} at ${timeLabel}.`
+    `${request.guestName} confirmed ${dateLabel} at ${timeLabel}.`,
+    {
+      linkUrl:
+        calendar.meetLink ||
+        `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}${buildOwnerBackofficePath('calendar')}`,
+    }
   )
 
   await createStakeholderInboxNotice({
@@ -949,6 +967,7 @@ const confirmGuestSlot = async (requestId: string, input: ConfirmGuestSlotInput)
     profileId: profile.id,
     slug: stakeholders.slug,
     requestId: request.id,
+    userId: stakeholders.ownerUserId,
   })
 
   return {
@@ -971,10 +990,10 @@ const rescheduleMeetingFromRequest = async (actor: Actor, input: RescheduleMeeti
   if (!meeting) throw new AppError(404, 'No scheduled meeting for this request')
   if (meeting.status === 'cancelled') throw new AppError(400, 'Cancelled meetings cannot be rescheduled')
 
-  const startsAt = parseSlotDateTime(input.date, input.startTime)
+  const timezone = input.timezone || meeting.timezone || DEFAULT_CAMPAIGN_TIMEZONE
+  const startsAt = parseSlotDateTime(input.date, input.startTime, timezone)
   const durationMinutes = input.durationMinutes ?? 30
   const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
-  const timezone = input.timezone || meeting.timezone
 
   const calendar = await createOrUpdateZohoEvent({
     title: input.title || meeting.title,
@@ -1098,6 +1117,27 @@ const completeMeetingFromRequest = async (actor: Actor, input: CompleteMeetingIn
   return serializeMeeting(completed)
 }
 
+/** Hard-delete a 1-on-1 request (and cascaded meeting/slots) from the owner backoffice. */
+const deleteRequest = async (actor: Actor, input: DeleteRequestInput) => {
+  assertOneOnOneClientReady()
+  const request = await prisma.oneOnOneRequest.findUnique({ where: { id: input.requestId } })
+  if (!request) throw new AppError(404, '1-on-1 request not found')
+
+  await assertOwnerCanSchedule(actor, request)
+
+  const meeting = await prisma.oneOnOneMeeting.findUnique({ where: { requestId: request.id } })
+  if (meeting?.zohoCalendarEventId) {
+    try {
+      await calendarIntegrationService.deleteMeetingEvent(meeting.zohoCalendarEventId)
+    } catch (error) {
+      logger.error('Failed to delete Zoho calendar event for 1-on-1 request', error)
+    }
+  }
+
+  await prisma.oneOnOneRequest.delete({ where: { id: request.id } })
+  return { id: request.id, deleted: true as const }
+}
+
 const getMeetingForGuest = async (requestId: string) => {
   const request = await prisma.oneOnOneRequest.findUnique({ where: { id: requestId } })
   if (!request) throw new AppError(404, 'Meeting not found')
@@ -1189,6 +1229,7 @@ const oneOnOneService = {
   rescheduleMeetingFromRequest,
   cancelMeetingFromRequest,
   completeMeetingFromRequest,
+  deleteRequest,
   getMeetingForGuest,
   listOwnerMeetings,
   signGuestToken,

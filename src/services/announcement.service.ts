@@ -1,10 +1,12 @@
 import type { Prisma } from '../../generated/prisma/client'
+import config from '../configs/config'
 import AppError from '../error/AppError'
 import { assertAdminCanContactProfile } from '../utils/adminOutreachAccess'
 import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
 import { prisma } from '../utils/prisma'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
+import { exactOwnerPushProfileIds, userMatchesSpecificAnnouncement } from '../utils/pushAudience'
 import type { SmsTopic } from '../utils/smsMessage'
 import type {
   AnnouncementKind,
@@ -131,7 +133,10 @@ function profileIdFromMeta(
 }
 
 function isInboxOnly(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
-  return metaRecord(meta)?.channel === 'inbox'
+  const m = metaRecord(meta)
+  if (!m) return false
+  // Personal / backoffice inbox — never treat as a public-card blast.
+  return m.channel === 'inbox' || m.onlyBackoffice === '1' || m.onlyBackoffice === true || m.onlyBackoffice === 1
 }
 
 function isShowPublic(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
@@ -166,18 +171,29 @@ function queueAnnouncementSms(row: {
 }) {
   if (row.status !== 'active') return
   if (isBirthdayNotice(row.meta)) return
+  // Inbox / backoffice-only: never SMS public saved contacts or every card phone.
+  if (isInboxOnly(row.meta) && !isShowPublic(row.meta)) return
   const detail = `${row.title}. ${row.body}`.replace(/\s+/g, ' ').trim().slice(0, 180)
   const topic = smsTopicFromMeta(row.meta)
+  const showPublic = isShowPublic(row.meta)
+
   if (row.targetType === 'specific') {
+    // Owner/target emails only — never fan out to guest saver phones unless public.
     if (row.targetEmails.length) {
       void smsService.notifyPhonesForEmails(row.targetEmails, topic, detail, '', '')
-    } else {
-      const profileId = profileIdFromMeta(row.meta)
-      if (profileId) void smsService.notifyProfilePhone(profileId, topic, detail)
+      return
+    }
+    const profileId = profileIdFromMeta(row.meta)
+    if (profileId && (showPublic || !isInboxOnly(row.meta))) {
+      void smsService.notifyProfilePhone(profileId, topic, detail)
     }
     return
   }
-  if (row.targetType === 'all') void smsService.notifyGlobalCardPhones(detail, topic)
+
+  // Global SMS only for explicitly public announcements (never backoffice-only).
+  if (row.targetType === 'all' && showPublic) {
+    void smsService.notifyGlobalCardPhones(detail, topic)
+  }
 }
 
 function isBirthdayNotice(meta: CreateAnnouncementInput['meta'] | Prisma.JsonValue | null | undefined): boolean {
@@ -339,14 +355,13 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
   const status = input.status ?? 'active'
   const profileId = profileIdFromMeta(input.meta)
 
-  // Public per-card banners are an admin action (same as global banners) and
-  // may target any single or corporate card. Outreach-only notices still
-  // require an owner card.
-  if (profileId && !isShowPublic(input.meta)) {
+  const inboxOnly = isInboxOnly(input.meta)
+
+  // Public / outreach banners may require admin-to-card outreach checks.
+  // Operational inbox (system return-view, lead alerts, etc.) must never be blocked.
+  if (profileId && !isShowPublic(input.meta) && !inboxOnly) {
     await assertAdminCanContactProfile(actor.id, profileId)
   }
-
-  const inboxOnly = isInboxOnly(input.meta)
 
   const row = await prisma.$transaction(async (tx) => {
     if (status === 'active' && !inboxOnly) {
@@ -400,35 +415,62 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
   try {
     const meta = input.meta ?? {}
     const showPublic = isShowPublic(meta)
-    const pushRequested = wantsSendPush(meta)
+    // Matrix §8.F / §18.1 #4 — back-office-only / inbox: never browser-push (public or owner).
+    const pushRequested = wantsSendPush(meta) && showPublic && !isInboxOnly(meta)
 
     if (pushRequested) {
       void (async () => {
         try {
           const profileIds = new Set<string>()
+          const metaObj = metaRecord(meta)
+          const includeCorporateTeam = metaObj?.includeCorporateTeam === '1' || metaObj?.corporateTeam === '1'
+          const inboxPersonal = isInboxOnly(meta)
 
-          // If targeted to specific emails, resolve profiles by email
-          if (targetType === 'specific' && targetEmails.length) {
+          if (profileId) {
+            // Card-scoped: exact target card only — never email-match sibling / member cards.
+            for (const id of exactOwnerPushProfileIds({ primaryProfileId: profileId })) {
+              profileIds.add(id)
+            }
+          } else if (targetType === 'specific' && targetEmails.length && !inboxPersonal) {
+            // Non-card specific (rare): email match. Inbox personal uses meta.userId below.
             for (const matchedId of await pushService.profileIdsMatchingEmails(targetEmails)) {
               profileIds.add(matchedId)
             }
           }
 
-          // If meta contains a profileId (explicit card owner), include it
-          if (profileId) profileIds.add(profileId)
-
-          const metaUserId = metaRecord(meta)?.userId
-          if (typeof metaUserId === 'string' && metaUserId.trim()) {
+          // Personal inbox without a card id → direct owner cards for that login only.
+          const metaUserId = typeof metaObj?.userId === 'string' ? metaObj.userId.trim() : ''
+          if (!profileId && metaUserId) {
             const owned = await prisma.profile.findMany({
-              where: { OR: [{ userId: metaUserId }, { companyUserId: metaUserId }] },
+              where: { userId: metaUserId },
               select: { id: true },
+              take: 20,
             })
             for (const p of owned) profileIds.add(p.id)
           }
 
-          // Global public announcements: blast to every active push subscription.
-          // Inbox-only globals still resolve via target emails / profileId above.
-          if (showPublic && targetType === 'all') {
+          // Corporate owner global/team blast → every card linked under this company user.
+          // Personal wishes / card-scoped inbox never set includeCorporateTeam.
+          if (includeCorporateTeam || (targetType === 'all' && !showPublic)) {
+            const actorUser = await prisma.user.findUnique({
+              where: { id: actor.id },
+              select: { role: true },
+            })
+            const isCorporateOwner = actorUser?.role === 'CORPORATE_OWNER'
+            if (includeCorporateTeam || isCorporateOwner) {
+              const teamCards = await prisma.profile.findMany({
+                where: { companyUserId: actor.id },
+                select: { id: true },
+                take: 500,
+              })
+              for (const p of teamCards) profileIds.add(p.id)
+            }
+          }
+
+          // Global public: every active subscription.
+          // Backoffice-only global: never fan browser push to all owners/followers —
+          // staff get email + in-app banner (Rule B: no admin browser push).
+          if (targetType === 'all' && showPublic) {
             const subs = await prisma.pushSubscription.findMany({
               where: { isActive: true },
               select: { profileId: true },
@@ -442,8 +484,41 @@ const create = async (actor: Actor, input: CreateAnnouncementInput) => {
             type: 'announcement_updates',
           }
 
+          // Public announcements → owners + opted-in push subscribers on those cards.
+          // Save-contact is not required for Web Push (subscription alone).
+          // Backoffice / personal inbox → owner devices only (never followers).
+          const audiences = showPublic ? (['followers', 'owners'] as const) : (['owners'] as const)
+          const seenEndpoints = new Set<string>()
+
           for (const pid of profileIds) {
-            await pushService.sendToProfile(pid, payloadPartial)
+            for (const audience of audiences) {
+              await pushService.sendToProfile(pid, payloadPartial, {
+                audience,
+                allowPrivate: true,
+                seenEndpoints,
+              })
+            }
+          }
+
+          // Global email: public → all accounts; backoffice-only → staff admins only (never public contacts).
+          if (targetType === 'all' && config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
+            const users = await prisma.user.findMany({
+              where: showPublic
+                ? { deletedAt: null, NOT: { email: '' } }
+                : { deletedAt: null, NOT: { email: '' }, role: { in: ['SUPER_ADMIN', 'ADMIN'] } },
+              select: { email: true },
+              take: 5000,
+            })
+            const subject = row.title || defaultTitle(row.type as AnnouncementType)
+            const html = `<div style="font-family:sans-serif;line-height:1.5"><p>${row.body
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/\n/g, '<br/>')}</p><p>vBiz Me</p></div>`
+            const emails = [...new Set(users.map((u) => (u.email || '').trim().toLowerCase()).filter(Boolean))]
+            await Promise.all(
+              emails.map((email) => authUtils.sendEmail({ receiverMail: email, subject, html }).catch(() => undefined))
+            )
           }
 
           // Guest email blast only for public-facing specific card notices.
@@ -512,11 +587,10 @@ const update = async (id: string, actor: Actor, input: UpdateAnnouncementInput) 
     throw new AppError(400, 'At least one target email is required when targetType is specific')
   }
 
-  if (profileId && !isShowPublic(input.meta ?? existing.meta)) {
+  const inboxOnly = isInboxOnly(input.meta ?? existing.meta)
+  if (profileId && !isShowPublic(input.meta ?? existing.meta) && !inboxOnly) {
     await assertAdminCanContactProfile(actor.id, profileId)
   }
-
-  const inboxOnly = isInboxOnly(input.meta ?? existing.meta)
 
   const row = await prisma.$transaction(async (tx) => {
     if (nextStatus === 'active' && existing.status !== 'active' && !inboxOnly) {
@@ -610,29 +684,52 @@ const clearLive = async (actor: Actor) => {
   return { clearedCount: announcementIds.length }
 }
 
-const getActiveForUser = async (user: { email: string; role?: string }) => {
+const getActiveForUser = async (user: { id: string; email: string; role?: string }) => {
   const now = new Date()
   const email = user.email.trim().toLowerCase()
+  const userId = user.id.trim()
 
-  const candidates = await prisma.announcement.findMany({
-    where: {
-      status: 'active',
-      AND: [
-        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-        { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
-      ],
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 40,
-  })
+  const [candidates, ownedProfiles] = await Promise.all([
+    prisma.announcement.findMany({
+      where: {
+        status: 'active',
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 40,
+    }),
+    prisma.profile.findMany({
+      // Direct-owned cards + corporate-linked member cards (companyUserId = this login).
+      where: { OR: [{ userId }, { companyUserId: userId }] },
+      select: { id: true },
+    }),
+  ])
 
-  const matchesEmail = (row: AnnouncementRow) =>
-    row.targetType === 'specific' && row.targetEmails.map((e) => e.toLowerCase()).includes(email)
+  const ownedProfileIds = ownedProfiles.map((profile) => profile.id)
 
-  const inbox = candidates.filter(matchesEmail).map(serializeAnnouncement)
+  const matchesIdentity = (row: AnnouncementRow) => {
+    if (row.targetType !== 'specific') return false
+    const meta = metaRecord(row.meta)
+    const metaUserId = typeof meta?.userId === 'string' ? meta.userId : null
+    const metaProfileId = typeof meta?.profileId === 'string' ? meta.profileId : null
+    return userMatchesSpecificAnnouncement({
+      userId,
+      userEmail: email,
+      targetEmails: row.targetEmails,
+      metaUserId,
+      metaProfileId,
+      ownedProfileIds,
+    })
+  }
 
+  const inbox = candidates.filter(matchesIdentity).map(serializeAnnouncement)
+
+  // Global banner is for every signed-in owner/admin. Specific banners stay identity-scoped.
   const bannerRow =
-    candidates.find((row) => !isInboxOnly(row.meta) && matchesEmail(row)) ??
+    candidates.find((row) => !isInboxOnly(row.meta) && matchesIdentity(row)) ??
     candidates.find((row) => row.targetType === 'all' && !isInboxOnly(row.meta))
 
   return {

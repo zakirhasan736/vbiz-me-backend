@@ -170,14 +170,9 @@ function shouldAutoFill(
 ) {
   if (!selected.has(field.tabId)) return false
   if (field.special === 'credentials') return false
-  if (
-    field.special === 'portfolio' ||
-    field.fieldKey === 'portfolio' ||
-    field.special === 'services' ||
-    field.fieldKey === 'services'
-  ) {
-    return listLength(field.currentValue) === 0
-  }
+  // Never invent portfolio or service rows; crawl/architect/customer data only (mission v4).
+  if (field.special === 'portfolio' || field.fieldKey === 'portfolio') return false
+  if (field.special === 'services' || field.fieldKey === 'services') return false
   if (!field.aiGenerationAllowed) return false
   if (isListContentField(field)) {
     if (field.special === 'faq' && includePermissioned?.faq === false) return false
@@ -186,6 +181,10 @@ function shouldAutoFill(
     return listLength(field.currentValue) === 0
   }
   if (field.status !== 'EMPTY' && field.status !== 'PARTIAL') return false
+  // Preserve SOL/architect About copy when already substantial — do not rewrite via a second model.
+  if (field.fieldKey === 'about' && typeof field.currentValue === 'string' && field.currentValue.trim().length >= 80) {
+    return false
+  }
   return AUTO_FILL_KEYS.has(field.fieldKey)
 }
 
@@ -212,20 +211,24 @@ async function generateForField(input: {
       section === 'reviews' ||
       section === 'services' ||
       section === 'portfolio'
-    if (listSection && existingLen > 0) return input.field.currentValue
+    if (listSection && existingLen > 0) {
+      // Website/source lists: keep them all (cap 15). Never pad with AI drafts.
+      const existing = Array.isArray(input.field.currentValue) ? input.field.currentValue : []
+      return existing.slice(0, 15)
+    }
     const instruction =
       section === 'faqs'
         ? `The sources had no FAQs. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} helpful FAQs from the business you understood. Do not invent prices, hours, guarantees, certifications, turnaround times, or service areas.`
         : section === 'blogs'
-          ? `The sources had no articles. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} evergreen posts from the business you understood. Do not invent news events, dates, or awards.`
+          ? 'The sources had no articles. Draft exactly 2 evergreen industry posts from the business you understood. Do not invent news events, dates, or awards.'
           : section === 'reviews'
-            ? `The sources had no reviews. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} realistic example testimonials from the business you understood. Label them as examples. Do not invent licenses, prices, or awards.`
+            ? `The website had no reviews. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} realistic example testimonials grounded in this business. Use authors like "Example Client 1". Do not invent licenses, prices, awards, star-rating platform claims, or review URLs.`
             : section === 'personal'
-              ? 'Write a professional About section from verified facts only.'
+              ? 'Write a professional About Me from verified facts only. Individuals = first person ~100–150 words with Mission + Why Choose Us + CTA.'
               : section === 'services'
-                ? `The sources had no services. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} realistic offerings this business would provide. Each item needs a title and a benefit-focused description. Do not invent prices, guarantees, or certifications.`
+                ? 'Return only verified services from the profile. If none exist, return { "services": [] }. Do not invent services to fill a quota. Never add imageUrl.'
                 : section === 'portfolio'
-                  ? `The sources had no portfolio items. Draft exactly ${MAX_DRAFT_WHEN_EMPTY} representative project examples. Describe the kind of work, not fake client metrics, awards, or named case studies.`
+                  ? 'Return only verified portfolio items from the profile. If none exist, return { "portfolio": [] }. Do not invent projects.'
                   : 'Group skills from verified services and experience only.'
     const payload = await generateSectionFromProfile({
       section,
@@ -242,7 +245,17 @@ async function generateForField(input: {
       section === 'services' ||
       section === 'portfolio'
     ) {
-      return topUpGeneratedList(input.field.currentValue, generated)
+      if ((section === 'services' || section === 'portfolio') && existingLen === 0) {
+        return Array.isArray(generated) ? generated : []
+      }
+      const merged = topUpGeneratedList(input.field.currentValue, generated)
+      if (section === 'blogs' && existingLen === 0 && Array.isArray(merged)) {
+        return merged.slice(0, 2)
+      }
+      if ((section === 'faqs' || section === 'reviews') && existingLen === 0 && Array.isArray(merged)) {
+        return merged.slice(0, MAX_DRAFT_WHEN_EMPTY)
+      }
+      return merged
     }
     return generated
   }

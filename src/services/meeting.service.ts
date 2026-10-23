@@ -7,7 +7,11 @@ import { writeAuditLog } from '../utils/auditLog'
 import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
-import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
+import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
+import { exactOwnerPushProfileIds } from '../utils/pushAudience'
+import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
+import { scheduleOwnerPush } from '../utils/pushRecipientCopy'
+import { computeStartsAt as computeStartsAtZoned, DEFAULT_CAMPAIGN_TIMEZONE } from '../utils/scheduleTimezone'
 import type {
   CreateMeetingInput,
   ListMeetingsQuery,
@@ -141,29 +145,12 @@ async function assertOwnerCanCreateMeeting(
   }
 }
 
-/** Parse display time like "10:00 AM" / "14:30" into hours/minutes. */
-function parseTimeParts(time: string): { hours: number; minutes: number } {
-  const trimmed = time.trim()
-  const ampm = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (ampm) {
-    let hours = Number(ampm[1])
-    const minutes = Number(ampm[2])
-    const period = ampm[3].toUpperCase()
-    if (period === 'PM' && hours < 12) hours += 12
-    if (period === 'AM' && hours === 12) hours = 0
-    return { hours, minutes }
-  }
-  const twentyFour = trimmed.match(/^(\d{1,2}):(\d{2})$/)
-  if (twentyFour) {
-    return { hours: Number(twentyFour[1]), minutes: Number(twentyFour[2]) }
-  }
-  return { hours: 0, minutes: 0 }
-}
-
-export function computeStartsAt(date: string, time: string): Date {
-  const { hours, minutes } = parseTimeParts(time)
-  const [y, m, d] = date.split('-').map(Number)
-  return new Date(y, m - 1, d, hours, minutes, 0, 0)
+export function computeStartsAt(
+  date: string,
+  time: string,
+  timeZone: string | null | undefined = DEFAULT_CAMPAIGN_TIMEZONE
+): Date {
+  return computeStartsAtZoned(date, time, timeZone)
 }
 
 function escapeHtml(value: string): string {
@@ -220,19 +207,22 @@ async function resolveOptionalGuestUserDataId(
 async function resolveOwnerEmails(profileId: string | null | undefined): Promise<{
   emails: string[]
   displayName: string | null
+  ownerUserId: string | null
 }> {
-  if (!profileId) return { emails: [], displayName: null }
+  if (!profileId) return { emails: [], displayName: null, ownerUserId: null }
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: {
       name: true,
       email: true,
+      userId: true,
+      companyUserId: true,
       user: { select: { email: true, name: true } },
       companyUser: { select: { email: true } },
     },
   })
-  if (!profile) return { emails: [], displayName: null }
+  if (!profile) return { emails: [], displayName: null, ownerUserId: null }
 
   const emails = collectProfileNotificationEmails({
     profileEmail: profile.email,
@@ -243,6 +233,10 @@ async function resolveOwnerEmails(profileId: string | null | undefined): Promise
   return {
     emails,
     displayName: profile.user?.name?.trim() || profile.name?.trim() || null,
+    ownerUserId: resolveDirectOwnerUserId({
+      userId: profile.userId,
+      companyUserId: profile.companyUserId,
+    }),
   }
 }
 
@@ -339,14 +333,18 @@ async function sendMeetingEmails(input: {
       .catch((error) => logger.error('Meeting owner email failed', { error, email }))
   }
 
-  const adminEmail = input.actor.email?.trim()
-  if (adminEmail) {
+  // Staff admins do not get a copy unless they are the responsible card owner on this meeting.
+  const actorEmail = input.actor.email?.trim().toLowerCase() || ''
+  const actorIsOwner = Boolean(
+    actorEmail && input.ownerEmails.some((email) => email.trim().toLowerCase() === actorEmail)
+  )
+  if (actorEmail && actorIsOwner) {
     void authUtils
       .sendEmail({
-        receiverMail: adminEmail,
+        receiverMail: actorEmail,
         subject: adminSubject,
         html: meetingEmailHtml({
-          recipientName: input.actor.name?.trim() || 'Admin',
+          recipientName: input.actor.name?.trim() || 'Card owner',
           type: input.meeting.type,
           host: input.meeting.host,
           date: input.meeting.date,
@@ -357,74 +355,85 @@ async function sendMeetingEmails(input: {
           isAdminCopy: true,
         }),
       })
-      .catch((error) => logger.error('Meeting admin email failed', { error, adminEmail }))
+      .catch((error) => logger.error('Meeting owner self-copy email failed', { error, actorEmail }))
   }
 }
 
 function meetingAlertPayload(meeting: MeetingRow) {
-  const meetSuffix = meeting.meetLink ? ' Open the notification to join.' : ''
+  const copy = scheduleOwnerPush({
+    type: meeting.type,
+    host: meeting.host,
+    date: meeting.date,
+    time: meeting.time,
+    meetLink: meeting.meetLink,
+    phase: 'booked',
+  })
   return {
-    title: `Upcoming session: ${meeting.type}`,
-    body: `${meeting.type} on ${meeting.date} at ${meeting.time}.${meetSuffix}`,
+    title: copy.title,
+    body: copy.body,
     type: 'meeting_alert' as const,
-    url: meeting.meetLink || undefined,
+    url: meeting.meetLink || buildOwnerBackofficePath('calendar'),
   }
 }
 
-/** Card on the meeting, plus any account that matches the owner or guest email and already allowed push. */
-async function profileIdsForMeetingPush(meeting: MeetingRow, emails: string[]) {
-  const ids = new Set<string>()
-  if (meeting.scope === 'group') {
-    for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) ids.add(profileId)
-  } else if (meeting.profileId) {
-    ids.add(meeting.profileId)
-  }
+/**
+ * Exact invited cards for schedule push.
+ * Guest/requester devices are resolved separately by direct-owned email match only.
+ */
+async function profileIdsForMeetingPush(meeting: MeetingRow, guestEmails: string[] = []) {
+  const ids = new Set<string>(
+    exactOwnerPushProfileIds({
+      primaryProfileId: meeting.scope === 'group' ? null : meeting.profileId,
+      additionalProfileIds: meeting.scope === 'group' ? parseGroupProfileIds(meeting.groupProfileIds) : [],
+    })
+  )
 
-  const normalized = [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))]
+  const normalized = [...new Set(guestEmails.map((email) => email.trim().toLowerCase()).filter(Boolean))]
   if (!normalized.length) return [...ids]
 
-  const users = await prisma.user.findMany({
-    where: { email: { in: normalized } },
-    select: { id: true },
-  })
-  const userIds = users.map((user) => user.id)
-  const profiles = await prisma.profile.findMany({
-    where: {
-      OR: [
-        { email: { in: normalized } },
-        ...(userIds.length ? [{ userId: { in: userIds } }, { companyUserId: { in: userIds } }] : []),
-      ],
-    },
-    select: { id: true },
-  })
-  for (const profile of profiles) ids.add(profile.id)
+  // Guests: only profiles they directly own (userId), never corporate children.
+  for (const profileId of await pushService.profileIdsMatchingEmails(normalized)) {
+    ids.add(profileId)
+  }
   return [...ids]
 }
 
-async function notifyOwnerPush(meeting: MeetingRow, emails: string[] = []) {
+async function notifyOwnerPush(meeting: MeetingRow, _emails: string[] = []) {
   if (meeting.scope === 'global') return
 
   const payload = meetingAlertPayload(meeting)
-  const profileIds = await profileIdsForMeetingPush(meeting, emails)
-  for (const profileId of profileIds) {
-    pushService.notifyProfileUpdate(profileId, payload)
+  // Owner cards → owner devices only.
+  // Guests / saved contacts: email + SMS only — never public Web Push for schedules/events.
+  const ownerProfileIds = await profileIdsForMeetingPush(meeting, [])
+
+  for (const profileId of ownerProfileIds) {
+    pushService.notifyProfileUpdate(profileId, payload, { audience: 'owners', allowPrivate: true })
   }
 }
 
 async function resolveOwnerEmailsForMeeting(meeting: MeetingRow): Promise<{
   emails: string[]
   displayName: string | null
+  ownerUserIds: string[]
 }> {
-  if (meeting.scope === 'global') return { emails: [], displayName: null }
+  if (meeting.scope === 'global') return { emails: [], displayName: null, ownerUserIds: [] }
 
   if (meeting.scope === 'group') {
     const ids = parseGroupProfileIds(meeting.groupProfileIds)
     const emailSets = await Promise.all(ids.map((profileId) => resolveOwnerEmails(profileId)))
     const emails = [...new Set(emailSets.flatMap((entry) => entry.emails))]
-    return { emails, displayName: emailSets[0]?.displayName ?? null }
+    const ownerUserIds = [
+      ...new Set(emailSets.map((entry) => entry.ownerUserId).filter((id): id is string => Boolean(id))),
+    ]
+    return { emails, displayName: emailSets[0]?.displayName ?? null, ownerUserIds }
   }
 
-  return resolveOwnerEmails(meeting.profileId)
+  const single = await resolveOwnerEmails(meeting.profileId)
+  return {
+    emails: single.emails,
+    displayName: single.displayName,
+    ownerUserIds: single.ownerUserId ? [single.ownerUserId] : [],
+  }
 }
 
 async function notifyOwnerAnnouncement(
@@ -432,7 +441,8 @@ async function notifyOwnerAnnouncement(
   meeting: MeetingRow,
   ownerEmails: string[],
   meetLabel: string,
-  onlyBackoffice = false
+  onlyBackoffice = false,
+  ownerUserId?: string | null
 ) {
   if (!ownerEmails.length) return
   if (meeting.scope === 'global') return
@@ -440,18 +450,21 @@ async function notifyOwnerAnnouncement(
   const meetLine = meeting.meetLink ? `\n\n${meetLabel}: ${meeting.meetLink}` : ''
   const notesLine = meeting.notes?.trim() ? `\n\n${meeting.notes.trim()}` : ''
   const scopeLine = meeting.scope === 'group' ? '\n\nThis is a group session for your team cards.' : ''
+  const profileId = meeting.profileId || parseGroupProfileIds(meeting.groupProfileIds)[0] || ''
+  const senderName = actor.name?.trim() || actor.email?.trim() || 'vBiz Me'
 
   try {
     await announcementService.create(actor, {
       type: 'info',
       kind: 'announcement',
-      title: `Upcoming session: ${meeting.type}`,
-      body: `You have a ${meeting.type} with admin on ${meeting.date} at ${meeting.time}.${scopeLine}${notesLine}${meetLine}`,
+      title: `Scheduled: ${meeting.type}`,
+      body: `${senderName} scheduled ${meeting.type} with ${meeting.host} for ${meeting.date} at ${meeting.time}.${scopeLine}${notesLine}${meetLine}`,
       status: 'active',
       targetType: 'specific',
       targetEmails: ownerEmails,
       meta: {
-        profileId: meeting.profileId || parseGroupProfileIds(meeting.groupProfileIds)[0] || '',
+        profileId,
+        ...(ownerUserId ? { userId: ownerUserId } : {}),
         meetingId: meeting.id,
         meetLink: meeting.meetLink || '',
         category: 'event',
@@ -482,23 +495,53 @@ async function resolveGuestContact(guestUserDataId: string | null | undefined): 
 }
 
 async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel: string, onlyBackoffice = false) {
-  const { emails: ownerEmails, displayName: ownerDisplayName } = await resolveOwnerEmailsForMeeting(meeting)
+  const {
+    emails: ownerEmails,
+    displayName: ownerDisplayName,
+    ownerUserIds,
+  } = await resolveOwnerEmailsForMeeting(meeting)
   const guest = await resolveGuestContact(meeting.guestUserDataId)
-  const receiverEmails = [...new Set([...ownerEmails, ...(guest.email ? [guest.email] : [])])]
   const displayName = guest.name || ownerDisplayName
 
-  await notifyOwnerAnnouncement(actor, meeting, receiverEmails, meetLabel, onlyBackoffice)
-  await notifyOwnerPush(meeting, receiverEmails)
-  if (receiverEmails.length) {
+  // Inbox / email / push / SMS are responsible-owner scoped — not staff admin broadcast.
+  await notifyOwnerAnnouncement(
+    actor,
+    meeting,
+    ownerEmails,
+    meetLabel,
+    onlyBackoffice,
+    ownerUserIds.length === 1 ? ownerUserIds[0] : null
+  )
+  await notifyOwnerPush(meeting, ownerEmails)
+  if (ownerEmails.length) {
     void sendMeetingEmails({
       meeting,
-      ownerEmails: receiverEmails,
-      ownerDisplayName: displayName,
+      ownerEmails,
+      ownerDisplayName: ownerDisplayName || displayName,
       actor,
       meetLabel,
     })
   }
-  await notifySenderAnnouncement(actor, meeting, meetLabel)
+  // Guest gets their own schedule email/SMS when present — never as "owner".
+  if (guest.email && !ownerEmails.includes(guest.email)) {
+    void sendMeetingEmails({
+      meeting,
+      ownerEmails: [guest.email],
+      ownerDisplayName: guest.name || displayName,
+      actor,
+      meetLabel,
+    })
+  }
+  const actorEmail = actor.email?.trim().toLowerCase() || ''
+  const actorIsResponsibleOwner = Boolean(
+    actorEmail && ownerEmails.some((email) => email.trim().toLowerCase() === actorEmail)
+  )
+  // Staff who book on a client's card do not get an admin inbox/email copy.
+  if (actorIsResponsibleOwner) {
+    await notifySenderAnnouncement(actor, meeting, meetLabel)
+  }
+  // Conversation SMS only: guest ↔ card owner. Never staff admin fan-out.
+  // Guest (if a lead is attached):
   void smsService.notifyScheduleCreated({
     guestUserDataId: meeting.guestUserDataId,
     profileId: meeting.profileId,
@@ -507,6 +550,16 @@ async function notifyMeetingCreated(actor: Actor, meeting: MeetingRow, meetLabel
     type: meeting.type,
     date: meeting.date,
     time: meeting.time,
+    linkUrl: meeting.meetLink || undefined,
+  })
+  // Card owner (tier quota — Free skips SMS, keeps push/email/inbox):
+  void smsService.notifyOwnerScheduleAlert({
+    profileId: meeting.profileId,
+    groupProfileIds: meeting.groupProfileIds,
+    detail: `${meeting.type} scheduled with ${meeting.host} on ${meeting.date} at ${meeting.time}.`,
+    linkUrl:
+      meeting.meetLink ||
+      `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}${buildOwnerBackofficePath('calendar')}`,
   })
 }
 
@@ -529,7 +582,9 @@ async function notifySenderAnnouncement(actor: Actor, meeting: MeetingRow, meetL
         meetLink: meeting.meetLink || '',
         category: 'event',
         channel: 'inbox',
-        sendPush: '1',
+        onlyBackoffice: '1',
+        showPublic: '0',
+        sendPush: '0',
         userId: actor.id,
       },
     })
@@ -683,7 +738,8 @@ const create = async (actor: Actor, input: CreateMeetingInput, actorRole?: strin
   }
 
   const status = input.status ?? 'Scheduled'
-  const startsAt = computeStartsAt(input.date, input.time)
+  const timezone = DEFAULT_CAMPAIGN_TIMEZONE
+  const startsAt = computeStartsAt(input.date, input.time, timezone)
   const primaryProfileId = normalized.profileId
   const guestUserDataId = await resolveOptionalGuestUserDataId(input.guestUserDataId, primaryProfileId)
   const { emails: ownerEmails } = await resolveOwnerEmails(primaryProfileId)
@@ -696,6 +752,7 @@ const create = async (actor: Actor, input: CreateMeetingInput, actorRole?: strin
       date: input.date,
       time: input.time,
       startsAt,
+      timezone,
       location: input.location ?? null,
       notes: input.notes ?? null,
       status,
@@ -779,7 +836,12 @@ const update = async (id: string, actor: Actor, input: UpdateMeetingInput) => {
       ...(input.type !== undefined ? { type: input.type } : {}),
       ...(input.date !== undefined ? { date: input.date } : {}),
       ...(input.time !== undefined ? { time: input.time } : {}),
-      ...(dateOrTimeChanged ? { startsAt: computeStartsAt(nextDate, nextTime) } : {}),
+      ...(dateOrTimeChanged
+        ? {
+            startsAt: computeStartsAt(nextDate, nextTime, existing.timezone || DEFAULT_CAMPAIGN_TIMEZONE),
+            timezone: existing.timezone || DEFAULT_CAMPAIGN_TIMEZONE,
+          }
+        : {}),
       ...(input.location !== undefined ? { location: input.location } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),

@@ -615,11 +615,24 @@ export async function linkCardsToCorporateAccount(options: {
   actorUserId: string
   apply?: boolean
   promoteToCorporateOwner?: boolean
+  /**
+   * Force each slug to be an owner-login card (userId = companyUserId = corporate).
+   * Use to repair AI-builder auto-member reassignment without losing card data.
+   */
+  forceAsOwnerCard?: boolean
+  /** Soft-delete orphaned previous member users that no longer own any cards. */
+  deleteOrphanMembers?: boolean
 }): Promise<{
   apply: boolean
   corporate: { id: string; name: string | null; email: string; role: string }
   cards: LinkedCorporateCardReport[]
-  summary: { linked: number; alreadyLinked: number; missing: number; errors: number }
+  orphanMembers: Array<{
+    userId: string
+    email: string
+    status: 'would_delete' | 'deleted' | 'kept' | 'error'
+    message: string
+  }>
+  summary: { linked: number; alreadyLinked: number; missing: number; errors: number; orphansDeleted: number }
 }> {
   const corporateEmail = options.corporateEmail.trim().toLowerCase()
   const slugs = [...new Set(options.slugs.map((slug) => slug.trim()).filter(Boolean))]
@@ -649,13 +662,20 @@ export async function linkCardsToCorporateAccount(options: {
       email: true,
       userId: true,
       companyUserId: true,
-      user: { select: { email: true } },
+      user: { select: { id: true, email: true } },
       companyUser: { select: { email: true } },
     },
   })
   const bySlug = new Map(cards.map((card) => [(card.slug || '').trim().toLowerCase(), card]))
   const reports: LinkedCorporateCardReport[] = []
-  const summary = { linked: 0, alreadyLinked: 0, missing: 0, errors: 0 }
+  const orphanMembers: Array<{
+    userId: string
+    email: string
+    status: 'would_delete' | 'deleted' | 'kept' | 'error'
+    message: string
+  }> = []
+  const previousMemberIds = new Set<string>()
+  const summary = { linked: 0, alreadyLinked: 0, missing: 0, errors: 0, orphansDeleted: 0 }
 
   for (const slug of slugs) {
     const card = bySlug.get(slug.toLowerCase())
@@ -677,8 +697,13 @@ export async function linkCardsToCorporateAccount(options: {
       corporateEmail: corporate.email,
       cardEmail: card.email,
       currentUserId: card.userId,
+      forceAsOwnerCard: options.forceAsOwnerCard,
     })
     const already = card.userId === next.userId && card.companyUserId === next.companyUserId
+    const previousUserId = card.userId || ''
+    if (options.forceAsOwnerCard && previousUserId && previousUserId !== corporate.id && next.userId === corporate.id) {
+      previousMemberIds.add(previousUserId)
+    }
     const base = {
       profileId: card.id,
       slug: card.slug,
@@ -690,7 +715,13 @@ export async function linkCardsToCorporateAccount(options: {
 
     if (already) {
       summary.alreadyLinked += 1
-      reports.push({ ...base, status: 'already_linked', message: 'Already linked to this corporate account' })
+      reports.push({
+        ...base,
+        status: 'already_linked',
+        message: options.forceAsOwnerCard
+          ? 'Already an owner-login card under this corporate account'
+          : 'Already linked to this corporate account',
+      })
       continue
     }
 
@@ -699,7 +730,9 @@ export async function linkCardsToCorporateAccount(options: {
       reports.push({
         ...base,
         status: 'linked',
-        message: `Would set company parent to ${corporate.email} (user ${next.userId === corporate.id ? 'corporate owner' : 'team member'})`,
+        message: options.forceAsOwnerCard
+          ? `Would claim as corporate owner card under ${corporate.email} (full edit/delete access)`
+          : `Would set company parent to ${corporate.email} (user ${next.userId === corporate.id ? 'corporate owner' : 'team member'})`,
       })
       continue
     }
@@ -713,6 +746,7 @@ export async function linkCardsToCorporateAccount(options: {
       reports.push({
         ...base,
         linkedToEmail: corporate.email,
+        ownerEmail: corporate.email,
         status: 'linked',
         message:
           next.userId === corporate.id
@@ -729,15 +763,75 @@ export async function linkCardsToCorporateAccount(options: {
     }
   }
 
-  if (options.apply) {
-    await ensureCorporateMemberLoginsForParent({
-      corporateUserId: corporate.id,
-      actorUserId: options.actorUserId,
-      apply: true,
-      resetPasswords: false,
-    }).catch((error) => {
-      logger.error('ensureCorporateMemberLoginsForParent after link failed', error)
+  // Never auto-provision member logins after linking. Owner cards may use a different
+  // display email than the corporate login (AI Builder / website scrape). Team members
+  // are created only via Duplicate → member popup (or the explicit admin ensure action).
+
+  for (const memberId of previousMemberIds) {
+    const member = await prisma.user.findFirst({
+      where: { id: memberId, deletedAt: null },
+      select: { id: true, email: true, role: true },
     })
+    if (!member) continue
+    if (toApiRole(member.role) === 'corporate-owner') {
+      orphanMembers.push({
+        userId: member.id,
+        email: member.email,
+        status: 'kept',
+        message: 'Skipped — user is a corporate owner',
+      })
+      continue
+    }
+    const remainingCards = await prisma.profile.count({
+      where: { OR: [{ userId: member.id }, { companyUserId: member.id }] },
+    })
+    if (remainingCards > 0) {
+      orphanMembers.push({
+        userId: member.id,
+        email: member.email,
+        status: 'kept',
+        message: `Still owns/linked to ${remainingCards} card(s)`,
+      })
+      continue
+    }
+    if (!options.deleteOrphanMembers) {
+      orphanMembers.push({
+        userId: member.id,
+        email: member.email,
+        status: 'would_delete',
+        message: 'No remaining cards — pass deleteOrphanMembers to soft-delete',
+      })
+      continue
+    }
+    if (!options.apply) {
+      orphanMembers.push({
+        userId: member.id,
+        email: member.email,
+        status: 'would_delete',
+        message: 'Would soft-delete orphan team-member login',
+      })
+      continue
+    }
+    try {
+      await prisma.user.update({
+        where: { id: member.id },
+        data: { deletedAt: new Date(), isActive: false, accountStatus: AccountStatus.SUSPENDED },
+      })
+      summary.orphansDeleted += 1
+      orphanMembers.push({
+        userId: member.id,
+        email: member.email,
+        status: 'deleted',
+        message: 'Soft-deleted orphan team-member login',
+      })
+    } catch (error) {
+      orphanMembers.push({
+        userId: member.id,
+        email: member.email,
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   return {
@@ -749,6 +843,7 @@ export async function linkCardsToCorporateAccount(options: {
       role: toApiRole(corporate.role),
     },
     cards: reports,
+    orphanMembers,
     summary,
   }
 }

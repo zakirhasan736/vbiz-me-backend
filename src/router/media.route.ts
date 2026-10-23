@@ -7,6 +7,7 @@ import {
   BUILDER_ATTACHMENT_TYPE_ALIASES,
   attachmentTypeNameMatches,
   isSingletonBuilderAttachmentType,
+  sameMediaUrl,
 } from '../utils/attachmentTypeMatch'
 import { bindCardChangeContext } from '../utils/cardChangeHistory'
 import catchAsyncError from '../utils/catchAsyncError'
@@ -142,6 +143,7 @@ router.post(
     const profileId = String(req.body.profileId || '').trim()
     const attachmentType = String(req.body.attachmentType || '').trim()
     const settingKey = String(req.body.settingKey || '').trim() || undefined
+    const targetUrl = String(req.body.url || '').trim()
     if (!profileId) throw new AppError(400, 'profileId is required')
     if (!attachmentType) throw new AppError(400, 'attachmentType is required')
     if (!req.user) throw new AppError(401, 'Unauthorized')
@@ -174,7 +176,8 @@ router.post(
       await prisma.attachment.delete({ where: { id: att.id } })
     }
 
-    if (settingKey) {
+    // Settings / avatar only for singleton clears (or URL-scoped when that was the setting media).
+    if (settingKey && (!targetUrl || matched.length > 0) && isSingletonBuilderAttachmentType(attachmentType)) {
       await prisma.setting.upsert({
         where: { profileId_key: { profileId, key: settingKey } },
         create: { profileId, key: settingKey, value: '' },
@@ -182,7 +185,7 @@ router.post(
       })
     }
 
-    if (attachmentType === 'Profile Image/Video') {
+    if (attachmentType === 'Profile Image/Video' && !targetUrl) {
       await prisma.profile.update({
         where: { id: profileId },
         data: { avatar: null },

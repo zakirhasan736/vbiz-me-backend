@@ -3,11 +3,21 @@ import webpush from 'web-push'
 import type { PushNotificationPreference } from '../../generated/prisma/client'
 import config from '../configs/config'
 import { buildFrontendPublicCardPath, normalizeFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
+import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
-import { cardChangeAlsoReachesSavers, skipsPublicProfileGate } from '../utils/pushAudience'
+import {
+  cardChangeAlsoReachesSavers,
+  defaultPushDeliveryAudience,
+  skipsPublicProfileGate,
+  staffAdminAllowsBrowserPush,
+  subscriberKindsForDelivery,
+  type PushDeliveryAudience,
+  type PushSubscriberKind,
+} from '../utils/pushAudience'
+import { fallbackPushBody, fallbackPushTitle } from '../utils/pushRecipientCopy'
 
 export type PushPreferenceKey =
   | 'service_updates'
@@ -253,6 +263,9 @@ const webPushBody = (payload: PushPayload) => {
   return body
 }
 
+const normalizeSubscriberKind = (value?: string | null): PushSubscriberKind =>
+  value === 'owner' ? 'owner' : 'follower'
+
 const subscribe = async (input: {
   profile_slug?: string
   profile_id?: string
@@ -261,6 +274,10 @@ const subscribe = async (input: {
   browser?: string
   platform?: string
   preferences?: Partial<SnakeCasePreferences>
+  /** Public card follow = follower (default). Backoffice owner device = owner. */
+  audience?: PushSubscriberKind | string
+  /** When true, allow non-public cards (owner backoffice registration). */
+  allowPrivate?: boolean
 }) => {
   if (!config.VAPID.PUBLIC_KEY || !config.VAPID.PRIVATE_KEY) {
     throw new AppError(503, 'Push notifications are not configured on the server (missing VAPID keys).')
@@ -272,7 +289,15 @@ const subscribe = async (input: {
     throw new AppError(400, 'profile_slug or profile_id is required')
   }
 
-  const profile = await resolvePublicProfile(input)
+  const audience = normalizeSubscriberKind(input.audience)
+  const profile = input.allowPrivate
+    ? await prisma.profile.findFirst({
+        where: input.profile_id ? { id: input.profile_id } : { slug: input.profile_slug },
+        select: profileMediaSelect,
+      })
+    : await resolvePublicProfile(input)
+  if (!profile) throw new AppError(404, 'Profile not found')
+
   const endpointHash = hashEndpoint(input.endpoint)
   const preferenceData = snakeToPrismaData(input.preferences || {})
   const hasPreferencePayload = Object.keys(preferenceData).length > 0
@@ -292,6 +317,7 @@ const subscribe = async (input: {
       auth: input.keys.auth,
       browser: input.browser,
       platform: input.platform,
+      audience,
       isActive: true,
       lastUsedAt: new Date(),
       preferences: { create: preferenceData },
@@ -302,6 +328,7 @@ const subscribe = async (input: {
       auth: input.keys.auth,
       browser: input.browser,
       platform: input.platform,
+      audience,
       isActive: true,
       lastUsedAt: new Date(),
     },
@@ -321,7 +348,12 @@ const subscribe = async (input: {
     })
   }
 
-  return { id: sub.id, subscribed: true, preferences: preferencesToSnake(preferences) }
+  return {
+    id: sub.id,
+    subscribed: true,
+    audience,
+    preferences: preferencesToSnake(preferences),
+  }
 }
 
 const subscriptionStatus = async (slug: string, endpoint?: string) => {
@@ -450,30 +482,19 @@ const sendOne = async (sub: { id: string; endpoint: string; p256dh: string; auth
   }
 }
 
-/** Short action line for card-content pushes — always names the updated card owner. */
-const actionPhraseForType = (type: string): string => {
-  switch (type) {
-    case 'contact_updates':
-      return 'updated their contact info'
-    case 'theme_updates':
-      return 'updated their card design'
-    case 'service_updates':
-      return 'updated their services'
-    case 'portfolio_updates':
-      return 'added new photos or videos'
-    case 'news':
-      return 'published a new post'
-    case 'event_updates':
-      return 'shared a new event'
-    case 'business_hours':
-      return 'updated their profile'
-    default:
-      return 'has a new update on their card'
-  }
-}
-
-const keepsCustomPushCopy = (type: string) =>
+const isOperationalPushType = (type: string) =>
   type === 'meeting_alert' || type === 'viewer_return' || type === 'save_contact' || type === 'announcement_updates'
+
+/** Preserve CRM/backoffice deep links; never rewrite `/crm` into `/vCard/crm`. */
+const resolvePushOpenUrl = (partial: Pick<PushPayload, 'type' | 'url'>, slug?: string): string => {
+  const raw = typeof partial.url === 'string' ? partial.url.trim() : ''
+  if (/^https?:\/\//i.test(raw)) return raw
+  if (/^\/(crm|admin|dashboard|vcards|settings|notifications)\b/i.test(raw)) {
+    return raw.startsWith('/') ? raw : `/${raw}`
+  }
+  if (isOperationalPushType(partial.type) && !raw) return '/crm'
+  return normalizeFrontendPublicCardPath(raw || (slug ? buildFrontendPublicCardPath(slug) : undefined), slug)
+}
 
 const buildProfilePayload = async (
   profileId: string,
@@ -496,19 +517,11 @@ const buildProfilePayload = async (
   const badge = stillImageUrl(partial.badge) || icon
   const image = stillImageUrl(partial.image) || icon
 
-  const meetingExternalUrl =
-    partial.type === 'meeting_alert' && typeof partial.url === 'string' && /^https?:\/\//i.test(partial.url.trim())
-      ? partial.url.trim()
-      : ''
+  const url = resolvePushOpenUrl(partial, slug)
 
-  // Always public card path: /vCard/{slug} (never legacy /v/{slug}).
-  const url =
-    meetingExternalUrl ||
-    normalizeFrontendPublicCardPath(partial.url?.trim() || (slug ? buildFrontendPublicCardPath(slug) : undefined), slug)
-
-  const customCopy = keepsCustomPushCopy(partial.type)
-  const title = customCopy ? partial.title : partial.title?.trim() || 'Card updated'
-  const body = customCopy ? partial.body : `${businessName} ${actionPhraseForType(partial.type)}.`
+  // Prefer caller-provided area/role-specific copy; never bare "Card updated" / "Update".
+  const title = partial.title?.trim() || fallbackPushTitle(partial.type, businessName)
+  const body = partial.body?.trim() || fallbackPushBody(partial.type, businessName)
 
   return {
     ...partial,
@@ -532,7 +545,11 @@ const normalizeEmails = (emails: string[]) => [
   ...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean)),
 ]
 
-/** Profiles owned by these emails that already have an active push device. */
+/**
+ * Profiles directly owned by these emails that already have an active push device.
+ * Matches profile contact email or profile.userId login — never companyUserId
+ * (corporate parent must not receive member-card push fan-out).
+ */
 const profileIdsMatchingEmails = async (emails: string[]) => {
   const normalized = normalizeEmails(emails)
   if (!normalized.length) return [] as string[]
@@ -544,10 +561,7 @@ const profileIdsMatchingEmails = async (emails: string[]) => {
   const userIds = users.map((user) => user.id)
   const profiles = await prisma.profile.findMany({
     where: {
-      OR: [
-        { email: { in: normalized } },
-        ...(userIds.length ? [{ userId: { in: userIds } }, { companyUserId: { in: userIds } }] : []),
-      ],
+      OR: [{ email: { in: normalized } }, ...(userIds.length ? [{ userId: { in: userIds } }] : [])],
     },
     select: {
       id: true,
@@ -575,27 +589,105 @@ const sendToProfile = async (
   profileId: string,
   partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
     Partial<Pick<PushPayload, 'slug' | 'url' | 'businessName'>>,
-  options?: { includeSavers?: boolean; allowPrivate?: boolean }
+  options?: {
+    includeSavers?: boolean
+    allowPrivate?: boolean
+    audience?: PushDeliveryAudience
+    /** Cross-card dedupe: skip endpoints already notified for this logical event. */
+    seenEndpoints?: Set<string>
+  }
 ) => {
   if (!config.VAPID.PUBLIC_KEY || !config.VAPID.PRIVATE_KEY) {
     logger.warn('Skipping push send: VAPID keys not configured')
     return { sent: 0, skipped: true as const }
   }
 
-  const payload = await buildProfilePayload(profileId, partial, { allowPrivate: options?.allowPrivate })
+  const deliveryAudience = options?.audience || defaultPushDeliveryAudience(partial.type)
+  const allowPrivate = options?.allowPrivate || deliveryAudience === 'owners' || skipsPublicProfileGate(partial.type)
+  const payload = await buildProfilePayload(profileId, partial, { allowPrivate })
   if (!payload) return { sent: 0, skipped: true as const }
 
-  // Only active subscriptions on THIS card — never another card’s devices.
+  // Staff admins must not receive routine OWNER browser push (matrix §13).
+  // Do NOT skip the whole card — public followers who only Allowed notifications
+  // (no save-contact required) must still receive content / announcement pushes.
+  let suppressOwnerSubsForStaff = false
+  if (!staffAdminAllowsBrowserPush(payload.type)) {
+    const ownerUser = await prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { user: { select: { role: true } } },
+    })
+    const apiRole = ownerUser?.user?.role ? toApiRole(ownerUser.user.role) : ''
+    if (isStaffRole(apiRole)) {
+      suppressOwnerSubsForStaff = true
+      if (deliveryAudience === 'owners') {
+        return { sent: 0, skipped: true as const }
+      }
+    }
+  }
+
+  const kinds = subscriberKindsForDelivery(deliveryAudience)
+
+  // Active subscriptions on THIS card for the responsible audience.
+  // Follower = opted-in push subscriber (Allow notifications). Save-contact is NOT required.
   const subscriptions = await prisma.pushSubscription.findMany({
-    where: { profileId, isActive: true },
+    where: {
+      profileId,
+      isActive: true,
+      ...(kinds ? { audience: { in: kinds } } : {}),
+    },
     include: { preferences: true },
   })
 
+  // Owner devices may have been registered on another owned card (or HQ). Always merge
+  // those endpoints so closed-browser Web Push works after the first Allow — even when
+  // this card already has a stale/dead owner row that would otherwise block the fallback.
+  if (deliveryAudience === 'owners') {
+    const ownerRow = await prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { userId: true, companyUserId: true },
+    })
+    const ownerUserIds = [ownerRow?.userId, ownerRow?.companyUserId].filter((id): id is string => Boolean(id))
+    if (ownerUserIds.length) {
+      const siblingIds = await prisma.profile.findMany({
+        where: {
+          OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }],
+        },
+        select: { id: true },
+        take: 80,
+      })
+      const siblingProfileIds = siblingIds.map((row) => row.id).filter((id) => id !== profileId)
+      if (siblingProfileIds.length) {
+        const siblingSubs = await prisma.pushSubscription.findMany({
+          where: {
+            profileId: { in: siblingProfileIds },
+            isActive: true,
+            audience: 'owner',
+          },
+          include: { preferences: true },
+        })
+        if (siblingSubs.length) {
+          const seenSubIds = new Set(subscriptions.map((row) => row.id))
+          for (const sub of siblingSubs) {
+            if (seenSubIds.has(sub.id)) continue
+            subscriptions.push(sub)
+            seenSubIds.add(sub.id)
+          }
+        }
+      }
+    }
+  }
+
   let sent = 0
+  const seen = options?.seenEndpoints
   for (const sub of subscriptions) {
+    if (suppressOwnerSubsForStaff && sub.audience === 'owner') continue
     if (!preferenceAllows(sub.preferences, payload.type)) continue
+    if (seen?.has(sub.endpoint)) continue
     const ok = await sendOne(sub, payload)
-    if (ok) sent += 1
+    if (ok) {
+      sent += 1
+      seen?.add(sub.endpoint)
+    }
   }
 
   // Optional legacy fan-out (disabled by cardChangeAlsoReachesSavers). If re-enabled,
@@ -617,6 +709,7 @@ const sendToProfile = async (
       const extra = await sendToProfile(saverProfileId, sourcePartial, {
         includeSavers: false,
         allowPrivate: true,
+        seenEndpoints: seen,
       })
       sent += extra.sent
     }
@@ -625,13 +718,14 @@ const sendToProfile = async (
   return { sent, skipped: false as const }
 }
 
-/** Fire-and-forget wrapper for owner mutations — never throws to callers. */
+/** Fire-and-forget wrapper — never throws to callers. Audience defaults from push type. */
 const notifyProfileUpdate = (
   profileId: string,
   partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
-    Partial<Pick<PushPayload, 'slug' | 'url' | 'businessName'>>
+    Partial<Pick<PushPayload, 'slug' | 'url' | 'businessName'>>,
+  options?: { audience?: PushDeliveryAudience; allowPrivate?: boolean }
 ) => {
-  void sendToProfile(profileId, partial).catch((error) => {
+  void sendToProfile(profileId, partial, options).catch((error) => {
     logger.error('Background push notify failed', error)
   })
 }
@@ -678,10 +772,14 @@ const sendTest = async (input: {
   return { sent: ok, message: ok ? 'Test notification sent.' : 'Failed to send test notification.' }
 }
 
-/** Map post type names to preference keys. */
-export const preferenceKeyForPostType = (postTypeName?: string | null): PushPreferenceKey => {
+/**
+ * Map post type names to follower preference keys.
+ * Event-named posts no longer fan out via public `event_updates`
+ * (meetings/CRM use participant `meeting_alert` instead).
+ */
+export const preferenceKeyForPostType = (postTypeName?: string | null): PushPreferenceKey | null => {
   const name = (postTypeName || '').toLowerCase()
-  if (name.includes('event')) return 'event_updates'
+  if (name.includes('event')) return null
   if (name.includes('announce')) return 'announcement_updates'
   if (name.includes('offer') || name.includes('promo')) return 'offers'
   return 'news'

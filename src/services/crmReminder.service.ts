@@ -3,8 +3,11 @@ import authUtils from '../utils/auth.utils'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails } from '../utils/profileNotificationEmails'
+import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
+import { noteOwnerPush, scheduleOwnerPush, wishLeadPush, wishOwnerDeliveredPush } from '../utils/pushRecipientCopy'
 import announcementService from './announcement.service'
 import crmEventService from './crmEvent.service'
+import exactOwnerNotifyService from './exactOwnerNotify.service'
 import pushService from './push.service'
 import smsService from './sms.service'
 
@@ -32,10 +35,19 @@ async function systemActor(): Promise<SystemActor> {
   return { id: 'system', role: 'super-admin', name: 'System', email: 'system@vbizme.com' }
 }
 
-async function notifyEmails(emails: string[], title: string, body: string, meta: Record<string, string>) {
+async function notifyEmails(
+  emails: string[],
+  title: string,
+  body: string,
+  meta: Record<string, string>,
+  options?: { sendPush?: boolean }
+) {
   const unique = [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))]
   if (!unique.length) return
   const actor = await systemActor()
+  // Default: inbox for internal recipients. Browser push only when explicitly allowed
+  // (card owner / sender). Never public-saver push for wish / schedule / event.
+  const allowPush = options?.sendPush === true
   try {
     await announcementService.create(
       { id: actor.id, email: actor.email || 'system@vbizme.com', name: actor.name },
@@ -47,7 +59,14 @@ async function notifyEmails(emails: string[], title: string, body: string, meta:
         status: 'active',
         targetType: 'specific',
         targetEmails: unique,
-        meta: { ...meta, sendPush: '1', category: 'event', channel: 'inbox' },
+        meta: {
+          ...meta,
+          category: 'event',
+          channel: 'inbox',
+          onlyBackoffice: '1',
+          showPublic: '0',
+          sendPush: allowPush ? '1' : '0',
+        },
       }
     )
   } catch (error) {
@@ -125,18 +144,21 @@ function crmEventEmailHtml(input: {
 async function resolveProfileEmails(profileId: string | null | undefined): Promise<{
   emails: string[]
   displayName: string | null
+  ownerUserId: string | null
 }> {
-  if (!profileId) return { emails: [], displayName: null }
+  if (!profileId) return { emails: [], displayName: null, ownerUserId: null }
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
     select: {
       name: true,
       email: true,
+      userId: true,
+      companyUserId: true,
       user: { select: { email: true, name: true } },
       companyUser: { select: { email: true } },
     },
   })
-  if (!profile) return { emails: [], displayName: null }
+  if (!profile) return { emails: [], displayName: null, ownerUserId: null }
   const emails = collectProfileNotificationEmails({
     profileEmail: profile.email,
     userEmail: profile.user?.email,
@@ -145,6 +167,7 @@ async function resolveProfileEmails(profileId: string | null | undefined): Promi
   return {
     emails,
     displayName: profile.user?.name?.trim() || profile.name?.trim() || null,
+    ownerUserId: profile.userId || profile.companyUserId || null,
   }
 }
 
@@ -174,35 +197,71 @@ async function processWorkNoteReminders(leadMinutes: number) {
     },
     take: 80,
     include: {
-      assignee: { select: { email: true } },
-      createdBy: { select: { email: true } },
-      profile: { select: { id: true, email: true, user: { select: { email: true } } } },
+      assignee: { select: { id: true, email: true } },
+      createdBy: { select: { id: true, email: true } },
+      profile: {
+        select: {
+          id: true,
+          email: true,
+          userId: true,
+          user: { select: { email: true } },
+        },
+      },
     },
   })
 
   for (const note of notes) {
-    const emails = [note.assignee?.email, note.createdBy.email, note.profile?.email, note.profile?.user?.email].filter(
-      (e): e is string => Boolean(e)
-    )
-
     const overdue = Boolean(note.dueAt && note.dueAt.getTime() < now.getTime())
     const dueLabel = note.dueAt ? note.dueAt.toLocaleString() : 'soon'
+    const title = overdue ? `Overdue note: ${note.title}` : `Note reminder: ${note.title}`
+    const body = overdue
+      ? `"${note.title}" was due ${dueLabel}. Open CRM Notes to update it.`
+      : `"${note.title}" is due ${dueLabel}. Open CRM Notes to continue.`
 
-    await notifyEmails(
-      emails,
-      overdue ? `Overdue note: ${note.title}` : `Note reminder: ${note.title}`,
-      overdue
-        ? `"${note.title}" was due ${dueLabel}. Open CRM Notes to update it.`
-        : `"${note.title}" is due ${dueLabel}. Open CRM Notes to continue.`,
-      { workNoteId: note.id, href: '/crm' }
-    )
+    // Exact people only — separate inbox rows so corporate siblings never share one blast.
+    const recipients: Array<{ email: string; userId?: string; profileId?: string }> = []
+    if (note.assignee?.email) {
+      recipients.push({ email: note.assignee.email, userId: note.assignee.id })
+    }
+    if (note.createdBy.email && note.createdBy.id !== note.assignee?.id) {
+      recipients.push({ email: note.createdBy.email, userId: note.createdBy.id })
+    }
+    if (note.profile?.userId && note.profile.user?.email) {
+      if (!recipients.some((r) => r.userId === note.profile!.userId)) {
+        recipients.push({
+          email: note.profile.user.email,
+          userId: note.profile.userId,
+          profileId: note.profile.id,
+        })
+      }
+    }
+
+    for (const recipient of recipients) {
+      await notifyEmails([recipient.email], title, body, {
+        workNoteId: note.id,
+        href: buildOwnerBackofficePath('crm_notes'),
+        ...(recipient.userId ? { userId: recipient.userId } : {}),
+        ...(recipient.profileId || note.profileId ? { profileId: recipient.profileId || note.profileId || '' } : {}),
+      })
+    }
 
     if (note.profileId) {
-      pushService.notifyProfileUpdate(note.profileId, {
-        title: overdue ? 'Overdue note' : 'Note reminder',
-        body: note.title,
-        type: 'event_updates',
+      // Owner devices only — never content preference / saver fan-out (event_updates).
+      const notePush = noteOwnerPush({
+        title: note.title,
+        preview: body,
+        overdue,
       })
+      pushService.notifyProfileUpdate(
+        note.profileId,
+        {
+          title: notePush.title,
+          body: notePush.body,
+          type: 'meeting_alert',
+          url: buildOwnerBackofficePath('crm_notes'),
+        },
+        { audience: 'owners', allowPrivate: true }
+      )
     }
 
     await prisma.workNote.update({
@@ -293,7 +352,7 @@ async function processMeetingReminders() {
 
     await notifyEmails(recipientList, `Upcoming: ${meeting.type}`, receiverBody, {
       meetingId: meeting.id,
-      href: '/crm',
+      href: buildOwnerBackofficePath('calendar'),
     })
 
     if (config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
@@ -318,19 +377,30 @@ async function processMeetingReminders() {
       }
     }
 
+    const schedulePush = scheduleOwnerPush({
+      type: meeting.type,
+      host: meeting.host,
+      date: meeting.date,
+      time: meeting.time,
+      meetLink: meeting.meetLink,
+      phase: 'starting',
+    })
     const pushPayload = {
-      title: `Upcoming: ${meeting.type}`,
-      body: `${meeting.date} ${meeting.time}`,
-      type: 'event_updates' as const,
-      url: meeting.meetLink || undefined,
+      title: schedulePush.title,
+      body: schedulePush.body,
+      type: 'meeting_alert' as const,
+      url: meeting.meetLink || buildOwnerBackofficePath('calendar'),
     }
 
     if (meeting.scope === 'group') {
       for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) {
-        pushService.notifyProfileUpdate(profileId, pushPayload)
+        pushService.notifyProfileUpdate(profileId, pushPayload, { audience: 'owners', allowPrivate: true })
       }
     } else if (meeting.profileId) {
-      pushService.notifyProfileUpdate(meeting.profileId, pushPayload)
+      pushService.notifyProfileUpdate(meeting.profileId, pushPayload, {
+        audience: 'owners',
+        allowPrivate: true,
+      })
     }
 
     const senderEmail = meeting.createdBy?.email?.trim().toLowerCase()
@@ -341,7 +411,7 @@ async function processMeetingReminders() {
         `Your ${meeting.type} with ${meeting.host} starts at ${meeting.date} ${meeting.time}.${joinHint}`,
         {
           meetingId: meeting.id,
-          href: '/crm',
+          href: buildOwnerBackofficePath('calendar'),
           userId: meeting.createdBy.id,
         }
       )
@@ -369,48 +439,83 @@ async function processCrmEventReminders() {
     take: 50,
     include: {
       createdBy: { select: { id: true, email: true, name: true } },
+      guestUserData: { select: { email: true, fullName: true, phone: true } },
     },
   })
 
   for (const event of events) {
     const attachments = crmEventService.parseAttachments(event.attachments)
-    const emails = new Set<string>()
-    let displayName = event.recipientName?.trim() || event.host
     const description = event.description?.trim() || ''
+    const tz = event.timezone || 'America/New_York'
 
-    if (event.recipientEmail?.trim()) {
-      emails.add(event.recipientEmail.trim().toLowerCase())
-    }
-
+    const ownerProfileIds: string[] = []
     if (event.scope === 'group') {
-      const ids = parseGroupProfileIds(event.groupProfileIds)
-      for (const profileId of ids) {
-        const resolved = await resolveProfileEmails(profileId)
-        for (const email of resolved.emails) emails.add(email)
-        if (!event.recipientName && resolved.displayName) displayName = resolved.displayName
-      }
-    } else if (event.profileId) {
-      const resolved = await resolveProfileEmails(event.profileId)
-      for (const email of resolved.emails) emails.add(email)
-      if (!event.recipientName && resolved.displayName) displayName = resolved.displayName
+      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) ownerProfileIds.push(profileId)
     }
+    if (event.profileId && !ownerProfileIds.includes(event.profileId)) ownerProfileIds.push(event.profileId)
 
-    const recipientList = [...emails]
+    const leadIds = (() => {
+      const raw = (event as { recipientLeadIds?: unknown }).recipientLeadIds
+      if (Array.isArray(raw)) return raw.map((id) => String(id || '').trim()).filter(Boolean)
+      if (event.guestUserDataId) return [event.guestUserDataId]
+      return []
+    })()
+
+    const leads = leadIds.length
+      ? await prisma.guestUserData.findMany({
+          where: { id: { in: leadIds } },
+          select: { id: true, email: true, fullName: true, phone: true, profileId: true },
+        })
+      : event.guestUserData
+        ? [
+            {
+              id: event.guestUserDataId || '',
+              email: event.guestUserData.email,
+              fullName: event.guestUserData.fullName,
+              phone: null as string | null,
+              profileId: event.profileId,
+            },
+          ]
+        : []
+
     const attachmentSummary = attachments.length
       ? ` Includes ${attachments.length} attachment${attachments.length === 1 ? '' : 's'}.`
       : ''
     const messageSummary = description ? ` ${truncateForPush(description, 180)}` : ''
-    const receiverBody = `${event.type} for ${event.host} — ${event.date} ${event.time}.${messageSummary}${attachmentSummary}`
-    const pushBody = description ? truncateForPush(description) : `${event.date} ${event.time}`
-
-    await notifyEmails(recipientList, `CRM event: ${event.type}`, receiverBody, {
-      crmEventId: event.id,
-      href: '/crm',
+    const ownerWishPush = wishOwnerDeliveredPush({
+      type: event.type,
+      leadCount: leads.length || 1,
+      date: event.date,
+      time: event.time,
+      timezone: tz,
+      description,
     })
+    const confirmBody = `${ownerWishPush.body}${attachmentSummary}`
 
-    if (config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
+    // Selected leads: email + SMS with a view link (never MMS photo/video — cheaper SMS rate).
+    const firstMediaUrl = attachments.find((row) => /^https?:\/\//i.test(row.url || ''))?.url || ''
+    const wishCard = event.profileId
+      ? await prisma.profile.findUnique({ where: { id: event.profileId }, select: { slug: true, name: true } })
+      : null
+    const wishCardUrl = wishCard?.slug
+      ? `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}/vCard/${encodeURIComponent(wishCard.slug)}`
+      : `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}`
+    const leadWishLink = firstMediaUrl || wishCardUrl
+
+    for (const lead of leads) {
+      const email = lead.email?.trim().toLowerCase() || ''
+      const name = lead.fullName?.trim() || event.recipientName?.trim() || 'there'
+      if (!email && !lead.phone) continue
+      const leadPush = wishLeadPush({
+        type: event.type,
+        host: event.host,
+        recipientName: name === 'there' ? null : name,
+        date: event.date,
+        time: event.time,
+        description,
+      })
       const html = crmEventEmailHtml({
-        recipientName: displayName || 'there',
+        recipientName: name,
         type: event.type,
         host: event.host,
         date: event.date,
@@ -418,46 +523,69 @@ async function processCrmEventReminders() {
         description,
         attachments,
       })
-      const subject = `${event.type} — ${event.date} ${event.time}`
-      for (const email of recipientList) {
-        void authUtils
-          .sendEmail({
-            receiverMail: email,
-            subject,
-            html,
-          })
-          .catch((error) => logger.error('CRM event reminder email failed', { error, email, crmEventId: event.id }))
-      }
-    }
-
-    if (event.profileId) {
-      pushService.notifyProfileUpdate(event.profileId, {
-        title: `CRM event: ${event.type}`,
-        body: pushBody,
-        type: 'event_updates',
-      })
-    } else if (event.scope === 'group') {
-      for (const profileId of parseGroupProfileIds(event.groupProfileIds)) {
-        pushService.notifyProfileUpdate(profileId, {
-          title: `CRM event: ${event.type}`,
-          body: pushBody,
-          type: 'event_updates',
+      void exactOwnerNotifyService
+        .notifyVisitorChannels({
+          email: email || null,
+          phone: lead.phone,
+          title: leadPush.title,
+          body: `${leadPush.body} View: ${leadWishLink}`,
+          emailHtml: html,
+          smsTopic: 'Wish',
+          cardName: wishCard?.name || event.host || 'vBiz card',
+          cardUrl: leadWishLink,
+          pushType: 'meeting_alert',
+          allowPush: true,
         })
-      }
+        .catch((error) => logger.error('CRM wish lead notify failed', { error, leadId: lead.id, crmEventId: event.id }))
     }
 
-    const senderEmail = event.createdBy?.email?.trim().toLowerCase()
+    // Card owner only: inbox + email + push + SMS (link to view wish — no MMS media).
+    const wishHref = buildOwnerBackofficePath('wish')
+    const wishAbsoluteUrl = `${(config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')}${wishHref}`
+    for (const profileId of ownerProfileIds) {
+      void exactOwnerNotifyService
+        .notifyExactCardOwnerInbox({
+          profileId,
+          title: ownerWishPush.title,
+          body: confirmBody,
+          category: 'event',
+          topic: 'crm',
+          eventKey: `crm_wish_delivered:${event.id}:${profileId}`,
+          href: wishHref,
+          sendEmail: true,
+          sendSms: true,
+          smsTopic: 'Wish',
+          smsDetail: `${event.type} wish was sent. Open the link to view it.`,
+          smsLinkUrl: wishAbsoluteUrl,
+          push: {
+            title: ownerWishPush.title,
+            body: ownerWishPush.body,
+            type: 'meeting_alert',
+            url: wishHref,
+          },
+        })
+        .catch((error) => logger.error('CRM wish owner notify failed', { error, profileId, crmEventId: event.id }))
+    }
+
+    // Confirm the booker only when they are the responsible card owner — never staff admin copies.
+    const senderEmail = event.createdBy?.email?.trim().toLowerCase() || ''
     if (senderEmail && event.createdBy) {
-      await notifyEmails(
-        [senderEmail],
-        `Your wish was delivered: ${event.type}`,
-        `Your ${event.type} for ${event.host} was sent at ${event.date} ${event.time}.${messageSummary}`,
-        {
-          crmEventId: event.id,
-          href: '/crm',
-          userId: event.createdBy.id,
-        }
-      )
+      const ownerEmailSets = await Promise.all(ownerProfileIds.map((profileId) => resolveProfileEmails(profileId)))
+      const ownerEmails = new Set(ownerEmailSets.flatMap((entry) => entry.emails))
+      if (ownerEmails.has(senderEmail)) {
+        await notifyEmails(
+          [senderEmail],
+          `Your wish was delivered: ${event.type}`,
+          `Your ${event.type} was sent at ${event.date} ${event.time} (${tz}) to ${leads.length || 1} lead(s).${messageSummary}`,
+          {
+            crmEventId: event.id,
+            href: wishHref,
+            topic: 'crm',
+            userId: event.createdBy.id,
+          },
+          { sendPush: false }
+        )
+      }
     }
 
     await prisma.crmEvent.update({

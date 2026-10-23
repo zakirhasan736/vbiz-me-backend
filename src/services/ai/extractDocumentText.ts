@@ -1,8 +1,15 @@
 import { createHash } from 'crypto'
 import mammoth from 'mammoth'
 import AppError from '../../error/AppError'
+import {
+  extractStylesheetUrls,
+  formatBrandColorResearchBlock,
+  themeRecommendationFromWebsite,
+} from './brandColorEngine'
 import { cacheGet, cacheKey, cacheSet } from './extractionCache'
-import { MAX_FILES, MAX_UPLOAD_BYTES } from './openai.client'
+import { MAX_DOCUMENT_EXTRACT_CHARS, MAX_FILES, MAX_UPLOAD_BYTES } from './openai.client'
+import { extractReputationLinksFromHtml } from './reputationFromSources'
+import { isBlockedFetchHostname, normalizeWebsiteUrl } from './sourceUrl'
 import type { WebsiteCrawlMode } from './websiteCrawlMode'
 
 export type WebsitePageCategory =
@@ -27,12 +34,33 @@ export type CrawledWebsitePage = {
   category: WebsitePageCategory
   title?: string
   imageUrls?: string[]
+  /** ISO timestamp when the page body was retrieved. */
+  retrievedAt?: string
+  extractionStatus?: 'ok' | 'empty' | 'truncated' | 'blocked'
 }
 
-export const PAGE_FETCH_TIMEOUT_MS = 20_000
-export const DEFAULT_CRAWL_MAX_PAGES = 40
-export const FOCUSED_CRAWL_MAX_PAGES = 48
+export const PAGE_FETCH_TIMEOUT_MS = 25_000
+/** Full-site scrape budget — open as many pages as practical for the card builder. */
+export const DEFAULT_CRAWL_MAX_PAGES = 150
+export const FOCUSED_CRAWL_MAX_PAGES = 180
 export const STOREFRONT_CRAWL_MAX_PAGES = 10
+/** Per-page body kept for AI (home pages get a larger slice). */
+export const CRAWL_PAGE_TEXT_CHARS = 20_000
+export const CRAWL_HOME_TEXT_CHARS = 28_000
+/** Combined crawl corpus fed into normalization / AI. */
+export const CRAWL_COMBINED_TEXT_CHARS = 450_000
+/** Priority inner pages that must be fetched when linked from the site. */
+const PRIORITY_PAGE_FOCUSES = [
+  'about',
+  'services',
+  'faqs',
+  'reviews',
+  'personal',
+  'portfolio',
+  'blogs',
+  'products',
+  'team',
+] as const
 
 const BROWSER_LIKE_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
@@ -52,9 +80,14 @@ export type UploadedPart = {
   buffer: Buffer
 }
 
-function truncate(text: string, max = 24000): string {
+/** Prefer keeping the start (overview) and end (contact/footer) of long PDFs/text. */
+function truncate(text: string, max = MAX_DOCUMENT_EXTRACT_CHARS): string {
   if (text.length <= max) return text
-  return `${text.slice(0, max)}\n\n[Truncated…]`
+  const marker = '\n\n[…middle omitted for length; beginning and ending kept for full context…]\n\n'
+  const budget = max - marker.length
+  const head = Math.floor(budget * 0.72)
+  const tail = Math.max(2_000, budget - head)
+  return `${text.slice(0, head)}${marker}${text.slice(-tail)}`
 }
 
 function decodeHtmlEntities(text: string): string {
@@ -269,10 +302,26 @@ export async function extractTextFromBuffer(file: UploadedPart): Promise<Extract
 }
 
 async function fetchHtml(url: string, timeoutMs = PAGE_FETCH_TIMEOUT_MS): Promise<string> {
+  let safeUrl: string
+  try {
+    safeUrl = normalizeWebsiteUrl(url)
+  } catch {
+    throw new AppError(400, `Blocked or invalid website URL: ${url}`)
+  }
+  let hostname: string
+  try {
+    hostname = new URL(safeUrl).hostname
+  } catch {
+    throw new AppError(400, `Blocked or invalid website URL: ${url}`)
+  }
+  if (isBlockedFetchHostname(hostname)) {
+    throw new AppError(400, `Blocked or invalid website URL: ${url}`)
+  }
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetch(url, {
+    const res = await fetch(safeUrl, {
       signal: controller.signal,
       headers: {
         'User-Agent': BROWSER_LIKE_UA,
@@ -282,6 +331,17 @@ async function fetchHtml(url: string, timeoutMs = PAGE_FETCH_TIMEOUT_MS): Promis
       },
       redirect: 'follow',
     })
+    // Re-check final URL after redirects (SSRF).
+    if (res.url) {
+      try {
+        const finalHost = new URL(res.url).hostname
+        if (isBlockedFetchHostname(finalHost)) {
+          throw new AppError(400, `Blocked redirect target for ${url}`)
+        }
+      } catch (error) {
+        if (error instanceof AppError) throw error
+      }
+    }
     if (!res.ok) throw new AppError(400, `Website fetch failed (${res.status}) for ${url}`)
     return await res.text()
   } finally {
@@ -468,12 +528,18 @@ function htmlToText(html: string): string {
   const carouselBlocks = extractCarouselAndReviewBlocks(html)
   const embedded = extractEmbeddedDataText(html)
   const attributes = extractAttributeText(html)
+  const externalLinks = extractReputationLinksFromHtml(html)
+  const externalBlock = externalLinks.length
+    ? `EXTERNAL_LINKS:\n${externalLinks.map((link) => `${link.platform}: ${link.url}`).join('\n')}`
+    : ''
   const visible = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
-  return stripWebsiteBoilerplate(cleanText([carouselBlocks, visible, attributes, embedded].filter(Boolean).join(' ')))
+  return stripWebsiteBoilerplate(
+    cleanText([carouselBlocks, visible, attributes, embedded, externalBlock].filter(Boolean).join(' '))
+  )
 }
 
 const SECTION_LINK_RE =
@@ -561,16 +627,17 @@ async function discoverSitemapUrls(home: string): Promise<string[]> {
     const sitemapUrl = new URL('/sitemap.xml', origin).toString()
     const xml = await fetchHtml(sitemapUrl, 12_000)
     const locs = parseSitemapLocs(xml, origin.hostname)
-    const nested = locs.filter((loc) => /sitemap/i.test(loc)).slice(0, 12)
+    const nested = locs.filter((loc) => /sitemap/i.test(loc)).slice(0, 24)
     const nestedLocs: string[] = []
     for (const nestedUrl of nested) {
       try {
-        nestedLocs.push(...parseSitemapLocs(await fetchHtml(nestedUrl, 12_000), origin.hostname))
+        nestedLocs.push(...parseSitemapLocs(await fetchHtml(nestedUrl, 15_000), origin.hostname))
       } catch {
         /* ignore nested sitemap failures */
       }
     }
-    return [...locs, ...nestedLocs].filter((loc) => !/sitemap/i.test(loc))
+    // Cap sitemap discovery so huge sites still finish, but keep a large set for planning.
+    return [...locs, ...nestedLocs].filter((loc) => !/sitemap/i.test(loc)).slice(0, 2_500)
   } catch {
     return []
   }
@@ -582,6 +649,36 @@ type FetchedPage = {
   text: string
   title: string
   imageUrls: string[]
+}
+
+/** Fetch a few same-origin stylesheets so brand CSS variables survive beyond inline <style>. */
+async function fetchLinkedStylesheets(html: string, pageUrl: string): Promise<string> {
+  let originHost = ''
+  try {
+    originHost = new URL(pageUrl).hostname
+  } catch {
+    return ''
+  }
+  const urls = extractStylesheetUrls(html, pageUrl, 3).filter((href) => {
+    try {
+      return new URL(href).hostname === originHost
+    } catch {
+      return false
+    }
+  })
+  if (!urls.length) return ''
+  const chunks: string[] = []
+  await Promise.all(
+    urls.map(async (href) => {
+      try {
+        const css = await fetchHtml(href, 12_000)
+        if (css && css.length < 400_000) chunks.push(css.slice(0, 120_000))
+      } catch {
+        /* ignore stylesheet failures */
+      }
+    })
+  )
+  return chunks.join('\n')
 }
 
 const CORE_READ_CATEGORIES = new Set<WebsitePageCategory>([
@@ -740,13 +837,13 @@ export function planCatalogReads(
       classifyWebsitePage(url) === 'products'
     )
   })
-  const samples = groups.slice(0, 12).map((group) => group.sampleUrl)
-  const fetchUrls = [...new Set([...cores, ...categoryPages, ...samples, ...blogs.slice(0, 3), ...others])].slice(
-    0,
-    limit
-  )
+  const samples = groups.slice(0, 24).map((group) => group.sampleUrl)
+  const blogBudget = Math.min(24, Math.max(8, Math.floor(limit * 0.2)))
+  const fetchUrls = [
+    ...new Set([...cores, ...categoryPages, ...samples, ...blogs.slice(0, blogBudget), ...others]),
+  ].slice(0, limit)
   const listed = groups
-    .slice(0, 24)
+    .slice(0, 40)
     .map((group) => {
       const extra = group.count - 1
       const names = group.otherLabels.slice(0, 6).join(', ')
@@ -754,12 +851,12 @@ export function planCatalogReads(
     })
     .join('\n')
   const summary = [
-    `FULL WEBSITE: ${unique.length} pages discovered.`,
-    'Main pages (home, about, services, contact, team, and similar) are read in full.',
+    `FULL WEBSITE: ${unique.length} pages discovered; opening up to ${limit} pages for the card builder.`,
+    'Main pages (home, about, services, contact, team, FAQ, reviews, portfolio) are read in full.',
     'Long car or product lists are read by category: one example from each category, not every listing.',
     listed,
-    blogs.length > 3
-      ? `Articles discovered: ${blogs.length}. Opened ${Math.min(3, blogs.length)} and kept the rest as titles only.`
+    blogs.length > blogBudget
+      ? `Articles discovered: ${blogs.length}. Opened ${Math.min(blogBudget, blogs.length)} and kept the rest as titles only.`
       : '',
   ]
     .filter(Boolean)
@@ -778,7 +875,7 @@ export async function crawlWebsiteDeep(
 ): Promise<{ pages: CrawledWebsitePage[]; combined: string; mode: WebsiteCrawlMode; catalogSummary?: string }> {
   const mode: WebsiteCrawlMode = options?.mode === 'storefront' ? 'storefront' : 'full'
   const home = url.startsWith('http') ? url : `https://${url}`
-  const cacheId = cacheKey(['crawl-v4', home, focus || '', mode])
+  const cacheId = cacheKey(['crawl-v6', home, focus || '', mode])
   const cached = cacheGet<{
     pages: CrawledWebsitePage[]
     combined: string
@@ -789,15 +886,24 @@ export async function crawlWebsiteDeep(
 
   const imageLimit = mode === 'storefront' ? 24 : 8
   const homeHtml = await fetchHtml(home)
+  const linkedCss = await fetchLinkedStylesheets(homeHtml, home)
+  const brandTheme = themeRecommendationFromWebsite(homeHtml, linkedCss)
+  const brandResearchBlock = formatBrandColorResearchBlock(
+    brandTheme?.recommendation || null,
+    brandTheme?.evidence || []
+  )
   const homeText = htmlToText(homeHtml)
   const homeCategory = mode === 'storefront' ? ('products' as WebsitePageCategory) : classifyWebsitePage(home, homeText)
+  const retrievedAt = new Date().toISOString()
   const pages: CrawledWebsitePage[] = [
     {
       url: home,
-      text: truncate(homeText, mode === 'storefront' ? 20000 : 16000),
+      text: truncate(homeText, mode === 'storefront' ? 20_000 : CRAWL_HOME_TEXT_CHARS),
       category: homeCategory,
       title: extractPageTitle(homeHtml),
       imageUrls: extractPageImageUrls(homeHtml, home, imageLimit),
+      retrievedAt,
+      extractionStatus: homeText.trim().length > 80 ? 'ok' : 'empty',
     },
   ]
   const visited = new Set<string>([canonicalPageUrl(home), home])
@@ -810,7 +916,7 @@ export async function crawlWebsiteDeep(
     return {
       url: link,
       html,
-      text: truncate(htmlToText(html), focus || mode === 'storefront' ? 14000 : 12000),
+      text: truncate(htmlToText(html), focus || mode === 'storefront' ? 14_000 : CRAWL_PAGE_TEXT_CHARS),
       title: extractPageTitle(html),
       imageUrls: extractPageImageUrls(html, link, imageLimit),
     }
@@ -833,6 +939,8 @@ export async function crawlWebsiteDeep(
           : classifyWebsitePage(page.url, `${page.title} ${page.text}`),
       title: page.title,
       imageUrls: page.imageUrls,
+      retrievedAt: new Date().toISOString(),
+      extractionStatus: page.text.trim().length > 80 ? 'ok' : 'empty',
     })
   }
 
@@ -849,9 +957,13 @@ export async function crawlWebsiteDeep(
       }
     }
   } else {
-    const homeLinks = extractSameOriginLinks(homeHtml, home, focus, 80)
+    const homeLinks = extractSameOriginLinks(homeHtml, home, focus, 120)
+    // Explicitly collect About / Services / FAQ / Reviews / Contact / Team links first.
+    const priorityLinks = PRIORITY_PAGE_FOCUSES.flatMap((priorityFocus) =>
+      extractSameOriginLinks(homeHtml, home, priorityFocus, 24)
+    )
     const sitemapUrls = await discoverSitemapUrls(home)
-    const plan = planCatalogReads([...homeLinks, ...sitemapUrls], Math.max(8, maxPages - 1))
+    const plan = planCatalogReads([...priorityLinks, ...homeLinks, ...sitemapUrls], Math.max(12, maxPages - 1))
     catalogSummary = plan.summary
     const fetchList = plan.fetchUrls.filter((link) => !visited.has(link)).slice(0, Math.max(0, maxPages - pages.length))
     for (const link of fetchList) visited.add(link)
@@ -862,10 +974,16 @@ export async function crawlWebsiteDeep(
         if (result.status !== 'fulfilled') continue
         const page = result.value as FetchedPage
         acceptPage(page)
-        extraLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 40))
+        extraLinks.push(...extractSameOriginLinks(page.html, page.url, focus, 50))
+        for (const priorityFocus of PRIORITY_PAGE_FOCUSES) {
+          extraLinks.push(...extractSameOriginLinks(page.html, page.url, priorityFocus, 16))
+        }
       }
     }
-    const refined = planCatalogReads([...homeLinks, ...sitemapUrls, ...extraLinks], Math.max(8, maxPages - 1))
+    const refined = planCatalogReads(
+      [...priorityLinks, ...homeLinks, ...sitemapUrls, ...extraLinks],
+      Math.max(12, maxPages - 1)
+    )
     if (refined.summary) catalogSummary = refined.summary
     const more = refined.fetchUrls.filter((link) => !visited.has(link)).slice(0, Math.max(0, maxPages - pages.length))
     for (const link of more) visited.add(link)
@@ -876,13 +994,62 @@ export async function crawlWebsiteDeep(
         acceptPage(result.value as FetchedPage)
       }
     }
+    // Final pass: if key categories are still missing, chase those links from every fetched HTML.
+    const haveCategories = new Set(pages.map((page) => page.category))
+    const missingPriority = (
+      [
+        ['about', 'about'],
+        ['services', 'services'],
+        ['faq', 'faqs'],
+        ['reviews', 'reviews'],
+        ['contact', 'personal'],
+        ['team', 'personal'],
+        ['portfolio', 'portfolio'],
+        ['blog', 'blogs'],
+      ] as const
+    ).filter(([category]) => !haveCategories.has(category))
+    if (missingPriority.length && pages.length < maxPages) {
+      const chase: string[] = []
+      for (const [, priorityFocus] of missingPriority) {
+        chase.push(...extractSameOriginLinks(homeHtml, home, priorityFocus, 20))
+      }
+      const chaseList = chase.filter((link) => remember(link)).slice(0, Math.max(0, maxPages - pages.length))
+      if (chaseList.length) {
+        const chased = await fetchSettledInChunks(chaseList, 6, fetchPage)
+        for (const result of chased) {
+          if (result.status !== 'fulfilled') continue
+          acceptPage(result.value as FetchedPage)
+        }
+      }
+    }
+
+    // Broad BFS: keep following same-origin links until the page budget is filled.
+    let frontier = [...extraLinks, ...more]
+    let waves = 0
+    while (pages.length < maxPages && frontier.length && waves < 4) {
+      waves += 1
+      const batch = frontier.filter((link) => remember(link)).slice(0, Math.max(0, maxPages - pages.length))
+      frontier = []
+      if (!batch.length) break
+      const waveResults = await fetchSettledInChunks(batch, 8, fetchPage)
+      for (const result of waveResults) {
+        if (result.status !== 'fulfilled') continue
+        const page = result.value as FetchedPage
+        acceptPage(page)
+        frontier.push(...extractSameOriginLinks(page.html, page.url, focus, 40))
+        for (const priorityFocus of PRIORITY_PAGE_FOCUSES) {
+          frontier.push(...extractSameOriginLinks(page.html, page.url, priorityFocus, 12))
+        }
+      }
+    }
   }
 
   const combinedPrefix = [
     mode === 'storefront'
       ? 'CRAWL MODE: storefront (seller/vendor page — focus on this URL, not the full marketplace)'
-      : '',
+      : `CRAWL MODE: full-site (${pages.length} pages opened; every area linked from the site was pursued up to the page budget)`,
     catalogSummary,
+    brandResearchBlock,
   ]
     .filter(Boolean)
     .join('\n')
@@ -894,13 +1061,14 @@ export async function crawlWebsiteDeep(
           ? `\nIMAGES: ${p.imageUrls.slice(0, mode === 'storefront' ? 8 : 3).join(' | ')}`
           : ''
         const title = p.title ? `\nTITLE: ${p.title}` : ''
-        return `=== PAGE ${i + 1} [${p.category.toUpperCase()}]: ${p.url} ===${title}${media}\n${p.text}`
+        const meta = `\nPAGE_TYPE: ${p.category}\nRETRIEVED_AT: ${p.retrievedAt || ''}\nEXTRACTION_STATUS: ${p.extractionStatus || 'ok'}`
+        return `=== PAGE ${i + 1} [${p.category.toUpperCase()}]: ${p.url} ===${title}${meta}${media}\n${p.text}`
       })
       .join('\n\n')
 
   const result = {
     pages,
-    combined: truncate(combined, mode === 'storefront' ? 90000 : focus ? 120000 : 110000),
+    combined: truncate(combined, mode === 'storefront' ? 90_000 : focus ? 320_000 : CRAWL_COMBINED_TEXT_CHARS),
     mode,
     catalogSummary: catalogSummary || undefined,
   }

@@ -165,6 +165,40 @@ const seedPackages = async (): Promise<void> => {
     logger.info(`Enabled mandatory push notification on ${seededPush} package(s) (allow_push_notification=1)`)
   }
 
+  // Owner text alerts: Free=0 (push+email only), Professional=200/mo, Concierge/Corporate=1000/mo.
+  const SMS_LIMIT_BY_SLUG: Record<string, string> = {
+    free: '0',
+    professional: '200',
+    'professional-concierge': '1000',
+    corporate: '1000',
+    'single-starter': '0',
+    'corporate-starter': '0',
+  }
+  let seededSms = 0
+  for (const pkg of packages) {
+    const slug = (pkg.slug || '').trim().toLowerCase()
+    const featureValue = SMS_LIMIT_BY_SLUG[slug] ?? '0'
+    const existing = await prisma.packageFeature.findUnique({
+      where: { packageId_featureKey: { packageId: pkg.id, featureKey: 'sms_monthly_limit' } },
+      select: { id: true, featureValue: true },
+    })
+    if (existing?.featureValue === featureValue) continue
+    if (existing) {
+      await prisma.packageFeature.update({
+        where: { id: existing.id },
+        data: { featureValue },
+      })
+    } else {
+      await prisma.packageFeature.create({
+        data: { packageId: pkg.id, featureKey: 'sms_monthly_limit', featureValue },
+      })
+    }
+    seededSms += 1
+  }
+  if (seededSms) {
+    logger.info(`Synced SMS monthly limits on ${seededSms} package(s) (sms_monthly_limit)`)
+  }
+
   const FILE_SIZE_BY_SLUG: Record<string, string> = {
     professional: '50',
     'professional-concierge': 'unlimited',

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { minCardAgeCutoffDate } from '../../utils/cardActivation'
 import type { MasterBusinessProfile } from './businessProfile.schema'
 import { TAB_CATALOG, cardBlueprintSchema, type CardBlueprint, type FillSectionId } from './cardBlueprint.schema'
+import { assessCardQuality } from './cardQuality.service'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const URL_RE = /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i
@@ -41,11 +42,14 @@ export function looksLikeDateOnly(value: string): boolean {
 }
 
 function stripSampleReviews(blueprint: CardBlueprint): CardBlueprint {
+  // Keep "Example Client" drafts for empty sites (customer replaces before publish).
+  // Strip only explicitly marked DRAFT / SAMPLE mock rows.
   const reviews = (blueprint.reviews || []).filter((row) => {
-    const blob = `${row.author} ${row.text}`.toLowerCase()
+    const author = String(row.author || '').trim()
+    const blob = `${author} ${row.text}`.toLowerCase()
     if (blob.includes('draft / sample') || blob.includes('[sample]')) return false
-    if (/^sample (client|customer|reviewer)/i.test(row.author || '')) return false
-    return Boolean((row.author || '').trim() || (row.text || '').trim())
+    if (/^sample (client|customer|reviewer)$/i.test(author)) return false
+    return Boolean(author || (row.text || '').trim())
   })
   return { ...blueprint, reviews }
 }
@@ -76,6 +80,9 @@ export function sanitizeBlueprint(raw: unknown): { blueprint: CardBlueprint; iss
 
   parsed = stripSampleReviews(parsed)
   parsed = dedupeServices(parsed)
+  const quality = assessCardQuality({ blueprint: parsed })
+  parsed = quality.blueprint
+  issues.push(...quality.issues)
 
   if (parsed.personal.email && !looksLikeEmail(parsed.personal.email)) {
     issues.push({ code: 'invalid_email', field: 'personal.email', message: 'Email format looks invalid.' })

@@ -46,21 +46,28 @@ const createCrmEvent = z
     recipientName: z.string().trim().max(200).optional().nullable(),
     /** Optional CRM lead (guest save) this event was created from. */
     guestUserDataId: z.string().min(1).optional().nullable(),
+    /** Explicit CRM lead ids for single / grouped wishes (GuestUserData ids). */
+    recipientLeadIds: z.array(z.string().min(1)).max(500).optional(),
+    /** IANA timezone for local send time (USA default America/New_York). */
+    timezone: z.string().trim().min(1).max(80).optional().nullable(),
   })
   .superRefine((data, ctx) => {
-    const scope = data.scope ?? (data.profileId ? 'one_to_one' : 'global')
-    if (scope === 'one_to_one' && !data.profileId) {
-      ctx.addIssue({ code: 'custom', message: 'profileId is required for one-to-one events', path: ['profileId'] })
-    }
-    if (scope === 'group' && !data.groupProfileIds?.length && !data.companyUserId) {
+    const scope =
+      data.scope ?? (data.profileId || data.guestUserDataId || data.recipientLeadIds?.length ? 'one_to_one' : 'global')
+    const hasLeads = Boolean(data.guestUserDataId || data.recipientLeadIds?.length)
+    if (scope === 'one_to_one' && !data.profileId && !hasLeads) {
       ctx.addIssue({
         code: 'custom',
-        message: 'groupProfileIds or companyUserId is required for group events',
-        path: ['groupProfileIds'],
+        message: 'Select a CRM lead (or card) for a single wish',
+        path: ['guestUserDataId'],
       })
     }
-    if (scope === 'global' && data.profileId) {
-      ctx.addIssue({ code: 'custom', message: 'Global events must not include profileId', path: ['profileId'] })
+    if (scope === 'group' && !hasLeads && !data.groupProfileIds?.length && !data.companyUserId) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Select one or more CRM leads for a grouped wish',
+        path: ['recipientLeadIds'],
+      })
     }
   })
 

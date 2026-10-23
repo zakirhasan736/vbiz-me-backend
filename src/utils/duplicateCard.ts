@@ -331,11 +331,19 @@ export function relinkExistingCardToCorporate(input: {
   corporateEmail?: string | null
   cardEmail?: string | null
   currentUserId?: string | null
+  /**
+   * When true, the corporate owner becomes the card login owner even if the card
+   * email differs (repairs AI-builder auto-member reassignment).
+   */
+  forceAsOwnerCard?: boolean
 }): {
   userId: string
   companyUserId: string
 } {
   const corpId = input.corporateUserId.trim()
+  if (input.forceAsOwnerCard) {
+    return { userId: corpId, companyUserId: corpId }
+  }
   const cardEmail = (input.cardEmail || '').trim().toLowerCase()
   const corpEmail = (input.corporateEmail || '').trim().toLowerCase()
   const currentUserId = input.currentUserId?.trim() || ''

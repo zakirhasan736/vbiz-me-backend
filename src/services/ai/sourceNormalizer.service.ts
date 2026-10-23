@@ -1,12 +1,21 @@
 import s3Utils from '../../utils/s3'
 import { extractWithOcrFallback, needsServerOcr } from '../documentOcr.service'
 import type { MasterBusinessProfile } from './businessProfile.schema'
+import { readDocumentFullyForCardBuilder } from './documentRead.service'
 import {
   crawlWebsiteDeep,
   extractTextFromBuffer,
+  isUnreadDocumentPlaceholder,
   type UploadedPart,
   type WebsitePageCategory,
 } from './extractDocumentText'
+import { MAX_DOCUMENT_EXTRACT_CHARS } from './openai.client'
+import {
+  extractHexColorsFromText,
+  extractReputationLinksFromText,
+  filterReputationLinksForIdentity,
+  formatReputationBlock,
+} from './reputationFromSources'
 import { normalizeWebsiteUrl } from './sourceUrl'
 import { detectWebsiteCrawlMode, STOREFRONT_SOURCE_PREAMBLE, type WebsiteCrawlMode } from './websiteCrawlMode'
 
@@ -24,7 +33,15 @@ export type NormalizedSourceData = {
   manualText: string
   website: {
     url: string
-    pages: Array<{ url: string; category: WebsitePageCategory; text: string; title?: string; imageUrls?: string[] }>
+    pages: Array<{
+      url: string
+      category: WebsitePageCategory
+      text: string
+      title?: string
+      imageUrls?: string[]
+      retrievedAt?: string
+      extractionStatus?: 'ok' | 'empty' | 'truncated' | 'blocked'
+    }>
     scrapeFailed?: boolean
     scrapeError?: string
     crawlMode?: WebsiteCrawlMode
@@ -36,6 +53,15 @@ export type NormalizedSourceData = {
   extractedText: string
   images: Array<{ mimeType: string; base64: string }>
   warnings: string[]
+  /** Phase 3–4 external research (search APIs). Status is truthful when skipped. */
+  research?: {
+    status: 'complete' | 'partial' | 'skipped' | 'failed'
+    provider: string
+    queriesRun: string[]
+    findingCount: number
+    linkCount: number
+    errors: string[]
+  }
 }
 
 export function emptyNormalizedSources(websiteUrl = ''): NormalizedSourceData {
@@ -76,12 +102,87 @@ function excerptForCard(text: string, max = 700): string {
 }
 
 /** If SOL missed real site articles/projects, copy them onto the card from the crawl. */
+/** Pull quote/author pairs from crawled review/testimonial page text. */
+export function extractReviewsFromCrawlText(
+  text: string,
+  sourceUrl = ''
+): Array<{ author: string; text: string; rating?: number; source: string; sourceUrl: string }> {
+  const out: Array<{ author: string; text: string; rating?: number; source: string; sourceUrl: string }> = []
+  const seen = new Set<string>()
+  const push = (author: string, quote: string) => {
+    const cleanQuote = quote.replace(/\s+/g, ' ').trim()
+    const cleanAuthor = author
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^[-–—\s]+/, '')
+    if (cleanQuote.length < 20 || cleanQuote.length > 800) return
+    if (/leave a review|write a review|google reviews|click here/i.test(cleanQuote)) return
+    const key = cleanQuote.toLowerCase().slice(0, 160)
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push({
+      author: cleanAuthor || 'Customer',
+      text: cleanQuote,
+      source: 'website',
+      sourceUrl,
+    })
+  }
+
+  for (const match of text.matchAll(
+    /REVIEW_TESTIMONIAL_BLOCK\s+\d+:\s*([\s\S]{20,1200}?)(?=REVIEW_TESTIMONIAL_BLOCK\s+\d+:|$)/gi
+  )) {
+    const block = match[1].replace(/\s+/g, ' ').trim()
+    const attributed =
+      block.match(/[“"]([^“"]{20,500})[”"]\s*[-–—]\s*([A-Za-z][A-Za-z .'-]{1,60})/) ||
+      block.match(/([A-Za-z][A-Za-z .'-]{1,60})\s*:\s*([A-Za-z][\s\S]{20,500})/)
+    if (attributed) {
+      if (attributed[1].length > attributed[2].length) push(attributed[2], attributed[1])
+      else push(attributed[1], attributed[2])
+    } else {
+      push('Customer', block.slice(0, 500))
+    }
+    if (out.length >= 15) return out
+  }
+
+  for (const match of text.matchAll(/[“"]([^“"]{20,500})[”"]\s*[-–—]\s*([A-Za-z][A-Za-z .'-]{1,60})/g)) {
+    push(match[2], match[1])
+    if (out.length >= 15) break
+  }
+
+  return out
+}
+
 export function seedProfileFromCrawledPages(
   profile: MasterBusinessProfile,
   pages: NormalizedSourceData['website']['pages'],
   crawlMode: WebsiteCrawlMode = 'full'
 ): MasterBusinessProfile {
   const next = { ...profile }
+  // Website reviews only (max 15). Do not hunt Google/Yelp/etc. for review text.
+  {
+    let crawledReviews = pages
+      .filter((page) => page.category === 'reviews' || /review|testimonial|feedback/i.test(`${page.url} ${page.title}`))
+      .flatMap((page) => extractReviewsFromCrawlText(page.text || '', page.url))
+    if (!crawledReviews.length) {
+      const homeCorpus = pages.map((page) => page.text || '').join('\n')
+      crawledReviews = extractReviewsFromCrawlText(homeCorpus, pages[0]?.url || '')
+    }
+    if (crawledReviews.length) {
+      const prior = [...(next.verifiedReviews || []), ...(next.existingTestimonials || [])]
+      const seen = new Set(
+        prior.map((row) => `${row.author || ''}|${row.text || ''}`.toLowerCase().replace(/\s+/g, ' ').slice(0, 180))
+      )
+      const merged = [...prior]
+      for (const row of crawledReviews) {
+        const key = `${row.author || ''}|${row.text || ''}`.toLowerCase().replace(/\s+/g, ' ').slice(0, 180)
+        if (seen.has(key)) continue
+        seen.add(key)
+        merged.push(row)
+        if (merged.length >= 15) break
+      }
+      next.verifiedReviews = merged.slice(0, 15)
+    }
+  }
   if (!(next.blogs || []).length) {
     const articles = pages
       .filter((page) => page.category === 'blog' && !isListingPath(page.url))
@@ -132,9 +233,63 @@ export function seedProfileFromCrawledPages(
       title: String(title).slice(0, 180),
       description: '',
       url: '',
+      imageUrl: '',
       source: 'website',
       sourceUrl: pages[0]?.url || '',
     }))
+  }
+
+  // Seed social / review URLs mined from crawl text when SOL left them empty.
+  const corpus = pages.map((page) => `${page.url}\n${page.text}`).join('\n')
+  const reputation = filterReputationLinksForIdentity(extractReputationLinksFromText(corpus), {
+    businessName: next.businessName,
+    ownerName: next.ownerName,
+    website: next.website || pages[0]?.url,
+  })
+  if (reputation.length) {
+    const social = { ...(next.socialMedia || {}) }
+    const socialKey: Record<string, keyof NonNullable<MasterBusinessProfile['socialMedia']>> = {
+      facebook: 'facebook',
+      instagram: 'instagram',
+      linkedin: 'linkedin',
+      youtube: 'youtube',
+      tiktok: 'tiktok',
+      x: 'x',
+    }
+    for (const link of reputation) {
+      if (link.kind !== 'social') continue
+      if (link.verification === 'needs_confirmation') continue
+      const key = socialKey[link.platform]
+      if (!key) continue
+      if (!social[key]) social[key] = link.url
+    }
+    next.socialMedia = social
+    if (!(next.reviewLinks || []).length) {
+      next.reviewLinks = reputation
+        .filter((link) => link.kind === 'review')
+        .map((link) => ({
+          platform: link.platform,
+          url: link.url,
+          verification: link.verification,
+        }))
+    }
+    const uncertain = reputation.filter((link) => link.verification === 'needs_confirmation')
+    if (uncertain.length) {
+      next.needsConfirmation = [
+        ...(next.needsConfirmation || []),
+        ...uncertain.map((link) => ({
+          field: `social.${link.platform}`,
+          value: link.url,
+          reason: 'Possible same-name match — confirm this is the correct person/business.',
+          status: 'needs_confirmation' as const,
+        })),
+      ]
+    }
+  }
+
+  // Never keep AI-hallucinated service images from architecture.
+  if (next.services?.length) {
+    next.services = next.services.map((service) => ({ ...service, imageUrl: '' }))
   }
 
   return next
@@ -184,7 +339,7 @@ async function extractFileWithOcr(file: UploadedPart) {
     const text = await extractWithOcrFallback(file, purpose)
     return {
       ...extracted,
-      text: text.slice(0, 24_000),
+      text: text.slice(0, MAX_DOCUMENT_EXTRACT_CHARS),
       extractionMethod: 'ocr' as const,
       warning: undefined,
     }
@@ -195,6 +350,22 @@ async function extractFileWithOcr(file: UploadedPart) {
         extracted.warning ||
         (error instanceof Error ? error.message : 'OCR could not read this file. Other sources will still be used.'),
     }
+  }
+}
+
+/** Native/OCR extract first, then chunk-read long documents so Card Studio understands the full file. */
+async function extractAndFullyReadFile(file: UploadedPart) {
+  const extracted = await extractFileWithOcr(file)
+  const raw = (extracted.text || '').trim()
+  if (!raw || isUnreadDocumentPlaceholder(raw)) return extracted
+  const fullyRead = await readDocumentFullyForCardBuilder({
+    label: extracted.label || file.name,
+    text: raw,
+  })
+  return {
+    ...extracted,
+    text: fullyRead.text,
+    warning: extracted.warning,
   }
 }
 
@@ -226,7 +397,7 @@ export async function normalizeSources(input: {
       )
     : Promise.resolve(null)
 
-  const filesTask = Promise.all((input.files || []).map((file) => extractFileWithOcr(file)))
+  const filesTask = Promise.all((input.files || []).map((file) => extractAndFullyReadFile(file)))
 
   const [websiteResult, fileResults] = await Promise.all([websiteTask, filesTask])
 
@@ -298,6 +469,14 @@ export async function normalizeSources(input: {
     textParts.push(`DOCUMENT “${extracted.label}” [${extracted.extractionMethod}]:\n${extracted.text}`)
   }
 
+  const corpus = textParts.join('\n')
+  const reputationLinks = filterReputationLinksForIdentity(extractReputationLinksFromText(corpus), {
+    website: websiteUrl,
+    businessName: manualText.slice(0, 120) || null,
+  })
+  const hexColors = extractHexColorsFromText(corpus)
+  textParts.unshift(formatReputationBlock(reputationLinks, hexColors))
+
   return {
     userInstructions,
     manualText,
@@ -310,7 +489,7 @@ export async function normalizeSources(input: {
   }
 }
 
-export function compactProfileForPrompt(profile: MasterBusinessProfile, max = 20000): string {
+export function compactProfileForPrompt(profile: MasterBusinessProfile, max = 32000): string {
   const json = JSON.stringify(profile)
   if (json.length <= max) return json
   return `${json.slice(0, max)}\n[truncated profile]`

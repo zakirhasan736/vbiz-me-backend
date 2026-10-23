@@ -1,6 +1,7 @@
 import AppError from '../error/AppError'
 import { assertCorporateBackOffice } from '../services/entitlement.service'
 import profileService from '../services/profile.service'
+import pushService from '../services/push.service'
 import { buildOverviewPdf } from '../utils/buildOverviewPdf'
 import catchAsyncError from '../utils/catchAsyncError'
 import liveClicksHub from '../utils/liveClicksHub'
@@ -491,6 +492,39 @@ const socialClicksByCard = catchAsyncError(async (req, res) => {
   sendResponse(res, { success: true, statusCode: 200, message: 'Social clicks by card', data })
 })
 
+/** Register this browser as an owner-device Web Push target for an owned card. */
+const ownerPushSubscribe = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const profileId = param(req.params.id)
+  await profileService.getOwned(profileId, req.user.id, req.user.role)
+
+  const body = req.body as {
+    endpoint: string
+    keys: { p256dh: string; auth: string }
+    browser?: string
+    platform?: string
+  }
+  if (!body.endpoint?.trim() || !body.keys?.p256dh || !body.keys?.auth) {
+    throw new AppError(400, 'endpoint and keys are required')
+  }
+
+  const data = await pushService.subscribe({
+    profile_id: profileId,
+    endpoint: body.endpoint,
+    keys: body.keys,
+    browser: body.browser,
+    platform: body.platform,
+    audience: 'owner',
+    allowPrivate: true,
+  })
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: 'Owner push subscription saved',
+    data,
+  })
+})
+
 const profileController = {
   list,
   getOne,
@@ -532,6 +566,7 @@ const profileController = {
   packages,
   subscriptions,
   entitlements,
+  ownerPushSubscribe,
 }
 
 export default profileController

@@ -92,19 +92,39 @@ function ensureOpenAiConfigured() {
 }
 
 function mergeBlueprint(base: Partial<CardBlueprint>, generated: CardBlueprint): CardBlueprint {
+  const basePersonal: Partial<CardBlueprint['personal']> = base.personal || {}
+  const genPersonal: CardBlueprint['personal'] = generated.personal
+  // Contact/identity facts from the factual skeleton win; polished About from the content pass wins.
+  const contactKeys = new Set([
+    'fullName',
+    'email',
+    'dob',
+    'phone',
+    'whatsapp',
+    'designation',
+    'company',
+    'profession',
+    'address',
+    'website',
+  ])
+  const mergedPersonal = {
+    ...genPersonal,
+    ...Object.fromEntries(Object.entries(basePersonal).filter(([k, v]) => Boolean(v) && contactKeys.has(k))),
+    about:
+      (genPersonal.about || '').trim().length >= 80 ? genPersonal.about : basePersonal.about || genPersonal.about || '',
+  }
   return cardBlueprintSchema.parse({
     ...generated,
-    personal: {
-      ...generated.personal,
-      ...Object.fromEntries(Object.entries(base.personal || {}).filter(([, v]) => v)),
-    },
+    personal: mergedPersonal,
     socialHandles: { ...(generated.socialHandles || {}), ...(base.socialHandles || {}) },
     education: generated.education?.length ? generated.education : base.education || [],
     experience: generated.experience?.length ? generated.experience : base.experience || [],
     skills: generated.skills?.length ? generated.skills : base.skills || [],
+    // Prefer generated polish only when it covers the same verified set; never drop crawl services.
     services: generated.services?.length ? generated.services : base.services || [],
-    portfolio: generated.portfolio?.length ? generated.portfolio : base.portfolio || [],
-    reviews: base.reviews || [],
+    portfolio: base.portfolio?.length ? base.portfolio : generated.portfolio || [],
+    // Keep crawl/fact reviews when present; otherwise keep AI Example Client drafts from the content pass.
+    reviews: base.reviews?.length ? base.reviews : generated.reviews || [],
     blogs: generated.blogs || [],
     faqs: generated.faqs || [],
     enabledTabs: generated.enabledTabs?.length ? generated.enabledTabs : base.enabledTabs || ['Personal'],
@@ -871,11 +891,31 @@ export async function regenerateSection(input: {
   if (!session?.businessProfile) {
     throw new AppError(400, 'No saved business profile for this card yet. Run analyze first.')
   }
-  return fillSection({
+  const { mergeSectionIntoDraft } = await import('./sectionPatch.service')
+  const section = String(input.section || '')
+    .trim()
+    .toLowerCase() as import('./cardBlueprint.schema').FillSectionId
+  const filled = await fillSection({
     section: input.section,
     text: input.instruction,
     currentDraft: input.currentDraft,
     sessionId: input.sessionId,
     userId: input.userId,
   })
+  let current: Record<string, unknown> = {}
+  if (input.currentDraft) {
+    try {
+      current = JSON.parse(input.currentDraft) as Record<string, unknown>
+    } catch {
+      current = {}
+    }
+  } else if (session.blueprint) {
+    current = session.blueprint as unknown as Record<string, unknown>
+  }
+  const sectionPayload =
+    filled && typeof filled === 'object' && 'payload' in filled
+      ? (filled as { payload: Record<string, unknown> }).payload || {}
+      : (filled as Record<string, unknown>)
+  const mergedDraft = mergeSectionIntoDraft(current, section, sectionPayload)
+  return { ...filled, mergedDraft }
 }

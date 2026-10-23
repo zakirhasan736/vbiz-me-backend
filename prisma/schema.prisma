@@ -1624,6 +1624,27 @@ model EventLog {
   @@index([profileId, eventType, createdAt])
 }
 
+/// Per-channel notification delivery attempt (push / email / SMS / inbox).
+model NotificationDeliveryAttempt {
+  id              String   @id @default(cuid())
+  eventKey        String
+  channel         String
+  status          String
+  profileId       String?
+  recipientRole   String?
+  recipientRef    String?
+  relatedRecordId String?
+  error           String?
+  meta            Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([eventKey])
+  @@index([channel, status])
+  @@index([profileId, createdAt])
+  @@index([createdAt])
+}
+
 model Meeting {
   id               String         @id @default(cuid())
   host             String
@@ -1631,6 +1652,8 @@ model Meeting {
   date             String
   time             String
   startsAt         DateTime
+  /** IANA zone used when computing startsAt (campaign / USA default). */
+  timezone         String         @default("America/New_York")
   location         String?
   notes            String?
   status           String         @default("Scheduled")
@@ -1668,6 +1691,8 @@ model CrmEvent {
   date            String
   time            String
   startsAt        DateTime
+  /** IANA zone used when computing startsAt (campaign / USA default). */
+  timezone        String         @default("America/New_York")
   status          String         @default("Scheduled")
   /** Optional free-text details shown on the board and calendar sync. */
   description     String?
@@ -1685,6 +1710,8 @@ model CrmEvent {
   /** Optional CRM lead (guest save) this event was created from. */
   guestUserDataId String?
   guestUserData   GuestUserData? @relation(fields: [guestUserDataId], references: [id], onDelete: SetNull)
+  /** Snapshot of CRM lead ids (GuestUserData) for global / single / grouped wish delivery. */
+  recipientLeadIds Json?
   createdById     String?
   createdBy       User?          @relation("CrmEventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   googleEventId   String?
@@ -2048,6 +2075,11 @@ model PushSubscription {
   auth         String
   browser      String?
   platform     String?
+  /**
+   * follower = visitor who Allowed notifications on the public card (save-contact not required)
+   * owner    = card owner / corporate member backoffice device for that card
+   */
+  audience     String    @default("follower")
   isActive     Boolean   @default(true)
   lastUsedAt   DateTime?
   createdAt    DateTime  @default(now())
@@ -2058,6 +2090,7 @@ model PushSubscription {
   @@unique([profileId, endpointHash])
   @@index([profileId])
   @@index([endpointHash])
+  @@index([profileId, audience])
 }
 
 model PushNotificationPreference {

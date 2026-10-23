@@ -54,7 +54,10 @@ describe('profile persistence safeguards', () => {
     assert.match(profileService, /input\.audience === 'savers' \|\| shouldDeliver/)
     assert.doesNotMatch(profileService, /You can only publish public notices on cards you personally own/)
     assert.match(profileService, /pushService\.notifyProfileUpdate\(targetProfileId/)
-    assert.match(profileService, /source: 'card_notice', channel: 'inbox'/)
+    assert.match(profileService, /audience: 'followers'/)
+    assert.match(profileService, /audience: 'owners'/)
+    assert.match(profileService, /source: 'card_notice'/)
+    assert.match(profileService, /channel: 'inbox'/)
     assert.match(profileService, /\.\.\.new Set\(\[\.\.\.saverEmails, \.\.\.ownerEmails\]\)/)
     assert.match(profileService, /Include admin-created notices/)
     assert.match(profileService, /staffAuthorIds\.has\(row\.ownerId\) \? 'admin' : 'owner'/)
@@ -64,12 +67,17 @@ describe('profile persistence safeguards', () => {
 
   it('links contact saves to a stable guest and privately notifies owners after a return cooldown', () => {
     assert.match(publicController, /req\.query\.visitor_id/)
-    assert.match(publicCardService, /RETURNING_SAVED_GUEST_DELAY_MS = 3 \* 24 \* 60 \* 60 \* 1000/)
+    // Same-visit dedupe (30m helper). Later visits the same day still notify the owner.
+    assert.match(publicCardService, /RETURNING_SAVED_GUEST_COOLDOWN_MS/)
     assert.match(publicCardService, /meta: \{ path: \['guestId'\], equals: guestId \}/)
     assert.match(publicCardService, /eventType: 'save_contact_download'/)
     assert.match(publicCardService, /eventType: RETURNING_SAVED_GUEST_EVENT/)
-    assert.match(publicCardService, /channel: 'inbox'/)
-    assert.match(publicCardService, /targetEmails: ownerEmails/)
+    // Exact card owner only — push + email + inbox + SMS. Never savers.
+    assert.match(publicCardService, /exactOwnerNotifyService/)
+    assert.match(publicCardService, /type: 'viewer_return'/)
+    assert.match(publicCardService, /sendSms:\s*true/)
+    assert.match(publicCardService, /smsTopic:\s*'Repeat view'/)
+    assert.match(publicCardService, /wonReturningGuestClaim/)
   })
 
   it('searches specific card owners across professional and linked account identities', () => {

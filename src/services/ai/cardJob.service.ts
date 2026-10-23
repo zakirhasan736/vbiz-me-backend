@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { assemblePublicNavOrder } from '../../constants/publicNavOrder'
+import { toApiRole } from '../../constants/userRole'
 import AppError from '../../error/AppError'
 import {
   cardActivationIssueMessage,
@@ -10,12 +11,14 @@ import {
   normalizeCardEmail,
   normalizeCardPhone,
 } from '../../utils/cardActivation'
+import { prisma } from '../../utils/prisma'
 import profileService from '../profile.service'
 import { seoMetadataToSettings } from '../seoMetadata.service'
 import { builderError, logBuilderEvent, newRequestId, type BuilderErrorCode, type BuilderStage } from './builderErrors'
 import { summarizeExtraction } from './cardAgent.service'
 import { assembleAiCard } from './cardAssembler.service'
 import { TAB_CATALOG } from './cardBlueprint.schema'
+import { stripAiServiceImages } from './cardQuality.service'
 import {
   assertJobOwner,
   loadCardSession,
@@ -37,10 +40,13 @@ import {
   nextActionableField,
   type AiCardField,
 } from './fieldGraph.service'
+import { appendResearchToExtractedText, runExternalResearch } from './researchEnrichment.service'
 import { runSolArchitect } from './solArchitect.service'
 import { emptyNormalizedSources, normalizeSources, seedProfileFromCrawledPages } from './sourceNormalizer.service'
 import { normalizeWebsiteUrl } from './sourceUrl'
 import { autoFillSelectedFields, capGeneratedSkills, topUpGeneratedList } from './tabBuild.service'
+import { resolveProfileThemeRecommendation } from './themeFromDocuments'
+import { shouldApplyBrandThemeConfig, themeConfigFromRecommendation } from './themeFromRecommendation'
 
 const running = new Set<string>()
 const pendingWork = new Map<
@@ -141,10 +147,13 @@ function publicJob(session: CardBuildSession) {
     assembledDraft: session.assembledDraft ?? session.blueprint,
     blueprint: session.blueprint,
     businessProfile: session.businessProfile,
+    // Surface brand palette for AI builder launch checklist (Global Color preview/edit).
+    themeRecommendation: session.businessProfile?.themeRecommendation || null,
     completion: buildCompletenessReport({ profile: session.businessProfile, blueprint: session.blueprint }),
     missingInformation: session.businessProfile?.missingInformation || [],
     conflicts: session.businessProfile?.conflicts || [],
     warnings: session.normalized?.warnings || [],
+    research: session.normalized?.research || null,
     errorMessage: session.errorMessage || null,
     errorCode: session.errorCode || null,
     errorStage: session.errorStage || null,
@@ -217,6 +226,37 @@ async function save(session: CardBuildSession, patch: Partial<CardBuildSession>)
   return next
 }
 
+/** Prefer Users-area account email/name over scraped website contact. Never invent users. */
+async function mergeAccountOwnerIntoExistingCard(input: {
+  existingCard?: unknown
+  ownerUserId?: string
+  actorUserId?: string
+  builderMode: 'create' | 'update'
+}): Promise<unknown> {
+  if (input.builderMode === 'update') return input.existingCard
+  const ownerId = (input.ownerUserId || input.actorUserId || '').trim()
+  if (!ownerId) return input.existingCard
+  const owner = await prisma.user.findFirst({
+    where: { id: ownerId, deletedAt: null },
+    select: { name: true, email: true },
+  })
+  if (!owner?.email) return input.existingCard
+  const root =
+    input.existingCard && typeof input.existingCard === 'object'
+      ? ({ ...(input.existingCard as Record<string, unknown>) } as Record<string, unknown>)
+      : {}
+  const personal =
+    root.personal && typeof root.personal === 'object'
+      ? ({ ...(root.personal as Record<string, unknown>) } as Record<string, unknown>)
+      : {}
+  personal.email = owner.email
+  if (owner.name?.trim() && !String(personal.fullName || '').trim()) {
+    personal.fullName = owner.name.trim()
+  }
+  root.personal = personal
+  return root
+}
+
 export async function startCardJob(input: {
   websiteUrl?: string
   businessText?: string
@@ -224,6 +264,7 @@ export async function startCardJob(input: {
   existingCard?: unknown
   userId?: string
   role?: string
+  ownerUserId?: string
   sessionId?: string
   profileId?: string
   builderMode?: 'create' | 'update'
@@ -237,6 +278,12 @@ export async function startCardJob(input: {
   const files = input.files || []
   const websiteUrl = input.websiteUrl?.trim() ? normalizeWebsiteUrl(input.websiteUrl, requestId) : ''
   const crawlMode = String(input.crawlMode || '').trim()
+  const existingCard = await mergeAccountOwnerIntoExistingCard({
+    existingCard: input.existingCard,
+    ownerUserId: input.ownerUserId,
+    actorUserId: input.userId,
+    builderMode,
+  })
 
   if (builderMode === 'update') {
     if (!profileId) {
@@ -256,7 +303,7 @@ export async function startCardJob(input: {
     await profileService.getOwnedForWrite(profileId, input.userId, input.role || 'user')
   }
 
-  if (!websiteUrl && !businessText && files.length === 0 && !input.existingCard) {
+  if (!websiteUrl && !businessText && files.length === 0 && !existingCard) {
     throw builderError(400, 'VALIDATION_FAILED', 'Provide a website URL, business text, and/or document uploads.', {
       requestId,
       stage: 'source_fetch',
@@ -287,7 +334,7 @@ export async function startCardJob(input: {
           websiteUrl,
           businessText,
           files,
-          existingCard: input.existingCard,
+          existingCard,
           crawlMode,
         })
         queueWorker(resumed.id, { architectureOnly: true })
@@ -303,7 +350,7 @@ export async function startCardJob(input: {
           websiteUrl,
           businessText,
           files,
-          existingCard: input.existingCard,
+          existingCard,
           crawlMode,
         })
         queueWorker(existing.id)
@@ -330,7 +377,7 @@ export async function startCardJob(input: {
     rawSources: {
       websiteUrl,
       businessText,
-      existingCard: input.existingCard,
+      existingCard,
       builderMode,
       requestId,
       profileId,
@@ -366,7 +413,7 @@ export async function startCardJob(input: {
   })
   await persistCardSession(session)
 
-  pendingWork.set(session.id, { websiteUrl, businessText, files, existingCard: input.existingCard, crawlMode })
+  pendingWork.set(session.id, { websiteUrl, businessText, files, existingCard, crawlMode })
   queueWorker(session.id)
   logBuilderEvent('AI_BUILDER_STAGE', {
     requestId,
@@ -447,10 +494,36 @@ async function runExtractAndArchitecture(jobId: string) {
       )
     }
 
-    const extraction = summarizeExtraction(normalized)
+    // Phase 3: optional search enrichment (SerpAPI / Brave). Skipped cleanly without credentials.
+    const research = await runExternalResearch({
+      website: websiteUrl || normalized.website.url,
+      businessName: businessText.slice(0, 120) || undefined,
+      crawlText: normalized.extractedText,
+    })
+    const withResearch = {
+      ...normalized,
+      extractedText: appendResearchToExtractedText(normalized.extractedText, research),
+      research: {
+        status: research.status,
+        provider: research.provider,
+        queriesRun: research.queriesRun,
+        findingCount: research.findings.length,
+        linkCount: research.links.length,
+        errors: research.errors,
+      },
+      warnings:
+        research.status === 'skipped' && research.errors.length
+          ? [
+              ...normalized.warnings,
+              'External web search was skipped (no search API key). Card built from website/documents only.',
+            ]
+          : normalized.warnings,
+    }
+
+    const extraction = summarizeExtraction(withResearch)
     const next = await save(session, {
       status: 'ARCHITECTING',
-      normalized,
+      normalized: withResearch,
       websiteUrl,
       sourceHash: session.sourceHash,
       rawSources: {
@@ -470,7 +543,9 @@ async function runExtractAndArchitecture(jobId: string) {
           id: 'understand',
           label: 'Understanding your business',
           status: 'active' as const,
-          detail: 'Taking extra time to understand the business from the full site, notes, and documents.',
+          detail: files.length
+            ? 'Finished reading your document(s) in full (long files are read section by section), then understanding the business.'
+            : 'Taking extra time to understand the business from the full site, notes, and documents.',
         },
         { id: 'design', label: 'Designing your card', status: 'pending' as const },
         { id: 'map', label: 'Matching what we found', status: 'pending' as const },
@@ -528,11 +603,47 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       sessionId: session.id,
       existingCard: cardSnapshot,
     })
-    const profile = seedProfileFromCrawledPages(
+    let profile = seedProfileFromCrawledPages(
       applyExistingCardToProfile(architecture.masterBusinessProfile, cardSnapshot),
       session.normalized.website.pages,
       session.normalized.website.crawlMode || 'full'
     )
+    // PDF/text + website BRAND COLOR RESEARCH → themeRecommendation (Global Color on apply).
+    profile = resolveProfileThemeRecommendation(
+      profile,
+      [
+        session.normalized.extractedText,
+        ...session.normalized.documents.map((doc) => doc.text),
+        ...session.normalized.ocrResults.map((doc) => doc.text),
+        session.normalized.manualText,
+      ]
+        .filter(Boolean)
+        .join('\n\n')
+    )
+    // Surface truthful research status on the profile for review UI / QC.
+    if (session.normalized.research) {
+      const r = session.normalized.research
+      profile = {
+        ...profile,
+        warnings: [
+          ...(profile.warnings || []),
+          r.status === 'skipped'
+            ? 'External search research was skipped (configure SERPAPI_API_KEY or BRAVE_SEARCH_API_KEY to enable).'
+            : r.status === 'failed'
+              ? 'External search research failed; card used website/documents only.'
+              : r.status === 'partial'
+                ? 'External search research completed partially; confirm discovered links before publishing.'
+                : '',
+        ].filter(Boolean),
+        missingInformation:
+          r.status === 'skipped' || r.status === 'failed'
+            ? [
+                ...(profile.missingInformation || []),
+                'External web research incomplete — LinkedIn/review discovery limited to website/document links.',
+              ]
+            : profile.missingInformation || [],
+      }
+    }
     await save(session, {
       status: 'MAPPING_FIELDS',
       businessProfile: profile,
@@ -556,6 +667,8 @@ async function runArchitecture(jobId: string, existingCard?: unknown) {
       profile,
       userId: session.userId,
       sessionId: session.id,
+      // Draft FAQs / blogs / reviews when empty so the card is nearly complete.
+      includePermissioned: { faq: true, blog: true, reviews: true },
     })
     const { blueprint } = assembleAiCard({
       profile,
@@ -623,6 +736,7 @@ export async function setSelectedTabs(jobId: string, selectedNavIds: string[], u
     profile: session.businessProfile,
     userId,
     sessionId: session.id,
+    includePermissioned: { faq: true, blog: true, reviews: true },
   })
   const { blueprint } = assembleAiCard({
     profile: session.businessProfile,
@@ -667,7 +781,7 @@ export async function generatePermissionedContent(input: {
         : input.kind === 'blog'
           ? 'The sources had no articles. Draft at most 5 evergreen posts. Do not invent news events, dates, awards, or statistics.'
           : input.kind === 'reviews'
-            ? 'The sources had no reviews. Draft at most 5 realistic example testimonials from the business you understood. Do not invent licenses, prices, or awards.'
+            ? 'The website had no reviews. Draft at most 5 realistic example testimonials from the business you understood. Authors like "Example Client 1". Do not invent licenses, prices, awards, or review URLs.'
             : 'Create at most 5 concise skills from verified services, expertise, and experience. Group them using the editor shape { type, skills }.',
     userId: input.userId,
     sessionId: session.id,
@@ -813,6 +927,7 @@ export async function runFastMode(jobId: string, mode: 'ai' | 'found' | 'review'
     profile: session.businessProfile,
     userId,
     sessionId: session.id,
+    includePermissioned: { faq: true, blog: true, reviews: true },
   })
   return publicJob(await assembleAndReady(await save(session, { fieldGraph: filled })))
 }
@@ -890,6 +1005,41 @@ export async function checkpointJob(input: {
   return publicJob(updated)
 }
 
+/**
+ * AI Builder must never invent Team Member users. If the acting/assigned account
+ * is a Corporate Team Owner, the applied card stays on that owner login even when
+ * the scraped website email differs from the corporate login email.
+ */
+async function ensureAiCardStaysOnCorporateOwner(input: {
+  profileId: string
+  actorUserId: string
+  actorRole: string
+  ownerUserId?: string
+}) {
+  const preferredOwnerId = (typeof input.ownerUserId === 'string' && input.ownerUserId.trim()) || input.actorUserId
+  const owner = await prisma.user.findFirst({
+    where: { id: preferredOwnerId, deletedAt: null },
+    select: { id: true, role: true },
+  })
+  if (!owner) return
+  const ownerApiRole = toApiRole(owner.role)
+  const actorIsCorporate = String(input.actorRole).trim().toLowerCase() === 'corporate-owner'
+  if (ownerApiRole !== 'corporate-owner' && !actorIsCorporate) return
+
+  const corporateId = ownerApiRole === 'corporate-owner' ? owner.id : input.actorUserId
+  const card = await prisma.profile.findUnique({
+    where: { id: input.profileId },
+    select: { id: true, userId: true, companyUserId: true },
+  })
+  if (!card) return
+  if (card.userId === corporateId && card.companyUserId === corporateId) return
+
+  await prisma.profile.update({
+    where: { id: card.id },
+    data: { userId: corporateId, companyUserId: corporateId },
+  })
+}
+
 export async function applyJob(input: {
   jobId: string
   userId: string
@@ -929,11 +1079,63 @@ export async function applyJob(input: {
   }
   await save(ready, { status: 'APPLYING' })
   const profileService = (await import('../profile.service')).default
+  const isUpdate = ready.builderMode === 'update'
+
+  // Create: Users-area account email/name win over scraped website contact.
+  // Update: keep card identity already on file — AI must not invent users or swap emails.
+  let applyName = personal.fullName || personal.company || 'My Card'
+  let applyEmail = personal.email
+  let applyPhone = personal.phone
+  if (!isUpdate) {
+    const accountOwnerId = (input.ownerUserId || input.userId || '').trim()
+    if (accountOwnerId) {
+      const accountOwner = await prisma.user.findFirst({
+        where: { id: accountOwnerId, deletedAt: null },
+        select: { name: true, email: true },
+      })
+      if (accountOwner?.email) applyEmail = accountOwner.email
+      if (accountOwner?.name?.trim()) applyName = accountOwner.name.trim()
+    }
+  } else if (ready.profileId) {
+    const existingProfile = await prisma.profile.findUnique({
+      where: { id: String(ready.profileId) },
+      select: { name: true, email: true, phone: true },
+    })
+    if (existingProfile?.email?.trim()) applyEmail = existingProfile.email
+    if (existingProfile?.phone?.trim()) applyPhone = existingProfile.phone
+    if (existingProfile?.name?.trim() && !String(personal.fullName || '').trim()) {
+      applyName = existingProfile.name
+    }
+  }
+
+  // Re-resolve from session sources so PDF + website brand colors always reach Card Settings.
+  // Priority inside resolve: document guidelines → BRAND COLOR RESEARCH (website) → AI suggestion.
+  const themeProfile = resolveProfileThemeRecommendation(
+    ready.businessProfile || ({} as NonNullable<typeof ready.businessProfile>),
+    [
+      ready.normalized?.extractedText,
+      ...(ready.normalized?.documents || []).map((doc) => doc.text),
+      ...(ready.normalized?.ocrResults || []).map((doc) => doc.text),
+      ready.normalized?.manualText,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  )
+  if (themeProfile.themeRecommendation && ready.businessProfile) {
+    ready.businessProfile = {
+      ...ready.businessProfile,
+      themeRecommendation: themeProfile.themeRecommendation,
+    }
+  }
+  // Apply Global Color only for document/website/logo/mixed brand evidence.
+  // No URL + no PDF color guidance → leave system default themeConfig alone (never AI suggestion).
+  const shouldApplyTheme = shouldApplyBrandThemeConfig(themeProfile.themeRecommendation)
+  const recommendedTheme = shouldApplyTheme ? themeConfigFromRecommendation(themeProfile.themeRecommendation) : null
   const profilePayload = {
-    name: personal.fullName || personal.company || 'My Card',
-    email: personal.email,
+    name: applyName,
+    email: applyEmail,
     dob: personal.dob || undefined,
-    phone: personal.phone,
+    phone: applyPhone,
     whatsapp: personal.whatsapp,
     website: personal.website,
     address: personal.address,
@@ -949,6 +1151,14 @@ export async function applyJob(input: {
     linkedin: ready.blueprint.socialHandles?.linkedin,
     youtube: ready.blueprint.socialHandles?.youtube,
     tiktok: ready.blueprint.socialHandles?.tiktok,
+    // Brand-sourced light/dark P/S/A → Card Settings → Theme → Global Color.
+    // Suggestions never overwrite platform defaults.
+    ...(shouldApplyTheme && recommendedTheme
+      ? {
+          themeConfig: recommendedTheme,
+          profileSettings: { themeConfig: recommendedTheme },
+        }
+      : {}),
     settings: input.seo
       ? seoMetadataToSettings({
           metaTitle: input.seo.metaTitle,
@@ -957,20 +1167,36 @@ export async function applyJob(input: {
         })
       : undefined,
   }
-  const isUpdate = ready.builderMode === 'update'
   if (isUpdate && !ready.profileId) {
     throw new AppError(409, 'AI update session is missing its persisted profile ID.')
   }
+  // AI Builder never creates users. Cards stay on the acting / assigned owner.
+  // Corporate Team Member logins are only created via Duplicate → member popup.
   const persisted = isUpdate
-    ? await profileService.update(String(ready.profileId), input.userId, input.role, profilePayload)
+    ? await profileService.update(String(ready.profileId), input.userId, input.role, {
+        ...profilePayload,
+        skipCorporateMemberProvision: true,
+      })
     : await profileService.create(input.userId, input.role, {
         ...profilePayload,
         ownerUserId: input.ownerUserId,
         creationKey: `ai-card-job:${ready.id}`,
         skipCreateContactRules: input.publish !== true,
+        skipCorporateMemberProvision: true,
       })
 
   const profileId = persisted.id as string
+
+  // Create-only: first/AI-created corporate cards stay on the Team Owner login.
+  // Updates must not steal an existing Team Member card back to the owner.
+  if (!isUpdate) {
+    await ensureAiCardStaysOnCorporateOwner({
+      profileId,
+      actorUserId: input.userId,
+      actorRole: input.role,
+      ownerUserId: input.ownerUserId,
+    })
+  }
   const collections: Array<
     [
       'services' | 'education' | 'experiences' | 'portfolios' | 'reviews' | 'skillTags',
@@ -980,12 +1206,13 @@ export async function applyJob(input: {
   > = [
     [
       'services',
-      ready.blueprint.services || [],
+      stripAiServiceImages(ready.blueprint.services || []),
       (item) => ({
         title: item.title,
         description: item.description,
         reviewUrl: item.url,
-        imageUrl: item.imageUrl || item.featuredImage,
+        // AI Card Builder never invents service images.
+        imageUrl: '',
         status: 1,
       }),
     ],

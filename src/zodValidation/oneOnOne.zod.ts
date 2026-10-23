@@ -44,6 +44,10 @@ const completeMeeting = z.object({
   requestId: z.string().trim().min(1),
 })
 
+const deleteRequest = z.object({
+  requestId: z.string().trim().min(1),
+})
+
 const listOpenRequests = z.object({
   status: z.enum(ONE_ON_ONE_REQUEST_STATUSES).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -64,6 +68,7 @@ export const OneOnOneZodSchema = {
   rescheduleMeeting,
   cancelMeeting,
   completeMeeting,
+  deleteRequest,
   listOpenRequests,
   guestAccessToken,
   confirmGuestSlot,
@@ -76,6 +81,7 @@ export type ScheduleMeetingInput = z.infer<typeof scheduleMeeting>
 export type RescheduleMeetingInput = z.infer<typeof rescheduleMeeting>
 export type CancelMeetingInput = z.infer<typeof cancelMeeting>
 export type CompleteMeetingInput = z.infer<typeof completeMeeting>
+export type DeleteRequestInput = z.infer<typeof deleteRequest>
 export type ListOpenRequestsQuery = z.infer<typeof listOpenRequests>
 export type GuestAccessTokenInput = z.infer<typeof guestAccessToken>
 export type ConfirmGuestSlotInput = z.infer<typeof confirmGuestSlot>

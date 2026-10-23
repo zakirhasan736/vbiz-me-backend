@@ -162,9 +162,14 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'TERRA',
     prompt:
-      'Write a professional About section that explains who they are, what they do, who they help, and what makes them different. Rewrite website copy so it is polished and persuasive. Include a clear Why Choose Us block and a fitting call-to-action close when facts allow. Match brand voice to the industry. Never invent years, awards, licenses, prices, or locations.',
+      'Write AS the cardholder in FIRST PERSON (I/my) for individuals — never “Name is a…”. ~100–150 words combining verified experience, accomplishments, personality/passions when supported, and customer value. Include Mission, Why Choose Us, and CTA. Company cards use we/our. Never invent years, awards, licenses, prices, or locations.',
     getValue: (p) =>
-      [p.businessDescription, p.whyChooseUs, p.suggestedCta ? `CTA: ${p.suggestedCta}` : '']
+      [
+        p.businessDescription,
+        p.missionStatement ? `Mission\n${p.missionStatement}` : '',
+        p.whyChooseUs ? `Why Choose Us\n${p.whyChooseUs}` : '',
+        p.suggestedCta ? `CTA: ${p.suggestedCta}` : '',
+      ]
         .map((part) => (part || '').trim())
         .filter(Boolean)
         .join('\n\n'),
@@ -179,7 +184,7 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'TERRA',
     prompt:
-      'Service names must come from sources. For each service write a clear title plus a professional benefit-focused description (what it is + why the customer cares). Avoid generic filler. Prefer authentic image URLs from sources when present.',
+      'Service names must come from sources — never invent services to fill a quota. For each verified service: one emoji + clear title + 40–75 word premium description that sells customer VALUE (what it is, why it matters, how the buyer benefits). Vary openings. NEVER invent service images or image URLs.',
     getValue: (p) => p.services,
   },
   {
@@ -191,7 +196,7 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'LUNA',
     prompt:
-      'Generate relevant FAQs potential customers would realistically ask about this business, industry, and services. Include both question and helpful answer. Keep every FAQ found in sources. If none exist, generate up to 5 strong FAQs (not meaningless filler). If some exist but fewer than 5, fill only the remaining slots. Do not invent policies, prices, guarantees, or certifications.',
+      'Generate 5–8 relevant FAQs potential customers would ask. Keep every FAQ found in sources. Add helpful ones toward 5–8 when the business is clear. Do not invent policies, prices, guarantees, or certifications.',
     getValue: () => [],
   },
   {
@@ -215,7 +220,7 @@ const FIELD_DEFS: FieldDef[] = [
     aiGenerationAllowed: true,
     recommendedTier: 'LUNA',
     prompt:
-      'Prefer real customer reviews from sources and keep all of them. If none were scraped, generate up to 5 realistic example testimonials from business topics. If some exist but fewer than 5, fill only the remaining slots. Do not invent licenses, prices, or awards.',
+      'If the website has reviews/testimonials, keep ALL of them (max 15). Never pad real reviews with invented ones. Only when the website has zero reviews, draft up to 5 Example Client testimonials from the business. Do not invent licenses, prices, awards, or review-platform URLs.',
     getValue: (p) => [...(p.verifiedReviews || []), ...(p.existingTestimonials || [])],
   },
   {

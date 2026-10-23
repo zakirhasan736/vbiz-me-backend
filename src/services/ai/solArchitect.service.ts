@@ -32,10 +32,11 @@ export type SolArchitecture = {
   sourceMap: Array<{ fieldKey: string; value: unknown; source?: string; sourceUrl?: string }>
 }
 
-const LARGE_SITE_PAGES = 8
-const LARGE_SITE_CHARS = 32_000
-const ARCHITECTURE_SOURCE_BUDGET = 26_000
-const ARCHITECTURE_RETRY_BUDGET = 12_000
+const LARGE_SITE_PAGES = 12
+const LARGE_SITE_CHARS = 48_000
+/** First architecture pass — large enough to cover a deep crawl + PDFs. */
+const ARCHITECTURE_SOURCE_BUDGET = 100_000
+const ARCHITECTURE_RETRY_BUDGET = 48_000
 
 function excerpt(text: string, max: number): string {
   const clean = text.replace(/\s+/g, ' ').trim()
@@ -55,24 +56,43 @@ function isLargeSite(normalized: NormalizedSourceData): boolean {
 export function buildArchitectureSource(normalized: NormalizedSourceData, budget = ARCHITECTURE_SOURCE_BUDGET): string {
   const pages = normalized.website.pages
   if (!pages.length) {
-    const cap = budget < ARCHITECTURE_SOURCE_BUDGET ? budget : 70_000
+    // Document-only jobs: keep a large slice so long PDFs/text are understood before planning.
+    const cap = budget < ARCHITECTURE_SOURCE_BUDGET ? Math.max(budget, 80_000) : 220_000
+    const body = normalized.extractedText
+    const source =
+      body.length <= cap
+        ? body
+        : `${body.slice(0, Math.floor(cap * 0.72))}\n\n[…middle omitted…]\n\n${body.slice(-(cap - Math.floor(cap * 0.72) - 40))}`
     return [
       'NO WEBSITE URL. The uploaded PDF, Word, text, photos, and notes are the business source.',
-      'Read them fully. Understand the business, then suggest the vBiz Me card and tabs. Do not wait for a website.',
-      normalized.extractedText.slice(0, cap),
+      'Read them fully. Understand the business, then suggest the vBiz Me card and tabs, fill eligible fields, and complete the card. Do not wait for a website.',
+      source,
     ]
       .filter(Boolean)
       .join('\n\n')
   }
   if (!isLargeSite(normalized)) {
-    const cap = budget < ARCHITECTURE_SOURCE_BUDGET ? budget : 70_000
-    return normalized.extractedText.slice(0, cap)
+    const cap = budget < ARCHITECTURE_SOURCE_BUDGET ? budget : 220_000
+    const docs = [...normalized.documents, ...normalized.ocrResults]
+      .filter((doc) => doc.text.trim())
+      .map((doc) => `DOCUMENT “${doc.label}”:\n${doc.text}`)
+      .join('\n\n')
+    const notes = [normalized.userInstructions, normalized.manualText].filter(Boolean).join('\n')
+    return [
+      `FULL WEBSITE READ: ${pages.length} pages scraped for the card builder.`,
+      notes ? `OWNER NOTES (high trust):\n${notes}` : '',
+      docs,
+      normalized.extractedText.slice(0, cap),
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+      .slice(0, cap)
   }
 
-  const priority = /^(home|about|contact|services|team|products)$/
+  const priority = /^(home|about|contact|services|team|products|faq|reviews|portfolio|blog)$/
   const chunks: string[] = []
   const push = (block: string) => {
-    if (!block.trim()) return
+    if (!block.trim()) return true
     const next = chunks.length ? `${chunks.join('\n\n')}\n\n${block}` : block
     if (next.length > budget) return false
     chunks.push(block)
@@ -82,22 +102,23 @@ export function buildArchitectureSource(normalized: NormalizedSourceData, budget
   push(
     [
       `LARGE SITE DIGEST. ${pages.length} pages were opened from ${normalized.website.url || 'the website'}.`,
-      'Main business pages are included in full. Long inventories were read by category, with one example each.',
-      'Turn each category into a service or product line. Do not create one card entry per vehicle or SKU.',
+      'Every discovered area was pursued up to the crawl budget. Main business pages are included with long excerpts.',
+      'Long inventories were read by category: one example each — turn categories into service/product lines, not one row per SKU.',
+      'Also use any uploaded PDF/Word/text documents below. Suggest tabs, then fill and complete the card.',
       'Caps: 15 services, 15 portfolio items, 15 blogs, 15 reviews, 16 products, 10 team members.',
     ].join(' ')
   )
   if (normalized.website.catalogSummary) push(normalized.website.catalogSummary)
   push(
-    `PAGE INDEX:\n${pages
+    `PAGE INDEX (all scraped pages):\n${pages
       .map((page, index) => `${index + 1}. [${page.category}] ${page.title || 'Untitled'} — ${page.url}`)
       .join('\n')}`
   )
   const notes = [normalized.userInstructions, normalized.manualText].filter(Boolean).join('\n')
-  if (notes) push(`OWNER NOTES (high trust):\n${excerpt(notes, 4000)}`)
+  if (notes) push(`OWNER NOTES (high trust):\n${excerpt(notes, 8_000)}`)
   for (const doc of [...normalized.documents, ...normalized.ocrResults]) {
     if (!doc.text.trim()) continue
-    if (!push(`DOCUMENT “${doc.label}”:\n${excerpt(doc.text, 1800)}`)) break
+    if (!push(`DOCUMENT “${doc.label}”:\n${excerpt(doc.text, 8_000)}`)) break
   }
 
   const ordered = [
@@ -105,7 +126,7 @@ export function buildArchitectureSource(normalized: NormalizedSourceData, budget
     ...pages.filter((page) => !priority.test(page.category)),
   ]
   for (const page of ordered) {
-    const limit = priority.test(page.category) ? 1600 : 320
+    const limit = priority.test(page.category) ? 4_500 : 900
     const media = page.imageUrls?.length ? `\nIMAGES: ${page.imageUrls.slice(0, 2).join(' | ')}` : ''
     const ok = push(
       `=== [${page.category}] ${page.title || 'Untitled'} ===\n${page.url}${media}\n${excerpt(page.text, limit)}`
@@ -164,7 +185,10 @@ function prepareSolPayload(data: unknown): unknown {
   const root = asRecord(data) || {}
   const wrapped = asRecord(root.masterBusinessProfile)
   const profile: Record<string, unknown> = { ...(wrapped || root) }
-  profile.services = titledObjects(profile.services, 15)
+  profile.services = titledObjects(profile.services, 15).map((item) => {
+    const row = asRecord(item) || {}
+    return { ...row, imageUrl: '' }
+  })
   profile.portfolio = titledObjects(profile.portfolio, 15)
   profile.blogs = titledObjects(profile.blogs, 15)
   profile.products = plainStrings(profile.products, 16)
@@ -344,19 +368,22 @@ Return JSON:
   "tabReasons": [{ "navId": "services", "reason": "short why" }]
 }
 
-First understand the business thoroughly from ALL provided sources (website crawl or seller/storefront page, OCR/documents, and owner-typed notes):
+First understand the business thoroughly from ALL provided sources (full website crawl of every opened page, seller/storefront page, uploaded PDF/Word/text/OCR documents, and owner-typed notes). The scraper opens as many pages as the budget allows — use every page in the PAGE INDEX and excerpts, not just the homepage:
 1. What is this business and who is the owner/professional? For seller/vendor storefronts, prefer the seller's name over the marketplace brand.
 2. Industry, services/products, target customers, buying journey, conversion opportunities. Map catalog/product lines into services and products. When the source says cars or products were read by category, make one service or product line per category (brand, type, or collection) using the opened example. Do not list every vehicle or SKU.
 3. Geography/service area, branding/tone, differentiators, social presence, contact, media. Use authentic product packaging images from IMAGES: when present.
 4. Verified reviews, projects, experience, certifications — only if present in sources.
 5. Real blog/news articles and portfolio/project pages from the crawl — copy titles, excerpts, URLs, and images. Likely FAQ topics and SEO opportunities from verified facts.
-6. Which EXISTING catalog tabs fit, which fields can be filled now, what must be asked of the owner, and what is required for a 90–100% ready card.
-7. Draft whyChooseUs, suggestedCta, and brandVoice from verified strengths only so content generation can finish a marketing-ready card.
+6. Which EXISTING catalog tabs fit, which fields can be filled now, what must be asked of the owner, and what is required for a 90–100% ready card. Prefer nearly-complete fills from the scraped/document evidence.
+7. Draft businessDescription (first-person for individuals), missionStatement (25–45 words), whyChooseUs, suggestedCta + alternateCtas, brandVoice, intendedAudience, uniqueAdvantages, customerBenefits from verified strengths only.
+8. themeRecommendation for BOTH light and dark (primary/secondary/accent HEX) only when brand evidence exists. Priority: (a) PDF/text Light/Dark Primary·Secondary·Accent → source "document"; (b) BRAND COLOR RESEARCH → source "website"; (c) logo/website brand evidence → source "website". If no website and documents do not specify colors, omit themeRecommendation (or source "suggestion" as notes only) — platform default Global Color stays. Never invent a different brand hue when research already resolved colors. Roles: Primary=CTA/nav/Home description; Secondary=banners/Home name/text·icons on Primary&Accent buttons; Accent=My vCard + social fills.
+9. services[].imageUrl must always be "". Never invent service images.
+10. Put EVERY distinct customer review/testimonial found ON THE WEBSITE into verifiedReviews (max 15). Do not search Google/Yelp/other sites for review text. If the website has zero reviews, leave verifiedReviews empty — the fill step will draft at most 5 Example Client testimonials.
 
 Large sites: finish valid JSON. Keep real services, FAQs, blogs, reviews, and portfolio items up to 15 each. Keep at most 16 products and 10 team members. Do not invent extra list items when the source already has some.
-If no website URL is present, the PDF, Word, text, and photo uploads are the full source. Understand that business from the files and still suggest the card: about, services, FAQs, why choose us, CTA, and contact details that the files actually contain.
+If no website URL is present, the PDF, Word, text, and photo uploads are the full source. Understand that business from the files and still suggest the card.
 Owner-typed notes and OCR text outrank weaker website guesses when they conflict.
-Never invent tabs. Never invent phones, emails, licenses, awards, reviews, projects, or years in business.
+Never invent tabs. Never invent phones, emails, licenses, awards, projects, social profiles, or years in business.
 Prefer facts already on an existing card over weaker new source text. Leave unknown required personal facts null so the owner can be asked later.`,
       user: `${existingCardPrompt(input.existingCard)}\nAnalyze sources and design the best card from supported tabs only.\n\n${buildArchitectureSource(input.normalized, budget)}`,
       images: includeImages ? input.normalized.images.slice(0, 4) : [],

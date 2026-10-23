@@ -61,6 +61,8 @@ const {
   TWILIO_AUTH_TOKEN,
   TWILIO_FROM_NUMBER,
   TWILIO_MESSAGING_SERVICE_SID,
+  TWILIO_10DLC_BRAND_SID,
+  TWILIO_10DLC_CAMPAIGN_SID,
   TWILIO_GLOBAL_SMS,
   PUBLIC_RATE_LIMIT_WINDOW_MS,
   PUBLIC_RATE_LIMIT_MAX,
@@ -176,7 +178,7 @@ export default {
   },
   CRM_REMINDER_CRON: {
     ENABLED: (CRM_REMINDER_CRON_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
-    TZ: (CRM_REMINDER_CRON_TZ || 'Asia/Dhaka').trim() || 'Asia/Dhaka',
+    TZ: (CRM_REMINDER_CRON_TZ || 'America/New_York').trim() || 'America/New_York',
     EXPR: (CRM_REMINDER_CRON_EXPR || '*/5 * * * *').trim() || '*/5 * * * *',
     LEAD_MINUTES: Number(CRM_REMINDER_LEAD_MINUTES) || 30,
   },
@@ -230,6 +232,8 @@ export default {
     AUTH_TOKEN: (TWILIO_AUTH_TOKEN || '').trim(),
     FROM_NUMBER: (TWILIO_FROM_NUMBER || '').trim(),
     MESSAGING_SERVICE_SID: (TWILIO_MESSAGING_SERVICE_SID || '').trim(),
+    BRAND_SID: (TWILIO_10DLC_BRAND_SID || '').trim(),
+    CAMPAIGN_SID: (TWILIO_10DLC_CAMPAIGN_SID || '').trim(),
     GLOBAL_SMS: (TWILIO_GLOBAL_SMS || 'false').trim().toLowerCase() === 'true',
   },
   INTERNAL_PUBLIC_API_KEY: (INTERNAL_PUBLIC_API_KEY || '').trim() || undefined,
@@ -252,7 +256,7 @@ export default {
   CANVA_SCOPES,
   BIRTHDAY_CRON: {
     ENABLED: (BIRTHDAY_CRON_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
-    TZ: (BIRTHDAY_CRON_TZ || 'Asia/Dhaka').trim() || 'Asia/Dhaka',
+    TZ: (BIRTHDAY_CRON_TZ || 'America/New_York').trim() || 'America/New_York',
     EXPR: (BIRTHDAY_CRON_EXPR || '0 9 * * *').trim() || '0 9 * * *',
   },
   GOOGLE_WALLET: {

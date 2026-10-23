@@ -11,6 +11,7 @@ import {
   guestSaveExternalWhere,
   guestSaveOriginWhere,
   isCrmExternalMeta,
+  isQualifiedCrmLead,
 } from '../utils/crmLeadOrigin'
 import {
   assertCrmStaffAuthorization,
@@ -174,19 +175,22 @@ describe('CRM external lead origin', () => {
     assert.deepEqual(guestSaveOriginWhere(), {})
   })
 
-  it('CRM contactable filter keeps email/phone/named leads and drops anonymous Visitors', () => {
+  it('CRM contactable filter requires email or phone, without requiring a name', () => {
     assert.deepEqual(guestSaveCrmContactableWhere(), {
       OR: [
-        { email: { not: null } },
-        { phone: { not: null } },
-        {
-          AND: [
-            { fullName: { not: null } },
-            { NOT: { fullName: { equals: 'Visitor', mode: 'insensitive' } } },
-            { NOT: { fullName: { equals: '' } } },
-          ],
-        },
+        { AND: [{ email: { not: null } }, { NOT: { email: { equals: '' } } }] },
+        { AND: [{ phone: { not: null } }, { NOT: { phone: { equals: '' } } }] },
       ],
     })
+  })
+
+  it('isQualifiedCrmLead accepts any email or phone and rejects name-only', () => {
+    assert.equal(isQualifiedCrmLead({ fullName: 'Ada', email: 'a@b.com', phone: null }), true)
+    assert.equal(isQualifiedCrmLead({ fullName: 'Ada', email: null, phone: '+15551212' }), true)
+    assert.equal(isQualifiedCrmLead({ fullName: 'Ada', email: 'a@b.com', phone: '+15551212' }), true)
+    assert.equal(isQualifiedCrmLead({ fullName: 'Ada', email: null, phone: null }), false)
+    assert.equal(isQualifiedCrmLead({ fullName: 'Visitor', email: 'a@b.com', phone: null }), true)
+    assert.equal(isQualifiedCrmLead({ fullName: '', email: 'a@b.com', phone: null }), true)
+    assert.equal(isQualifiedCrmLead({ fullName: '', email: null, phone: '+15551212' }), true)
   })
 })

@@ -19,7 +19,7 @@ import { readAboutMeFeaturedMediaUrl, readAboutMeMediaFocusY } from '../utils/ab
 import { PUBLIC_ATTACHMENT_KIND_ALIASES, sameMediaUrl, scoreAttachmentTypeName } from '../utils/attachmentTypeMatch'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
 import { isCorporateEditUnlockedCard } from '../utils/corporateSiblingSync'
-import { CRM_LEAD_ORIGIN_GUEST } from '../utils/crmLeadOrigin'
+import { CRM_LEAD_ORIGIN_GUEST, crmLeadDisplayName, isQualifiedCrmLead } from '../utils/crmLeadOrigin'
 import { fillMissingGalleryMedia, galleryHasMedia, listGalleriesForProfile } from '../utils/galleryMedia'
 import { enrichGuestSaveMeta, mergeGuestSaveMeta } from '../utils/guestSaveMeta'
 import { resolveLiveAgentGreetingHostName } from '../utils/liveAgentGreeting'
@@ -39,13 +39,24 @@ import { formatProfileLocation, hasProfileLocationParts } from '../utils/persona
 import { prisma } from '../utils/prisma'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaSchemaDrift } from '../utils/prismaErrors'
 import { resolveStoredProductPricing } from '../utils/productPricing'
+import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
+import {
+  buildReturningViewCopy,
+  formatReturningViewWhen,
+  RETURNING_SAVED_GUEST_COOLDOWN_MS,
+  RETURNING_SAVED_GUEST_EVENT,
+  returningGuestDayKey,
+  returningGuestEventKey,
+  wonReturningGuestClaim,
+} from '../utils/returningSavedGuest'
 import { buildSaveContactFields } from '../utils/saveContactPayload'
 import { collectSaveContactPhotoCandidates, resolveSaveContactPhotoUrls } from '../utils/saveContactPhoto'
 import { resolveProfileSharePreviewImageUrl, SHARE_PREVIEW_IMAGE_SETTING_KEY } from '../utils/sharePreviewImage'
 import { hasFullSaveContactInfo } from '../utils/smsMessage'
+import exactOwnerNotifyService from './exactOwnerNotify.service'
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
-import pushService, { mediaFromProfile } from './push.service'
+import { mediaFromProfile } from './push.service'
 import { mergeSeoSettingsWithDefaults } from './seoMetadata.service'
 import smsService from './sms.service'
 
@@ -58,9 +69,6 @@ const hiddenOwnerMediaOnPublicCard = async (
   if (await isCorporateEditUnlockedCard(profileId)) return new Set()
   return idsHiddenOnMemberPublicCard(profileId, kind, rows)
 }
-
-const RETURNING_SAVED_GUEST_EVENT = 'returning_saved_guest'
-const RETURNING_SAVED_GUEST_DELAY_MS = 3 * 24 * 60 * 60 * 1000
 
 const ATTACHMENT_TYPE_ALIASES = PUBLIC_ATTACHMENT_KIND_ALIASES
 
@@ -2321,7 +2329,7 @@ const saveGuestUser = async (
     submittedAt,
   }
 
-  // Prefer returning an existing save for this guest/email so visitors aren't duplicated.
+  // Prefer an existing save for this guest/contact method so visitors aren't duplicated.
   const existingByGuest = guestId
     ? await prisma.guestUserData.findFirst({
         where: {
@@ -2353,8 +2361,19 @@ const saveGuestUser = async (
           orderBy: { createdAt: 'desc' },
         })
       : null)
+  const existingByPhone =
+    existingByEmail ||
+    (phone
+      ? await prisma.guestUserData.findFirst({
+          where: {
+            profileId: profile.id,
+            phone,
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+      : null)
 
-  const existing = existingByEmail
+  const existing = existingByPhone
   const meta = mergeGuestSaveMeta(existing?.meta, metaBase) as Prisma.InputJsonValue
 
   const guestFields = {
@@ -2364,6 +2383,11 @@ const saveGuestUser = async (
   }
 
   if (existing) {
+    const wasQualified = isQualifiedCrmLead({
+      fullName: existing.fullName,
+      email: existing.email,
+      phone: existing.phone,
+    })
     const updated = await prisma.guestUserData.update({
       where: { id: existing.id },
       data: {
@@ -2371,6 +2395,67 @@ const saveGuestUser = async (
         meta,
       },
     })
+    const nowQualified = isQualifiedCrmLead({
+      fullName: updated.fullName,
+      email: updated.email,
+      phone: updated.phone,
+    })
+
+    // Matrix §2.A / §18 — name-only → name+email/phone upgrade must fire qualified-lead channels once.
+    if (!wasQualified && nowQualified) {
+      const displayName = crmLeadDisplayName(updated)
+      const cardName = profile.name?.trim() || 'vBiz card'
+      const base = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
+      const cardUrl = profile.slug ? buildFrontendPublicCardUrl(base, profile.slug) : base
+      void exactOwnerNotifyService
+        .notifyExactCardOwnerInbox({
+          profileId: profile.id,
+          title: `New lead: ${displayName}`,
+          body: `${displayName} shared contact details through ${cardName}.${updated.email ? ` Email: ${updated.email}.` : ''}${
+            updated.phone ? ` Phone: ${updated.phone}.` : ''
+          } Open CRM Leads to follow up.`,
+          category: 'contact_save',
+          topic: 'crm',
+          href: buildOwnerBackofficePath('leads'),
+          sendEmail: true,
+          emailSubject: `CRM Leads: New lead — ${displayName}`,
+          emailDetails: [
+            { label: 'Contact', value: displayName },
+            ...(updated.email?.trim() ? [{ label: 'Email', value: updated.email.trim() }] : []),
+            ...(updated.phone?.trim() ? [{ label: 'Phone', value: updated.phone.trim() }] : []),
+          ],
+          push: {
+            title: `${displayName} became a lead`,
+            body: `${displayName} is now a CRM lead from ${cardName}.${updated.email ? ` Email: ${updated.email}.` : ''}${
+              updated.phone ? ` Phone: ${updated.phone}.` : ''
+            }`,
+            type: 'save_contact',
+            url: buildOwnerBackofficePath('leads'),
+          },
+        })
+        .catch((error) => logger.error('Owner contact-save upgrade notify failed', { profileId: profile.id, error }))
+      void smsService.notifyProfilePhone(
+        profile.id,
+        'Saved contact',
+        `${displayName} shared contact details on your card.`
+      )
+      if (
+        hasFullSaveContactInfo({
+          name: displayName,
+          email: updated.email,
+          phone: updated.phone,
+        })
+      ) {
+        smsService.sendTopicSms({
+          to: updated.phone,
+          topic: 'Saved contact',
+          cardName,
+          cardUrl,
+          detail: `You saved ${profile.name?.trim() || 'this card'}. We'll text you about this card.`,
+        })
+      }
+    }
+
     return {
       id: updated.id,
       full_name: updated.fullName,
@@ -2382,6 +2467,7 @@ const saveGuestUser = async (
       meta: updated.meta,
       created_at: updated.createdAt.toISOString(),
       already_saved: true,
+      upgraded_to_lead: !wasQualified && nowQualified,
     }
   }
 
@@ -2412,13 +2498,63 @@ const saveGuestUser = async (
 
   liveDashboardHub.emitKpi('save', [profile.userId, profile.companyUserId])
 
-  if (hasFullSaveContactInfo({ name: fullName, email, phone })) {
-    const base = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
+  const base = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
+  const cardUrl = profile.slug ? buildFrontendPublicCardUrl(base, profile.slug) : base
+  const cardName = profile.name?.trim() || 'vBiz card'
+  const displayName = crmLeadDisplayName({ fullName: guestFields.fullName, email, phone })
+  const qualifiedLead = isQualifiedCrmLead({ fullName: displayName, email, phone })
+
+  // Exact card owner only. Qualified leads: push + inbox + email + owner SMS.
+  // Name-only / unqualified: contact-save push + card inbox — never CRM lead email/SMS.
+  const ownerArea = qualifiedLead ? buildOwnerBackofficePath('leads') : buildOwnerBackofficePath('contacts')
+  void exactOwnerNotifyService
+    .notifyExactCardOwnerInbox({
+      profileId: profile.id,
+      title: qualifiedLead ? `New CRM lead: ${displayName}` : `${displayName} viewed your contact details`,
+      body: qualifiedLead
+        ? `${displayName} shared contact details through ${cardName}.${email ? ` Email: ${email}.` : ''}${
+            phone ? ` Phone: ${phone}.` : ''
+          } Open CRM Leads to follow up.`
+        : `${displayName} interacted with ${cardName}, but did not provide an email address or phone number. This activity stays in Contact Saves.`,
+      category: 'contact_save',
+      topic: qualifiedLead ? 'crm' : 'card',
+      href: ownerArea,
+      sendEmail: qualifiedLead,
+      emailSubject: qualifiedLead
+        ? `CRM Leads: New lead — ${displayName}`
+        : `Contact Saves: ${displayName} saved your card`,
+      emailDetails: [
+        { label: 'Contact', value: displayName },
+        ...(email?.trim() ? [{ label: 'Email', value: email.trim() }] : []),
+        ...(phone?.trim() ? [{ label: 'Phone', value: phone.trim() }] : []),
+      ],
+      push: {
+        title: qualifiedLead ? `New CRM lead: ${displayName}` : `New contact activity on ${cardName}`,
+        body: qualifiedLead
+          ? `${displayName} shared contact details through ${cardName}.${email ? ` Email: ${email}.` : ''}${
+              phone ? ` Phone: ${phone}.` : ''
+            }`
+          : `${displayName} interacted with ${cardName} without providing an email address or phone number.`,
+        type: 'save_contact',
+        url: ownerArea,
+      },
+    })
+    .catch((error) => logger.error('Owner contact-save inbox notify failed', { profileId: profile.id, error }))
+
+  if (qualifiedLead) {
+    void smsService.notifyProfilePhone(
+      profile.id,
+      'Saved contact',
+      `${displayName} shared contact details on your card.`
+    )
+  }
+
+  if (qualifiedLead && hasFullSaveContactInfo({ name: displayName, email, phone })) {
     smsService.sendTopicSms({
       to: phone,
       topic: 'Saved contact',
-      cardName: profile.name?.trim() || 'vBiz card',
-      cardUrl: profile.slug ? buildFrontendPublicCardUrl(base, profile.slug) : base,
+      cardName,
+      cardUrl,
       detail: `You saved ${profile.name?.trim() || 'this card'}. We'll text you about this card.`,
     })
   }
@@ -2511,7 +2647,34 @@ const saveNote = async (profileId: string, content: string, options: PublicNoteO
   const note = await prisma.userNote.create({
     data: { profileId, content, meta },
   })
-  void smsService.notifyProfilePhone(profile.id, 'Note', `${authorName || 'A visitor'} left a note on this card.`)
+  const notePreview = content.trim().slice(0, 120)
+  const authorLabel = authorName || 'A visitor'
+  // Keep SMS + add exact-owner inbox/push (not corporate siblings).
+  void smsService.notifyProfilePhone(profile.id, 'Note', `${authorLabel} left a note on this card.`)
+  void exactOwnerNotifyService
+    .notifyExactCardOwnerInbox({
+      profileId: profile.id,
+      title: `New note from ${authorLabel}`,
+      body: notePreview
+        ? `${authorLabel} wrote: “${notePreview}”. Open Contact Saves → Lead Notes to reply.`
+        : `${authorLabel} left a note on your card. Open Contact Saves → Lead Notes to reply.`,
+      category: 'note',
+      topic: 'card',
+      href: buildOwnerBackofficePath('contact_notes'),
+      sendEmail: true,
+      emailSubject: `Lead Notes: New note from ${authorLabel}`,
+      emailDetails: [
+        { label: 'From', value: authorLabel },
+        ...(notePreview ? [{ label: 'Note', value: notePreview }] : []),
+      ],
+      push: {
+        title: `Note from ${authorLabel}`,
+        body: notePreview ? `${authorLabel}: “${notePreview}”` : `${authorLabel} left a note on your public card.`,
+        type: 'save_contact',
+        url: buildOwnerBackofficePath('contact_notes'),
+      },
+    })
+    .catch((error) => logger.error('Owner note inbox notify failed', { profileId: profile.id, error }))
   return mapPublicNote(note)
 }
 
@@ -2563,12 +2726,26 @@ const saveContactCard = async (
     },
     { ip: requestMeta?.ip, userAgent: requestMeta?.userAgent }
   )
-  pushService.notifyProfileUpdate(profile.id, {
-    type: 'save_contact',
-    title: 'Contact saved',
-    body: `Someone saved ${profile.name?.trim() || 'your card'} to their phone.`,
-    url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
-  })
+  // Anonymous VCF download = unqualified contact-save activity (matrix §2.B / §18):
+  // push + card back-office only — no email, no lead SMS, no CRM lead.
+  const cardLabel = profile.name?.trim() || profile.companyName?.trim() || 'your card'
+  void exactOwnerNotifyService
+    .notifyExactCardOwnerInbox({
+      profileId: profile.id,
+      title: `Contact details downloaded from ${cardLabel}`,
+      body: `An anonymous visitor downloaded the contact details from ${cardLabel}. No email address or phone number was provided, so this activity stays in Contact Saves.`,
+      category: 'contact_save',
+      topic: 'card',
+      href: buildOwnerBackofficePath('contacts'),
+      sendEmail: false,
+      push: {
+        title: `New contact activity on ${cardLabel}`,
+        body: `An anonymous visitor downloaded contact details from ${cardLabel}. No contact information was provided.`,
+        type: 'save_contact',
+        url: buildOwnerBackofficePath('contacts'),
+      },
+    })
+    .catch((error) => logger.error('Owner VCF-save inbox notify failed', { profileId: profile.id, error }))
   // Do not emit dashboard:kpi save — that KPI tracks guest form submissions (GuestUserData), not VCF downloads.
 
   const frontendBase = (config.FRONTEND_URL || '').replace(/\/$/, '')
@@ -2646,18 +2823,19 @@ type ReturningGuestProfile = {
 }
 
 /**
- * Notify the card owner's back-office when a known contact returns after a quiet period.
- * The same event marker is also the cooldown, so ordinary refreshes never create inbox noise.
+ * Notify the exact card owner when a recognized saved contact returns.
+ * Recognition: GuestUserData guestId OR prior save_guest_user / save_contact_download.
+ * Same viewer → one owner alert per Eastern calendar day; next day can notify again.
+ * Four channels (push, email, SMS, inbox) are dispatched independently with audit rows.
  */
-const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId: string, firstViewAt: Date) => {
-  const cutoff = new Date(Date.now() - RETURNING_SAVED_GUEST_DELAY_MS)
-  if (firstViewAt > cutoff) return
+const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId: string, _firstViewAt: Date) => {
+  const dayKey = returningGuestDayKey()
+  const raceCutoff = new Date(Date.now() - RETURNING_SAVED_GUEST_COOLDOWN_MS)
 
-  const [savedGuest, savedContact, recentNotice] = await Promise.all([
+  const [savedGuest, saveFormEvent, saveVcfEvent, sameDayNotice] = await Promise.all([
     prisma.guestUserData.findFirst({
       where: {
         profileId: profile.id,
-        createdAt: { lte: cutoff },
         meta: { path: ['guestId'], equals: guestId },
       },
       orderBy: { updatedAt: 'desc' },
@@ -2666,8 +2844,7 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
     prisma.eventLog.findFirst({
       where: {
         profileId: profile.id,
-        eventType: 'save_contact_download',
-        createdAt: { lte: cutoff },
+        eventType: 'save_guest_user',
         payload: { path: ['guestId'], equals: guestId },
       },
       select: { id: true },
@@ -2675,68 +2852,122 @@ const notifyReturningSavedGuest = async (profile: ReturningGuestProfile, guestId
     prisma.eventLog.findFirst({
       where: {
         profileId: profile.id,
-        eventType: RETURNING_SAVED_GUEST_EVENT,
-        createdAt: { gt: cutoff },
+        eventType: 'save_contact_download',
         payload: { path: ['guestId'], equals: guestId },
       },
       select: { id: true },
     }),
-  ])
-  if (!savedGuest || !savedContact || recentNotice) return
-
-  const ownerEmails = [...new Set([profile.user?.email, profile.companyUser?.email])]
-    .map((email) => (email || '').trim().toLowerCase())
-    .filter(Boolean)
-  if (!ownerEmails.length) return
-
-  const guestName = savedGuest.fullName?.trim() || 'A saved contact'
-  const cardName = profile.name?.trim() || profile.slug || 'your vCard'
-  const body = `Hey! ${guestName} is reviewing your card again. Check Lead Notes if they left a message — you can reply there.`
-
-  await prisma.$transaction([
-    prisma.eventLog.create({
-      data: {
+    // One owner alert per saved viewer per Eastern calendar day (not per refresh / not 10 texts).
+    prisma.eventLog.findFirst({
+      where: {
         profileId: profile.id,
         eventType: RETURNING_SAVED_GUEST_EVENT,
-        payload: {
-          guestId,
-          guestUserId: savedGuest.id,
-          guestName,
-          guestEmail: savedGuest.email,
-          guestPhone: savedGuest.phone,
-          profileSlug: profile.slug,
-        },
+        AND: [{ payload: { path: ['guestId'], equals: guestId } }, { payload: { path: ['dayKey'], equals: dayKey } }],
       },
-    }),
-    prisma.announcement.create({
-      data: {
-        kind: 'announcement',
-        type: 'info',
-        title: `Returning contact · ${cardName}`,
-        body,
-        status: 'active',
-        targetType: 'specific',
-        targetEmails: ownerEmails,
-        meta: {
-          channel: 'inbox',
-          source: RETURNING_SAVED_GUEST_EVENT,
-          profileId: profile.id,
-          guestId,
-          guestUserId: savedGuest.id,
-          ...(profile.slug ? { slug: profile.slug } : {}),
-        },
-        createdById: null,
-      },
+      select: { id: true },
     }),
   ])
 
-  pushService.notifyProfileUpdate(profile.id, {
-    type: 'viewer_return',
-    title: `Returning contact · ${cardName}`,
-    body,
-    url: profile.slug ? buildFrontendPublicCardPath(profile.slug) : undefined,
+  const recognized = Boolean(savedGuest || saveFormEvent || saveVcfEvent)
+  if (!recognized || sameDayNotice) return
+
+  const { title, body, guestName } = buildReturningViewCopy({
+    guestName: savedGuest?.fullName?.trim() || 'A saved contact',
+    when: formatReturningViewWhen(),
   })
-  void smsService.notifyProfilePhone(profile.id, 'Repeat view', `${guestName} is looking at this card again.`)
+
+  // Claim the visit first, then resolve concurrent races by keeping the oldest claim for this day.
+  const claim = await prisma.eventLog.create({
+    data: {
+      profileId: profile.id,
+      eventType: RETURNING_SAVED_GUEST_EVENT,
+      payload: {
+        guestId,
+        dayKey,
+        guestUserId: savedGuest?.id || null,
+        guestName,
+        guestEmail: savedGuest?.email || null,
+        guestPhone: savedGuest?.phone || null,
+        profileSlug: profile.slug,
+        status: 'claimed',
+      },
+    },
+  })
+
+  const siblings = await prisma.eventLog.findMany({
+    where: {
+      profileId: profile.id,
+      eventType: RETURNING_SAVED_GUEST_EVENT,
+      OR: [
+        {
+          AND: [{ payload: { path: ['guestId'], equals: guestId } }, { payload: { path: ['dayKey'], equals: dayKey } }],
+        },
+        // Race: two tabs before dayKey is readable — keep oldest in the short window.
+        {
+          createdAt: { gt: raceCutoff },
+          payload: { path: ['guestId'], equals: guestId },
+        },
+      ],
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  })
+  if (
+    !wonReturningGuestClaim(
+      claim.id,
+      siblings.map((row) => row.id)
+    )
+  ) {
+    await prisma.eventLog.delete({ where: { id: claim.id } }).catch(() => undefined)
+    return
+  }
+
+  const eventKey = returningGuestEventKey(profile.id, guestId, claim.id)
+
+  // Push + email + inbox + SMS via exact owner. Never savers / other cards / admin broadcast.
+  void exactOwnerNotifyService
+    .notifyExactCardOwnerInbox({
+      profileId: profile.id,
+      title,
+      body: `${body} Open Contact Saves to review.`,
+      category: 'contact_save',
+      topic: 'card',
+      eventKey,
+      href: buildOwnerBackofficePath('contacts'),
+      sendEmail: true,
+      sendSms: true,
+      smsTopic: 'Repeat view',
+      smsDetail: `${guestName} is looking at this card again.`,
+      push: {
+        title,
+        body,
+        type: 'viewer_return',
+        url: buildOwnerBackofficePath('contacts'),
+      },
+    })
+    .then(async (result) => {
+      await prisma.eventLog
+        .update({
+          where: { id: claim.id },
+          data: {
+            payload: {
+              guestId,
+              guestUserId: savedGuest?.id || null,
+              guestName,
+              guestEmail: savedGuest?.email || null,
+              guestPhone: savedGuest?.phone || null,
+              profileSlug: profile.slug,
+              status: result.sent ? 'notified' : 'attempted',
+              eventKey,
+              channels: result.channels,
+            },
+          },
+        })
+        .catch(() => undefined)
+    })
+    .catch((error) =>
+      logger.error('Returning saved guest owner notify failed', { profileId: profile.id, guestId, error })
+    )
 }
 
 const trackEvent = async (

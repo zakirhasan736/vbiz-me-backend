@@ -55,21 +55,53 @@ export function guestSaveOriginWhere(origin?: CrmLeadOrigin | null): Prisma.Gues
 }
 
 /**
- * CRM-only: exclude anonymous "Visitor" saves with no way to contact them.
- * Backoffice / admin leads keep those rows via {@link guestSaveDashboardVisibleWhere}.
+ * Real display name (not empty / anonymous "Visitor").
+ */
+export function isRealGuestFullName(fullName?: string | null): boolean {
+  const name = (fullName || '').trim()
+  if (!name) return false
+  return name.toLowerCase() !== 'visitor'
+}
+
+/**
+ * Qualified CRM lead: at least one usable contact method.
+ * A name improves presentation but is not required; email-only and phone-only
+ * submissions are actionable leads. Name-only saves remain card activity.
+ */
+export function isQualifiedCrmLead(input: {
+  fullName?: string | null
+  email?: string | null
+  phone?: string | null
+}): boolean {
+  const email = (input.email || '').trim()
+  const phone = (input.phone || '').trim()
+  return Boolean(email || phone)
+}
+
+/** Best human-readable identity for notification titles and CRM rows. */
+export function crmLeadDisplayName(input: {
+  fullName?: string | null
+  email?: string | null
+  phone?: string | null
+}): string {
+  const fullName = (input.fullName || '').trim()
+  if (isRealGuestFullName(fullName)) return fullName
+  const email = (input.email || '').trim()
+  if (email) return email
+  const phone = (input.phone || '').trim()
+  if (phone) return phone
+  return fullName || 'Visitor'
+}
+
+/**
+ * CRM-only: require email and/or phone. Name-only rows stay on the card
+ * dashboard via {@link guestSaveDashboardVisibleWhere}.
  */
 export function guestSaveCrmContactableWhere(): Prisma.GuestUserDataWhereInput {
   return {
     OR: [
-      { email: { not: null } },
-      { phone: { not: null } },
-      {
-        AND: [
-          { fullName: { not: null } },
-          { NOT: { fullName: { equals: 'Visitor', mode: 'insensitive' } } },
-          { NOT: { fullName: { equals: '' } } },
-        ],
-      },
+      { AND: [{ email: { not: null } }, { NOT: { email: { equals: '' } } }] },
+      { AND: [{ phone: { not: null } }, { NOT: { phone: { equals: '' } } }] },
     ],
   }
 }

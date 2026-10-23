@@ -2,8 +2,9 @@ import { randomBytes } from 'node:crypto'
 import type { Prisma } from '../../generated/prisma/client'
 import { UserRole } from '../../generated/prisma/client'
 import { AccountStatus } from '../../generated/prisma/enums'
+import config from '../configs/config'
 import { buildAdminTeamCardsScopeWhere } from '../constants/adminTeamCards'
-import { buildFrontendPublicCardPath } from '../constants/frontendPublicCardPath'
+import { buildFrontendPublicCardPath, buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
 import {
   CORPORATE_CARD_LIMIT_REACHED,
   FEATURE_LIMIT_REACHED,
@@ -37,11 +38,7 @@ import {
   normalizeCardStatusName,
   resolveInitialCardLifecycle,
 } from '../utils/cardStatus'
-import {
-  cardNeedsCorporateMemberLogin,
-  ensureCorporateMemberLoginsForParent,
-  provisionCorporateMemberUser,
-} from '../utils/corporateMemberUser'
+import { provisionCorporateMemberUser } from '../utils/corporateMemberUser'
 import {
   assertNotCorporateOwnedRow,
   corporateContentFingerprint,
@@ -123,6 +120,13 @@ import {
 } from '../utils/prismaErrors'
 import { loadProfileEngagementMetrics } from '../utils/profileListMetrics'
 import type { PublicViewerIdentity } from '../utils/publicVisitor'
+import {
+  buildPublicCardPathWithTab,
+  pushAreaForCollection,
+  pushAreaForPostType,
+  pushAreaForProfileFields,
+  renderPushAreaBody,
+} from '../utils/pushAreaDeepLink'
 import { recordCardChange, recordCollectionChange } from '../utils/recordCardChange'
 import announcementService from './announcement.service'
 import {
@@ -131,8 +135,10 @@ import {
   findLinkedCorporateParentUserId,
   getEffectiveEntitlements,
 } from './entitlement.service'
+import exactOwnerNotifyService from './exactOwnerNotify.service'
 import pushService from './push.service'
 import { normalizeSeoSettings } from './seoMetadata.service'
+import smsService from './sms.service'
 import subscriptionService from './subscription.service'
 
 type LifecycleNotifyActor = { id: string; email: string; name?: string | null }
@@ -203,6 +209,7 @@ const notifyCardPausedOrSuspended = async (
 
     if (announcementEmails.length) {
       try {
+        const ownerUserId = profile.userId || profile.companyUserId || null
         await announcementService.create(actor, {
           type: 'warning',
           kind: 'warning',
@@ -211,7 +218,13 @@ const notifyCardPausedOrSuspended = async (
           status: 'active',
           targetType: 'specific',
           targetEmails: announcementEmails,
-          meta: { profileId: profile.id, action },
+          meta: {
+            profileId: profile.id,
+            action,
+            ...(ownerUserId ? { userId: ownerUserId } : {}),
+            channel: 'inbox',
+            sendPush: '1',
+          },
         })
       } catch (error) {
         logger.error(`Failed to create card ${action} announcement`, error)
@@ -262,6 +275,7 @@ const notifyCardActivated = async (actor: LifecycleNotifyActor, profileId: strin
     await announcementService.archiveLockNotices({ profileId: profile.id })
 
     try {
+      const ownerUserId = profile.userId || profile.companyUserId || null
       await announcementService.create(actor, {
         type: 'success',
         kind: 'announcement',
@@ -270,7 +284,13 @@ const notifyCardActivated = async (actor: LifecycleNotifyActor, profileId: strin
         status: 'active',
         targetType: 'specific',
         targetEmails: announcementEmails,
-        meta: { profileId: profile.id, action: 'activated', channel: 'inbox', sendPush: '1' },
+        meta: {
+          profileId: profile.id,
+          action: 'activated',
+          channel: 'inbox',
+          sendPush: '1',
+          ...(ownerUserId ? { userId: ownerUserId } : {}),
+        },
       })
     } catch (error) {
       logger.error('Failed to create card activated announcement', error)
@@ -1153,21 +1173,10 @@ const buildListFiltersWhere = async (
 }
 
 const listForUser = async (userId: string, role: string, scope?: ProfileListScope) => {
-  // Corporate team directory: auto-create missing member logins for linked cards.
-  try {
-    const entitlements =
-      role === 'corporate-owner' ? { ownerMode: 'corporate' as const } : await getEffectiveEntitlements(userId, role)
-    if (role === 'corporate-owner' || entitlements.ownerMode === 'corporate') {
-      await ensureCorporateMemberLoginsForParent({
-        corporateUserId: userId,
-        actorUserId: userId,
-        apply: true,
-        resetPasswords: false,
-      })
-    }
-  } catch (error) {
-    logger.error('Failed to ensure corporate team member logins before card list', error)
-  }
+  // Never auto-provision Team Member logins here. Members are created only via
+  // the explicit Duplicate → member popup (or admin ensure-member-logins tools).
+  // Auto-provision on list was stealing owner cards when the card email differed
+  // from the corporate login (e.g. AI Builder website email).
 
   const profiles = await prisma.profile.findMany({
     where: await resolveOwnershipWhere(userId, role, scope),
@@ -1294,6 +1303,7 @@ const getOwnedLite = async (profileId: string, userId: string, role: string) => 
           companyUserId: true,
           name: true,
           companyName: true,
+          slug: true,
           status: { select: { id: true, name: true } },
         },
       }),
@@ -1315,6 +1325,7 @@ const getOwnedLite = async (profileId: string, userId: string, role: string) => 
     companyUserId: typeof row.companyUserId === 'string' ? row.companyUserId : null,
     name: typeof row.name === 'string' ? row.name : null,
     companyName: typeof row.companyName === 'string' ? row.companyName : null,
+    slug: typeof row.slug === 'string' ? row.slug : null,
     status: lookups.status,
   }
 }
@@ -1478,7 +1489,10 @@ const create = async (
     linkedin?: string
     ownerUserId?: string
     creationKey?: string
-    /** Internal: duplicate() provisions the member itself before create. */
+    /**
+     * Legacy no-op on create/update (kept for callers). Member users are never
+     * auto-created here — only via duplicate() member popup.
+     */
     skipCorporateMemberProvision?: boolean
     settings?: Record<string, string>
     profileSettings?: {
@@ -1592,11 +1606,11 @@ const create = async (
     })
   }
 
-  // Corporate team cards: auto-create a login-ready member when the card email
-  // differs from the corporate account (single-card backoffice for that member).
-  let provisionedMemberUserId: string | null = null
-  const skipMemberProvision = Boolean(input.skipCorporateMemberProvision)
-  if (!skipMemberProvision && resolvedEmail) {
+  // Corporate parent link only — never invent Team Member users here.
+  // First card / AI Builder / card editor always stay on the Corporate Team Owner.
+  // Team members are created only via duplicate() with the member popup.
+  void input.skipCorporateMemberProvision
+  {
     const corporateCandidateId = companyUserId || profileOwnerId
     const corporateCandidate = await prisma.user.findFirst({
       where: { id: corporateCandidateId, deletedAt: null },
@@ -1609,25 +1623,8 @@ const create = async (
           ? { ownerMode: 'corporate' as const }
           : await getEffectiveEntitlements(corporateCandidate.id, corpApiRole)
       const isCorporateAccount = corpApiRole === 'corporate-owner' || corpEntitlements.ownerMode === 'corporate'
-      const cardEmail = resolvedEmail.trim().toLowerCase()
-      const corpEmail = corporateCandidate.email.trim().toLowerCase()
       const ownedByCorporate = profileOwnerId === corporateCandidate.id
-
-      if (isCorporateAccount && ownedByCorporate && cardEmail && cardEmail !== corpEmail) {
-        const provisioned = await provisionCorporateMemberUser({
-          name: String(raw.name || ''),
-          email: cardEmail,
-          phone: typeof raw.phone === 'string' ? raw.phone : null,
-          companyName: typeof raw.companyName === 'string' ? raw.companyName : null,
-          createdById: userId,
-          corporateUserId: corporateCandidate.id,
-        })
-        provisionedMemberUserId = provisioned.memberUserId
-        profileOwnerId = provisioned.ownership.userId
-        companyUserId = provisioned.ownership.companyUserId
-        createdById = provisioned.ownership.createdById
-      } else if (isCorporateAccount && ownedByCorporate && !companyUserId) {
-        // Keep corporate parent link even when the corporate owner keeps the card.
+      if (isCorporateAccount && ownedByCorporate && !companyUserId) {
         companyUserId = corporateCandidate.id
       }
     }
@@ -1685,9 +1682,6 @@ const create = async (
       select: { id: true },
     })
   } catch (error) {
-    if (provisionedMemberUserId) {
-      await prisma.user.delete({ where: { id: provisionedMemberUserId } }).catch(() => undefined)
-    }
     if (!creationKey || !isPrismaUniqueConstraint(error, 'creationKey')) throw error
     const existing = await prisma.profile.findFirst({
       where: { creationKey, createdById: userId },
@@ -2334,8 +2328,10 @@ const update = async (
     gender: genderName,
     maritalStatus: maritalStatusName,
     relationship: relationshipName,
+    skipCorporateMemberProvision,
     ...raw
   } = data
+  const skipMemberProvisionOnUpdate = Boolean(skipCorporateMemberProvision)
   const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
   const requestedStatus = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : undefined
@@ -2431,18 +2427,9 @@ const update = async (
     else if (currentProfile.maritalStatusId) profileData.maritalStatus = { disconnect: true }
   }
 
-  const nextEmail =
-    'email' in raw
-      ? typeof raw.email === 'string'
-        ? raw.email.trim()
-        : ''
-      : typeof currentProfile.email === 'string'
-        ? currentProfile.email.trim()
-        : ''
-  const nextName = 'name' in raw && typeof raw.name === 'string' ? raw.name.trim() : currentProfile.name || ''
-
-  // Backfill member login when a corporate-owned card gets a distinct email.
-  let updateProvisionedMemberUserId: string | null = null
+  // Never spawn Team Member users on card update (AI Builder, editor, etc.).
+  // Distinct card emails are fine on the owner card; members come from Duplicate only.
+  void skipMemberProvisionOnUpdate
   const corporateParentId = await resolveCorporateParentUserId(
     {
       userId: currentProfile.userId,
@@ -2451,47 +2438,8 @@ const update = async (
     userId,
     role
   )
-  if (corporateParentId && nextEmail) {
-    const corporateUser = await prisma.user.findFirst({
-      where: { id: corporateParentId, deletedAt: null },
-      select: { id: true, email: true },
-    })
-    if (
-      corporateUser &&
-      cardNeedsCorporateMemberLogin(
-        {
-          userId: currentProfile.userId,
-          companyUserId: currentProfile.companyUserId,
-          email: nextEmail,
-        },
-        corporateUser.id,
-        corporateUser.email
-      )
-    ) {
-      try {
-        const provisioned = await provisionCorporateMemberUser({
-          name: nextName,
-          email: nextEmail,
-          phone: 'phone' in raw && typeof raw.phone === 'string' ? raw.phone : currentProfile.phone,
-          companyName: currentProfile.companyName,
-          createdById: userId,
-          corporateUserId: corporateUser.id,
-        })
-        updateProvisionedMemberUserId = provisioned.memberUserId
-        Object.assign(profileData, {
-          userId: provisioned.ownership.userId,
-          companyUserId: provisioned.ownership.companyUserId,
-          createdById: provisioned.ownership.createdById,
-        })
-      } catch (error) {
-        if (updateProvisionedMemberUserId) {
-          await prisma.user.delete({ where: { id: updateProvisionedMemberUserId } }).catch(() => undefined)
-        }
-        throw error
-      }
-    } else if (corporateUser && currentProfile.userId === corporateUser.id && !currentProfile.companyUserId) {
-      Object.assign(profileData, { companyUserId: corporateUser.id })
-    }
+  if (corporateParentId && currentProfile.userId === corporateParentId && !currentProfile.companyUserId) {
+    Object.assign(profileData, { companyUserId: corporateParentId })
   }
 
   const nextDraft = 'isDraft' in raw ? Boolean(raw.isDraft) : currentProfile.isDraft
@@ -2601,9 +2549,6 @@ const update = async (
       data: profileData,
     })
   } catch (error) {
-    if (updateProvisionedMemberUserId) {
-      await prisma.user.delete({ where: { id: updateProvisionedMemberUserId } }).catch(() => undefined)
-    }
     if (!isPrismaUniqueConstraint(error, 'email')) throw error
     throw new AppError(409, 'This email is already used by another card.', {
       code: 'PROFILE_EMAIL_CONFLICT',
@@ -2772,25 +2717,22 @@ const update = async (
     'countryCode',
   ]
   const contactTouched = contactKeys.some((key) => key in raw)
+  const avatarTouched = 'avatar' in raw || 'avatarUrl' in raw || 'profileImage' in raw || 'logo' in raw
+  const nameTouched = 'name' in raw || 'companyName' in raw || 'jobTitle' in raw || 'headline' in raw
   const lifecycleStatusChange = Boolean(requestedStatus)
 
-  if (themeTouched) {
+  // Birthday / DOB is private — must not fire saver content preferences.
+  const dobTouched = 'dob' in raw || 'dateOfBirth' in raw || 'birthDate' in raw
+
+  if (!lifecycleStatusChange && !dobTouched && (themeTouched || contactTouched || avatarTouched || nameTouched)) {
+    const area = pushAreaForProfileFields({ themeTouched, contactTouched, avatarTouched, nameTouched })
+    const businessName = updated.companyName || updated.name || 'A vBiz Me card'
+    const pushType = themeTouched ? 'theme_updates' : contactTouched ? 'contact_updates' : 'business_hours'
     pushService.notifyProfileUpdate(profileId, {
-      type: 'theme_updates',
-      title: 'Theme updated',
-      body: `${updated.companyName || updated.name} updated their card design.`,
-    })
-  } else if (contactTouched) {
-    pushService.notifyProfileUpdate(profileId, {
-      type: 'contact_updates',
-      title: 'Contact info updated',
-      body: `${updated.companyName || updated.name} updated their contact info.`,
-    })
-  } else if (!lifecycleStatusChange) {
-    pushService.notifyProfileUpdate(profileId, {
-      type: 'business_hours',
-      title: 'Profile updated',
-      body: `${updated.companyName || updated.name} updated their profile.`,
+      type: pushType,
+      title: area.title,
+      body: renderPushAreaBody(area.bodyTemplate, businessName),
+      url: buildPublicCardPathWithTab(updated.slug, area.tabId),
     })
   }
 
@@ -3042,18 +2984,15 @@ const replaceCollection = async <T extends Record<string, unknown>>(
   const owned = await getOwnedLite(profileId, userId, role)
   const preferenceType = pushService.preferenceKeyForCollection(kind)
   if (preferenceType) {
-    const titles: Record<string, { title: string; action: string }> = {
-      service_updates: { title: 'Services updated', action: 'updated their services' },
-      portfolio_updates: { title: 'Portfolio updated', action: 'added new photos or videos' },
-      contact_updates: { title: 'Contact links updated', action: 'updated their contact links' },
-      business_hours: { title: 'Professional info updated', action: 'updated their professional info' },
-    }
-    const copy = titles[preferenceType] || { title: 'Card updated', action: 'has a new update' }
-    const businessName = owned.companyName || owned.name
+    const area = pushAreaForCollection(kind)
+    const businessName = owned.companyName || owned.name || 'A vBiz Me card'
     pushService.notifyProfileUpdate(profileId, {
       type: preferenceType,
-      title: copy.title,
-      body: `${businessName} ${copy.action}.`,
+      title: area?.title || `${area?.areaLabel || 'Card section'} updated`,
+      body: area
+        ? renderPushAreaBody(area.bodyTemplate, businessName)
+        : `${businessName} updated a card section. Tap to open their public card.`,
+      url: buildPublicCardPathWithTab(owned.slug, area?.tabId || 'home'),
     })
   }
   return owned
@@ -3259,26 +3198,28 @@ const upsertAboutMe = async (
     })
     const profile = await prisma.profile.findUnique({
       where: { id: profileId },
-      select: { name: true, companyName: true },
+      select: { name: true, companyName: true, slug: true },
     })
     const businessName = profile?.companyName || profile?.name || 'vBiz Me'
     pushService.notifyProfileUpdate(profileId, {
       type: 'business_hours',
       title: 'About Me updated',
-      body: `${businessName} updated their About Me section.`,
+      body: `${businessName} updated About Me. Tap to open that tab on their public card.`,
+      url: buildPublicCardPathWithTab(profile?.slug, 'about'),
     })
     return fallback
   }
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
-    select: { name: true, companyName: true },
+    select: { name: true, companyName: true, slug: true },
   })
   const businessName = profile?.companyName || profile?.name || 'vBiz Me'
   pushService.notifyProfileUpdate(profileId, {
     type: 'business_hours',
     title: 'About Me updated',
-    body: `${businessName} updated their About Me section.`,
+    body: `${businessName} updated About Me. Tap to open that tab on their public card.`,
+    url: buildPublicCardPathWithTab(profile?.slug, 'about'),
   })
 
   await upsertAboutMeMediaFocusY(prisma, profileId, input.featuredMediaFocusY)
@@ -3409,16 +3350,23 @@ const createPost = async (
   })
 
   const preferenceType = pushService.preferenceKeyForPostType(created.postType?.name || input.postTypeName)
-  const profile = await prisma.profile.findUnique({
-    where: { id: profileId },
-    select: { name: true, companyName: true },
-  })
-  const businessName = profile?.companyName || profile?.name || 'vBiz Me'
-  pushService.notifyProfileUpdate(profileId, {
-    type: preferenceType,
-    title: created.title?.trim() || 'New post',
-    body: `${businessName} published a new update.`,
-  })
+  if (preferenceType) {
+    const profile = await prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { name: true, companyName: true, slug: true },
+    })
+    const businessName = profile?.companyName || profile?.name || 'vBiz Me'
+    const area = pushAreaForPostType(created.postType?.name || input.postTypeName)
+    const postTitle = created.title?.trim()
+    pushService.notifyProfileUpdate(profileId, {
+      type: preferenceType,
+      title: postTitle || area?.title || `${area?.areaLabel || 'Card section'} updated`,
+      body: area
+        ? `${renderPushAreaBody(area.bodyTemplate, businessName)}${postTitle ? ` “${postTitle}”` : ''}`
+        : `${businessName} published a new update${postTitle ? `: ${postTitle}` : ''}.`,
+      url: buildPublicCardPathWithTab(profile?.slug, area?.tabId),
+    })
+  }
 
   await safeSyncCorporateSiblingSharedContent(
     profileId,
@@ -3505,16 +3453,23 @@ const updatePost = async (
   })
 
   const preferenceType = pushService.preferenceKeyForPostType(updatedPost.postType?.name)
-  const profile = await prisma.profile.findUnique({
-    where: { id: post.profileId },
-    select: { name: true, companyName: true },
-  })
-  const businessName = profile?.companyName || profile?.name || 'vBiz Me'
-  pushService.notifyProfileUpdate(post.profileId, {
-    type: preferenceType,
-    title: updatedPost.title?.trim() || 'Post updated',
-    body: `${businessName} updated a post.`,
-  })
+  if (preferenceType) {
+    const profile = await prisma.profile.findUnique({
+      where: { id: post.profileId },
+      select: { name: true, companyName: true, slug: true },
+    })
+    const businessName = profile?.companyName || profile?.name || 'vBiz Me'
+    const area = pushAreaForPostType(updatedPost.postType?.name)
+    const postTitle = updatedPost.title?.trim()
+    pushService.notifyProfileUpdate(post.profileId, {
+      type: preferenceType,
+      title: postTitle || area?.title || `${area?.areaLabel || 'Card section'} updated`,
+      body: area
+        ? `${renderPushAreaBody(area.bodyTemplate, businessName)}${postTitle ? ` “${postTitle}”` : ''}`
+        : `${businessName} updated ${postTitle ? `“${postTitle}”` : 'a section'} on their card.`,
+      url: buildPublicCardPathWithTab(profile?.slug, area?.tabId),
+    })
+  }
 
   await safeSyncCorporateSiblingSharedContent(
     post.profileId,
@@ -3564,7 +3519,14 @@ const listPosts = async (
   const where = {
     profileId,
     deletedAt: null,
-    ...(postTypeName ? { postType: { name: { equals: postTypeName, mode: 'insensitive' as const } } } : {}),
+    ...(postTypeName
+      ? {
+          OR: [
+            { postType: { name: { equals: postTypeName, mode: 'insensitive' as const } } },
+            { postType: { title: { equals: postTypeName, mode: 'insensitive' as const } } },
+          ],
+        }
+      : {}),
   }
   const [items, total] = await Promise.all([
     prisma.post.findMany({
@@ -4120,6 +4082,41 @@ const patchContact = async (
           : (await tryGuest()) || (await tryContact()) || (await tryNote())
 
   if (!row) throw new AppError(404, 'Contact not found')
+
+  // Owner → visitor reply: email + push (visitor's own cards) + SMS — exact recipient only.
+  const replyText = body.lastReply?.trim()
+  if (replyText && (row.source === 'note' || row.source === 'contact')) {
+    const cardName = row.profile?.name?.trim() || 'a vBiz card'
+    const frontendBase = (config.FRONTEND_URL || 'https://vbiz.me').replace(/\/$/, '')
+    const cardUrl = row.profile?.slug ? buildFrontendPublicCardUrl(frontendBase, row.profile.slug) : ''
+    const replyPreview = replyText.length > 160 ? `${replyText.slice(0, 157).trimEnd()}…` : replyText
+    void exactOwnerNotifyService
+      .notifyVisitorChannels({
+        email: row.email,
+        phone: row.phone,
+        title: `${cardName} replied to your message`,
+        body: `${cardName} replied: “${replyPreview}”${cardUrl ? ' Tap to open the card.' : ''}`,
+        emailHtml: `<div style="font-family:sans-serif;line-height:1.5"><p><strong>${escapeHtml(cardName)}</strong> replied to your message:</p><p>${escapeHtml(replyText)}</p>${
+          cardUrl
+            ? `<p><a href="${escapeHtml(cardUrl)}" style="display:inline-block;padding:10px 16px;background:#0f766e;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">Open ${escapeHtml(cardName)}</a></p>`
+            : ''
+        }</div>`,
+        smsTopic: 'Note',
+        cardName,
+        cardUrl,
+        pushUrl: cardUrl || undefined,
+        pushType: 'contact_updates',
+        // Matrix §10.B — requesting guest gets push when subscribed (own devices only).
+        allowPush: true,
+      })
+      .catch((error) => logger.error('Visitor reply notify failed', { contactId, error }))
+
+    // Owner confirmation stays on this exact card only (push already covered by UI; SMS optional).
+    if (row.profile?.id) {
+      void smsService.notifyProfilePhone(row.profile.id, 'Note', `Your reply was sent to ${row.name || 'the visitor'}.`)
+    }
+  }
+
   return row
 }
 
@@ -4837,7 +4834,15 @@ const createTeamNotice = async (
           status: 'active',
           targetType: 'specific',
           targetEmails: [...new Set(ownerEmails)],
-          meta: { profileId: targetProfileId, source: 'card_notice', onlyBackoffice: '1' },
+          meta: {
+            profileId: targetProfileId,
+            source: 'card_notice',
+            onlyBackoffice: '1',
+            // Matrix §8.F — back-office only: in-app + email; no browser push.
+            sendPush: '0',
+            channel: 'inbox',
+            topic: 'card',
+          },
         })
         .catch((error) => logger.error('Card owner backoffice notice failed', { targetProfileId, error }))
     }
@@ -4913,11 +4918,21 @@ const createTeamNotice = async (
       )
 
       if (shouldDeliver && targetProfileId) {
-        pushService.notifyProfileUpdate(targetProfileId, {
+        // Public card notice: opted-in push subscribers + the card owner (same card only).
+        // Followers = Allow notifications; save-contact / GuestUserData is not required for Web Push.
+        const noticePush = {
           title: subject,
           body: text,
-          type: 'announcement_updates',
+          type: 'announcement_updates' as const,
           url: targetProfile?.slug ? buildFrontendPublicCardPath(targetProfile.slug) : undefined,
+        }
+        pushService.notifyProfileUpdate(targetProfileId, noticePush, {
+          audience: 'followers',
+          allowPrivate: true,
+        })
+        pushService.notifyProfileUpdate(targetProfileId, noticePush, {
+          audience: 'owners',
+          allowPrivate: true,
         })
 
         if (actor && ownerEmails.length) {
@@ -4934,7 +4949,13 @@ const createTeamNotice = async (
               status: 'active',
               targetType: 'specific',
               targetEmails: [...new Set(ownerEmails)],
-              meta: { profileId: targetProfileId, source: 'card_notice', channel: 'inbox' },
+              meta: {
+                profileId: targetProfileId,
+                source: 'card_notice',
+                channel: 'inbox',
+                showPublic: '1',
+                sendPush: '0',
+              },
             })
             .catch((error) => logger.error('Card owner backoffice notice failed', { targetProfileId, error }))
         }

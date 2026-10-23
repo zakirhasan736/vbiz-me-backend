@@ -53,6 +53,8 @@ export function decideRecommendedTabs(profile: MasterBusinessProfile): Recommend
   if ((profile.blogs || []).length) add('blog', 'Blog or news articles were found on the website.', 'high')
   if ((profile.verifiedReviews || []).length || (profile.existingTestimonials || []).length) {
     add('reviews', 'Real testimonials were found in the sources.', 'high')
+  } else {
+    add('reviews', 'Reviews tab: draft up to 5 from the business when the website has none.', 'high')
   }
   if ((profile.education || []).length) add('education', 'Education history was found.', 'medium')
   if ((profile.experience || []).length) add('work', 'Work history was found.', 'medium')
@@ -93,7 +95,10 @@ export function decideRecommendedTabs(profile: MasterBusinessProfile): Recommend
   }
 
   if (profile.businessDescription) add('profile', 'A public profile/about section fits this business.', 'medium')
-  add('faq', 'A short FAQ helps visitors act without extra research.', 'medium')
+  add('faq', 'Always include FAQs — keep real ones or draft 5 from the business.', 'high')
+  add('services', 'Always include services — keep real ones or draft 5 from the business.', 'high')
+  add('reviews', 'Reviews tab: keep all website reviews (max 15) or draft up to 5 if none.', 'high')
+  add('blog', 'Two educational blog drafts help when the site has no articles.', 'medium')
   if ((profile.services || []).length || profile.businessDescription) {
     add('services', 'Primary services should be listed with benefit-focused descriptions.', 'high')
   }

@@ -61,7 +61,12 @@ export function profileToBlueprintFacts(
       profession: profile.industry || profile.businessType || '',
       address: profile.address || '',
       website: profile.website || social.website || '',
-      about: [profile.businessDescription, profile.whyChooseUs]
+      about: [
+        profile.businessDescription,
+        profile.missionStatement ? `Mission\n${profile.missionStatement}` : '',
+        profile.whyChooseUs ? `Why Choose Us\n${profile.whyChooseUs}` : '',
+        profile.suggestedCta ? `CTA: ${profile.suggestedCta}` : '',
+      ]
         .map((part) => (part || '').trim())
         .filter(Boolean)
         .join('\n\n'),
@@ -85,6 +90,7 @@ export function profileToBlueprintFacts(
         title: s.title,
         description: s.description || '',
         url: s.url || '',
+        // AI must never invent service images — keep empty even if a model hallucinated imageUrl.
       }))
       if (fromServices.length) return fromServices
       return (profile.products || []).slice(0, 12).map((title) => ({
@@ -116,19 +122,20 @@ export function profileToBlueprintFacts(
   }
 }
 
-const CONTENT_SYSTEM = `You write professional vBiz Me card copy from a Master Business Profile.
+const CONTENT_SYSTEM = `You write professional vBiz Me card copy from a Master Business Profile (Business Intelligence Profile).
 
 ${CARD_BUILDER_MISSION}
 
-Rules:
-- Creative language is allowed. Creative facts are not.
-- Only claim things present in the profile (or clearly labeled sample testimonials when no real reviews exist).
-- Do not invent licenses, years, phone numbers, awards, prices, or locations.
-- About: rewrite polished About + include a "Why Choose Us" section and a fitting CTA close when space allows.
-- Services: every service needs a clear title plus benefit-focused description (not generic filler).
-- FAQs: keep every FAQ found in sources. If none exist, generate up to 5 from business topics. If some exist but fewer than 5, fill only the remaining slots.
+Operational constraints for this pass:
+- Only claim things present in the profile. Preserve approved/manual contact facts.
+- Individual About Me MUST be first person (~100–150 words). Company cards use company voice.
+- Include Mission + Why Choose Us + CTA close in about when available.
+- Services: polish verified offerings only (emoji title + 40–75 word benefit copy). Do not invent services to fill a quota. NEVER invent service images or image URLs.
+- FAQs: keep verified FAQs; aim for 5–8 total without inventing policies.
+- Blogs: keep real articles; if none, draft at most 2 evergreen industry posts (not fake news).
+- Reviews: if the website has reviews, keep ALL of them (max 15). If the website has none, draft at most 5 Example Client testimonials from the business. Never invent extras when real reviews already exist.
+- Honor narrow user instructions — change only the requested section.
 - Return JSON matching the vCard blueprint shape.
-- Prefer real testimonials already in the profile for reviews. If none exist, write realistic example testimonials from business topics (not suggestedTestimonialTemplates copied as verified quotes).
 ${BLUEPRINT_JSON_INSTRUCTION}`
 
 export async function generateCardContent(input: {
@@ -143,7 +150,7 @@ export async function generateCardContent(input: {
     tier: writing.tier === 'vision' ? 'terra' : writing.tier,
     temperature: 0.5,
     system: CONTENT_SYSTEM,
-    user: `Write a nearly complete card from this Master Business Profile. Merge with the factual skeleton. Fill polishable marketing fields (About, Services, FAQs). ${input.instruction || ''}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}\n\nFACT SKELETON:\n${JSON.stringify(input.factBlueprint).slice(0, 12000)}`,
+    user: `Write a nearly complete card from this Master Business Profile. Merge with the factual skeleton. Fill polishable marketing fields (About, Services, FAQs, Reviews). Prefer the skeleton for contact/identity facts; write marketing copy from verified profile evidence. Do not invent services or contact details. Reviews: keep all website reviews (max 15); only if none, draft at most 5 Example Client testimonials. ${input.instruction || ''}\n\nPROFILE:\n${compactProfileForPrompt(input.profile)}\n\nFACT SKELETON:\n${JSON.stringify(input.factBlueprint).slice(0, 24000)}`,
   })
   await logChatMeta('content_generation', result.meta, {
     userId: input.userId,
@@ -165,17 +172,17 @@ export async function generateSectionFromProfile(input: {
   const schemaHint = FILL_SECTION_SCHEMA_HINTS[input.section]
   const reviewRule =
     input.section === 'reviews'
-      ? 'If verifiedReviews or existingTestimonials have real quotes, return only those real quotes, up to 15. If they are empty, write at most 5 realistic example testimonials from the business. Do not add drafts when any real review exists. Do not invent licenses, prices, awards, or claim unverified named customers as factual quotes.'
+      ? 'If verifiedReviews or existingTestimonials have any real quotes from the website, return ALL of them (max 15) and do not invent more. Only if both are empty, draft exactly 5 Example Client testimonials from the business. Do not invent review-platform URLs, rating counts, licenses, or awards.'
       : input.section === 'faqs'
-        ? 'If the profile or sources contain FAQs, return only those, up to 15. If none exist, generate at most 5 helpful FAQs from the business. Do not add drafts when any real FAQ exists. Do not invent prices, hours, guarantees, or certifications.'
+        ? 'If the profile or sources contain FAQs, return those. If empty or fewer than 5, draft helpful FAQs to reach exactly 5 total when the business is clear. Do not invent prices, hours, guarantees, or certifications.'
         : input.section === 'blogs'
-          ? 'If the profile or sources contain articles, return only those, up to 15. If none exist, draft at most 5 evergreen posts from the business. Do not add drafts when any real article exists. Do not invent news events, dates, or awards.'
+          ? 'If the profile or sources contain articles, return only those, up to 15. If none exist, draft at most 2 evergreen industry posts. Do not invent news events, dates, or awards.'
           : input.section === 'personal'
-            ? 'For about: write polished About + Why Choose Us + a fitting CTA close when facts allow. Match brand voice to the industry. Do not invent contact facts.'
+            ? 'For about: individuals = FIRST PERSON ~100–150 words + Mission + Why Choose Us + CTA close. Company voice for companies. Match brand voice. Do not invent contact facts. Change only fields the user asked to change.'
             : input.section === 'services'
-              ? 'If services were found, return only those, up to 15, each with a title and description. If none exist, draft at most 5 realistic offerings. Do not add drafts when any real service exists. Do not invent prices or guarantees.'
+              ? 'If services were found, return those (up to 15), each with an emoji-capable title and a 40–75 word benefit description. If none exist, return { "services": [] } — do not invent services to fill a quota. Unconfirmed ideas belong in needsConfirmation only. Never add imageUrl.'
               : input.section === 'portfolio'
-                ? 'If portfolio items were found, return only those, up to 15. If none exist, draft at most 5 representative project examples. Do not add drafts when any real item exists. Do not invent client names, metrics, awards, or prices.'
+                ? 'If portfolio items were found, return only those, up to 15. If none exist, return { "portfolio": [] }. Do not invent projects, client names, metrics, awards, or prices.'
                 : 'Do not invent facts. Creative wording is fine for about/faq/blogs.'
   const seoRule =
     input.section === 'seo'

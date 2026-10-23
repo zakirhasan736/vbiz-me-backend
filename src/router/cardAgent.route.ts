@@ -1,11 +1,14 @@
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import multer from 'multer'
+import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import { getRequestId } from '../middlewares/requestId'
 import * as cardAgentService from '../services/ai/cardAgent.service'
 import * as cardJobService from '../services/ai/cardJob.service'
 import { filesFromMulter } from '../services/ai/extractDocumentText'
+import { probeModelAvailability } from '../services/ai/modelAvailability.service'
+import { MAX_FILES, MAX_UPLOAD_BYTES } from '../services/ai/openai.client'
 import { checkAiRateLimit } from '../services/ai/rateLimit'
 import { assertUserPackageAccess } from '../services/entitlement.service'
 import catchAsyncError, { type IUserInfoRequest } from '../utils/catchAsyncError'
@@ -13,7 +16,7 @@ import sendResponse from '../utils/sendResponse'
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024, files: 6 },
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: MAX_FILES },
 })
 
 const router = Router()
@@ -45,7 +48,7 @@ function rateLimitOrThrow(req: IUserInfoRequest, action: string, limit: number) 
 
 function optionalMultipart(req: Request, res: Response, next: NextFunction) {
   if (req.is('multipart/form-data')) {
-    return upload.array('files', 6)(req, res, next)
+    return upload.array('files', MAX_FILES)(req, res, next)
   }
   return next()
 }
@@ -209,6 +212,7 @@ router.post(
       existingCard,
       userId: req.user?.id,
       role: String(req.user?.role || ''),
+      ownerUserId: typeof req.body?.ownerUserId === 'string' ? req.body.ownerUserId.trim() : undefined,
       sessionId: String(req.body?.sessionId || ''),
       profileId: String(req.body?.profileId || req.body?.cardId || '').trim(),
       builderMode: String(req.body?.builderMode || '') === 'update' ? 'update' : 'create',
@@ -327,6 +331,24 @@ router.post(
       seo: req.body?.seo,
     })
     sendResponse(res, { success: true, statusCode: 200, message: 'Card filled', data })
+  })
+)
+
+/** Admin diagnostics: preferred vs fallback model IDs (never shown to end customers). */
+router.get(
+  '/diagnostics/models',
+  catchAsyncError(async (req, res) => {
+    if (!req.user?.id || !isStaffRole(String(req.user.role || ''))) {
+      throw new AppError(403, 'Admin access required')
+    }
+    const force = String(req.query.force || '') === '1' || String(req.query.force || '') === 'true'
+    const data = await probeModelAvailability(force)
+    sendResponse(res, {
+      success: true,
+      statusCode: 200,
+      message: 'AI model availability',
+      data,
+    })
   })
 )
 

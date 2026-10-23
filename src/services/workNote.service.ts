@@ -264,6 +264,69 @@ export async function createWorkNote(actor: CrmActor, access: CrmAccessContext, 
     include,
   })
 
+  const { default: exactOwnerNotifyService } = await import('./exactOwnerNotify.service')
+  const { noteAssigneePush, noteOwnerPush } = await import('../utils/pushRecipientCopy')
+  const { buildOwnerBackofficePath } = await import('../utils/pushOwnerDeepLink')
+  const crmNotesPath = buildOwnerBackofficePath('crm_notes')
+  const preview = (description || title).trim().slice(0, 180)
+  const actorUser = await prisma.user.findUnique({
+    where: { id: actor.id },
+    select: { email: true, name: true },
+  })
+  const actorName = actorUser?.name?.trim() || actorUser?.email || 'CRM'
+  const notifyActor = {
+    id: actor.id,
+    email: actorUser?.email || 'system@vbizme.com',
+    name: actorUser?.name || 'CRM',
+  }
+  const ownerCopy = noteOwnerPush({ title, preview, actorName })
+  const assigneeCopy = noteAssigneePush({ title, preview, actorName })
+
+  // Exact card owner gets CRM in-app + email + owner push when the note is on a card.
+  if (profileId) {
+    void exactOwnerNotifyService
+      .notifyExactCardOwnerInbox({
+        actor: notifyActor,
+        profileId,
+        title: ownerCopy.title,
+        body: ownerCopy.body,
+        category: 'note',
+        topic: 'crm',
+        href: crmNotesPath,
+        sendEmail: true,
+        push: {
+          title: ownerCopy.title,
+          body: ownerCopy.body,
+          type: 'meeting_alert',
+          url: crmNotesPath,
+        },
+      })
+      .catch(() => undefined)
+  }
+
+  // Assignees (partners / members) get their own CRM inbox + push when they are not the creator.
+  const resolvedAssignee = assigneeUserId || actor.id
+  if (resolvedAssignee && resolvedAssignee !== actor.id) {
+    void exactOwnerNotifyService
+      .notifyUserInbox({
+        actor: notifyActor,
+        userId: resolvedAssignee,
+        title: assigneeCopy.title,
+        body: assigneeCopy.body,
+        category: 'note',
+        topic: 'crm',
+        href: crmNotesPath,
+        sendEmail: true,
+        push: {
+          title: assigneeCopy.title,
+          body: assigneeCopy.body,
+          type: 'meeting_alert',
+          url: crmNotesPath,
+        },
+      })
+      .catch(() => undefined)
+  }
+
   return mapRow(row)
 }
 
