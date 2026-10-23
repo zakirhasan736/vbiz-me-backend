@@ -175,8 +175,13 @@ router.post(
       await prisma.attachment.delete({ where: { id: att.id } })
     }
 
-    // Settings / avatar only for singleton clears (or URL-scoped when that was the setting media).
-    if (settingKey && (!targetUrl || matched.length > 0) && isSingletonBuilderAttachmentType(attachmentType)) {
+    // Settings / avatar for singleton file clears, or YouTube-only URL fields (no Attachment rows).
+    const youtubeUrlOnlyClear =
+      attachmentType === 'Intro YouTube vCard Video Link' || attachmentType === 'YouTube Background Music Link'
+    const shouldClearSetting =
+      Boolean(settingKey) &&
+      (youtubeUrlOnlyClear || ((!targetUrl || matched.length > 0) && isSingletonBuilderAttachmentType(attachmentType)))
+    if (shouldClearSetting && settingKey) {
       await prisma.setting.upsert({
         where: { profileId_key: { profileId, key: settingKey } },
         create: { profileId, key: settingKey, value: '' },
