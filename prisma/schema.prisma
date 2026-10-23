@@ -89,6 +89,7 @@ model User {
   teamNotices          TeamNotice[]          @relation("TeamNoticeOwner")
   canvaConnection      CanvaConnection?
   canvaOAuthPendings   CanvaOAuthPending[]
+  canvaEditSessions    CanvaEditSession[]
   aiGenerationLogs     AiGenerationLog[]
   aiCardSessions       AiCardSession[]
   featureOverrides     CorporateFeatureOverride[]
@@ -168,6 +169,51 @@ model CanvaOAuthPending {
   createdAt    DateTime @default(now())
 
   @@index([userId])
+  @@index([expiresAt])
+}
+
+/**
+ * Secure Create → Edit → Return → Auto-import session for Card Builder media fields.
+ * correlationState is the opaque ≤50-char value passed to Canva Return Navigation.
+ */
+model CanvaEditSession {
+  id               String    @id @default(cuid())
+  correlationState String    @unique
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId        String
+  /// Stable Card Builder field id (attachment type / setting key), not UI order.
+  fieldKey         String
+  /// Optional stable repeatable-item id (service/blog/portfolio row id).
+  itemKey          String?
+  attachmentType   String?
+  designId         String
+  designTitle      String?
+  mediaKind        String    @default("image")
+  exportFormat     String    @default("png")
+  targetWidth      Int?
+  targetHeight     Int?
+  builderRoute     String
+  status           String    @default("awaiting_return")
+  exportJobId      String?
+  resultUrl        String?
+  resultFilename   String?
+  resultMime       String?
+  attachmentId     String?
+  errorMessage     String?
+  correlationJti   String?   @unique
+  canvaUserId      String?
+  canvaTeamId      String?
+  importStartedAt  DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  expiresAt        DateTime
+
+  @@index([userId])
+  @@index([profileId])
+  @@index([designId])
+  @@index([status])
   @@index([expiresAt])
 }
 
