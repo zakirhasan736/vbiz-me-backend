@@ -32,6 +32,8 @@ describe('isSharedSettingKey', () => {
     assert.equal(isSharedSettingKey('about_me_featured_media_url'), false)
     assert.equal(isSharedSettingKey('profile_media_url'), false)
     assert.equal(isSharedSettingKey('background_media_url'), false)
+    assert.equal(isSharedSettingKey('intro_video_url'), false)
+    assert.equal(isSharedSettingKey('intro_youtube_url'), false)
     assert.equal(isSharedSettingKey('extra_fields_json'), false)
     assert.equal(isSharedSettingKey('seo_meta_title'), false)
     assert.equal(isSharedSettingKey('seo_image_url'), false)
@@ -47,23 +49,27 @@ describe('isSharedSettingKey', () => {
 })
 
 describe('mergeDisplaySettingsKeepingPersonalMedia', () => {
-  it('keeps the sibling Profile Image/Video when shared display settings copy', () => {
+  it('keeps the sibling profile / intro / background media when shared display settings copy', () => {
     const source = JSON.stringify({
       fields: {
         'Profile Image/Video': { customValue: 'https://cdn.example.com/julia.jpg' },
         'Background Video/Image': { customValue: 'https://cdn.example.com/office.jpg' },
+        'Intro vCard Video': { customValue: 'https://cdn.example.com/owner-intro.mp4' },
       },
     })
     const target = JSON.stringify({
       fields: {
         'Profile Image/Video': { customValue: 'https://cdn.example.com/mila.jpg' },
+        'Intro vCard Video': { customValue: 'https://cdn.example.com/mila-intro.mp4' },
       },
     })
     const merged = JSON.parse(mergeDisplaySettingsKeepingPersonalMedia(source, target)) as {
       fields: Record<string, { customValue?: string }>
     }
     assert.equal(merged.fields['Profile Image/Video']?.customValue, 'https://cdn.example.com/mila.jpg')
-    assert.equal(merged.fields['Background Video/Image']?.customValue, 'https://cdn.example.com/office.jpg')
+    assert.equal(merged.fields['Intro vCard Video']?.customValue, 'https://cdn.example.com/mila-intro.mp4')
+    // Sibling had no background of its own — do not push the owner's home media onto it.
+    assert.equal(merged.fields['Background Video/Image'], undefined)
   })
 })
 
