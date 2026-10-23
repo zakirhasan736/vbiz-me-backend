@@ -8,6 +8,7 @@ import AppError from '../error/AppError'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
+import { isPrismaColumnMismatch, missingPrismaColumnName } from '../utils/prismaErrors'
 import {
   cardChangeAlsoReachesSavers,
   defaultPushDeliveryAudience,
@@ -302,7 +303,7 @@ const subscribe = async (input: {
   const preferenceData = snakeToPrismaData(input.preferences || {})
   const hasPreferencePayload = Object.keys(preferenceData).length > 0
 
-  const sub = await prisma.pushSubscription.upsert({
+  const upsertBase = {
     where: {
       profileId_endpointHash: {
         profileId: profile.id,
@@ -317,7 +318,6 @@ const subscribe = async (input: {
       auth: input.keys.auth,
       browser: input.browser,
       platform: input.platform,
-      audience,
       isActive: true,
       lastUsedAt: new Date(),
       preferences: { create: preferenceData },
@@ -328,12 +328,28 @@ const subscribe = async (input: {
       auth: input.keys.auth,
       browser: input.browser,
       platform: input.platform,
-      audience,
       isActive: true,
       lastUsedAt: new Date(),
     },
-    include: { preferences: true },
-  })
+    include: { preferences: true as const },
+  }
+
+  let sub
+  try {
+    sub = await prisma.pushSubscription.upsert({
+      ...upsertBase,
+      create: { ...upsertBase.create, audience },
+      update: { ...upsertBase.update, audience },
+    })
+  } catch (error) {
+    // Deployed code before migrate:deploy — keep subscribe working until audience column exists.
+    if (isPrismaColumnMismatch(error) && missingPrismaColumnName(error) === 'audience') {
+      logger.warn('PushSubscription.audience column missing; subscribe without audience (run yarn migrate:deploy)')
+      sub = await prisma.pushSubscription.upsert(upsertBase)
+    } else {
+      throw error
+    }
+  }
 
   let preferences = sub.preferences
   if (!preferences) {

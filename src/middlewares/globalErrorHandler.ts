@@ -10,7 +10,12 @@ import AppError from '../error/AppError'
 import handleZodError from '../error/zodError'
 import { IErrorSources } from '../interfaces/error.interface'
 import logger from '../utils/logger'
-import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaTypeMismatch } from '../utils/prismaErrors'
+import {
+  isPrismaColumnMismatch,
+  isPrismaMissingTable,
+  isPrismaTypeMismatch,
+  isPrismaUnknownArgument,
+} from '../utils/prismaErrors'
 import { captureSentryException } from '../utils/sentry'
 
 const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
@@ -64,7 +69,12 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     statusCode = simpleErr.statusCode
     message = simpleErr.message
     errorMessages = simpleErr.errorSources
-  } else if (isPrismaMissingTable(error) || isPrismaColumnMismatch(error) || isPrismaTypeMismatch(error)) {
+  } else if (
+    isPrismaMissingTable(error) ||
+    isPrismaColumnMismatch(error) ||
+    isPrismaTypeMismatch(error) ||
+    isPrismaUnknownArgument(error)
+  ) {
     logger.error(`${req.method} ${req.originalUrl} schema mismatch`, { error: error.message })
     if (req.method === 'GET') {
       return res.status(200).json({
@@ -75,7 +85,7 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
       })
     }
     statusCode = 409
-    message = 'Database schema is missing a table or column this API expects.'
+    message = 'Database schema is missing a table or column this API expects. Run yarn migrate:deploy on the API host.'
     errorMessages = [{ path: '', message }]
   }
 
