@@ -2250,7 +2250,8 @@ const duplicate = async (
       data: {
         ...identity,
         ...ownership,
-        avatar: source.avatar,
+        // Linked corporate cards keep their own portrait / SEO images — do not seed the owner's face.
+        avatar: corporateParentId ? null : source.avatar,
         colorCode: source.colorCode,
         rumble: source.rumble,
         truth: source.truth,
