@@ -2084,6 +2084,18 @@ const getPublicBootstrap = async (slug: string): Promise<BootstrapPayload> => {
 const PUBLIC_CARDS_LIST_TTL_MS = 45_000
 const publicCardsListCache = new Map<string, { expiresAt: number; value: unknown }>()
 
+/** Stable dropdown options from free-text Profile.state / Profile.city on public cards. */
+function uniqueLocationOptions(names: Array<string | null | undefined>): { id: string; name: string }[] {
+  const byKey = new Map<string, string>()
+  for (const raw of names) {
+    const name = String(raw || '').trim()
+    if (!name) continue
+    const key = name.toLowerCase()
+    if (!byKey.has(key)) byKey.set(key, name)
+  }
+  return [...byKey.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+}
+
 function isPublicCardVideoUrl(url: string, docName?: string | null): boolean {
   const name = `${url} ${docName || ''}`.toLowerCase()
   return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) || name.includes('.mp4') || name.includes('video')
@@ -2129,11 +2141,16 @@ const getPublicCards = async (query: {
   const page = Math.max(1, Number(query.page) || 1)
   const perPage = Math.min(100, Math.max(1, Number(query.per_page) || 12))
   const searchTerm = String(query.search || query.service || '').trim()
-  const includeDropdowns = query.dropdowns !== '0' && page === 1 && !searchTerm && !query.profession_id
+  const stateId = String(query.state_id || '').trim()
+  const cityId = String(query.city_id || '').trim()
+  // Keep location/profession filter options available on page 1 even when a filter is active.
+  const includeDropdowns = query.dropdowns !== '0' && page === 1
   const cacheKey = JSON.stringify({
     page,
     perPage,
     profession_id: query.profession_id || '',
+    state_id: stateId,
+    city_id: cityId,
     searchTerm,
     dropdowns: includeDropdowns,
   })
@@ -2142,10 +2159,16 @@ const getPublicCards = async (query: {
     return cached.value
   }
 
-  const where = {
+  const directoryBaseWhere = {
     ...publicVisibleWhere(),
     slug: { not: null },
+  }
+
+  const where = {
+    ...directoryBaseWhere,
     ...(query.profession_id ? { professionId: query.profession_id } : {}),
+    ...(stateId ? { state: { equals: stateId, mode: 'insensitive' as const } } : {}),
+    ...(cityId ? { city: { equals: cityId, mode: 'insensitive' as const } } : {}),
     ...(searchTerm
       ? {
           OR: [
@@ -2154,12 +2177,14 @@ const getPublicCards = async (query: {
             { prof: { contains: searchTerm, mode: 'insensitive' as const } },
             { designation: { contains: searchTerm, mode: 'insensitive' as const } },
             { slug: { contains: searchTerm, mode: 'insensitive' as const } },
+            { city: { contains: searchTerm, mode: 'insensitive' as const } },
+            { state: { contains: searchTerm, mode: 'insensitive' as const } },
           ],
         }
       : {}),
   }
 
-  const [total, rows, professionRows] = await Promise.all([
+  const [total, rows, professionRows, stateRows, cityRows] = await Promise.all([
     prisma.profile.count({ where }),
     prisma.profile.findMany({
       where,
@@ -2173,10 +2198,33 @@ const getPublicCards = async (query: {
     }),
     includeDropdowns
       ? prisma.profile.findMany({
-          where: { ...publicVisibleWhere(), slug: { not: null }, professionId: { not: null } },
+          where: { ...directoryBaseWhere, professionId: { not: null } },
           distinct: ['professionId'],
           select: { professionId: true, profession: { select: { id: true, name: true } } },
           take: 200,
+        })
+      : Promise.resolve([]),
+    includeDropdowns
+      ? prisma.profile.findMany({
+          where: {
+            ...directoryBaseWhere,
+            AND: [{ state: { not: null } }, { state: { not: '' } }],
+          },
+          distinct: ['state'],
+          select: { state: true },
+          take: 500,
+        })
+      : Promise.resolve([]),
+    includeDropdowns
+      ? prisma.profile.findMany({
+          where: {
+            ...directoryBaseWhere,
+            AND: [{ city: { not: null } }, { city: { not: '' } }],
+            ...(stateId ? { state: { equals: stateId, mode: 'insensitive' as const } } : {}),
+          },
+          distinct: ['city'],
+          select: { city: true },
+          take: 500,
         })
       : Promise.resolve([]),
   ])
@@ -2194,6 +2242,8 @@ const getPublicCards = async (query: {
       profession: p.profession?.name || p.prof,
       profession_id: p.professionId,
       designation: p.designation?.trim() || null,
+      city: p.city?.trim() || null,
+      state: p.state?.trim() || null,
       image: media.image,
       image_type: media.image_type,
       is_video: media.is_video,
@@ -2211,6 +2261,9 @@ const getPublicCards = async (query: {
     .map((row) => row.profession)
     .filter((item): item is { id: string; name: string } => Boolean(item?.id && item?.name))
     .sort((a, b) => a.name.localeCompare(b.name))
+
+  const states = uniqueLocationOptions(stateRows.map((row) => row.state))
+  const cities = uniqueLocationOptions(cityRows.map((row) => row.city))
 
   const payload = {
     success: true,
@@ -2231,14 +2284,14 @@ const getPublicCards = async (query: {
     },
     dropdowns: includeDropdowns
       ? {
-          states: [] as { id: string; name: string }[],
-          cities: [] as { id: string; name: string }[],
+          states,
+          cities,
           professions,
         }
       : undefined,
     filters_applied: {
-      state_id: query.state_id || null,
-      city_id: query.city_id || null,
+      state_id: stateId || null,
+      city_id: cityId || null,
       profession_id: query.profession_id || null,
       service: query.service || null,
     },
