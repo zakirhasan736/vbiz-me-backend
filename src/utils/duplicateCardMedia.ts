@@ -57,7 +57,7 @@ export async function copyAllCardMediaToOwnKeys(
   const worker = async () => {
     for (let key = queue.shift(); key !== undefined; key = queue.shift()) {
       try {
-        if (!(await s3Utils.headObject(key))) {
+        if ((await s3Utils.checkObject(key)) === 'missing') {
           // Source already broken — try to bring it back before copying.
           const healed = await s3Utils.restoreFromVersions(key)
           if (healed.status === 'unrecoverable') {

@@ -7,11 +7,13 @@ import s3Utils from './s3'
 export type MediaHealReport = {
   checked: number
   alive: number
+  /** HEAD failed transiently — status left unchanged, retried next run. */
+  unknown: number
   restored: string[]
   missing: Array<{ key: string; reason: string }>
 }
 
-const emptyReport = (): MediaHealReport => ({ checked: 0, alive: 0, restored: [], missing: [] })
+const emptyReport = (): MediaHealReport => ({ checked: 0, alive: 0, unknown: 0, restored: [], missing: [] })
 
 /**
  * Make sure every bucket key is readable. Missing keys are brought back from
@@ -37,6 +39,8 @@ export async function healMediaKeys(keys: Iterable<string>, concurrency = 6): Pr
         if (result.status === 'alive') {
           report.alive += 1
           await setMediaStatus(key, 'ok')
+        } else if (result.status === 'check-failed') {
+          report.unknown += 1
         } else if (result.status === 'restored') {
           report.restored.push(key)
           logger.warn(`media heal: restored missing S3 key from version ${result.versionId}`, { key })
@@ -44,9 +48,9 @@ export async function healMediaKeys(keys: Iterable<string>, concurrency = 6): Pr
           report.missing.push({ key, reason: result.reason })
           await setMediaStatus(key, 'missing', { reason: result.reason })
         }
-      } catch (error) {
-        const reason = (error as { name?: string; message?: string })?.name || 'error'
-        report.missing.push({ key, reason })
+      } catch {
+        // Listing / copying versions failed — we know nothing new; leave status as is.
+        report.unknown += 1
       }
     }
   }
@@ -80,6 +84,7 @@ export async function runMediaHealthSweep(): Promise<MediaHealReport> {
     ok: report.alive,
     recovered: report.restored.length,
     missing: report.missing.length,
+    unknown: report.unknown,
   })
   return report
 }

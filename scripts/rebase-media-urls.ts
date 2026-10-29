@@ -8,6 +8,8 @@
  *   # 1. set S3_PUBLIC_BASE_URL in .env to the NEW base (e.g. https://media.vbizme.com)
  *   yarn media:rebase --from=https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com
  *   yarn media:rebase --from=https://aws-s3-vbizme-vcard.s3.us-east-2.amazonaws.com --apply
+ *
+ * Refuses to apply unless a real file is reachable at the new base (HTTP 200).
  */
 import config from '../src/configs/config'
 import { listTextColumns } from '../src/utils/cardMediaScan'
@@ -27,6 +29,26 @@ async function main() {
   if (from === to) throw new Error('--from equals S3_PUBLIC_BASE_URL — nothing to do')
 
   console.log(`${from}/…  →  ${to}/…${apply ? '' : '   (dry-run)'}`)
+
+  // Safety: prove the NEW base actually serves our files before touching any row.
+  // A typo in S3_PUBLIC_BASE_URL would otherwise break every image on every card.
+  const sample = await prisma.attachment.findFirst({
+    where: { url: { startsWith: `${from}/` } },
+    select: { url: true },
+    orderBy: { createdAt: 'desc' },
+  })
+  if (!sample?.url) {
+    if (apply && !argv.includes('--force')) {
+      throw new Error('No stored URL uses --from; nothing to verify the new base with. Re-run with --force if sure.')
+    }
+  } else {
+    const probe = `${to}/${sample.url.slice(from.length + 1)}`
+    const res = await fetch(probe, { method: 'HEAD' }).catch(() => null)
+    console.log(`Probe ${probe} → ${res?.status ?? 'network error'}`)
+    if (!res || res.status !== 200) {
+      throw new Error('The new base does not serve an existing file (expected 200). Nothing was changed.')
+    }
+  }
   let total = 0
   for (const col of await listTextColumns()) {
     const table = quoteIdent(col.table)

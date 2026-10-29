@@ -252,14 +252,24 @@ export async function collectAllReferencedMediaKeys(): Promise<Set<string>> {
   const base = (config.S3.PUBLIC_BASE_URL || '').replace(/\/+$/, '')
   if (!base) return keys
   const like = `%${base.replace(/[\\%_]/g, (m) => `\\${m}`)}/%`
+  // One sequential scan per table (all its text/json columns at once) instead of one
+  // per column, so the nightly sweep stays light on big tables.
+  const byTable = new Map<string, TextColumn[]>()
   for (const col of await listTextColumns()) {
-    const rows = await prisma.$queryRawUnsafe<Array<{ v: string | null }>>(
-      `SELECT ${quoteIdent(col.column)}::text AS v FROM ${quoteIdent(col.table)}
-        WHERE ${quoteIdent(col.column)}::text LIKE $1`,
+    if (!byTable.has(col.table)) byTable.set(col.table, [])
+    byTable.get(col.table)!.push(col)
+  }
+  for (const [table, cols] of byTable) {
+    const select = cols.map((c, i) => `${quoteIdent(c.column)}::text AS c${i}`).join(', ')
+    const where = cols.map((c) => `${quoteIdent(c.column)}::text LIKE $1`).join(' OR ')
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, string | null>>>(
+      `SELECT ${select} FROM ${quoteIdent(table)} WHERE ${where}`,
       like
     )
     for (const row of rows) {
-      if (row.v) for (const key of extractMediaKeys(row.v, base)) keys.add(key)
+      for (const value of Object.values(row)) {
+        if (value) for (const key of extractMediaKeys(value, base)) keys.add(key)
+      }
     }
   }
   // Bare keys (no base URL) in Attachment.publicId

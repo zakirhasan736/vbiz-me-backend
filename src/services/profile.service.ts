@@ -2265,12 +2265,15 @@ const duplicate = async (
       await safeSyncCorporateSiblingSharedContent(profileId, { type: 'fullShared' }, { allowEmpty: false })
     }
     // Give the new card its own copy of every image/video (all tabs, profile media,
-    // settings, rich text). Runs last so it sees exactly what the card ended up with.
-    // Best-effort: a copy problem must never undo the duplicate (shared URLs stay valid
-    // because the API never deletes media).
-    await copyAllCardMediaToOwnKeys(created.id).catch((error) =>
-      logger.error('duplicate media copy failed; card keeps shared media URLs', { cardId: created.id, error })
-    )
+    // settings, rich text). Runs in the background AFTER the response so a card with
+    // large videos never makes the duplicate request slow or time out. Until it
+    // finishes the new card shows the shared files — safe, the API never deletes them.
+    const duplicatedCardId = created.id
+    setImmediate(() => {
+      void copyAllCardMediaToOwnKeys(duplicatedCardId).catch((error) =>
+        logger.error('duplicate media copy failed; card keeps shared media URLs', { cardId: duplicatedCardId, error })
+      )
+    })
   } catch (error) {
     await prisma.profile.delete({ where: { id: created.id } }).catch(() => undefined)
     if (provisionedMemberUserId) {

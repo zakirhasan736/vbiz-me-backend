@@ -64,20 +64,30 @@ const publicUrlForKey = (key: string) => {
   return `${base}/${key}`
 }
 
-const headObject = async (key: string): Promise<boolean> => {
+export type ObjectCheck = 'exists' | 'missing' | 'error'
+
+/**
+ * HEAD with a clear answer. 404 / NoSuchKey (and 403, which S3 returns for a missing
+ * key when the caller has no ListBucket) mean missing. Throttling, 5xx and network
+ * failures are 'error' — callers must NOT treat those as a missing file.
+ */
+const checkObject = async (key: string): Promise<ObjectCheck> => {
   const s3 = ensureConfigured()
-  try {
-    await s3.send(
-      new HeadObjectCommand({
-        Bucket: config.S3.BUCKET,
-        Key: key,
-      })
-    )
-    return true
-  } catch {
-    return false
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await s3.send(new HeadObjectCommand({ Bucket: config.S3.BUCKET, Key: key }))
+      return 'exists'
+    } catch (error) {
+      const e = error as { name?: string; $metadata?: { httpStatusCode?: number } }
+      const code = e?.$metadata?.httpStatusCode
+      if (code === 404 || code === 403 || e?.name === 'NotFound' || e?.name === 'NoSuchKey') return 'missing'
+      // transient: retry once, then report as unknown
+    }
   }
+  return 'error'
 }
+
+const headObject = async (key: string): Promise<boolean> => (await checkObject(key)) === 'exists'
 
 const uploadBuffer = async (
   buffer: Buffer,
@@ -125,7 +135,8 @@ const uploadBuffer = async (
 
   // Fail closed — never return a URL the bucket does not actually hold.
   // Browsers see AccessDenied XML for missing keys (no anonymous ListBucket).
-  const exists = await headObject(key)
+  // A transient HEAD error is not proof of a failed upload — PutObject already succeeded.
+  const exists = (await checkObject(key)) !== 'missing'
   if (!exists) {
     await setMediaStatus(key, 'missing', { reason: 'upload did not persist' })
     throw new AppError(502, `S3 upload did not persist (${key})`)
@@ -281,7 +292,11 @@ const keyFromPublicUrl = (url: string | null | undefined): string | null => {
 }
 
 export type RestoreVersionResult =
-  { status: 'alive' } | { status: 'restored'; versionId: string } | { status: 'unrecoverable'; reason: string }
+  | { status: 'alive' }
+  | { status: 'restored'; versionId: string }
+  | { status: 'unrecoverable'; reason: string }
+  /** S3 could not be reached reliably — status unknown, nothing was changed. */
+  | { status: 'check-failed'; reason: string }
 
 /**
  * Self-heal a missing key from S3 versioning: copy the newest real (non delete-marker)
@@ -292,7 +307,9 @@ const restoreFromVersions = async (key: string): Promise<RestoreVersionResult> =
   const s3 = ensureConfigured()
   const cleanKey = key.replace(/^\/+/, '').trim()
   if (!cleanKey) return { status: 'unrecoverable', reason: 'empty key' }
-  if (await headObject(cleanKey)) return { status: 'alive' }
+  const check = await checkObject(cleanKey)
+  if (check === 'exists') return { status: 'alive' }
+  if (check === 'error') return { status: 'check-failed', reason: 'S3 HEAD failed (throttled or unreachable)' }
 
   let listed
   try {
@@ -336,6 +353,7 @@ const s3Utils = {
   uploadFromUrl,
   copyObject,
   headObject,
+  checkObject,
   restoreFromVersions,
   keyFromPublicUrl,
   ensureConfigured,
