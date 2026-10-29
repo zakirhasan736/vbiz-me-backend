@@ -1,7 +1,7 @@
 import {
   CopyObjectCommand,
-  DeleteObjectCommand,
   HeadObjectCommand,
+  ListObjectVersionsCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3'
@@ -226,22 +226,77 @@ const copyObject = async (
   }
 }
 
-const destroy = async (key: string) => {
-  const s3 = ensureConfigured()
-  await s3.send(
-    new DeleteObjectCommand({
-      Bucket: config.S3.BUCKET,
-      Key: key,
-    })
-  )
+/** Bucket key for a public URL on our bucket (null for foreign / YouTube / legacy URLs). */
+const keyFromPublicUrl = (url: string | null | undefined): string | null => {
+  const base = (config.S3.PUBLIC_BASE_URL || '').replace(/\/$/, '')
+  const trimmed = (url || '').trim()
+  if (!base || !trimmed.startsWith(`${base}/`)) return null
+  const raw = trimmed.slice(base.length + 1).split(/[?#]/)[0]
+  if (!raw) return null
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
 }
 
+export type RestoreVersionResult =
+  { status: 'alive' } | { status: 'restored'; versionId: string } | { status: 'unrecoverable'; reason: string }
+
+/**
+ * Self-heal a missing key from S3 versioning: copy the newest real (non delete-marker)
+ * version back on top. Uses only Get/Put permissions — the app IAM user has no delete
+ * rights, so we never remove delete markers, we just write a fresh current version.
+ */
+const restoreFromVersions = async (key: string): Promise<RestoreVersionResult> => {
+  const s3 = ensureConfigured()
+  const cleanKey = key.replace(/^\/+/, '').trim()
+  if (!cleanKey) return { status: 'unrecoverable', reason: 'empty key' }
+  if (await headObject(cleanKey)) return { status: 'alive' }
+
+  let listed
+  try {
+    listed = await s3.send(new ListObjectVersionsCommand({ Bucket: config.S3.BUCKET, Prefix: cleanKey, MaxKeys: 50 }))
+  } catch (error) {
+    const name = (error as { name?: string })?.name || 'error'
+    return { status: 'unrecoverable', reason: `cannot list versions (${name})` }
+  }
+  const versions = (listed.Versions || [])
+    .filter((v) => v.Key === cleanKey && v.VersionId)
+    .sort((a, b) => (b.LastModified?.getTime() || 0) - (a.LastModified?.getTime() || 0))
+  const target = versions[0]
+  if (!target?.VersionId) {
+    return { status: 'unrecoverable', reason: 'no stored versions (deleted before versioning was enabled)' }
+  }
+
+  const copySource = `${config.S3.BUCKET}/${cleanKey
+    .split('/')
+    .map((seg) => encodeURIComponent(seg))
+    .join('/')}?versionId=${encodeURIComponent(target.VersionId)}`
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: config.S3.BUCKET,
+      Key: cleanKey,
+      CopySource: copySource,
+      MetadataDirective: 'COPY',
+    })
+  )
+  if (!(await headObject(cleanKey))) {
+    return { status: 'unrecoverable', reason: 'copy from version did not persist' }
+  }
+  return { status: 'restored', versionId: target.VersionId }
+}
+
+// NOTE: there is intentionally no `destroy` here. The API must never delete card media.
+// Reclaiming unused files is done offline by scripts/s3-orphan-cleanup.ts with separate
+// credentials. See docs/S3_MEDIA_SAFETY.md.
 const s3Utils = {
   uploadBuffer,
   uploadFromUrl,
   copyObject,
   headObject,
-  destroy,
+  restoreFromVersions,
+  keyFromPublicUrl,
   ensureConfigured,
   publicUrlForKey,
 }

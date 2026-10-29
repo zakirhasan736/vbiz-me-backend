@@ -1,131 +1,77 @@
-import { isSingletonBuilderAttachmentType, normalizeMediaUrlKey } from './attachmentTypeMatch'
+import path from 'path'
+import { collectCardMediaKeys, rewriteCardMediaKeys } from './cardMediaScan'
 import logger from './logger'
-import { prisma } from './prisma'
 import s3Utils from './s3'
 
-export type DuplicatedMediaClone = {
-  url: string
-  publicId: string
-  bytes?: number | null
-  resourceType?: string | null
-  format?: string | null
+export type DuplicateMediaCopyReport = {
+  found: number
+  copied: number
+  failed: Array<{ key: string; reason: string }>
 }
 
-export type DuplicateMediaRemap = {
-  /** source attachment id → cloned media */
-  byAttachmentId: Map<string, DuplicatedMediaClone>
-  /** old URL (normalized + raw) → new URL */
-  urlMap: Map<string, string>
+/** `vbizme/1793285518140-ML1.jpg` → folder `vbizme`, filename `ML1.jpg`. */
+export function splitMediaKey(key: string): { folder: string; filename: string } {
+  const clean = key.replace(/^\/+/, '')
+  const folder = path.posix.dirname(clean)
+  const base = path.posix.basename(clean).replace(/^\d{10,}-/, '')
+  return { folder: folder === '.' ? '' : folder, filename: base || 'file' }
 }
 
 /**
- * Copy-on-write for singleton profile media (intro / profile / background / music / explainer)
- * when duplicating a card. Linked cards must not share the same S3 key — otherwise one
- * card's replace/clear deletes the file every sibling still points at (AccessDenied).
+ * Copy-on-duplicate for EVERY image / video on a freshly duplicated card — profile
+ * media, settings, every tab (services, gallery, blogs, about, custom tabs, posts …)
+ * and rich-text HTML — then point the new card's rows at its own copies.
  *
- * Portfolio / gallery items keep shared URLs (collection rows are not singleton destroys).
+ * Runs after the DB clone (and after corporate fan-out) so it sees exactly what the
+ * new card ended up with. Server-side S3 copy, no download. A key that fails to copy
+ * keeps the shared URL (still safe: the API never deletes media).
  */
-export async function copySingletonMediaForDuplicate(sourceProfileId: string): Promise<DuplicateMediaRemap> {
-  const byAttachmentId = new Map<string, DuplicatedMediaClone>()
-  const urlMap = new Map<string, string>()
-
-  const attachments = await prisma.attachment.findMany({
-    where: { profileId: sourceProfileId },
-    include: { attachmentType: true },
-  })
-
-  for (const att of attachments) {
-    if (!isSingletonBuilderAttachmentType(att.attachmentType?.name)) continue
-    const sourceKey = att.publicId?.trim()
-    const sourceUrl = att.url?.trim()
-    if (!sourceKey && !sourceUrl) continue
-
-    try {
-      let copied: Awaited<ReturnType<typeof s3Utils.copyObject>> | Awaited<ReturnType<typeof s3Utils.uploadFromUrl>>
-      if (sourceKey && (await s3Utils.headObject(sourceKey))) {
-        copied = await s3Utils.copyObject(sourceKey, {
-          filename: att.docName || undefined,
-          contentType: att.mimeType || undefined,
-          resourceType:
-            att.resourceType === 'image' || att.resourceType === 'video' || att.resourceType === 'raw'
-              ? att.resourceType
-              : 'auto',
-        })
-      } else if (sourceUrl) {
-        copied = await s3Utils.uploadFromUrl(sourceUrl, {
-          resourceType:
-            att.resourceType === 'image' || att.resourceType === 'video' || att.resourceType === 'raw'
-              ? att.resourceType
-              : 'auto',
-        })
-      } else {
-        continue
-      }
-
-      const clone: DuplicatedMediaClone = {
-        url: copied.url,
-        publicId: copied.publicId,
-        bytes: copied.bytes ?? att.bytes,
-        resourceType: copied.resourceType || att.resourceType,
-        format: copied.format || att.format,
-      }
-      byAttachmentId.set(att.id, clone)
-      if (sourceUrl) {
-        urlMap.set(sourceUrl, clone.url)
-        urlMap.set(normalizeMediaUrlKey(sourceUrl), clone.url)
-      }
-      urlMap.set(normalizeMediaUrlKey(clone.url), clone.url)
-    } catch (error) {
-      logger.error('duplicate singleton media copy failed; linked card will share source URL', {
-        sourceProfileId,
-        attachmentId: att.id,
-        publicId: sourceKey,
-        error,
-      })
-    }
-  }
-
-  return { byAttachmentId, urlMap }
-}
-
-/** Rewrite setting values + profile.avatar on the duplicated card to the new S3 URLs. */
-export async function applyDuplicatedMediaUrlRemap(
+export async function copyAllCardMediaToOwnKeys(
   targetProfileId: string,
-  urlMap: Map<string, string>
-): Promise<void> {
-  if (!urlMap.size) return
-
-  const replaceAll = (input: string): string => {
-    let next = input
-    for (const [from, to] of urlMap) {
-      if (!from || !to || from === to) continue
-      if (next.includes(from)) next = next.split(from).join(to)
-    }
-    return next
+  concurrency = 5
+): Promise<DuplicateMediaCopyReport> {
+  const report: DuplicateMediaCopyReport = { found: 0, copied: 0, failed: [] }
+  try {
+    s3Utils.ensureConfigured()
+  } catch {
+    return report
   }
 
-  const settings = await prisma.setting.findMany({ where: { profileId: targetProfileId } })
-  for (const row of settings) {
-    if (!row.value?.trim()) continue
-    const next = replaceAll(row.value)
-    if (next === row.value) continue
-    await prisma.setting.update({
-      where: { id: row.id },
-      data: { value: next },
+  const keys = [...(await collectCardMediaKeys(targetProfileId))]
+  report.found = keys.length
+  if (!keys.length) return report
+
+  const keyMap = new Map<string, string>()
+  const queue = [...keys]
+  const worker = async () => {
+    for (let key = queue.shift(); key !== undefined; key = queue.shift()) {
+      try {
+        if (!(await s3Utils.headObject(key))) {
+          // Source already broken — try to bring it back before copying.
+          const healed = await s3Utils.restoreFromVersions(key)
+          if (healed.status === 'unrecoverable') {
+            report.failed.push({ key, reason: healed.reason })
+            continue
+          }
+        }
+        const { folder, filename } = splitMediaKey(key)
+        const copied = await s3Utils.copyObject(key, { folder: folder || undefined, filename })
+        keyMap.set(key, copied.publicId)
+        report.copied += 1
+      } catch (error) {
+        report.failed.push({ key, reason: (error as { name?: string })?.name || 'copy failed' })
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker))
+
+  await rewriteCardMediaKeys(targetProfileId, keyMap)
+
+  if (report.failed.length) {
+    logger.error('duplicate media copy: some files keep the shared source URL', {
+      targetProfileId,
+      failed: report.failed,
     })
   }
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: targetProfileId },
-    select: { avatar: true },
-  })
-  if (profile?.avatar?.trim()) {
-    const nextAvatar = replaceAll(profile.avatar)
-    if (nextAvatar !== profile.avatar) {
-      await prisma.profile.update({
-        where: { id: targetProfileId },
-        data: { avatar: nextAvatar },
-      })
-    }
-  }
+  return report
 }

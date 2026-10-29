@@ -2,6 +2,7 @@ import { Prisma } from '../../generated/prisma/client'
 import AppError from '../error/AppError'
 import { areaLabelFor, isSnapshotRestorable, type CardChangeSnapshot } from '../utils/cardChangeHistory'
 import { formatCardHealth, type CardHealthCounts } from '../utils/cardHealth'
+import { healMediaInValue } from '../utils/mediaHealth'
 import { prisma } from '../utils/prisma'
 import type { CardChangeMeta } from '../utils/recordCardChange'
 import { recordCardChange, recordCollectionChange } from '../utils/recordCardChange'
@@ -217,6 +218,11 @@ const restoreCardChange = async (profileId: string, historyId: string, userId: s
   const snapshot = row.snapshot as CardChangeSnapshot
   if (!snapshot || snapshot.version !== 1) throw new AppError(400, 'This history snapshot cannot be restored')
 
+  // Bring back any image/video in the snapshot whose S3 file went missing
+  // (recovered from S3 versioning). Without this, restore would re-save the same
+  // broken URLs and the card would still show AccessDenied.
+  const media = await healMediaInValue(snapshot)
+
   if (snapshot.kind === 'collection' && snapshot.collectionKind) {
     await restoreCollection(profileId, userId, role, snapshot.collectionKind, snapshot.items)
   } else if (snapshot.kind === 'settings') {
@@ -231,7 +237,15 @@ const restoreCardChange = async (profileId: string, historyId: string, userId: s
     where: { id: row.id },
     data: { restoredAt: new Date() },
   })
-  return { restored: true as const, id: row.id }
+  return {
+    restored: true as const,
+    id: row.id,
+    media: {
+      checked: media.checked,
+      recovered: media.restored.length,
+      unrecoverable: media.missing.map((m) => m.key),
+    },
+  }
 }
 
 const cardChangeHistoryService = {
