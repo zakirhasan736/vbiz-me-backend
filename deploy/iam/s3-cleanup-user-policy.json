@@ -1,0 +1,24 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CleanupListBucket",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::aws-s3-vbizme-vcard",
+      "Condition": { "StringLike": { "s3:prefix": ["vbizme/*"] } }
+    },
+    {
+      "Sid": "CleanupDeleteCurrentVersionOnly",
+      "Effect": "Allow",
+      "Action": ["s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::aws-s3-vbizme-vcard/vbizme/*"
+    },
+    {
+      "Sid": "CleanupCannotPurgeHistory",
+      "Effect": "Deny",
+      "Action": ["s3:DeleteObjectVersion", "s3:PutBucketVersioning", "s3:PutLifecycleConfiguration"],
+      "Resource": ["arn:aws:s3:::aws-s3-vbizme-vcard", "arn:aws:s3:::aws-s3-vbizme-vcard/*"]
+    }
+  ]
+}

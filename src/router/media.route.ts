@@ -10,10 +10,11 @@ import {
   sameMediaUrl,
 } from '../utils/attachmentTypeMatch'
 import { bindCardChangeContext } from '../utils/cardChangeHistory'
+import { collectCardMediaKeys } from '../utils/cardMediaScan'
 import catchAsyncError from '../utils/catchAsyncError'
+import { healMediaKeys } from '../utils/mediaHealth'
 import { prisma } from '../utils/prisma'
 import s3Utils from '../utils/s3'
-import { destroyS3IfUnreferenced } from '../utils/s3MediaRefCount'
 import sendResponse from '../utils/sendResponse'
 
 const upload = multer({
@@ -76,35 +77,20 @@ router.post(
           }))
         attachmentTypeId = type.id
 
-        // Replace prior S3 objects only for singleton profile-media slots.
-        // Multi-item types (Portfolio Gallery, Service Featured, Blog Featured, …)
-        // share one type name across many items — destroying by type orphans older CDN URLs.
+        // Singleton slots (avatar / intro / background / music …) hold one file:
+        // detach the previous Attachment rows so the new upload becomes the active one.
+        // The S3 objects are NEVER deleted here — history restore, daily backups and
+        // linked/corporate cards may still point at them. See docs/S3_MEDIA_SAFETY.md.
         if (isSingletonBuilderAttachmentType(attachmentTypeName)) {
           const existing = await prisma.attachment.findMany({
             where: { profileId },
             include: { attachmentType: true },
           })
-          const matched = existing.filter((att) =>
-            isSameBuilderAttachmentType(att.attachmentType?.name, attachmentTypeName)
-          )
-          const matchedIds = matched.map((att) => att.id)
-          for (const att of matched) {
-            const key = att.publicId?.trim()
-            if (key) {
-              try {
-                // Linked/corporate duplicates share the same S3 key — never delete
-                // while another card still references it (prevents AccessDenied XML).
-                await destroyS3IfUnreferenced({
-                  publicId: key,
-                  url: att.url,
-                  exceptAttachmentIds: matchedIds,
-                  destroy: (k) => s3Utils.destroy(k),
-                })
-              } catch {
-                /* best-effort */
-              }
-            }
-            await prisma.attachment.delete({ where: { id: att.id } })
+          const matchedIds = existing
+            .filter((att) => isSameBuilderAttachmentType(att.attachmentType?.name, attachmentTypeName))
+            .map((att) => att.id)
+          if (matchedIds.length) {
+            await prisma.attachment.deleteMany({ where: { id: { in: matchedIds } } })
           }
         }
       }
@@ -167,27 +153,13 @@ router.post(
     }
 
     const matched = targetUrl ? typeMatched.filter((att) => sameMediaUrl(att.url, targetUrl)) : typeMatched
-    const matchedIds = matched.map((att) => att.id)
 
-    for (const att of matched) {
-      const key = att.publicId?.trim()
-      // Collection / multi-item: never destroy S3 here. Detach the Attachment row only.
-      // Eager deletes previously wiped sibling service/gallery URLs still stored on the card
-      // (browser AccessDenied). Orphans are cheap; broken client cards are not.
-      // Singletons (avatar/intro/background) may still reclaim storage when unreferenced.
-      if (key && singleton) {
-        try {
-          await destroyS3IfUnreferenced({
-            publicId: key,
-            url: att.url,
-            exceptAttachmentIds: matchedIds,
-            destroy: (k) => s3Utils.destroy(k),
-          })
-        } catch {
-          /* best-effort S3 delete */
-        }
-      }
-      await prisma.attachment.delete({ where: { id: att.id } })
+    // Remove = detach the Attachment row(s) only. The S3 object is NEVER deleted from
+    // the app: an unsaved editor, history restore, daily backups or a linked card can
+    // still reference the URL, and a deleted key shows as AccessDenied in the browser.
+    // Unused files are reclaimed later by scripts/s3-orphan-cleanup.ts (grace period).
+    if (matched.length) {
+      await prisma.attachment.deleteMany({ where: { id: { in: matched.map((att) => att.id) } } })
     }
 
     // Settings / avatar for singleton file clears, or YouTube-only URL fields (no Attachment rows).
@@ -216,6 +188,35 @@ router.post(
       statusCode: 200,
       message: 'Media cleared',
       data: { deleted: matched.length },
+    })
+  })
+)
+
+/**
+ * Check every image/video URL on a card and recover any missing S3 file from
+ * versioning. Safe to call any time (read + re-put only, never deletes).
+ */
+router.post(
+  '/repair',
+  catchAsyncError(async (req, res) => {
+    const profileId = String(req.body.profileId || '').trim()
+    if (!profileId) throw new AppError(400, 'profileId is required')
+    if (!req.user) throw new AppError(401, 'Unauthorized')
+    await profileService.getOwnedLite(profileId, req.user.id, req.user.role)
+
+    const keys = await collectCardMediaKeys(profileId)
+    const report = await healMediaKeys(keys)
+    sendResponse(res, {
+      success: true,
+      statusCode: 200,
+      message: report.missing.length
+        ? `${report.restored.length} file(s) recovered, ${report.missing.length} could not be recovered — please re-upload those`
+        : `All ${report.checked} media file(s) OK${report.restored.length ? ` (${report.restored.length} recovered)` : ''}`,
+      data: {
+        checked: report.checked,
+        recovered: report.restored.map((key) => s3Utils.publicUrlForKey(key)),
+        unrecoverable: report.missing.map((m) => ({ url: s3Utils.publicUrlForKey(m.key), reason: m.reason })),
+      },
     })
   })
 )
