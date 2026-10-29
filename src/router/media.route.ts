@@ -7,6 +7,7 @@ import {
   BUILDER_ATTACHMENT_TYPE_ALIASES,
   attachmentTypeNameMatches,
   isSingletonBuilderAttachmentType,
+  sameMediaUrl,
 } from '../utils/attachmentTypeMatch'
 import { bindCardChangeContext } from '../utils/cardChangeHistory'
 import catchAsyncError from '../utils/catchAsyncError'
@@ -96,7 +97,6 @@ router.post(
                 await destroyS3IfUnreferenced({
                   publicId: key,
                   url: att.url,
-                  exceptProfileId: profileId,
                   exceptAttachmentIds: matchedIds,
                   destroy: (k) => s3Utils.destroy(k),
                 })
@@ -154,17 +154,32 @@ router.post(
       include: { attachmentType: true },
     })
 
-    const matched = attachments.filter((att) => isSameBuilderAttachmentType(att.attachmentType?.name, attachmentType))
+    const typeMatched = attachments.filter((att) =>
+      isSameBuilderAttachmentType(att.attachmentType?.name, attachmentType)
+    )
+    const singleton = isSingletonBuilderAttachmentType(attachmentType)
+
+    // Collection types (Service Featured, Gallery, …) MUST scope by URL.
+    // Clearing without a URL used to destroy every sibling item's S3 object while
+    // Service/Portfolio rows still held those URLs → browser AccessDenied.
+    if (!singleton && !targetUrl) {
+      throw new AppError(400, 'url is required when clearing multi-item media (pass the exact file URL to remove)')
+    }
+
+    const matched = targetUrl ? typeMatched.filter((att) => sameMediaUrl(att.url, targetUrl)) : typeMatched
     const matchedIds = matched.map((att) => att.id)
 
     for (const att of matched) {
       const key = att.publicId?.trim()
-      if (key) {
+      // Collection / multi-item: never destroy S3 here. Detach the Attachment row only.
+      // Eager deletes previously wiped sibling service/gallery URLs still stored on the card
+      // (browser AccessDenied). Orphans are cheap; broken client cards are not.
+      // Singletons (avatar/intro/background) may still reclaim storage when unreferenced.
+      if (key && singleton) {
         try {
           await destroyS3IfUnreferenced({
             publicId: key,
             url: att.url,
-            exceptProfileId: profileId,
             exceptAttachmentIds: matchedIds,
             destroy: (k) => s3Utils.destroy(k),
           })

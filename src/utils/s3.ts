@@ -63,6 +63,21 @@ const publicUrlForKey = (key: string) => {
   return `${base}/${key}`
 }
 
+const headObject = async (key: string): Promise<boolean> => {
+  const s3 = ensureConfigured()
+  try {
+    await s3.send(
+      new HeadObjectCommand({
+        Bucket: config.S3.BUCKET,
+        Key: key,
+      })
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
 const uploadBuffer = async (
   buffer: Buffer,
   options?: {
@@ -86,10 +101,18 @@ const uploadBuffer = async (
       Key: key,
       Body: buffer,
       ContentType: contentType,
-      // Public-read if bucket policy allows; CDN/base URL still used for serving
-      ACL: undefined,
+      // BucketOwnerEnforced: no object ACL. Public GETs need the bucket policy
+      // from scripts/make-s3-public.ts (s3:GetObject on `{prefix}/*`).
+      CacheControl: 'public, max-age=31536000, immutable',
     })
   )
+
+  // Fail closed — never return a URL the bucket does not actually hold.
+  // Browsers see AccessDenied XML for missing keys (no anonymous ListBucket).
+  const exists = await headObject(key)
+  if (!exists) {
+    throw new AppError(502, `S3 upload did not persist (${key})`)
+  }
 
   const resourceType =
     options?.resourceType && options.resourceType !== 'auto'
@@ -156,21 +179,6 @@ const uploadFromUrl = async (
     filename,
     resourceType: options?.resourceType,
   })
-}
-
-const headObject = async (key: string): Promise<boolean> => {
-  const s3 = ensureConfigured()
-  try {
-    await s3.send(
-      new HeadObjectCommand({
-        Bucket: config.S3.BUCKET,
-        Key: key,
-      })
-    )
-    return true
-  } catch {
-    return false
-  }
 }
 
 /** Server-side copy within the bucket — used when duplicating linked cards so each owns its file. */
