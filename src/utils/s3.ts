@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto'
 import path from 'path'
 import config from '../configs/config'
 import AppError from '../error/AppError'
+import { registerPending, s3MetadataFor, setMediaStatus, type MediaIdentity } from './mediaAsset'
 
 let client: S3Client | null = null
 
@@ -87,6 +88,8 @@ const uploadBuffer = async (
     contentType?: string
     filename?: string
     resourceType?: 'image' | 'video' | 'raw' | 'auto'
+    /** Card / tab identity recorded in MediaAsset and S3 metadata. */
+    identity?: MediaIdentity
   }
 ): Promise<S3UploadResult> => {
   const s3 = ensureConfigured()
@@ -94,25 +97,40 @@ const uploadBuffer = async (
   const format = options?.filename ? path.extname(options.filename).replace(/^\./, '') || undefined : undefined
   const key = options?.key?.replace(/^\/+/, '') || buildKey(folder, options?.filename, format)
   const contentType = options?.contentType || 'application/octet-stream'
+  const identity: MediaIdentity = { source: 'upload', ...(options?.identity || {}) }
 
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: config.S3.BUCKET,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType,
-      // BucketOwnerEnforced: no object ACL. Public GETs need the bucket policy
-      // from scripts/make-s3-public.ts (s3:GetObject on `{prefix}/*`).
-      CacheControl: 'public, max-age=31536000, immutable',
-    })
-  )
+  await registerPending(key, identity, {
+    originalName: options?.filename,
+    contentType,
+    bytes: buffer.length,
+  })
+
+  try {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: config.S3.BUCKET,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+        Metadata: s3MetadataFor(identity),
+        // BucketOwnerEnforced: no object ACL. Public GETs need the bucket policy
+        // from scripts/make-s3-public.ts (s3:GetObject on `{prefix}/*`).
+        CacheControl: 'public, max-age=31536000, immutable',
+      })
+    )
+  } catch (error) {
+    await setMediaStatus(key, 'missing', { reason: 'upload failed' })
+    throw error
+  }
 
   // Fail closed — never return a URL the bucket does not actually hold.
   // Browsers see AccessDenied XML for missing keys (no anonymous ListBucket).
   const exists = await headObject(key)
   if (!exists) {
+    await setMediaStatus(key, 'missing', { reason: 'upload did not persist' })
     throw new AppError(502, `S3 upload did not persist (${key})`)
   }
+  await setMediaStatus(key, 'ok')
 
   const resourceType =
     options?.resourceType && options.resourceType !== 'auto'
@@ -130,7 +148,7 @@ const uploadBuffer = async (
 
 const uploadFromUrl = async (
   remoteUrl: string,
-  options?: { folder?: string; resourceType?: 'image' | 'video' | 'raw' | 'auto' }
+  options?: { folder?: string; resourceType?: 'image' | 'video' | 'raw' | 'auto'; identity?: MediaIdentity }
 ): Promise<S3UploadResult> => {
   ensureConfigured()
   let fetchUrl: string
@@ -178,6 +196,7 @@ const uploadFromUrl = async (
     contentType,
     filename,
     resourceType: options?.resourceType,
+    identity: { source: 'url-import', ...(options?.identity || {}) },
   })
 }
 
@@ -189,6 +208,7 @@ const copyObject = async (
     filename?: string
     contentType?: string
     resourceType?: 'image' | 'video' | 'raw' | 'auto'
+    identity?: MediaIdentity
   }
 ): Promise<S3UploadResult> => {
   const s3 = ensureConfigured()
@@ -203,20 +223,40 @@ const copyObject = async (
     .map((seg) => encodeURIComponent(seg))
     .join('/')}`
 
+  const identity: MediaIdentity = { source: 'duplicate', ...(options?.identity || {}) }
+  let sourceContentType = options?.contentType
+  if (!sourceContentType) {
+    try {
+      const head = await s3.send(new HeadObjectCommand({ Bucket: config.S3.BUCKET, Key: src }))
+      sourceContentType = head.ContentType
+    } catch {
+      /* copy below will fail with a clear error if the source is gone */
+    }
+  }
+  await registerPending(destKey, identity, { originalName: options?.filename, contentType: sourceContentType })
+
   await s3.send(
     new CopyObjectCommand({
       Bucket: config.S3.BUCKET,
       CopySource: copySource,
       Key: destKey,
-      ContentType: options?.contentType || undefined,
-      MetadataDirective: options?.contentType ? 'REPLACE' : 'COPY',
+      // REPLACE so the copy carries the NEW card's identity metadata.
+      MetadataDirective: 'REPLACE',
+      ContentType: sourceContentType || 'application/octet-stream',
+      CacheControl: 'public, max-age=31536000, immutable',
+      Metadata: s3MetadataFor(identity),
     })
   )
+  if (!(await headObject(destKey))) {
+    await setMediaStatus(destKey, 'missing', { reason: 'copy did not persist' })
+    throw new AppError(502, `S3 copy did not persist (${destKey})`)
+  }
+  await setMediaStatus(destKey, 'ok')
 
   const resourceType =
     options?.resourceType && options.resourceType !== 'auto'
       ? options.resourceType
-      : guessResourceType(options?.contentType, format)
+      : guessResourceType(sourceContentType, format)
 
   return {
     url: publicUrlForKey(destKey),
@@ -284,6 +324,7 @@ const restoreFromVersions = async (key: string): Promise<RestoreVersionResult> =
   if (!(await headObject(cleanKey))) {
     return { status: 'unrecoverable', reason: 'copy from version did not persist' }
   }
+  await setMediaStatus(cleanKey, 'ok', { recovered: true })
   return { status: 'restored', versionId: target.VersionId }
 }
 
