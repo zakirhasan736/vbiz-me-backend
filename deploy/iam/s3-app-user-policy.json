@@ -4,20 +4,13 @@
     {
       "Sid": "AppReadWriteCardMediaNoDelete",
       "Effect": "Allow",
-      "Action": [
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:GetObjectVersion"
-      ],
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:GetObjectVersion"],
       "Resource": "arn:aws:s3:::aws-s3-vbizme-vcard/vbizme/*"
     },
     {
       "Sid": "AppListForHeadAndVersionRecovery",
       "Effect": "Allow",
-      "Action": [
-        "s3:ListBucket",
-        "s3:ListBucketVersions"
-      ],
+      "Action": ["s3:ListBucket", "s3:ListBucketVersions"],
       "Resource": "arn:aws:s3:::aws-s3-vbizme-vcard",
       "Condition": { "StringLike": { "s3:prefix": ["vbizme/*"] } }
     },
@@ -32,10 +25,7 @@
         "s3:PutBucketPolicy",
         "s3:DeleteBucketPolicy"
       ],
-      "Resource": [
-        "arn:aws:s3:::aws-s3-vbizme-vcard",
-        "arn:aws:s3:::aws-s3-vbizme-vcard/*"
-      ]
+      "Resource": ["arn:aws:s3:::aws-s3-vbizme-vcard", "arn:aws:s3:::aws-s3-vbizme-vcard/*"]
     }
   ]
 }
