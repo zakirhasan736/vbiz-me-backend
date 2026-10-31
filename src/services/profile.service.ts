@@ -2341,7 +2341,16 @@ const update = async (
   } = data
   const skipMemberProvisionOnUpdate = Boolean(skipCorporateMemberProvision)
   const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
+  // Never keep scalar FKs on ProfileUpdateInput (gender/status/companyUser use connect).
+  // Request bodies and AI payloads may echo companyUserId after single→corporate switches.
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
+  delete (profileData as Record<string, unknown>).companyUserId
+  delete (profileData as Record<string, unknown>).userId
+  delete (profileData as Record<string, unknown>).genderId
+  delete (profileData as Record<string, unknown>).maritalStatusId
+  delete (profileData as Record<string, unknown>).professionId
+  delete (profileData as Record<string, unknown>).statusId
+  delete (profileData as Record<string, unknown>).createdById
   const requestedStatus = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : undefined
 
   if ('email' in raw) {
@@ -2447,7 +2456,8 @@ const update = async (
     role
   )
   if (corporateParentId && currentProfile.userId === corporateParentId && !currentProfile.companyUserId) {
-    Object.assign(profileData, { companyUserId: corporateParentId })
+    // Must use relation connect — ProfileUpdateInput rejects scalar companyUserId.
+    profileData.companyUser = { connect: { id: corporateParentId } }
   }
 
   const nextDraft = 'isDraft' in raw ? Boolean(raw.isDraft) : currentProfile.isDraft
