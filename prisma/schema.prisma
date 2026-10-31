@@ -2355,3 +2355,38 @@ model AiCardSession {
   @@index([sourceHash])
   @@index([expiresAt])
 }
+
+/// One row per S3 object the app uploaded or references. The key is the source of
+/// truth; the public URL is always rebuilt from config (S3_PUBLIC_BASE_URL).
+/// No FK to Profile on purpose: media records outlive deleted cards (files are
+/// never deleted by the API).
+model MediaAsset {
+  id            String    @id @default(cuid())
+  /// S3 object key, e.g. vbizme/cards/<profileId>/services/1793285518140-ML1.jpg
+  key           String    @unique
+  /// ok | missing | pending
+  status        String    @default("pending")
+  /// Card that owns the file (uploaded it, or got it as a duplicate copy).
+  profileId     String?
+  /// Tab / screen the file belongs to: services, portfolio, gallery, blogs, about,
+  /// profile, intro-video, background, custom-tab … (from upload or backfill).
+  area          String?
+  /// Item title at upload/backfill time, so a broken file can be traced to its row.
+  itemLabel     String?
+  uploadedById  String?
+  originalName  String?
+  contentType   String?
+  bytes         Int?
+  /// Where it came from: upload | duplicate | backfill | canva | url-import
+  source        String    @default("upload")
+  /// Last HeadObject result time and the reason when missing.
+  checkedAt     DateTime?
+  missingReason String?
+  /// Set when a missing file was recovered from an S3 version.
+  recoveredAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([profileId, status])
+  @@index([status])
+}

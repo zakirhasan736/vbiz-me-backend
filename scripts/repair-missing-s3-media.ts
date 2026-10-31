@@ -47,18 +47,25 @@ async function main() {
   const restored: string[] = []
   const unrecoverable: Array<{ key: string; reason: string }> = []
   const queue = [...keys]
+  const uncheckable: string[] = []
   let done = 0
 
   const worker = async () => {
     for (let key = queue.shift(); key !== undefined; key = queue.shift()) {
       done += 1
       if (done % 200 === 0) console.log(`  checked ${done}/${keys.size}`)
-      if (await s3Utils.headObject(key)) continue
+      const check = await s3Utils.checkObject(key)
+      if (check === 'exists') continue
+      if (check === 'error') {
+        uncheckable.push(key)
+        continue
+      }
       missing.push(key)
       if (!args.apply) continue
       try {
         const result = await s3Utils.restoreFromVersions(key)
         if (result.status === 'restored' || result.status === 'alive') restored.push(key)
+        else if (result.status === 'check-failed') uncheckable.push(key)
         else unrecoverable.push({ key, reason: result.reason })
       } catch (error) {
         unrecoverable.push({ key, reason: (error as Error)?.message || 'error' })
@@ -79,6 +86,7 @@ async function main() {
     missing: missing.length,
     restored,
     unrecoverable,
+    uncheckable,
     affectedCards,
   }
   const dir = path.join(process.cwd(), 'scripts', 'reports')
@@ -87,6 +95,7 @@ async function main() {
   fs.writeFileSync(file, JSON.stringify(report, null, 2))
 
   console.log(`\nMissing: ${missing.length}`)
+  if (uncheckable.length) console.log(`Could not check (S3 throttled/unreachable, re-run later): ${uncheckable.length}`)
   if (args.apply) {
     console.log(`Recovered from versions: ${restored.length}`)
     console.log(`Unrecoverable (needs re-upload): ${unrecoverable.length}`)

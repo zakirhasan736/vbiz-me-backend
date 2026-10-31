@@ -2265,12 +2265,15 @@ const duplicate = async (
       await safeSyncCorporateSiblingSharedContent(profileId, { type: 'fullShared' }, { allowEmpty: false })
     }
     // Give the new card its own copy of every image/video (all tabs, profile media,
-    // settings, rich text). Runs last so it sees exactly what the card ended up with.
-    // Best-effort: a copy problem must never undo the duplicate (shared URLs stay valid
-    // because the API never deletes media).
-    await copyAllCardMediaToOwnKeys(created.id).catch((error) =>
-      logger.error('duplicate media copy failed; card keeps shared media URLs', { cardId: created.id, error })
-    )
+    // settings, rich text). Runs in the background AFTER the response so a card with
+    // large videos never makes the duplicate request slow or time out. Until it
+    // finishes the new card shows the shared files — safe, the API never deletes them.
+    const duplicatedCardId = created.id
+    setImmediate(() => {
+      void copyAllCardMediaToOwnKeys(duplicatedCardId).catch((error) =>
+        logger.error('duplicate media copy failed; card keeps shared media URLs', { cardId: duplicatedCardId, error })
+      )
+    })
   } catch (error) {
     await prisma.profile.delete({ where: { id: created.id } }).catch(() => undefined)
     if (provisionedMemberUserId) {
@@ -2338,7 +2341,16 @@ const update = async (
   } = data
   const skipMemberProvisionOnUpdate = Boolean(skipCorporateMemberProvision)
   const normalizedSettings = settings ? normalizeSeoSettings(settings) : undefined
+  // Never keep scalar FKs on ProfileUpdateInput (gender/status/companyUser use connect).
+  // Request bodies and AI payloads may echo companyUserId after single→corporate switches.
   const profileData = { ...raw } as Prisma.ProfileUpdateInput
+  delete (profileData as Record<string, unknown>).companyUserId
+  delete (profileData as Record<string, unknown>).userId
+  delete (profileData as Record<string, unknown>).genderId
+  delete (profileData as Record<string, unknown>).maritalStatusId
+  delete (profileData as Record<string, unknown>).professionId
+  delete (profileData as Record<string, unknown>).statusId
+  delete (profileData as Record<string, unknown>).createdById
   const requestedStatus = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : undefined
 
   if ('email' in raw) {
@@ -2444,7 +2456,8 @@ const update = async (
     role
   )
   if (corporateParentId && currentProfile.userId === corporateParentId && !currentProfile.companyUserId) {
-    Object.assign(profileData, { companyUserId: corporateParentId })
+    // Must use relation connect — ProfileUpdateInput rejects scalar companyUserId.
+    profileData.companyUser = { connect: { id: corporateParentId } }
   }
 
   const nextDraft = 'isDraft' in raw ? Boolean(raw.isDraft) : currentProfile.isDraft

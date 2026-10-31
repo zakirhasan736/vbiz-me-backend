@@ -10,9 +10,9 @@ import {
   sameMediaUrl,
 } from '../utils/attachmentTypeMatch'
 import { bindCardChangeContext } from '../utils/cardChangeHistory'
-import { collectCardMediaKeys } from '../utils/cardMediaScan'
 import catchAsyncError from '../utils/catchAsyncError'
-import { healMediaKeys } from '../utils/mediaHealth'
+import { mediaFolderFor, resolveUploadArea } from '../utils/mediaAsset'
+import { cardMediaReport } from '../utils/mediaHealth'
 import { prisma } from '../utils/prisma'
 import s3Utils from '../utils/s3'
 import sendResponse from '../utils/sendResponse'
@@ -49,10 +49,27 @@ router.post(
   catchAsyncError(async (req, res) => {
     if (!req.file) throw new AppError(400, 'file is required')
     validateAttachmentUpload(req.file, req.body.attachmentType as string | undefined)
+
+    // Identity: which card + which tab/screen this file belongs to. Ownership is
+    // verified BEFORE the upload so a file can never land in another card's folder.
+    const requestedProfileId = String(req.body.profileId || '').trim() || undefined
+    if (requestedProfileId && req.user) {
+      await profileService.getOwnedLite(requestedProfileId, req.user.id, req.user.role)
+    }
+    const area = resolveUploadArea(req.body.attachmentType as string | undefined, req.body.area as string | undefined)
+    const identity = {
+      profileId: requestedProfileId || null,
+      area,
+      itemLabel: String(req.body.itemLabel || '').trim() || null,
+      uploadedById: req.user?.id || null,
+      source: 'upload' as const,
+    }
     const result = await s3Utils.uploadBuffer(req.file.buffer, {
       contentType: req.file.mimetype,
       filename: req.file.originalname,
       resourceType: 'auto',
+      folder: mediaFolderFor({ profileId: identity.profileId, userId: identity.uploadedById, area }),
+      identity,
     })
 
     const profileId = req.body.profileId as string | undefined
@@ -193,9 +210,23 @@ router.post(
 )
 
 /**
- * Check every image/video URL on a card and recover any missing S3 file from
- * versioning. Safe to call any time (read + re-put only, never deletes).
+ * Every image/video on a card with its tab, item and S3 status.
+ * GET /media/status?profileId=…            → last known status (fast)
+ * POST /media/repair { profileId }          → check now + recover from S3 versions
+ * Read + re-put only; never deletes.
  */
+router.get(
+  '/status',
+  catchAsyncError(async (req, res) => {
+    const profileId = String(req.query.profileId || '').trim()
+    if (!profileId) throw new AppError(400, 'profileId is required')
+    if (!req.user) throw new AppError(401, 'Unauthorized')
+    await profileService.getOwnedLite(profileId, req.user.id, req.user.role)
+    const items = await cardMediaReport(profileId)
+    sendResponse(res, { success: true, statusCode: 200, message: 'Media status', data: { items } })
+  })
+)
+
 router.post(
   '/repair',
   catchAsyncError(async (req, res) => {
@@ -204,18 +235,22 @@ router.post(
     if (!req.user) throw new AppError(401, 'Unauthorized')
     await profileService.getOwnedLite(profileId, req.user.id, req.user.role)
 
-    const keys = await collectCardMediaKeys(profileId)
-    const report = await healMediaKeys(keys)
+    const items = await cardMediaReport(profileId, { heal: true })
+    const files = new Map(items.map((i) => [i.key, i.status]))
+    const recovered = [...files.values()].filter((s) => s === 'recovered').length
+    const missing = items.filter((i) => i.status === 'missing')
+    const missingFiles = new Set(missing.map((i) => i.key)).size
     sendResponse(res, {
       success: true,
       statusCode: 200,
-      message: report.missing.length
-        ? `${report.restored.length} file(s) recovered, ${report.missing.length} could not be recovered — please re-upload those`
-        : `All ${report.checked} media file(s) OK${report.restored.length ? ` (${report.restored.length} recovered)` : ''}`,
+      message: missingFiles
+        ? `${recovered} file(s) recovered, ${missingFiles} could not be recovered — re-upload those`
+        : `All ${files.size} media file(s) OK${recovered ? ` (${recovered} recovered)` : ''}`,
       data: {
-        checked: report.checked,
-        recovered: report.restored.map((key) => s3Utils.publicUrlForKey(key)),
-        unrecoverable: report.missing.map((m) => ({ url: s3Utils.publicUrlForKey(m.key), reason: m.reason })),
+        checked: files.size,
+        recovered: items.filter((i) => i.status === 'recovered').map((i) => i.url),
+        unrecoverable: missing.map((i) => ({ url: i.url, reason: i.reason || '', area: i.area, label: i.label })),
+        items,
       },
     })
   })

@@ -35,6 +35,15 @@ describe('profile persistence safeguards', () => {
     assert.ok(parentWrite > validation)
   })
 
+  it('backfills corporate companyUser via relation connect, not scalar companyUserId', () => {
+    const updateStart = profileService.indexOf('const update = async')
+    const updateBody = profileService.slice(updateStart, updateStart + 12000)
+    assert.match(updateBody, /profileData\.companyUser = \{ connect: \{ id: corporateParentId \} \}/)
+    assert.doesNotMatch(updateBody, /Object\.assign\(profileData, \{ companyUserId:/)
+    assert.match(updateBody, /Never keep scalar FKs/)
+    assert.match(updateBody, /delete \(profileData as Record<string, unknown>\)\.companyUserId/)
+  })
+
   it('applies AI update jobs to their existing profile and keys create retries by job', () => {
     assert.match(cardJobService, /ready\.builderMode === 'update'/)
     assert.match(cardJobService, /profileService\.update\(String\(ready\.profileId\)/)
