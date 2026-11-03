@@ -1,13 +1,17 @@
 import { Prisma } from '../../generated/prisma/client'
 
+export type StoredMediaObjectFit = 'cover' | 'contain' | 'fill' | 'none' | 'scale-down'
+
 export type StoredMediaFrame = {
   focusX: number
   focusY: number
   zoom: number
   height: number
+  /** How the media fills the frame. Omitted = cover (legacy crops). */
+  objectFit?: StoredMediaObjectFit
 }
 
-const ZOOM_MIN = 1
+const ZOOM_MIN = 0.5
 const ZOOM_MAX = 2.5
 const HEIGHT_MIN = 0.7
 const HEIGHT_MAX = 1.6
@@ -21,6 +25,21 @@ function readNumber(value: unknown, fallback: number, min: number, max: number, 
   if (!Number.isFinite(n)) return fallback
   const factor = 10 ** decimals
   return clamp(Math.round(n * factor) / factor, min, max)
+}
+
+function readObjectFit(value: unknown): StoredMediaObjectFit | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim().toLowerCase()
+  if (
+    trimmed === 'cover' ||
+    trimmed === 'contain' ||
+    trimmed === 'fill' ||
+    trimmed === 'none' ||
+    trimmed === 'scale-down'
+  ) {
+    return trimmed
+  }
+  return undefined
 }
 
 /** Saved crop for a featured image or video. Null when the visitor should see the original fit. */
@@ -37,12 +56,16 @@ export function parseStoredMediaFrame(value: unknown): StoredMediaFrame | null {
   }
   if (typeof value !== 'object' || Array.isArray(value)) return null
   const raw = value as Record<string, unknown>
-  if (raw.focusX == null && raw.focusY == null && raw.zoom == null && raw.height == null) return null
+  const objectFit = readObjectFit(raw.objectFit)
+  if (raw.focusX == null && raw.focusY == null && raw.zoom == null && raw.height == null && objectFit == null) {
+    return null
+  }
   return {
     focusX: readNumber(raw.focusX, 50, 0, 100),
     focusY: readNumber(raw.focusY, 50, 0, 100),
     zoom: readNumber(raw.zoom, 1, ZOOM_MIN, ZOOM_MAX, 2),
     height: readNumber(raw.height, 1, HEIGHT_MIN, HEIGHT_MAX, 2),
+    ...(objectFit ? { objectFit } : {}),
   }
 }
 

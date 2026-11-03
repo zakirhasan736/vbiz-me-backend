@@ -2789,6 +2789,10 @@ const replaceCollection = async <T extends Record<string, unknown>>(
     const next = { ...mapped }
     delete next.id
     delete next.corporateOwned
+    // Persist objectFit (contain/cover/fill) + clamped crop for every collection row.
+    if (Object.prototype.hasOwnProperty.call(next, 'mediaFrame')) {
+      next.mediaFrame = mediaFrameColumnValue(next.mediaFrame)
+    }
     return next
   }
   if (kind === 'socialLinks') {
