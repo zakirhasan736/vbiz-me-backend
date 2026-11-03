@@ -20,6 +20,15 @@ describe('CRM Wish & Outreach delivery timing', () => {
     assert.match(crmEventService, /resolveWishLeadIds/)
   })
 
+  it('loads global wish leads from the full CRM scope, not a single owner profileId', () => {
+    const fnStart = crmEventService.indexOf('async function resolveWishLeadIds')
+    const fnBody = crmEventService.slice(fnStart, fnStart + 2500)
+    assert.match(fnBody, /Do NOT narrow by input\.profileId/)
+    assert.doesNotMatch(fnBody, /normalized\.profileId \? \{ profileId: normalized\.profileId \}/)
+    assert.match(crmEventService, /Lead is outside your CRM scope/)
+    assert.match(crmEventService, /OR: \[\{ companyUserId \}, \{ userId: companyUserId \}\]/)
+  })
+
   it('at startsAt delivers lead email+SMS link and confirms the card owner (inbox/email/push/SMS)', () => {
     assert.match(reminderService, /startsAt:\s*\{\s*gte:\s*catchupFloor,\s*lte:\s*now\s*\}/)
     assert.match(reminderService, /wishOwnerDeliveredPush|Wish sent:/)
