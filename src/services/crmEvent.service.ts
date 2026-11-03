@@ -126,8 +126,9 @@ async function resolveGroupProfileIds(input: CreateCrmEventInput): Promise<strin
   const companyUserId = input.companyUserId?.trim()
   if (!companyUserId) return []
 
+  // Owner card + every linked member card (companyUserId OR userId = corporate parent).
   const profiles = await prisma.profile.findMany({
-    where: { companyUserId },
+    where: { OR: [{ companyUserId }, { userId: companyUserId }] },
     select: { id: true },
   })
   return profiles.map((profile) => profile.id)
@@ -179,11 +180,13 @@ async function resolveWishLeadIds(
   input: CreateCrmEventInput
 ): Promise<string[]> {
   if (normalized.scope === 'global') {
+    // Global = every contactable lead in this actor's CRM scope.
+    // Do NOT narrow by input.profileId — that used to force corporate "all cards"
+    // wishes down to a single owner card and return "No CRM leads found".
     const where: Prisma.GuestUserDataWhereInput = {
       ...(access.profileIds === null
         ? {}
         : { profileId: { in: access.profileIds.length ? access.profileIds : ['__none__'] } }),
-      ...(normalized.profileId ? { profileId: normalized.profileId } : {}),
       ...guestSaveCrmContactableWhere(),
     }
     const leads = await prisma.guestUserData.findMany({
@@ -263,7 +266,9 @@ function serializeCrmEvent(row: CrmEventRow) {
 
 async function resolveOptionalGuestUserDataId(
   guestUserDataId: string | null | undefined,
-  profileId: string | null
+  profileId: string | null,
+  access: CrmAccessContext,
+  scope: CrmEventScope
 ): Promise<string | null> {
   const id = guestUserDataId?.trim()
   if (!id) return null
@@ -272,7 +277,12 @@ async function resolveOptionalGuestUserDataId(
     select: { id: true, profileId: true },
   })
   if (!lead) throw new AppError(404, 'Lead not found')
-  if (profileId && lead.profileId !== profileId) {
+  // Corporate owners may attach a lead from any linked card in their CRM pool.
+  if (!isProfileIdInCrmScope(access, lead.profileId)) {
+    throw new AppError(403, 'Lead is outside your CRM scope')
+  }
+  // One-to-one only: lead must sit on the selected card.
+  if (scope === 'one_to_one' && profileId && lead.profileId !== profileId) {
     throw new AppError(400, 'Lead does not belong to this card')
   }
   return lead.id
@@ -468,7 +478,12 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
   }
 
   const guestUserDataId =
-    (await resolveOptionalGuestUserDataId(input.guestUserDataId || recipientLeadIds[0], primaryProfileId)) ||
+    (await resolveOptionalGuestUserDataId(
+      input.guestUserDataId || recipientLeadIds[0],
+      primaryProfileId,
+      access,
+      normalized.scope
+    )) ||
     recipientLeadIds[0] ||
     null
   const { emails: ownerEmails } = await resolveOwnerEmails(primaryProfileId)
