@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto'
 import path from 'path'
 import config from '../configs/config'
 import AppError from '../error/AppError'
+import { registerPending, s3MetadataFor, setMediaStatus, type MediaIdentity } from './mediaAsset'
 
 let client: S3Client | null = null
 
@@ -63,20 +64,30 @@ const publicUrlForKey = (key: string) => {
   return `${base}/${key}`
 }
 
-const headObject = async (key: string): Promise<boolean> => {
+export type ObjectCheck = 'exists' | 'missing' | 'error'
+
+/**
+ * HEAD with a clear answer. 404 / NoSuchKey (and 403, which S3 returns for a missing
+ * key when the caller has no ListBucket) mean missing. Throttling, 5xx and network
+ * failures are 'error' — callers must NOT treat those as a missing file.
+ */
+const checkObject = async (key: string): Promise<ObjectCheck> => {
   const s3 = ensureConfigured()
-  try {
-    await s3.send(
-      new HeadObjectCommand({
-        Bucket: config.S3.BUCKET,
-        Key: key,
-      })
-    )
-    return true
-  } catch {
-    return false
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await s3.send(new HeadObjectCommand({ Bucket: config.S3.BUCKET, Key: key }))
+      return 'exists'
+    } catch (error) {
+      const e = error as { name?: string; $metadata?: { httpStatusCode?: number } }
+      const code = e?.$metadata?.httpStatusCode
+      if (code === 404 || code === 403 || e?.name === 'NotFound' || e?.name === 'NoSuchKey') return 'missing'
+      // transient: retry once, then report as unknown
+    }
   }
+  return 'error'
 }
+
+const headObject = async (key: string): Promise<boolean> => (await checkObject(key)) === 'exists'
 
 const uploadBuffer = async (
   buffer: Buffer,
@@ -87,6 +98,8 @@ const uploadBuffer = async (
     contentType?: string
     filename?: string
     resourceType?: 'image' | 'video' | 'raw' | 'auto'
+    /** Card / tab identity recorded in MediaAsset and S3 metadata. */
+    identity?: MediaIdentity
   }
 ): Promise<S3UploadResult> => {
   const s3 = ensureConfigured()
@@ -94,25 +107,41 @@ const uploadBuffer = async (
   const format = options?.filename ? path.extname(options.filename).replace(/^\./, '') || undefined : undefined
   const key = options?.key?.replace(/^\/+/, '') || buildKey(folder, options?.filename, format)
   const contentType = options?.contentType || 'application/octet-stream'
+  const identity: MediaIdentity = { source: 'upload', ...(options?.identity || {}) }
 
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: config.S3.BUCKET,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType,
-      // BucketOwnerEnforced: no object ACL. Public GETs need the bucket policy
-      // from scripts/make-s3-public.ts (s3:GetObject on `{prefix}/*`).
-      CacheControl: 'public, max-age=31536000, immutable',
-    })
-  )
+  await registerPending(key, identity, {
+    originalName: options?.filename,
+    contentType,
+    bytes: buffer.length,
+  })
+
+  try {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: config.S3.BUCKET,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+        Metadata: s3MetadataFor(identity),
+        // BucketOwnerEnforced: no object ACL. Public GETs need the bucket policy
+        // from scripts/make-s3-public.ts (s3:GetObject on `{prefix}/*`).
+        CacheControl: 'public, max-age=31536000, immutable',
+      })
+    )
+  } catch (error) {
+    await setMediaStatus(key, 'missing', { reason: 'upload failed' })
+    throw error
+  }
 
   // Fail closed — never return a URL the bucket does not actually hold.
   // Browsers see AccessDenied XML for missing keys (no anonymous ListBucket).
-  const exists = await headObject(key)
+  // A transient HEAD error is not proof of a failed upload — PutObject already succeeded.
+  const exists = (await checkObject(key)) !== 'missing'
   if (!exists) {
+    await setMediaStatus(key, 'missing', { reason: 'upload did not persist' })
     throw new AppError(502, `S3 upload did not persist (${key})`)
   }
+  await setMediaStatus(key, 'ok')
 
   const resourceType =
     options?.resourceType && options.resourceType !== 'auto'
@@ -130,7 +159,7 @@ const uploadBuffer = async (
 
 const uploadFromUrl = async (
   remoteUrl: string,
-  options?: { folder?: string; resourceType?: 'image' | 'video' | 'raw' | 'auto' }
+  options?: { folder?: string; resourceType?: 'image' | 'video' | 'raw' | 'auto'; identity?: MediaIdentity }
 ): Promise<S3UploadResult> => {
   ensureConfigured()
   let fetchUrl: string
@@ -178,6 +207,7 @@ const uploadFromUrl = async (
     contentType,
     filename,
     resourceType: options?.resourceType,
+    identity: { source: 'url-import', ...(options?.identity || {}) },
   })
 }
 
@@ -189,6 +219,7 @@ const copyObject = async (
     filename?: string
     contentType?: string
     resourceType?: 'image' | 'video' | 'raw' | 'auto'
+    identity?: MediaIdentity
   }
 ): Promise<S3UploadResult> => {
   const s3 = ensureConfigured()
@@ -203,20 +234,40 @@ const copyObject = async (
     .map((seg) => encodeURIComponent(seg))
     .join('/')}`
 
+  const identity: MediaIdentity = { source: 'duplicate', ...(options?.identity || {}) }
+  let sourceContentType = options?.contentType
+  if (!sourceContentType) {
+    try {
+      const head = await s3.send(new HeadObjectCommand({ Bucket: config.S3.BUCKET, Key: src }))
+      sourceContentType = head.ContentType
+    } catch {
+      /* copy below will fail with a clear error if the source is gone */
+    }
+  }
+  await registerPending(destKey, identity, { originalName: options?.filename, contentType: sourceContentType })
+
   await s3.send(
     new CopyObjectCommand({
       Bucket: config.S3.BUCKET,
       CopySource: copySource,
       Key: destKey,
-      ContentType: options?.contentType || undefined,
-      MetadataDirective: options?.contentType ? 'REPLACE' : 'COPY',
+      // REPLACE so the copy carries the NEW card's identity metadata.
+      MetadataDirective: 'REPLACE',
+      ContentType: sourceContentType || 'application/octet-stream',
+      CacheControl: 'public, max-age=31536000, immutable',
+      Metadata: s3MetadataFor(identity),
     })
   )
+  if (!(await headObject(destKey))) {
+    await setMediaStatus(destKey, 'missing', { reason: 'copy did not persist' })
+    throw new AppError(502, `S3 copy did not persist (${destKey})`)
+  }
+  await setMediaStatus(destKey, 'ok')
 
   const resourceType =
     options?.resourceType && options.resourceType !== 'auto'
       ? options.resourceType
-      : guessResourceType(options?.contentType, format)
+      : guessResourceType(sourceContentType, format)
 
   return {
     url: publicUrlForKey(destKey),
@@ -241,7 +292,11 @@ const keyFromPublicUrl = (url: string | null | undefined): string | null => {
 }
 
 export type RestoreVersionResult =
-  { status: 'alive' } | { status: 'restored'; versionId: string } | { status: 'unrecoverable'; reason: string }
+  | { status: 'alive' }
+  | { status: 'restored'; versionId: string }
+  | { status: 'unrecoverable'; reason: string }
+  /** S3 could not be reached reliably — status unknown, nothing was changed. */
+  | { status: 'check-failed'; reason: string }
 
 /**
  * Self-heal a missing key from S3 versioning: copy the newest real (non delete-marker)
@@ -252,7 +307,9 @@ const restoreFromVersions = async (key: string): Promise<RestoreVersionResult> =
   const s3 = ensureConfigured()
   const cleanKey = key.replace(/^\/+/, '').trim()
   if (!cleanKey) return { status: 'unrecoverable', reason: 'empty key' }
-  if (await headObject(cleanKey)) return { status: 'alive' }
+  const check = await checkObject(cleanKey)
+  if (check === 'exists') return { status: 'alive' }
+  if (check === 'error') return { status: 'check-failed', reason: 'S3 HEAD failed (throttled or unreachable)' }
 
   let listed
   try {
@@ -284,6 +341,7 @@ const restoreFromVersions = async (key: string): Promise<RestoreVersionResult> =
   if (!(await headObject(cleanKey))) {
     return { status: 'unrecoverable', reason: 'copy from version did not persist' }
   }
+  await setMediaStatus(cleanKey, 'ok', { recovered: true })
   return { status: 'restored', versionId: target.VersionId }
 }
 
@@ -295,6 +353,7 @@ const s3Utils = {
   uploadFromUrl,
   copyObject,
   headObject,
+  checkObject,
   restoreFromVersions,
   keyFromPublicUrl,
   ensureConfigured,

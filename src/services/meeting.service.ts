@@ -188,9 +188,8 @@ function serializeMeeting(row: MeetingRow) {
 }
 
 async function resolveOptionalGuestUserDataId(
-  guestUserDataId: string | null | undefined,
-  profileId: string | null
-): Promise<string | null> {
+  guestUserDataId: string | null | undefined
+): Promise<{ id: string; profileId: string } | null> {
   const id = guestUserDataId?.trim()
   if (!id) return null
   const lead = await prisma.guestUserData.findUnique({
@@ -198,10 +197,9 @@ async function resolveOptionalGuestUserDataId(
     select: { id: true, profileId: true },
   })
   if (!lead) throw new AppError(404, 'Lead not found')
-  if (profileId && lead.profileId !== profileId) {
-    throw new AppError(400, 'Lead does not belong to this card')
-  }
-  return lead.id
+  // Callers re-anchor profileId to the lead's card (corporate linked-card pickers
+  // often send a sibling card id that does not match lead.profileId).
+  return lead
 }
 
 async function resolveOwnerEmails(profileId: string | null | undefined): Promise<{
@@ -740,8 +738,16 @@ const create = async (actor: Actor, input: CreateMeetingInput, actorRole?: strin
   const status = input.status ?? 'Scheduled'
   const timezone = DEFAULT_CAMPAIGN_TIMEZONE
   const startsAt = computeStartsAt(input.date, input.time, timezone)
-  const primaryProfileId = normalized.profileId
-  const guestUserDataId = await resolveOptionalGuestUserDataId(input.guestUserDataId, primaryProfileId)
+  const resolvedGuest = await resolveOptionalGuestUserDataId(input.guestUserDataId)
+  let primaryProfileId = normalized.profileId
+  const guestUserDataId = resolvedGuest?.id || null
+  if (resolvedGuest?.profileId) {
+    primaryProfileId = resolvedGuest.profileId
+    if (primaryProfileId !== normalized.profileId) {
+      const reanchored = { ...normalized, profileId: primaryProfileId }
+      await assertOwnerCanCreateMeeting(actor.id, actorRole, { ...input, profileId: primaryProfileId }, reanchored)
+    }
+  }
   const { emails: ownerEmails } = await resolveOwnerEmails(primaryProfileId)
   const meetLabel = meetLabelForEvent(null)
 

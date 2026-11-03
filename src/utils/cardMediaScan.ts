@@ -1,4 +1,5 @@
 import config from '../configs/config'
+import { areaFromTable } from './mediaAsset'
 import { extractMediaKeys, replaceMediaKeys } from './mediaKeys'
 import { prisma } from './prisma'
 
@@ -140,19 +141,66 @@ async function* iterateCardRows(profileId: string, options?: { skipTables?: Set<
   }
 }
 
+export type CardMediaRef = {
+  key: string
+  /** DB table / column / row the URL was found in. */
+  table: string
+  column: string
+  rowId: string
+  /** Tab / screen: services, portfolio, gallery, about, profile, intro-video … */
+  area: string
+  /** Human label of the item (service title, setting name …) for reports. */
+  label: string | null
+}
+
+const LABEL_COLUMNS = ['title', 'name', 'label', 'key', 'metaKey', 'docName']
+
+/**
+ * Every media reference on this card with its identity: which tab/screen, which
+ * item. Lets a broken file be reported as "Services → Medicare Advantage" instead
+ * of an anonymous URL.
+ */
+export async function collectCardMediaRefs(
+  profileId: string,
+  options?: { skipTables?: Set<string> }
+): Promise<CardMediaRef[]> {
+  const refs: CardMediaRef[] = []
+  const base = config.S3.PUBLIC_BASE_URL || ''
+  for await (const row of iterateCardRows(profileId, options)) {
+    const labelColumn = LABEL_COLUMNS.find((c) => row.values[c])
+    const label = labelColumn ? String(row.values[labelColumn]).slice(0, 200) : null
+    for (const [column, value] of Object.entries(row.values)) {
+      if (!value || column === labelColumn) continue
+      for (const key of extractMediaKeys(value, base)) {
+        const area =
+          row.table.table === 'Setting' && column === 'value'
+            ? areaFromSettingKey(label)
+            : areaFromTable(row.table.table, column)
+        refs.push({ key, table: row.table.table, column, rowId: row.id, area, label })
+      }
+    }
+  }
+  return refs
+}
+
 /** Every bucket key referenced anywhere on this card (all tabs, settings, attachments, …). */
 export async function collectCardMediaKeys(
   profileId: string,
   options?: { skipTables?: Set<string> }
 ): Promise<Set<string>> {
-  const keys = new Set<string>()
-  const base = config.S3.PUBLIC_BASE_URL || ''
-  for await (const row of iterateCardRows(profileId, options)) {
-    for (const value of Object.values(row.values)) {
-      if (value) for (const key of extractMediaKeys(value, base)) keys.add(key)
-    }
-  }
-  return keys
+  return new Set((await collectCardMediaRefs(profileId, options)).map((r) => r.key))
+}
+
+function areaFromSettingKey(settingKey: string | null): string {
+  const k = (settingKey || '').toLowerCase()
+  if (k.includes('intro')) return 'intro-video'
+  if (k.includes('background_music') || k.includes('music')) return 'music'
+  if (k.includes('background')) return 'background'
+  if (k.includes('profile_media') || k.includes('avatar')) return 'profile'
+  if (k.includes('company') || k.includes('office')) return 'company'
+  if (k.includes('seo') || k.includes('favicon') || k.includes('pwa') || k.includes('og_')) return 'seo'
+  if (k.includes('explainer')) return 'explainer'
+  return 'settings'
 }
 
 /**
@@ -204,14 +252,24 @@ export async function collectAllReferencedMediaKeys(): Promise<Set<string>> {
   const base = (config.S3.PUBLIC_BASE_URL || '').replace(/\/+$/, '')
   if (!base) return keys
   const like = `%${base.replace(/[\\%_]/g, (m) => `\\${m}`)}/%`
+  // One sequential scan per table (all its text/json columns at once) instead of one
+  // per column, so the nightly sweep stays light on big tables.
+  const byTable = new Map<string, TextColumn[]>()
   for (const col of await listTextColumns()) {
-    const rows = await prisma.$queryRawUnsafe<Array<{ v: string | null }>>(
-      `SELECT ${quoteIdent(col.column)}::text AS v FROM ${quoteIdent(col.table)}
-        WHERE ${quoteIdent(col.column)}::text LIKE $1`,
+    if (!byTable.has(col.table)) byTable.set(col.table, [])
+    byTable.get(col.table)!.push(col)
+  }
+  for (const [table, cols] of byTable) {
+    const select = cols.map((c, i) => `${quoteIdent(c.column)}::text AS c${i}`).join(', ')
+    const where = cols.map((c) => `${quoteIdent(c.column)}::text LIKE $1`).join(' OR ')
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, string | null>>>(
+      `SELECT ${select} FROM ${quoteIdent(table)} WHERE ${where}`,
       like
     )
     for (const row of rows) {
-      if (row.v) for (const key of extractMediaKeys(row.v, base)) keys.add(key)
+      for (const value of Object.values(row)) {
+        if (value) for (const key of extractMediaKeys(value, base)) keys.add(key)
+      }
     }
   }
   // Bare keys (no base URL) in Attachment.publicId

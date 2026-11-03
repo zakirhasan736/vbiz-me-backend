@@ -33,6 +33,9 @@ export function assertCrmStaffAuthorization(actor: Pick<CrmActor, 'role' | 'allo
 /**
  * Prisma `Profile` where for this actor. `null` = no profile filter (admin platform).
  * Client-supplied owner/company/profile IDs must never replace this.
+ *
+ * - corporate-owner → own card + every linked team-member card
+ * - vcard-owner (single or linked member) → only cards they personally own (userId)
  */
 export function crmProfileWhere(actorId: string, kind: CrmScopeKind): Prisma.ProfileWhereInput | null {
   if (kind === 'admin') return null

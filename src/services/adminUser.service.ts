@@ -894,8 +894,24 @@ const update = async (id: string, body: UpdateAdminUserBody, actor: ActorContext
         where: { id },
         data: { role: toPrismaRole(roleForOwnerMode(targetOwnerMode)) },
       })
+      if (targetOwnerMode === 'corporate') {
+        // Owner cards created as single often have companyUserId null. Without this,
+        // the next card save tries to backfill companyUserId as a scalar on
+        // ProfileUpdateInput (mixed with gender/status connect) and Prisma 500s.
+        // updateMany scalar FK is fine — no nested relation writes here.
+        await prisma.profile.updateMany({
+          where: { userId: user.id, companyUserId: null },
+          data: { companyUserId: user.id },
+        })
+      }
       if (targetOwnerMode === 'single') {
         await prisma.corporateFeatureOverride.deleteMany({ where: { userId: id } })
+        // Drop self-company link on cards this user still personally owns.
+        // Leave true linked-member cards (userId !== this user) untouched.
+        await prisma.profile.updateMany({
+          where: { userId: user.id, companyUserId: user.id },
+          data: { companyUserId: null },
+        })
       } else if (body.featureOverrides !== undefined) {
         await replaceCorporateFeatureOverrides(user.id, roleForOwnerMode(targetOwnerMode), body.featureOverrides)
       }
