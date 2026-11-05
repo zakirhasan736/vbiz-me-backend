@@ -180,11 +180,12 @@ router.post(
     }
 
     // Settings / avatar for singleton file clears, or YouTube-only URL fields (no Attachment rows).
+    // Blank the setting even when no Attachment row matches. Otherwise the next profile
+    // load treats the leftover URL as authoritative and the removed image comes back.
     const youtubeUrlOnlyClear =
       attachmentType === 'Intro YouTube vCard Video Link' || attachmentType === 'YouTube Background Music Link'
     const shouldClearSetting =
-      Boolean(settingKey) &&
-      (youtubeUrlOnlyClear || ((!targetUrl || matched.length > 0) && isSingletonBuilderAttachmentType(attachmentType)))
+      Boolean(settingKey) && (youtubeUrlOnlyClear || isSingletonBuilderAttachmentType(attachmentType))
     if (shouldClearSetting && settingKey) {
       await prisma.setting.upsert({
         where: { profileId_key: { profileId, key: settingKey } },
@@ -193,7 +194,7 @@ router.post(
       })
     }
 
-    if (attachmentType === 'Profile Image/Video' && !targetUrl) {
+    if (attachmentTypeNameMatches(attachmentType, 'Profile Image/Video')) {
       await prisma.profile.update({
         where: { id: profileId },
         data: { avatar: null },
