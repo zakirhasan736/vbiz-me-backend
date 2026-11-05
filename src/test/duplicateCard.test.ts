@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { shouldRetireCardLogin } from '../utils/cardLoginRetirement'
 import {
   blankDuplicatedIdentityFields,
   cloneRecord,
@@ -444,5 +445,18 @@ describe('remapDuplicatedCardSettings', () => {
     assert.equal(myInfo.phone, '')
     assert.equal(myInfo.email, '')
     assert.equal(myInfo.whatsapp, '+1 202 555 0101')
+  })
+})
+
+describe('card login retirement', () => {
+  it('retires a single owner or team member after their last card is deleted', () => {
+    assert.equal(shouldRetireCardLogin({ role: 'vcard-owner', remainingCards: 0 }), true)
+    assert.equal(shouldRetireCardLogin({ role: 'vcard-owner', remainingCards: 1 }), false)
+  })
+
+  it('keeps the corporate owner and staff logins when a card is deleted', () => {
+    assert.equal(shouldRetireCardLogin({ role: 'corporate-owner', remainingCards: 0 }), false)
+    assert.equal(shouldRetireCardLogin({ role: 'admin', remainingCards: 0 }), false)
+    assert.equal(shouldRetireCardLogin({ role: 'super-admin', remainingCards: 0 }), false)
   })
 })

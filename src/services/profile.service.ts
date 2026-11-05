@@ -31,6 +31,7 @@ import {
   normalizeCardEmail,
   type CardActivationInput,
 } from '../utils/cardActivation'
+import { shouldRetireCardLogin } from '../utils/cardLoginRetirement'
 import {
   ensureStatusByName,
   isCardLifecycleStatus,
@@ -931,6 +932,8 @@ export type CardCapacity = {
   used: number
   remaining: number | null
   canCreate: boolean
+  /** Linked corporate team member: one assigned card, no create or duplicate. */
+  memberLocked?: boolean
 }
 
 export type ProfileListPage = {
@@ -1060,11 +1063,12 @@ const getCardCapacity = async (userId: string, role: string): Promise<CardCapaci
     return { limit: null, used, remaining: null, canCreate: true }
   }
 
-  // Every linked team-member login shares that corporate owner's seat pool (used + limit).
+  // A linked team member keeps the one card the company owner assigned. They do not spend company seats.
   if (role === 'vcard-owner') {
     const parentId = await findLinkedCorporateParentUserId(userId)
     if (parentId) {
-      return getCardCapacity(parentId, 'corporate-owner')
+      const used = await prisma.profile.count({ where: { userId } })
+      return { limit: 1, used, remaining: 0, canCreate: false, memberLocked: true }
     }
   }
 
@@ -1091,6 +1095,14 @@ const assertCanCreateCard = async (userId: string, role: string) => {
   if (isStaff(role) || isAdminRole(role)) return
   const capacity = await getCardCapacity(userId, role)
   if (capacity.canCreate) return
+
+  if (capacity.memberLocked) {
+    throw featureLimitReachedError(
+      'Corporate team members can have only the card assigned by the company owner.',
+      { limit: capacity.limit, used: capacity.used, remaining: capacity.remaining },
+      { code: FEATURE_LIMIT_REACHED }
+    )
+  }
 
   const entitlements = await getEffectiveEntitlements(userId, role)
   const { used, limit, remaining } = capacity
@@ -2095,6 +2107,9 @@ const duplicate = async (
     designation?: string | null
   }
 ) => {
+  if (role === 'vcard-owner' && (await findLinkedCorporateParentUserId(userId))) {
+    throw new AppError(403, 'Corporate team members can have only the card assigned by the company owner.')
+  }
   const source = await getOwned(profileId, userId, role)
   const isStaffActor = isStaff(role) || isAdminRole(role)
   const corporateParentId = await resolveCorporateParentUserId(source, userId, role)
@@ -2720,9 +2735,30 @@ const update = async (
   return updated
 }
 
+const retireCardLoginIfOrphaned = async (cardOwnerId: string | null) => {
+  if (!cardOwnerId) return
+  const owner = await prisma.user.findUnique({
+    where: { id: cardOwnerId },
+    select: { id: true, role: true, deletedAt: true },
+  })
+  if (!owner || owner.deletedAt) return
+  const remainingCards = await prisma.profile.count({ where: { userId: cardOwnerId } })
+  if (!shouldRetireCardLogin({ role: toApiRole(owner.role), remainingCards })) return
+  await prisma.user.update({
+    where: { id: owner.id },
+    data: {
+      deletedAt: new Date(),
+      isActive: false,
+      accountStatus: AccountStatus.SUSPENDED,
+    },
+  })
+}
+
 const remove = async (profileId: string, userId: string, role: string) => {
-  await getOwnedForWrite(profileId, userId, role)
+  const profile = await getOwnedForWrite(profileId, userId, role)
+  const cardOwnerId = typeof profile.userId === 'string' ? profile.userId : null
   await prisma.profile.delete({ where: { id: profileId } })
+  await retireCardLoginIfOrphaned(cardOwnerId)
   return { id: profileId, deleted: true }
 }
 
