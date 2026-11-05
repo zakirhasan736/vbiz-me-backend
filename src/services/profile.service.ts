@@ -100,15 +100,9 @@ import { copyAllCardMediaToOwnKeys } from '../utils/duplicateCardMedia'
 import { fillMissingGalleryMedia, listGalleriesForProfile, toGalleryWriteData } from '../utils/galleryMedia'
 import liveClicksHub, { type LiveSocialClickRow } from '../utils/liveClicksHub'
 import logger from '../utils/logger'
-import { catalogGateForWallpaperChange, catalogGatesForSettingChange } from '../utils/mediaFeatureGates'
 import { mediaFrameColumnValue } from '../utils/mediaFrame'
 import { ensureAbsoluteMediaUrl } from '../utils/mediaUrl'
-import {
-  canCreateAnotherCard,
-  countFilledExtraFields,
-  countFilledSocialLinks,
-  remainingCardSlots,
-} from '../utils/packageLimits'
+import { canCreateAnotherCard, remainingCardSlots } from '../utils/packageLimits'
 import { prisma } from '../utils/prisma'
 import {
   isPrismaColumnMismatch,
@@ -130,12 +124,7 @@ import {
 } from '../utils/pushAreaDeepLink'
 import { recordCardChange, recordCollectionChange } from '../utils/recordCardChange'
 import announcementService from './announcement.service'
-import {
-  assertCatalogFeatureGate,
-  assertCountWithinPackageLimit,
-  findLinkedCorporateParentUserId,
-  getEffectiveEntitlements,
-} from './entitlement.service'
+import { findLinkedCorporateParentUserId, getEffectiveEntitlements } from './entitlement.service'
 import exactOwnerNotifyService from './exactOwnerNotify.service'
 import pushService from './push.service'
 import { normalizeSeoSettings } from './seoMetadata.service'
@@ -2525,8 +2514,7 @@ const update = async (
     }
   }
 
-  // Complete entitlement validation before changing the parent Profile. A denied
-  // setting must not leave scalar fields partially saved behind an error response.
+  // Card Settings and tab settings are not package-gated (wallpaper, media, SEO, extra fields).
   let existingSettingsMap: Map<string, string | null> | null = null
   if (normalizedSettings) {
     const existingSettings = await safePrismaQuery(
@@ -2534,31 +2522,6 @@ const update = async (
       [] as Array<{ key: string; value: string }>
     )
     existingSettingsMap = new Map(existingSettings.map((row) => [row.key, row.value]))
-    if ('extra_fields_json' in normalizedSettings) {
-      const nextCount = countFilledExtraFields(normalizedSettings.extra_fields_json)
-      const currentCount = countFilledExtraFields(existingSettingsMap.get('extra_fields_json'))
-      if (nextCount > currentCount) {
-        await assertCountWithinPackageLimit(userId, role, 'maxExtraFields', nextCount)
-      }
-    }
-    for (const [key, value] of Object.entries(normalizedSettings)) {
-      const gates = catalogGatesForSettingChange(key, value, existingSettingsMap.get(key))
-      for (const gate of gates) {
-        await assertCatalogFeatureGate(userId, role, gate)
-      }
-    }
-  }
-
-  if (profileSettings?.themeConfig !== undefined) {
-    const existingTheme = await safePrismaQuery(
-      () => prisma.profileSetting.findUnique({ where: { profileId }, select: { themeConfig: true } }),
-      null as { themeConfig: unknown } | null
-    )
-    const wallpaperGate = catalogGateForWallpaperChange(
-      profileSettings.themeConfig,
-      existingTheme?.themeConfig ?? currentProfile.themeConfig
-    )
-    if (wallpaperGate) await assertCatalogFeatureGate(userId, role, wallpaperGate)
   }
 
   try {
@@ -2794,17 +2757,6 @@ const replaceCollection = async <T extends Record<string, unknown>>(
       next.mediaFrame = mediaFrameColumnValue(next.mediaFrame)
     }
     return next
-  }
-  if (kind === 'socialLinks') {
-    const nextCount = countFilledSocialLinks(items)
-    const existing = await prisma.socialLink.findMany({
-      where: { profileId },
-      select: { name: true, url: true },
-    })
-    const currentCount = countFilledSocialLinks(existing)
-    if (nextCount > currentCount) {
-      await assertCountWithinPackageLimit(userId, role, 'maxSocialLinks', nextCount)
-    }
   }
   const delegate = COLLECTION_DELEGATE[kind]
   const collectionClient = prisma as unknown as Record<

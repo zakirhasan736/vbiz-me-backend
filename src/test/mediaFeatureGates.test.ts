@@ -44,35 +44,23 @@ describe('media catalog gates', () => {
     assert.equal(guessUploadedKind({ mimetype: 'audio/mpeg', filename: 'loop.mp3' }), 'audio')
   })
 
-  it('locks newly filled YouTube and music setting URLs without touching existing values', () => {
-    const introGates = catalogGatesForSettingChange('intro_youtube_url', 'https://youtu.be/abc', '')
-    assert.equal(introGates.length, 1)
-    assert.deepEqual(introGates[0], { all: ['allow_intro_video_upload'] })
-    assert.deepEqual(
-      catalogGatesForSettingChange('intro_youtube_url', 'https://youtu.be/abc', 'https://youtu.be/abc'),
-      []
-    )
-    assert.deepEqual(catalogGatesForSettingChange('intro_youtube_url', '', 'https://youtu.be/abc'), [])
-  })
-
-  it('reads nested display-settings media fields', () => {
+  it('does not package-gate card setting media URLs', () => {
+    assert.deepEqual(catalogGatesForSettingChange('intro_youtube_url', 'https://youtu.be/abc', ''), [])
+    assert.deepEqual(catalogGatesForSettingChange('background_music_file_url', 'https://cdn.example.com/a.mp3', ''), [])
     const previous = JSON.stringify({ fields: { 'Intro vCard Video': { customValue: '' } } })
     const next = JSON.stringify({
       fields: { 'Intro vCard Video': { customValue: 'https://cdn.example.com/intro.mp4' } },
     })
-    const gates = catalogGatesForSettingChange('display_settings_json', next, previous)
-    assert.deepEqual(gates, [{ all: ['allow_intro_video_upload'] }])
+    assert.deepEqual(catalogGatesForSettingChange('display_settings_json', next, previous), [])
   })
 
-  it('locks switching wallpaper style to video', () => {
-    assert.deepEqual(
+  it('does not package-gate wallpaper style changes', () => {
+    assert.equal(
       catalogGateForWallpaperChange({ wallpaper: { style: 'video' } }, { wallpaper: { style: 'image' } }),
-      {
-        all: ['allow_background_video_upload'],
-      }
+      null
     )
     assert.equal(
-      catalogGateForWallpaperChange({ wallpaper: { style: 'video' } }, { wallpaper: { style: 'video' } }),
+      catalogGateForWallpaperChange({ wallpaper: { style: 'fill' } }, { wallpaper: { style: 'gradient' } }),
       null
     )
   })

@@ -1,13 +1,11 @@
 import type { RequestHandler } from 'express'
 import AppError from '../error/AppError'
 import * as canvaService from '../services/canva/canva.service'
-import { assertUserPackageAccess } from '../services/entitlement.service'
 import catchAsyncError from '../utils/catchAsyncError'
 import sendResponse from '../utils/sendResponse'
 
 async function requireCanvaAccess(user?: Express.User) {
   if (!user?.id) throw new AppError(403, 'Unauthorized')
-  await assertUserPackageAccess(user.id, user.role, 'allow_canva')
 }
 
 const status = catchAsyncError(async (req, res) => {

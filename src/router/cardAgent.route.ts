@@ -180,7 +180,6 @@ router.post(
   '/generate-seo',
   catchAsyncError(async (req, res) => {
     if (!req.user?.id) throw new AppError(403, 'Unauthorized')
-    await assertUserPackageAccess(req.user.id, req.user.role, 'allow_seo')
     rateLimitOrThrow(req, 'fill', 40)
     const data = await cardAgentService.generateSeo(req.body, req.user?.id)
     sendResponse(res, {

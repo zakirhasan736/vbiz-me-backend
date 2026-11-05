@@ -58,83 +58,23 @@ export function mediaUploadCatalogGate(input: {
   return null
 }
 
-const SETTING_GATES: Record<string, MediaCatalogGate | ((value: string) => MediaCatalogGate | null)> = {
-  intro_youtube_url: { all: ['allow_intro_video_upload'] },
-  intro_video_url: { all: ['allow_intro_video_upload'] },
-  background_music_url: { all: ['allow_yt_bg_music_upload'] },
-  background_music_file_url: { all: ['allow_music_upload', 'allow_bg_music_upload'] },
-  background_media_url: (value) => (isVideoLikeUrl(value) ? { all: ['allow_background_video_upload'] } : null),
-  profile_media_url: (value) => (isVideoLikeUrl(value) ? { all: ['allow_video_upload'] } : null),
-}
-
-const DISPLAY_FIELD_GATES: Record<string, MediaCatalogGate | ((value: string) => MediaCatalogGate | null)> = {
-  'Intro YouTube vCard Video Link': SETTING_GATES.intro_youtube_url,
-  'Intro vCard Video': SETTING_GATES.intro_video_url,
-  'YouTube Background Music Link': SETTING_GATES.background_music_url,
-  'Background Music': SETTING_GATES.background_music_file_url,
-  'Background Video/Image': SETTING_GATES.background_media_url,
-  'Profile Image/Video': SETTING_GATES.profile_media_url,
-}
-
-function resolveGate(
-  spec: MediaCatalogGate | ((value: string) => MediaCatalogGate | null) | undefined,
-  value: string
-): MediaCatalogGate | null {
-  if (!spec) return null
-  return typeof spec === 'function' ? spec(value) : spec
-}
-
-function isNewlyFilled(next: string, previous: string | null | undefined): boolean {
-  const value = next.trim()
-  if (!value) return false
-  return value !== (previous || '').trim()
-}
-
-function displayFieldValue(raw: string | null | undefined, label: string): string {
-  if (!raw) return ''
-  try {
-    const parsed = JSON.parse(raw) as { fields?: Record<string, { customValue?: string | null }> }
-    return String(parsed?.fields?.[label]?.customValue || '').trim()
-  } catch {
-    return ''
-  }
-}
-
-function wallpaperStyle(themeConfig: unknown): string {
-  if (!themeConfig || typeof themeConfig !== 'object') return ''
-  const wallpaper = (themeConfig as { wallpaper?: { style?: unknown } }).wallpaper
-  return typeof wallpaper?.style === 'string' ? wallpaper.style.trim().toLowerCase() : ''
-}
-
 export function catalogGatesForSettingChange(
   key: string,
   nextValue: string,
   previousValue?: string | null
 ): MediaCatalogGate[] {
-  const next = (nextValue || '').trim()
-  if (!isNewlyFilled(next, previousValue)) return []
-
-  if (key === 'display_settings_json') {
-    const gates: MediaCatalogGate[] = []
-    for (const [label, spec] of Object.entries(DISPLAY_FIELD_GATES)) {
-      const fieldNext = displayFieldValue(next, label)
-      const fieldPrev = displayFieldValue(previousValue, label)
-      if (!isNewlyFilled(fieldNext, fieldPrev)) continue
-      const gate = resolveGate(spec, fieldNext)
-      if (gate) gates.push(gate)
-    }
-    return gates
-  }
-
-  const gate = resolveGate(SETTING_GATES[key], next)
-  return gate ? [gate] : []
+  // Card Settings / tab settings (wallpaper, intro, music, profile and cover media) are not package-gated.
+  void key
+  void nextValue
+  void previousValue
+  return []
 }
 
 export function catalogGateForWallpaperChange(nextTheme: unknown, previousTheme: unknown): MediaCatalogGate | null {
-  const next = wallpaperStyle(nextTheme)
-  const previous = wallpaperStyle(previousTheme)
-  if (next !== 'video' || previous === 'video') return null
-  return { all: ['allow_background_video_upload'] }
+  // Fill, gradient, blur, pattern, image, and video are available on every plan.
+  void nextTheme
+  void previousTheme
+  return null
 }
 
 export function firstDeniedFeatureKey(gate: MediaCatalogGate, allowed: (key: string) => boolean): string {
