@@ -26,13 +26,17 @@ describe('profile persistence safeguards', () => {
     assert.match(profileService, /where: \{ creationKey, createdById: userId \}/)
   })
 
-  it('completes settings entitlement checks before updating the parent profile', () => {
+  it('saves card settings without a package entitlement gate', () => {
     const updateStart = profileService.indexOf('const update = async')
     const updateBody = profileService.slice(updateStart)
-    const validation = updateBody.indexOf('Complete entitlement validation before changing the parent Profile')
+    const note = updateBody.indexOf('Card Settings and tab settings are not package-gated')
     const parentWrite = updateBody.indexOf('await prisma.profile.update')
-    assert.ok(validation >= 0)
-    assert.ok(parentWrite > validation)
+    assert.ok(note >= 0)
+    assert.ok(parentWrite > note)
+    assert.doesNotMatch(
+      updateBody,
+      /assertCatalogFeatureGate|catalogGateForWallpaperChange|catalogGatesForSettingChange|assertCountWithinPackageLimit/
+    )
   })
 
   it('backfills corporate companyUser via relation connect, not scalar companyUserId', () => {

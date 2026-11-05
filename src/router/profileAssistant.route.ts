@@ -5,6 +5,7 @@ import AppError from '../error/AppError'
 import authMiddleware from '../middlewares/authValidation'
 import { assertProfileAccess } from '../middlewares/ownership'
 import { checkAiRateLimit } from '../services/ai/rateLimit'
+import { assertUserPackageAccess } from '../services/entitlement.service'
 import type { IUserInfoRequest } from '../utils/catchAsyncError'
 
 const router = Router({ mergeParams: true })
@@ -40,21 +41,44 @@ function assistantRateLimit(limit: number) {
   }
 }
 
+async function requireAiAssistance(req: Request, _res: Response, next: NextFunction) {
+  try {
+    const user = (req as IUserInfoRequest).user
+    if (!user?.id) throw new AppError(403, 'Unauthorized')
+    await assertUserPackageAccess(user.id, user.role, 'allow_ai_assistance')
+    next()
+  } catch (error) {
+    next(error)
+  }
+}
+
 router.use(assertProfileAccess)
 router.get('/config', profileAssistantController.getConfig)
-router.patch('/config', authMiddleware.requireVcardMutable, profileAssistantController.updateConfig)
+router.patch(
+  '/config',
+  authMiddleware.requireVcardMutable,
+  requireAiAssistance,
+  profileAssistantController.updateConfig
+)
 router.get('/knowledge', profileAssistantController.listKnowledge)
 router.post(
   '/knowledge/extract',
   authMiddleware.requireVcardMutable,
+  requireAiAssistance,
   assistantRateLimit(12),
   optionalMultipart,
   profileAssistantController.extractKnowledge
 )
-router.delete('/knowledge/:id', authMiddleware.requireVcardMutable, profileAssistantController.deleteKnowledge)
+router.delete(
+  '/knowledge/:id',
+  authMiddleware.requireVcardMutable,
+  requireAiAssistance,
+  profileAssistantController.deleteKnowledge
+)
 router.post(
   '/fill-section',
   authMiddleware.requireVcardMutable,
+  requireAiAssistance,
   assistantRateLimit(20),
   optionalMultipart,
   profileAssistantController.fillSection
