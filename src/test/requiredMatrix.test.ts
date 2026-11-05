@@ -281,7 +281,7 @@ describe('required matrix: PACKAGE CHANGES', () => {
       features: flags({ allow_auto_card_builder: '1', max_cards: '5' }),
       subscription: { id: 'sub', quantity: 5, endsAt: null },
     })
-    assert.equal(professional.access.allow_auto_card_builder, false)
+    assert.equal(professional.access.allow_auto_card_builder, true)
     assert.equal(concierge.access.allow_auto_card_builder, true)
     assert.equal(concierge.limits.maxCards, 5)
   })
@@ -328,9 +328,12 @@ describe('required matrix: CORPORATE', () => {
   })
 
   it('keeps push notification and Canva on for every package even when the flag is off', () => {
-    const free = entitlementsFromFeatures(flags({ allow_push_notification: '0', allow_canva: '0' }))
+    const free = entitlementsFromFeatures(
+      flags({ allow_push_notification: '0', allow_canva: '0', allow_auto_card_builder: '0' })
+    )
     assert.equal(free.allow_push_notification, true)
     assert.equal(free.allow_canva, true)
+    assert.equal(free.allow_auto_card_builder, true)
 
     const locked = buildEffectiveEntitlements({
       role: 'vcard-owner',
@@ -351,7 +354,9 @@ describe('required matrix: CORPORATE', () => {
     })
     assert.equal(unpaid.subscriptionActive, false)
     assert.equal(unpaid.access.allow_push_notification, true)
+    assert.equal(unpaid.access.allow_auto_card_builder, true)
     assert.equal(isCatalogFeatureAllowed(unpaid, 'allow_push_notification'), true)
+    assert.equal(isCatalogFeatureAllowed(unpaid, 'allow_auto_card_builder'), true)
   })
 
   it('Remove override → global value inherited again', () => {

@@ -80,6 +80,8 @@ describe('central entitlement service', () => {
     assert.equal(result.access.allow_canva, true)
     assert.equal(result.access.allow_seo, true)
     assert.equal(result.access.allow_crm, true)
+    assert.equal(result.access.allow_auto_card_builder, true)
+    assert.equal(result.access.allow_ai_assistance, false)
     assert.equal(result.limits.maxCards, 1)
   })
 
