@@ -14,7 +14,6 @@ import { resolveOwnerMode } from '../constants/packageOwnerMode'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
-import { isSlugRename, recordSlugRename, releaseSlugAlias } from '../utils/slugRedirects'
 import {
   ABOUT_ME_MEDIA_FOCUS_Y_KEY,
   clampAboutMeMediaFocusY,
@@ -125,6 +124,7 @@ import {
   renderPushAreaBody,
 } from '../utils/pushAreaDeepLink'
 import { recordCardChange, recordCollectionChange } from '../utils/recordCardChange'
+import { isSlugRename, recordSlugRename, releaseSlugAlias } from '../utils/slugRedirects'
 import announcementService from './announcement.service'
 import { findLinkedCorporateParentUserId, getEffectiveEntitlements } from './entitlement.service'
 import exactOwnerNotifyService from './exactOwnerNotify.service'
