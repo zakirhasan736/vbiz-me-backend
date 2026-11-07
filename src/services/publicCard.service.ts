@@ -2024,13 +2024,41 @@ type BootstrapPayload = {
 }
 
 const BOOTSTRAP_TTL_MS = 15_000
-const bootstrapCache = new Map<string, { expiresAt: number; value: BootstrapPayload }>()
+/** Bound memory; Map insertion order makes the first key the least recently used. */
+const BOOTSTRAP_CACHE_MAX_ENTRIES = 1000
+/**
+ * Keyed by profile id. Previously this map was cleared on every write, so it only ever
+ * held one card and every request during a crawl burst rebuilt the payload from the DB.
+ */
+const bootstrapCache = new Map<string, { updatedAtMs: number; expiresAt: number; value: BootstrapPayload }>()
+
+function readBootstrapCache(profileId: string, updatedAtMs: number): BootstrapPayload | null {
+  const cached = bootstrapCache.get(profileId)
+  if (!cached) return null
+  if (cached.updatedAtMs !== updatedAtMs || cached.expiresAt <= Date.now()) {
+    bootstrapCache.delete(profileId)
+    return null
+  }
+  bootstrapCache.delete(profileId)
+  bootstrapCache.set(profileId, cached)
+  return cached.value
+}
+
+function writeBootstrapCache(profileId: string, updatedAtMs: number, value: BootstrapPayload) {
+  bootstrapCache.delete(profileId)
+  bootstrapCache.set(profileId, { updatedAtMs, expiresAt: Date.now() + BOOTSTRAP_TTL_MS, value })
+  while (bootstrapCache.size > BOOTSTRAP_CACHE_MAX_ENTRIES) {
+    const oldest = bootstrapCache.keys().next().value
+    if (oldest === undefined) break
+    bootstrapCache.delete(oldest)
+  }
+}
 
 const getPublicBootstrap = async (slug: string): Promise<BootstrapPayload> => {
   const profile = await getProfileBySlugOrThrow(slug)
-  const cacheKey = `${profile.id}:${profile.updatedAt.getTime()}`
-  const cached = bootstrapCache.get(cacheKey)
-  if (cached && cached.expiresAt > Date.now()) return cached.value
+  const updatedAtMs = profile.updatedAt.getTime()
+  const cached = readBootstrapCache(profile.id, updatedAtMs)
+  if (cached) return cached
 
   const validatedProfile = { id: profile.id, legacyId: profile.legacyId, isPublic: profile.isPublic }
   const settings = {
@@ -2076,8 +2104,7 @@ const getPublicBootstrap = async (slug: string): Promise<BootstrapPayload> => {
     settings,
     sections: Object.fromEntries(sectionEntries),
   }
-  bootstrapCache.clear()
-  bootstrapCache.set(cacheKey, { expiresAt: Date.now() + BOOTSTRAP_TTL_MS, value })
+  writeBootstrapCache(profile.id, updatedAtMs, value)
   return value
 }
 
@@ -2248,6 +2275,8 @@ const getPublicCards = async (query: {
       image_type: media.image_type,
       is_video: media.is_video,
       profile_url: p.slug ? buildFrontendPublicCardPath(p.slug) : null,
+      // Sitemap <lastmod>: without this every card got the sitemap build time.
+      updated_at: p.updatedAt.toISOString(),
     }
   })
 
