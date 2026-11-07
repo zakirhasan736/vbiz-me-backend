@@ -17,6 +17,12 @@ export const publicRateLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, data: null, error: 'Too many requests' },
   validate: { xForwardedForHeader: false },
+  /**
+   * Never rate-limit our own Next SSR (verified by INTERNAL_PUBLIC_API_KEY). A 429 here makes
+   * the public card page soft-fail to an empty HTML shell, which is what Googlebot then sees
+   * during crawl bursts. Abuse protection for SSR belongs at the edge (nginx), keyed by client IP.
+   */
+  skip: (req) => isTrustedInternalPublicRequest(req),
   keyGenerator: (req) => {
     if (isTrustedInternalPublicRequest(req)) return 'internal-ssr'
     return ipKeyGenerator(req.ip || req.socket.remoteAddress || '0.0.0.0')

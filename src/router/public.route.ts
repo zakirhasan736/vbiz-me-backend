@@ -29,6 +29,7 @@ router.use(publicRateLimiter)
 
 router.get('/v/:slug', publicController.getMyCard)
 router.get('/v/:slug/bootstrap', publicController.getBootstrap)
+router.get('/v/:slug/redirect', publicController.getSlugRedirect)
 router.get('/cards/:slug/bootstrap', publicController.getBootstrap)
 router.get('/post-types', publicController.getPostTypes)
 router.get('/profiles/:id/settings', publicController.getSettings)

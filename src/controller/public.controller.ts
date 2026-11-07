@@ -11,6 +11,7 @@ import { logPublicSectionMedia } from '../utils/logPublicSectionMedia'
 import { parseListQuery } from '../utils/pagination'
 import { getPublicViewerIdentity } from '../utils/publicVisitor'
 import sendPublicResponse from '../utils/sendPublicResponse'
+import { resolveSlugRedirect } from '../utils/slugRedirects'
 
 const param = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
 
@@ -25,6 +26,16 @@ const getBootstrap = catchAsyncError(async (req, res) => {
   const data = await publicCardService.getPublicBootstrap(param(req.params.slug))
   res.setHeader('Cache-Control', 'no-store')
   sendPublicResponse(res, { success: true, data })
+})
+
+/** Old card address → current slug, so the frontend can 301 renamed cards instead of 404ing. */
+const getSlugRedirect = catchAsyncError(async (req, res) => {
+  const slug = await resolveSlugRedirect(param(req.params.slug))
+  res.setHeader('Cache-Control', 'no-store')
+  if (!slug) {
+    return sendPublicResponse(res, { success: false, data: null, error: 'No redirect for this address' }, 404)
+  }
+  sendPublicResponse(res, { success: true, data: { slug } })
 })
 
 const getPostTypes = catchAsyncError(async (req, res) => {
@@ -334,6 +345,7 @@ const trackEvent = catchAsyncError(async (req, res) => {
 const publicController = {
   getMyCard,
   getBootstrap,
+  getSlugRedirect,
   getPostTypes,
   getSettings,
   getProfileAnnouncement,
