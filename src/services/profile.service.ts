@@ -14,6 +14,7 @@ import { resolveOwnerMode } from '../constants/packageOwnerMode'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
+import { isSlugRename, recordSlugRename, releaseSlugAlias } from '../utils/slugRedirects'
 import {
   ABOUT_ME_MEDIA_FOCUS_Y_KEY,
   clampAboutMeMediaFocusY,
@@ -1713,6 +1714,9 @@ const create = async (
     }
   }
 
+  // A new card that takes an old address of another card owns it from now on.
+  await releaseSlugAlias(slug)
+
   const created = await loadProfileDetail({ id: profile.id })
   if (!created) throw new AppError(404, 'Profile not found')
   return created
@@ -2550,6 +2554,11 @@ const update = async (
       code: 'PROFILE_EMAIL_CONFLICT',
       data: { field: 'email' },
     })
+  }
+
+  // Keep the old public address alive as a 301 so Google and shared links follow the rename.
+  if (typeof profileData.slug === 'string' && currentProfile && isSlugRename(currentProfile.slug, profileData.slug)) {
+    await recordSlugRename(profileId, currentProfile.slug, profileData.slug)
   }
 
   if ('address' in raw || 'zipCode' in raw) {

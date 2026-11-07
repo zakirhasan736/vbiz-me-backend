@@ -11,6 +11,7 @@ const EXPECTED_PUBLIC_ROUTES = [
   'POST /track-event',
   'GET /v/:slug',
   'GET /v/:slug/bootstrap',
+  'GET /v/:slug/redirect',
   'GET /cards/:slug/bootstrap',
   'GET /post-types',
   'GET /profiles/:id/settings',

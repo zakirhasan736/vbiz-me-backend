@@ -424,6 +424,7 @@ model Profile {
   oneOnOneRequests    OneOnOneRequest[]
   auditLogs           AuditLog[]
   changeHistories     CardChangeHistory[]
+  slugRedirects       ProfileSlugRedirect[]
   dailyBackups        CardDailyBackup[]
   birthdayWishLogs    BirthdayWishLog[]
   aiGenerationLogs    AiGenerationLog[]
@@ -2389,4 +2390,15 @@ model MediaAsset {
 
   @@index([profileId, status])
   @@index([status])
+}
+
+/// Old public card addresses (/vCard/{oldSlug}) that 301 to the card's current slug after a rename.
+model ProfileSlugRedirect {
+  id        String   @id @default(cuid())
+  oldSlug   String   @unique
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([profileId])
 }
