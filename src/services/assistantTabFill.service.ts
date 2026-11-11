@@ -7,6 +7,7 @@ import { chatJson } from './ai/openai.client'
 import { preferFullPastedBodies } from './ai/preferFullPastedBodies'
 import {
   buildTabFillSystemPrompt,
+  describeTabFillContext,
   parseSupportedTabScope,
   parseTabFillBodyMode,
   type TabFillBodyMode,
@@ -35,8 +36,11 @@ export async function fillProfileSection(input: {
   files?: UploadedPart[]
   /** as_written (default) keeps full pasted body; summarize asks AI for a short polished body. */
   bodyMode?: unknown
+  /** `{ tabName, fields }` for the generic "entries" / "content" scopes. */
+  context?: unknown
 }) {
   const scope = parseSupportedTabScope(input.scope)
+  const tabContext = describeTabFillContext(input.context)
   const bodyMode: TabFillBodyMode = parseTabFillBodyMode(input.bodyMode)
   const pastedText = String(input.text || '').trim()
   const files = input.files || []
@@ -60,6 +64,7 @@ export async function fillProfileSection(input: {
   const prepared = await prepareTabFillSources(files)
   const system = buildTabFillSystemPrompt(scope, bodyMode)
   const userText = [
+    tabContext,
     `CURRENT PUBLIC CARD (context only; output remains limited to "${scope}"):\n${JSON.stringify(currentProfile)}`,
     `BODY MODE: ${bodyMode === 'summarize' ? 'summarize (short polished body)' : 'as_written (keep full pasted wording)'}`,
     pastedText ? `PASTED TEXT:\n${pastedText}` : '',

@@ -103,6 +103,29 @@ const fillFaqItemSchema = z.object({
   url: z.string().optional().default(''),
 })
 
+/**
+ * Generic list item for every tab without a dedicated schema (section-post tabs such as
+ * Additional Services, Events, Menu, Clients…, certificates, and custom tabs). The editor
+ * sends the tab name and its fields as context; fields a tab doesn't use come back empty.
+ */
+const fillEntryItemSchema = z.object({
+  title: z.string().optional().default(''),
+  subtitle: z.string().optional().default(''),
+  description: z.string().optional().default(''),
+  url: z.string().optional().default(''),
+  imageUrl: z.string().optional().default(''),
+  date: z.string().optional().default(''),
+  location: z.string().optional().default(''),
+  price: z.string().optional().default(''),
+  offerPrice: z.string().optional().default(''),
+})
+
+/** One heading + body for single-item tabs (About Me, Mission Statement, Why Choose Us…). */
+const fillContentSchema = z.object({
+  title: z.string().optional().default(''),
+  description: z.string().optional().default(''),
+})
+
 const personalFillSchema = z.object({
   fullName: z.string().optional().default(''),
   email: z.string().optional().default(''),
@@ -131,6 +154,8 @@ export const fillSectionSchemas = {
   education: z.object({ education: z.array(fillEducationItemSchema).default([]) }),
   experience: z.object({ experience: z.array(fillExperienceItemSchema).default([]) }),
   faqs: z.object({ faqs: z.array(fillFaqItemSchema).default([]) }),
+  entries: z.object({ entries: z.array(fillEntryItemSchema).default([]) }),
+  content: z.object({ content: fillContentSchema.default({}) }),
   personal: z.object({
     personal: personalFillSchema.default({}),
     socialHandles: socialHandlesSchema.optional().default({}),
@@ -149,6 +174,8 @@ export const FILL_SECTION_SCHEMA_HINTS: Record<FillSectionId, string> = {
   education: `{ "education": [{ "institute": "", "degree": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
   experience: `{ "experience": [{ "company": "", "jobTitle": "", "description": "", "fromDate": "", "toDate": "", "tillNow": false }] }`,
   faqs: `{ "faqs": [{ "question": "", "answer": "full answer as HTML paragraphs when multi-paragraph", "imageUrl": "", "url": "" }] }`,
+  entries: `{ "entries": [{ "title": "", "subtitle": "issuer, organization or short tagline (optional)", "description": "full write-up as HTML paragraphs", "url": "", "imageUrl": "", "date": "YYYY-MM-DD or as written", "location": "", "price": "", "offerPrice": "" }] }`,
+  content: `{ "content": { "title": "short heading", "description": "the full body as HTML paragraphs" } }`,
   personal: `{ "personal": { "fullName": "", "email": "", "dob": "YYYY-MM-DD", "phone": "", "designation": "", "company": "", "about": "", "website": "", "address": "" }, "socialHandles": {} }`,
   seo: `{ "seo": { "metaTitle": "", "metaDescription": "", "keywords": ["business phrase", "service phrase"] } }`,
 }
@@ -166,6 +193,12 @@ export function countFillEntries(section: FillSectionId, payload: Record<string,
     return String(value.metaTitle || '').trim().length > 0 || String(value.metaDescription || '').trim().length > 0
       ? 1
       : 0
+  }
+  if (section === 'content') {
+    const content = payload.content
+    if (!content || typeof content !== 'object') return 0
+    const value = content as Record<string, unknown>
+    return String(value.title || '').trim() || String(value.description || '').trim() ? 1 : 0
   }
   const rows = payload[section]
   if (!Array.isArray(rows)) return 0
