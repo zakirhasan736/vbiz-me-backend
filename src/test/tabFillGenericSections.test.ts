@@ -19,7 +19,10 @@ describe('generic tab fill sections', () => {
 
   it('parses list entries with optional fields defaulting to empty', () => {
     const parsed = fillSectionSchemas.entries.parse({
-      entries: [{ title: 'Spring Gala', description: '<p>Annual dinner.</p>', date: '2026-04-12' }, { title: 'Open House' }],
+      entries: [
+        { title: 'Spring Gala', description: '<p>Annual dinner.</p>', date: '2026-04-12' },
+        { title: 'Open House' },
+      ],
     })
     assert.equal(parsed.entries.length, 2)
     assert.equal(parsed.entries[0]?.date, '2026-04-12')
@@ -48,7 +51,9 @@ describe('generic tab fill sections', () => {
 
   it('restores the full pasted body for a single content block', () => {
     const pasted = `Our Mission\n${'We help families plan their future with clear advice. '.repeat(8)}`
-    const out = preferFullPastedBodies('content', pasted, { content: { title: 'Our Mission', description: 'We help families.' } })
+    const out = preferFullPastedBodies('content', pasted, {
+      content: { title: 'Our Mission', description: 'We help families.' },
+    })
     const content = out.content as { title: string; description: string }
     assert.equal(content.title, 'Our Mission')
     assert.ok(content.description.length > 300)

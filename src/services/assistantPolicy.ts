@@ -113,7 +113,8 @@ export function describeTabFillContext(raw: unknown): string {
     : []
   const parts: string[] = []
   if (tabName) parts.push(`TAB BEING FILLED: "${tabName}".`)
-  if (fields.length) parts.push(`This tab uses these fields: ${[...new Set(fields)].join(', ')}. Leave other fields "".`)
+  if (fields.length)
+    parts.push(`This tab uses these fields: ${[...new Set(fields)].join(', ')}. Leave other fields "".`)
   return parts.join(' ')
 }
 
@@ -233,10 +234,10 @@ export function buildTabFillSystemPrompt(
           : scope === 'content'
             ? 'This tab holds ONE block of content, not a list. Combine everything relevant in the source into a single "content" object. Never return an array or several items.'
             : scope === 'services' || scope === 'portfolio' || scope === 'entries'
-            ? summarize
-              ? 'Extract every distinct item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and write polished short descriptions from the source.'
-              : 'Extract every distinct item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and FULL descriptions from the source.'
-            : 'Use only facts present in the supplied text/files/current public card.'
+              ? summarize
+                ? 'Extract every distinct item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and write polished short descriptions from the source.'
+                : 'Extract every distinct item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and FULL descriptions from the source.'
+              : 'Use only facts present in the supplied text/files/current public card.'
   const bodyRule = (summarize ? SUMMARIZE_BODY_FIELD_RULE : FULL_BODY_FIELD_RULE)[scope] || ''
   const singleItemRule = summarize
     ? 'When the paste is a single article/item (title line plus body paragraphs), return exactly one entry and summarize the body clearly for a public card.'
