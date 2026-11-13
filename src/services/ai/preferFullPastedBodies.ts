@@ -103,7 +103,7 @@ export function bodyFromPastedText(pasted: string, titleHint: string): string {
   return rest.join('\n').trim()
 }
 
-type BodyScope = 'blogs' | 'services' | 'portfolio' | 'faqs' | 'reviews'
+type BodyScope = 'blogs' | 'services' | 'portfolio' | 'faqs' | 'reviews' | 'entries'
 
 const BODY_FIELD: Record<BodyScope, string> = {
   blogs: 'description',
@@ -111,6 +111,7 @@ const BODY_FIELD: Record<BodyScope, string> = {
   portfolio: 'description',
   faqs: 'answer',
   reviews: 'text',
+  entries: 'description',
 }
 
 const TITLE_FIELD: Record<BodyScope, string> = {
@@ -119,6 +120,7 @@ const TITLE_FIELD: Record<BodyScope, string> = {
   portfolio: 'title',
   faqs: 'question',
   reviews: 'author',
+  entries: 'title',
 }
 
 function isBodyScope(scope: string): scope is BodyScope {
@@ -135,6 +137,14 @@ export function preferFullPastedBodies(
   pastedText: string,
   payload: Record<string, unknown>
 ): Record<string, unknown> {
+  // Single-block tabs (About Me, Mission…): same rules as a one-item list.
+  if (scope === 'content') {
+    const content = payload.content
+    if (!content || typeof content !== 'object' || Array.isArray(content)) return payload
+    const asList = preferFullPastedBodies('entries', pastedText, { entries: [{ ...content }] })
+    const restored = Array.isArray(asList.entries) ? asList.entries[0] : null
+    return restored ? { ...payload, content: restored } : payload
+  }
   if (!isBodyScope(scope)) return payload
   const items = payload[scope]
   if (!Array.isArray(items) || !items.length) return payload

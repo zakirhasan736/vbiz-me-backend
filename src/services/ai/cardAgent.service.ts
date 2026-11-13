@@ -62,6 +62,8 @@ const SECTIONS = [
   'education',
   'experience',
   'faqs',
+  'entries',
+  'content',
   'personal',
   'seo',
 ] as const

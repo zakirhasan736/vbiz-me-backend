@@ -43,6 +43,7 @@ const fillSection = catchAsyncError(async (req, res) => {
     scope: req.body?.section ?? req.body?.tabScope,
     text: String(req.body?.text || req.body?.businessText || ''),
     bodyMode: req.body?.bodyMode,
+    context: req.body?.context,
     files: filesFromMulter(req.files as Express.Multer.File[] | undefined),
   })
   sendResponse(res, { success: true, statusCode: 200, message: 'Section draft generated for review', data })

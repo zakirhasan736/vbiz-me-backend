@@ -75,6 +75,49 @@ export function parseSupportedTabScope(raw: unknown): Exclude<FillSectionId, 'se
   return scope as Exclude<FillSectionId, 'seo'>
 }
 
+const TAB_CONTEXT_FIELDS = new Set([
+  'title',
+  'subtitle',
+  'description',
+  'url',
+  'imageUrl',
+  'date',
+  'location',
+  'price',
+  'offerPrice',
+])
+
+/**
+ * Which tab a generic fill ("entries" / "content") is for, as a prompt line. Only a short
+ * plain tab name and known field names are accepted, so the editor can't smuggle
+ * instructions into the prompt through this value.
+ */
+export function describeTabFillContext(raw: unknown): string {
+  let value: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      value = JSON.parse(raw)
+    } catch {
+      return ''
+    }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+  const input = value as { tabName?: unknown; fields?: unknown }
+  const tabName = String(input.tabName ?? '')
+    .replace(/[^\p{L}\p{N} &'’,.()/+-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+  const fields = Array.isArray(input.fields)
+    ? input.fields.map((f) => String(f)).filter((f) => TAB_CONTEXT_FIELDS.has(f))
+    : []
+  const parts: string[] = []
+  if (tabName) parts.push(`TAB BEING FILLED: "${tabName}".`)
+  if (fields.length)
+    parts.push(`This tab uses these fields: ${[...new Set(fields)].join(', ')}. Leave other fields "".`)
+  return parts.join(' ')
+}
+
 export function sanitizePromptAddendum(raw: unknown): string | null {
   const value = String(raw ?? '')
     .replace(/\0/g, '')
@@ -149,6 +192,10 @@ const FULL_BODY_FIELD_RULE: Partial<Record<Exclude<FillSectionId, 'seo'>, string
   faqs: 'For each FAQ: put the question in "question". Put the COMPLETE answer in "answer" (full wording from the source). Prefer HTML with one <p> per paragraph when the answer has multiple paragraphs. Do not shorten answers.',
   reviews:
     'For each review: put the author in "author". Put the COMPLETE quote in "text" (full wording from the source). Prefer HTML with one <p> per paragraph when the quote has multiple paragraphs. Do not shorten quotes.',
+  entries:
+    'For each item: put its name or headline in "title". Put the COMPLETE write-up in "description" (every paragraph from the source). Prefer HTML with one <p> per paragraph. Fill "date", "location", "price", "offerPrice", "url" and "subtitle" only when the source states them; otherwise leave them "".',
+  content:
+    'Put a short heading in "content.title" (use the source heading when there is one). Put the COMPLETE body in "content.description" — every paragraph, as HTML with one <p> per paragraph. Never shorten it.',
 }
 
 /** Body fields when the owner asked for a polished short summary. */
@@ -162,6 +209,10 @@ const SUMMARIZE_BODY_FIELD_RULE: Partial<Record<Exclude<FillSectionId, 'seo'>, s
   faqs: 'For each FAQ: put the question in "question". Write a clear, concise HTML answer in "answer" that keeps the meaning of the source without unnecessary length.',
   reviews:
     'For each review: put the author in "author". Keep a faithful but concise quote in "text" (trim filler if needed; do not invent praise).',
+  entries:
+    'For each item: put its name or headline in "title". Write a polished HTML summary in "description" (2–4 sentences) using only facts from the source. Fill "date", "location", "price", "offerPrice", "url" and "subtitle" only when the source states them.',
+  content:
+    'Put a short heading in "content.title". Write a polished, well-organized HTML version of the body in "content.description" that keeps every key point from the source.',
 }
 
 export function buildTabFillSystemPrompt(
@@ -180,11 +231,13 @@ export function buildTabFillSystemPrompt(
           ? summarize
             ? 'Extract every distinct testimonial conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Capture author, a concise faithful quote, and rating when present. Do not invent reviews.'
             : 'Extract every distinct testimonial conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Capture author, the FULL quote, and rating when present. Do not invent reviews.'
-          : scope === 'services' || scope === 'portfolio'
-            ? summarize
-              ? 'Extract every distinct item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and write polished short descriptions from the source.'
-              : 'Extract every distinct item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and FULL descriptions from the source.'
-            : 'Use only facts present in the supplied text/files/current public card.'
+          : scope === 'content'
+            ? 'This tab holds ONE block of content, not a list. Combine everything relevant in the source into a single "content" object. Never return an array or several items.'
+            : scope === 'services' || scope === 'portfolio' || scope === 'entries'
+              ? summarize
+                ? 'Extract every distinct item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and write polished short descriptions from the source.'
+                : 'Extract every distinct item conceptually present in the pasted text or OCR output. Keep all found items with no maximum. Keep real titles and FULL descriptions from the source.'
+              : 'Use only facts present in the supplied text/files/current public card.'
   const bodyRule = (summarize ? SUMMARIZE_BODY_FIELD_RULE : FULL_BODY_FIELD_RULE)[scope] || ''
   const singleItemRule = summarize
     ? 'When the paste is a single article/item (title line plus body paragraphs), return exactly one entry and summarize the body clearly for a public card.'
@@ -198,7 +251,7 @@ ${bodyRule}
 ${singleItemRule}
 The order of lines in the paste is not the order of fields. Decide by what the text is:
 - reviews: a short person name (even after a dash, quotes, or "by", and even when it is the last line) is "author". The testimonial paragraph is "text", even when that paragraph is pasted first.
-- services, portfolio, blogs: a short name or headline is "title". The longer write-up is "description", even when the write-up is pasted first.
+- services, portfolio, blogs, entries, content: a short name or headline is "title". The longer write-up is "description", even when the write-up is pasted first.
 - faqs: the question is "question". The longer answer is "answer", even when the answer is pasted first.
 Do not invent reviews, credentials, dates, contact details, or claims.
 If the sources do not support this section, return the matching empty array/object.`
