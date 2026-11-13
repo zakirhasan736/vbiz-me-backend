@@ -1,6 +1,7 @@
 import path from 'path'
-import { collectCardMediaKeys, rewriteCardMediaKeys } from './cardMediaScan'
+import { collectCardMediaRefs, rewriteCardMediaKeys } from './cardMediaScan'
 import logger from './logger'
+import { mediaFolderFor } from './mediaAsset'
 import s3Utils from './s3'
 
 export type DuplicateMediaCopyReport = {
@@ -37,7 +38,17 @@ export async function copyAllCardMediaToOwnKeys(
     return report
   }
 
-  const keys = [...(await collectCardMediaKeys(targetProfileId))]
+  // Area per key from where it is used on the card (a Service row beats the
+  // generic Attachment row that points at the same file).
+  const areaByKey = new Map<string, { area: string; label: string | null }>()
+  for (const ref of await collectCardMediaRefs(targetProfileId)) {
+    const current = areaByKey.get(ref.key)
+    const generic = (a?: string) => !a || a === 'attachments' || a === 'settings'
+    if (!current || (generic(current.area) && !generic(ref.area))) {
+      areaByKey.set(ref.key, { area: ref.area, label: ref.label })
+    }
+  }
+  const keys = [...areaByKey.keys()]
   report.found = keys.length
   if (!keys.length) return report
 
@@ -46,7 +57,7 @@ export async function copyAllCardMediaToOwnKeys(
   const worker = async () => {
     for (let key = queue.shift(); key !== undefined; key = queue.shift()) {
       try {
-        if (!(await s3Utils.headObject(key))) {
+        if ((await s3Utils.checkObject(key)) === 'missing') {
           // Source already broken — try to bring it back before copying.
           const healed = await s3Utils.restoreFromVersions(key)
           if (healed.status === 'unrecoverable') {
@@ -54,8 +65,13 @@ export async function copyAllCardMediaToOwnKeys(
             continue
           }
         }
-        const { folder, filename } = splitMediaKey(key)
-        const copied = await s3Utils.copyObject(key, { folder: folder || undefined, filename })
+        const { filename } = splitMediaKey(key)
+        const where = areaByKey.get(key)
+        const copied = await s3Utils.copyObject(key, {
+          folder: mediaFolderFor({ profileId: targetProfileId, area: where?.area }),
+          filename,
+          identity: { profileId: targetProfileId, area: where?.area, itemLabel: where?.label, source: 'duplicate' },
+        })
         keyMap.set(key, copied.publicId)
         report.copied += 1
       } catch (error) {

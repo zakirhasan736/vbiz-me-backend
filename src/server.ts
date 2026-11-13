@@ -8,6 +8,7 @@ import { startBillingTrialCron } from './bootstrap/startBillingTrialCron'
 import { startBirthdayWishCron } from './bootstrap/startBirthdayWishCron'
 import { startCardChangeHistoryCron } from './bootstrap/startCardChangeHistoryCron'
 import { startCrmReminderCron } from './bootstrap/startCrmReminderCron'
+import { startMediaHealthCron } from './bootstrap/startMediaHealthCron'
 import config from './configs/config'
 import logger from './utils/logger'
 import { prisma } from './utils/prisma'
@@ -29,6 +30,7 @@ const main = async () => {
     startBillingTrialCron()
     startCrmReminderCron()
     startCardChangeHistoryCron()
+    startMediaHealthCron()
 
     httpServer.listen(config.PORT, () => {
       logger.info(`🔗 Database connected && server running on port ${config.PORT}`)

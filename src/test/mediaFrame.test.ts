@@ -14,6 +14,28 @@ describe('mediaFrame', () => {
     assert.deepEqual(frame, { focusX: 100, focusY: 0, zoom: 2.5, height: 0.7 })
   })
 
+  it('persists objectFit so Contain reaches the public card', () => {
+    const frame = parseStoredMediaFrame({
+      focusX: 50,
+      focusY: 50,
+      zoom: 1,
+      height: 1,
+      objectFit: 'contain',
+    })
+    assert.deepEqual(frame, {
+      focusX: 50,
+      focusY: 50,
+      zoom: 1,
+      height: 1,
+      objectFit: 'contain',
+    })
+  })
+
+  it('allows zoom out below 100% to match the card builder', () => {
+    const frame = parseStoredMediaFrame({ zoom: 0.5, focusX: 50, focusY: 50 })
+    assert.equal(frame?.zoom, 0.5)
+  })
+
   it('reads a crop from the column or from metas', () => {
     assert.deepEqual(readRowMediaFrame({ mediaFrame: { focusX: 10, focusY: 20 } }), {
       focusX: 10,

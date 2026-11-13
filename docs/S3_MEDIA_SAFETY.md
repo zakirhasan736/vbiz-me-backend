@@ -39,6 +39,39 @@ Restore could not help: it restores database rows (URLs), not files.
    It runs with a separate cleanup IAM user and refuses to run if >50% of the bucket
    looks unused.
 
+## Identity + status registry (MediaAsset)
+
+Every file has a `MediaAsset` row: S3 `key` (source of truth), `status`
+(`ok | missing | pending`), the card (`profileId`), the tab/screen (`area`: services,
+portfolio, gallery, about, profile, intro-video, …) and the item (`itemLabel`).
+
+- **Keys say where a file belongs.** New uploads go to
+  `vbizme/cards/<cardId>/<tab>/<ms>-<name>` and carry S3 metadata
+  (`profile-id`, `area`, `uploaded-by`, `source`). Old flat keys keep working.
+- **Upload:** row is written `pending` → PutObject → HeadObject → `ok` (or
+  `missing` with a reason). A URL is only returned when the object exists.
+- **Nightly health sweep** (`MEDIA_HEALTH_CRON_EXPR`, default `40 3 * * *`
+  America/New_York; disable with `MEDIA_HEALTH_CRON_ENABLED=false`): HEAD every
+  referenced file, recover from versions, flag the rest as `missing`.
+- **Per card:** `GET /media/status?profileId=` (last known) and
+  `POST /media/repair` (check now) list every file as _tab → item → status_.
+- **Existing data:** `yarn media:backfill` (dry-run) / `--apply` registers every
+  current file with its card and tab.
+- **Base URL / CDN change:** set the new `S3_PUBLIC_BASE_URL`, then
+  `yarn media:rebase --from=<old base> [--apply]` rewrites every stored URL in one go.
+
+Why a registry table instead of `imageKey`/`imageStatus` columns on every model:
+media URLs live in ~15 columns across 10+ tables plus settings JSON and rich-text
+HTML. One table covers all of them (including HTML/JSON) with no per-model
+migrations, and the scanners pick up new columns automatically.
+
+## Never guess a file from a similar name
+
+`scripts/restore-s3-keys-from-siblings.ts` was removed. It "restored" a missing key
+by copying another file with a similar name (e.g. `ML-1.jpeg` → `ML1.jpg`). Those
+can be different pictures from different tabs, so a Services item could end up
+showing a Portfolio image. Recovery now only uses S3 versions of the exact same key.
+
 ## AWS setup checklist (one time)
 
 1. IAM → the user whose keys are in the API `.env` (`AWS_ACCESS_KEY_ID`) → replace
@@ -49,7 +82,8 @@ Restore could not help: it restores database rows (URLs), not files.
 3. Confirm versioning: S3 → bucket → Properties → Bucket Versioning = Enabled.
    (Or run `npx tsx --env-file=.env scripts/enable-s3-versioning.ts` with admin keys —
    the app user is not allowed to change versioning.)
-4. After deploy: `yarn media:repair` (dry-run), then `yarn media:repair --apply`.
+4. After deploy: `yarn migrate:deploy` (creates `MediaAsset`), `yarn media:backfill --apply`,
+   then `yarn media:repair` (dry-run) and `yarn media:repair --apply`.
 
 ## For developers
 

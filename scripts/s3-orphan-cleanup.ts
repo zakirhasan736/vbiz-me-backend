@@ -7,7 +7,7 @@
  *      column, incl. soft-deleted rows, change history and daily backups).
  *   2. It was uploaded more than --grace-days ago (default 30), so unsaved editor
  *      sessions and in-flight uploads are never touched.
- *   3. Its key matches the app's own upload pattern `<prefix>/<13-digit ms>-<name>`
+ *   3. Its key matches the app's own upload pattern (`<prefix>/[cards/<id>/<tab>/]<ms>-<name>`)
  *      (migrated / legacy files are never touched).
  *
  * With bucket versioning on, a delete only adds a delete marker — the bytes stay
@@ -49,7 +49,12 @@ async function main() {
   const client = new S3Client({ region: REGION, credentials: { accessKeyId, secretAccessKey } })
 
   const prefix = `${(KEY_PREFIX || 'vbizme').replace(/^\/+|\/+$/g, '')}/`
-  const appKeyPattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d{13}-[A-Za-z0-9._-]+$`)
+  // App-made keys only: flat `<prefix>/<ms>-<name>` (older uploads) or
+  // `<prefix>/(cards|users|unassigned)/…/<ms>-<name>` (card/tab-scoped uploads).
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const appKeyPattern = new RegExp(
+    `^${escapedPrefix}(?:(?:cards|users)/[a-z0-9-]+/[a-z0-9-]+/|unassigned/[a-z0-9-]+/)?\\d{13}-[A-Za-z0-9._-]+$`
+  )
   const cutoff = Date.now() - args.graceDays * 24 * 60 * 60 * 1000
 
   console.log('Collecting references from the database…')

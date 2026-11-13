@@ -151,10 +151,12 @@ function groupCrmLeadsByEmail(rows: CrmLeadCountRow[]): CrmLeadRow[] {
       eventsCount,
       cards,
       leadIds: list.map((row) => row.id),
-      // Prefer primary card fields from the newest unique card set when only one card.
-      vCardId: cards[0]?.profileId || primary.vCardId,
-      vCardSlug: cards[0]?.slug || primary.vCardSlug,
-      vCardName: cards[0]?.name || primary.vCardName,
+      // Keep vCard* aligned with `primary.id` (newest lead row). Using cards[0] from
+      // Map insertion order mismatched lead id vs card and broke corporate wishes
+      // ("Lead does not belong to this card").
+      vCardId: primary.vCardId,
+      vCardSlug: primary.vCardSlug,
+      vCardName: primary.vCardName,
     }
   })
 }

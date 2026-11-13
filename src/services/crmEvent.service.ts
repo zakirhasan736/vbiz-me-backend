@@ -126,8 +126,9 @@ async function resolveGroupProfileIds(input: CreateCrmEventInput): Promise<strin
   const companyUserId = input.companyUserId?.trim()
   if (!companyUserId) return []
 
+  // Owner card + every linked member card (companyUserId OR userId = corporate parent).
   const profiles = await prisma.profile.findMany({
-    where: { companyUserId },
+    where: { OR: [{ companyUserId }, { userId: companyUserId }] },
     select: { id: true },
   })
   return profiles.map((profile) => profile.id)
@@ -179,11 +180,13 @@ async function resolveWishLeadIds(
   input: CreateCrmEventInput
 ): Promise<string[]> {
   if (normalized.scope === 'global') {
+    // Global = every contactable lead in this actor's CRM scope.
+    // Do NOT narrow by input.profileId — that used to force corporate "all cards"
+    // wishes down to a single owner card and return "No CRM leads found".
     const where: Prisma.GuestUserDataWhereInput = {
       ...(access.profileIds === null
         ? {}
         : { profileId: { in: access.profileIds.length ? access.profileIds : ['__none__'] } }),
-      ...(normalized.profileId ? { profileId: normalized.profileId } : {}),
       ...guestSaveCrmContactableWhere(),
     }
     const leads = await prisma.guestUserData.findMany({
@@ -263,8 +266,8 @@ function serializeCrmEvent(row: CrmEventRow) {
 
 async function resolveOptionalGuestUserDataId(
   guestUserDataId: string | null | undefined,
-  profileId: string | null
-): Promise<string | null> {
+  access: CrmAccessContext
+): Promise<{ id: string; profileId: string } | null> {
   const id = guestUserDataId?.trim()
   if (!id) return null
   const lead = await prisma.guestUserData.findUnique({
@@ -272,10 +275,13 @@ async function resolveOptionalGuestUserDataId(
     select: { id: true, profileId: true },
   })
   if (!lead) throw new AppError(404, 'Lead not found')
-  if (profileId && lead.profileId !== profileId) {
-    throw new AppError(400, 'Lead does not belong to this card')
+  // Corporate owners may attach a lead from any linked card in their CRM pool.
+  // Do not require lead.profileId === request.profileId — grouped lead rows / pickers
+  // often send a sibling card id; create() re-anchors to the lead's real card.
+  if (!isProfileIdInCrmScope(access, lead.profileId)) {
+    throw new AppError(403, 'Lead is outside your CRM scope')
   }
-  return lead.id
+  return lead
 }
 
 function calendarSummary(type: string, host: string) {
@@ -467,10 +473,12 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
     primaryProfileId = firstLead?.profileId || null
   }
 
-  const guestUserDataId =
-    (await resolveOptionalGuestUserDataId(input.guestUserDataId || recipientLeadIds[0], primaryProfileId)) ||
-    recipientLeadIds[0] ||
-    null
+  const resolvedGuest = await resolveOptionalGuestUserDataId(input.guestUserDataId || recipientLeadIds[0], access)
+  const guestUserDataId = resolvedGuest?.id || recipientLeadIds[0] || null
+  // Always trust the lead's real card when in scope (fixes corporate linked-card wishes).
+  if (resolvedGuest?.profileId && isProfileIdInCrmScope(access, resolvedGuest.profileId)) {
+    primaryProfileId = resolvedGuest.profileId
+  }
   const { emails: ownerEmails } = await resolveOwnerEmails(primaryProfileId)
   const primaryLead = guestUserDataId
     ? await prisma.guestUserData.findUnique({
