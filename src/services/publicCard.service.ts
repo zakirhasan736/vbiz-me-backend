@@ -204,6 +204,14 @@ function collectEnabledTabKeys(map: Record<string, string>): Set<string> {
   return keys
 }
 
+/** Settings keys resolveIntroMedia depends on. */
+const INTRO_VIDEO_SETTING_KEYS = [
+  'intro_video_url',
+  'intro_youtube_url',
+  'profile_video_checkbox',
+  'profile_video_link_checkbox',
+] as const
+
 function settingsToMap(settings: Setting[]): Record<string, string> {
   const map: Record<string, string> = {}
   for (const s of settings) {
@@ -2218,6 +2226,8 @@ const getPublicCards = async (query: {
       include: {
         profession: true,
         attachments: { include: { attachmentType: true }, take: 8 },
+        // Only the keys resolveIntroMedia reads, so the sitemap can list intro-video pages cheaply.
+        settings: { where: { key: { in: [...INTRO_VIDEO_SETTING_KEYS] } }, select: { key: true, value: true } },
       },
       skip: (page - 1) * perPage,
       take: perPage,
@@ -2262,6 +2272,9 @@ const getPublicCards = async (query: {
   const path = '/public-cards'
   const data = rows.map((p) => {
     const media = resolvePublicDirectoryMedia(p)
+    const introSettings: Record<string, string> = {}
+    for (const s of p.settings) introSettings[s.key] = s.value ?? ''
+    const intro = resolveIntroMedia(p.attachments, introSettings, p.legacyId)
     return {
       id: p.id,
       name: p.name,
@@ -2277,6 +2290,8 @@ const getPublicCards = async (query: {
       profile_url: p.slug ? buildFrontendPublicCardPath(p.slug) : null,
       // Sitemap <lastmod>: without this every card got the sitemap build time.
       updated_at: p.updatedAt.toISOString(),
+      // Card's intro video (file or YouTube link) for the video sitemap; null when none or disabled.
+      intro_video_url: intro.enabled ? intro.youtube?.link || intro.url || null : null,
     }
   })
 
