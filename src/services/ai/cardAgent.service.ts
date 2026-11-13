@@ -29,6 +29,7 @@ import { generateCardContent, generateSectionFromProfile, profileToBlueprintFact
 import { crawlWebsiteDeep, extractTextFromBuffer, type UploadedPart } from './extractDocumentText'
 import { buildFieldGraph, buildTabPlan } from './fieldGraph.service'
 import { routeAiTier, selectFillSectionModel } from './modelRouter.service'
+import { normalizeFillPayload } from './normalizeFillPayload'
 import { chatJson, getOpenAiApiKey } from './openai.client'
 import { preferFullPastedBodies } from './preferFullPastedBodies'
 import { runSolArchitect } from './solArchitect.service'
@@ -688,7 +689,8 @@ export async function fillSection(input: {
   const schema = fillSectionSchemas[sectionId]
   let payload: Record<string, unknown>
   try {
-    const coerced = sectionId === 'services' ? coerceServiceTypes(raw) : raw
+    const normalized = normalizeFillPayload(sectionId, raw)
+    const coerced = sectionId === 'services' ? coerceServiceTypes(normalized) : normalized
     payload = schema.parse(coerced) as Record<string, unknown>
     if (sectionId !== 'seo' && sectionId !== 'personal' && sectionId !== 'skills') {
       payload = preferFullPastedBodies(sectionId, bodyMode === 'as_written' ? text : '', payload)
