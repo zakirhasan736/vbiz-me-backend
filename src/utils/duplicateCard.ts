@@ -166,6 +166,8 @@ export const ABOUT_ME_SETTING_KEYS = [
   'about_me_featured_media_url',
   'about_me_status',
   'about_me_featured_media_focus_y',
+  'about_me_gallery_url',
+  'about_me_gallery_preview',
 ] as const
 
 export function stripAboutMeSettings(settings: Record<string, string>): Record<string, string> {

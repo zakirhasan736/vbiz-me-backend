@@ -14,6 +14,7 @@ import { resolveOwnerMode } from '../constants/packageOwnerMode'
 import { isStaffRole, toApiRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import { slugify } from '../middlewares/ownership'
+import { readAboutMeGallery, upsertAboutMeGallery } from '../utils/aboutMeGallery'
 import {
   ABOUT_ME_MEDIA_FOCUS_Y_KEY,
   clampAboutMeMediaFocusY,
@@ -3046,6 +3047,27 @@ const serializeAboutMe = (
 const ABOUT_ME_TITLE_KEY = 'about_me_title'
 const ABOUT_ME_MEDIA_KEY = 'about_me_featured_media_url'
 const ABOUT_ME_STATUS_KEY = 'about_me_status'
+const ABOUT_ME_GALLERY_KEYS = ['about_me_gallery_url', 'about_me_gallery_preview'] as const
+
+const attachAboutMeGallery = async <T extends object>(profileId: string, row: T | null) => {
+  const gallery = await readAboutMeGallery(prisma, profileId)
+  if (!row && !gallery.galleryUrl) return null
+  const base =
+    row ??
+    ({
+      id: profileId,
+      profileId,
+      title: 'About Me',
+      description: null,
+      featuredMediaUrl: null,
+      featuredMediaFocusY: null,
+      status: '1',
+      legacyPostId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as T)
+  return { ...base, galleryUrl: gallery.galleryUrl, galleryPreview: gallery.galleryPreview }
+}
 
 const serializeAboutMeFromProfile = async (profileId: string) => {
   const profile = await prisma.profile.findUnique({
@@ -3125,12 +3147,11 @@ const getAboutMe = async (profileId: string, userId: string, role: string) => {
   const focusY = await readAboutMeMediaFocusY(prisma, profileId)
   try {
     const row = await prisma.aboutMe.findUnique({ where: { profileId } })
-    if (row) return serializeAboutMe(row, focusY)
-    const fallback = await serializeAboutMeFromProfile(profileId)
-    return fallback
+    if (row) return attachAboutMeGallery(profileId, serializeAboutMe(row, focusY))
+    return attachAboutMeGallery(profileId, await serializeAboutMeFromProfile(profileId))
   } catch (error) {
     if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
-    return serializeAboutMeFromProfile(profileId)
+    return attachAboutMeGallery(profileId, await serializeAboutMeFromProfile(profileId))
   }
 }
 
@@ -3143,6 +3164,8 @@ const upsertAboutMe = async (
     description?: string | null
     featuredMediaUrl?: string | null
     featuredMediaFocusY?: number | null
+    galleryUrl?: string | null
+    galleryPreview?: unknown
     status?: string | null
   }
 ) => {
@@ -3215,6 +3238,10 @@ const upsertAboutMe = async (
       featuredMediaFocusY: input.featuredMediaFocusY,
       status,
     })
+    await upsertAboutMeGallery(prisma, profileId, {
+      galleryUrl: input.galleryUrl,
+      galleryPreview: input.galleryPreview,
+    })
     const profile = await prisma.profile.findUnique({
       where: { id: profileId },
       select: { name: true, companyName: true, slug: true },
@@ -3226,7 +3253,7 @@ const upsertAboutMe = async (
       body: `${businessName} updated About Me. Tap to open that tab on their public card.`,
       url: buildPublicCardPathWithTab(profile?.slug, 'about'),
     })
-    return fallback
+    return attachAboutMeGallery(profileId, fallback)
   }
 
   const profile = await prisma.profile.findUnique({
@@ -3242,8 +3269,12 @@ const upsertAboutMe = async (
   })
 
   await upsertAboutMeMediaFocusY(prisma, profileId, input.featuredMediaFocusY)
+  await upsertAboutMeGallery(prisma, profileId, {
+    galleryUrl: input.galleryUrl,
+    galleryPreview: input.galleryPreview,
+  })
   const focusY = await readAboutMeMediaFocusY(prisma, profileId)
-  return serializeAboutMe(row, focusY)
+  return attachAboutMeGallery(profileId, serializeAboutMe(row, focusY))
 }
 
 const deleteAboutMe = async (profileId: string, userId: string, role: string) => {
@@ -3267,7 +3298,15 @@ const deleteAboutMe = async (profileId: string, userId: string, role: string) =>
   await prisma.setting.deleteMany({
     where: {
       profileId,
-      key: { in: [ABOUT_ME_TITLE_KEY, ABOUT_ME_MEDIA_KEY, ABOUT_ME_STATUS_KEY, ABOUT_ME_MEDIA_FOCUS_Y_KEY] },
+      key: {
+        in: [
+          ABOUT_ME_TITLE_KEY,
+          ABOUT_ME_MEDIA_KEY,
+          ABOUT_ME_STATUS_KEY,
+          ABOUT_ME_MEDIA_FOCUS_Y_KEY,
+          ...ABOUT_ME_GALLERY_KEYS,
+        ],
+      },
     },
   })
   return { deleted: true as const }

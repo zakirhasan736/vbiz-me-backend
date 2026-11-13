@@ -92,6 +92,17 @@ const upsertAboutMeBody = z.object({
   featured_image: z.string().max(2000).optional().nullable(),
   featuredMediaFocusY: z.coerce.number().min(0).max(100).optional().nullable(),
   featured_media_focus_y: z.coerce.number().min(0).max(100).optional().nullable(),
+  galleryUrl: z.string().max(2000).optional().nullable(),
+  galleryPreview: z
+    .object({
+      url: z.string().max(2000).optional().nullable(),
+      title: z.string().max(300).optional().nullable(),
+      description: z.string().max(500).optional().nullable(),
+      image: z.string().max(2000).optional().nullable(),
+      siteName: z.string().max(200).optional().nullable(),
+    })
+    .optional()
+    .nullable(),
   status: z.string().max(20).optional().nullable(),
 })
 

@@ -15,6 +15,7 @@ import {
   TAB_REGISTRY,
 } from '../constants/tabRegistry'
 import AppError from '../error/AppError'
+import { readAboutMeGallery, toPublicGalleryLink } from '../utils/aboutMeGallery'
 import { readAboutMeFeaturedMediaUrl, readAboutMeMediaFocusY } from '../utils/aboutMeMediaFocus'
 import { PUBLIC_ATTACHMENT_KIND_ALIASES, sameMediaUrl, scoreAttachmentTypeName } from '../utils/attachmentTypeMatch'
 import { publicReadableWhere, publicVisibleWhere, slugEquals } from '../utils/cardStatus'
@@ -1715,6 +1716,12 @@ const getDynamicSection = async (
   }
 
   if (registryTab?.storage === 'about_me') {
+    let galleryLink: ReturnType<typeof toPublicGalleryLink> = null
+    try {
+      galleryLink = toPublicGalleryLink(await readAboutMeGallery(prisma, profileId))
+    } catch (error) {
+      if (!isPrismaMissingTable(error) && !isPrismaColumnMismatch(error)) throw error
+    }
     try {
       const about = await prisma.aboutMe.findUnique({ where: { profileId } })
       const featuredMediaFocusY = await readAboutMeMediaFocusY(prisma, profileId)
@@ -1724,13 +1731,24 @@ const getDynamicSection = async (
           select: { about: true, id: true },
         })
         const text = fallback?.about?.trim() || ''
+        const link = about?.status === '0' ? null : galleryLink
         return {
           type: 'About Me',
           postType: { name: 'About Me', title: 'About Me' },
           profile: { id: profileId },
-          items: text
-            ? [{ id: profileId, title: 'About Me', description: text, status: '1', featured_image: null }]
-            : [],
+          items:
+            text || link
+              ? [
+                  {
+                    id: profileId,
+                    title: 'About Me',
+                    description: text,
+                    status: '1',
+                    featured_image: null,
+                    gallery_link: link,
+                  },
+                ]
+              : [],
         }
       }
       let directDescription = ''
@@ -1771,6 +1789,7 @@ const getDynamicSection = async (
             status: about.status || '1',
             featured_image: about.featuredMediaUrl ? abs(about.featuredMediaUrl) : null,
             featured_media_focus_y: featuredMediaFocusY,
+            gallery_link: galleryLink,
           },
         ],
       }
@@ -1785,7 +1804,19 @@ const getDynamicSection = async (
         type: 'About Me',
         postType: { name: 'About Me', title: 'About Me' },
         profile: { id: profileId },
-        items: text ? [{ id: profileId, title: 'About Me', description: text, status: '1', featured_image: null }] : [],
+        items:
+          text || galleryLink
+            ? [
+                {
+                  id: profileId,
+                  title: 'About Me',
+                  description: text,
+                  status: '1',
+                  featured_image: null,
+                  gallery_link: galleryLink,
+                },
+              ]
+            : [],
       }
     }
   }

@@ -6,6 +6,7 @@ import { getEffectiveEntitlements } from '../services/entitlement.service'
 import { getCardChangeActor } from './cardChangeHistory'
 import { CORPORATE_OWNED_IDS_SETTING_KEY, getCorporateOwnedIds, setCorporateOwnedIds } from './corporateOwnedContent'
 import {
+  ABOUT_ME_SETTING_KEYS,
   cloneRecord,
   isCorporateLiveSyncProfileField,
   isSharedProfileFieldValuePresent,
@@ -763,12 +764,7 @@ const replacePosts = async (
 
 const replaceAboutMe = async (sourceProfileId: string, targetProfileId: string, options: SharedSyncOptions = {}) => {
   await replaceModelRows(sourceProfileId, targetProfileId, 'aboutMe', {}, options)
-  await copySharedSettings(
-    sourceProfileId,
-    targetProfileId,
-    ['about_me_title', 'about_me_featured_media_url', 'about_me_status', 'about_me_featured_media_focus_y'],
-    options
-  )
+  await copySharedSettings(sourceProfileId, targetProfileId, [...ABOUT_ME_SETTING_KEYS], options)
 }
 
 const buildCustomTabIdMap = async (sourceProfileId: string, targetProfileId: string): Promise<Map<string, string>> => {
@@ -1100,12 +1096,7 @@ const applyScopeToSibling = async (
       await replaceModelRows(sourceProfileId, siblingId, 'tabItem', { tabKey: scope.tabKey }, options)
     }
     if (scope.storage === 'about_me') {
-      await copySharedSettings(
-        sourceProfileId,
-        siblingId,
-        ['about_me_title', 'about_me_featured_media_url', 'about_me_status', 'about_me_featured_media_focus_y'],
-        options
-      )
+      await copySharedSettings(sourceProfileId, siblingId, [...ABOUT_ME_SETTING_KEYS], options)
     }
     return
   }

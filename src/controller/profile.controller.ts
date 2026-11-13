@@ -258,6 +258,8 @@ const upsertAboutMe = catchAsyncError(async (req, res) => {
       body.featuredMediaFocusY === undefined && body.featured_media_focus_y === undefined
         ? undefined
         : (body.featuredMediaFocusY ?? body.featured_media_focus_y ?? null),
+    galleryUrl: body.galleryUrl === undefined ? undefined : body.galleryUrl,
+    galleryPreview: body.galleryPreview === undefined ? undefined : body.galleryPreview,
     status: body.status == null ? null : String(body.status),
   })
   sendResponse(res, { success: true, statusCode: 200, message: 'About Me updated', data })
