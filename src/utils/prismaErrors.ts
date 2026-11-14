@@ -42,6 +42,21 @@ export function isPrismaUniqueConstraint(error: unknown, field?: string): boolea
   )
 }
 
+/**
+ * Run a write that can lose a race on a unique key (an `upsert` is "find, then create", so two
+ * identical requests arriving together both try to create). The loser retries, by which time the
+ * row exists and the same write succeeds as an update. Any other error is thrown unchanged.
+ */
+export async function retryOnUniqueConflict<T>(write: () => Promise<T>, attempts = 2): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await write()
+    } catch (error) {
+      if (attempt >= attempts || !isPrismaUniqueConstraint(error)) throw error
+    }
+  }
+}
+
 /** True when Prisma Client rejects a create/update field that is not on the generated model. */
 export function isPrismaUnknownArgument(error: unknown): boolean {
   const message = String((error as { message?: string })?.message || '')

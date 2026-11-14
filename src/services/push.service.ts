@@ -8,6 +8,7 @@ import AppError from '../error/AppError'
 import logger from '../utils/logger'
 import { ensureAbsoluteMediaUrl, looksLikeExternalPageUrl } from '../utils/mediaUrl'
 import { prisma } from '../utils/prisma'
+import { retryOnUniqueConflict } from '../utils/prismaErrors'
 import {
   cardChangeAlsoReachesSavers,
   defaultPushDeliveryAudience,
@@ -312,44 +313,51 @@ const subscribe = async (input: {
   const preferenceData = snakeToPrismaData(input.preferences || {})
   const hasPreferencePayload = Object.keys(preferenceData).length > 0
 
-  const sub = await prisma.pushSubscription.upsert({
-    where: {
-      profileId_endpointHash: {
-        profileId: profile.id,
-        endpointHash,
+  // A browser can fire the same subscribe twice at once (two tabs, a retry); the second must not 500.
+  const sub = await retryOnUniqueConflict(() =>
+    prisma.pushSubscription.upsert({
+      where: {
+        profileId_endpointHash: {
+          profileId: profile.id,
+          endpointHash,
+        },
       },
-    },
-    create: {
-      profileId: profile.id,
-      endpoint: input.endpoint,
-      endpointHash,
-      p256dh: input.keys.p256dh,
-      auth: input.keys.auth,
-      browser: input.browser,
-      platform: input.platform,
-      audience,
-      isActive: true,
-      lastUsedAt: new Date(),
-      preferences: { create: preferenceData },
-    },
-    update: {
-      endpoint: input.endpoint,
-      p256dh: input.keys.p256dh,
-      auth: input.keys.auth,
-      browser: input.browser,
-      platform: input.platform,
-      audience,
-      isActive: true,
-      lastUsedAt: new Date(),
-    },
-    include: { preferences: true },
-  })
+      create: {
+        profileId: profile.id,
+        endpoint: input.endpoint,
+        endpointHash,
+        p256dh: input.keys.p256dh,
+        auth: input.keys.auth,
+        browser: input.browser,
+        platform: input.platform,
+        audience,
+        isActive: true,
+        lastUsedAt: new Date(),
+        preferences: { create: preferenceData },
+      },
+      update: {
+        endpoint: input.endpoint,
+        p256dh: input.keys.p256dh,
+        auth: input.keys.auth,
+        browser: input.browser,
+        platform: input.platform,
+        audience,
+        isActive: true,
+        lastUsedAt: new Date(),
+      },
+      include: { preferences: true },
+    })
+  )
 
   let preferences = sub.preferences
   if (!preferences) {
-    preferences = await prisma.pushNotificationPreference.create({
-      data: { pushSubscriptionId: sub.id, ...preferenceData },
-    })
+    preferences = await retryOnUniqueConflict(() =>
+      prisma.pushNotificationPreference.upsert({
+        where: { pushSubscriptionId: sub.id },
+        create: { pushSubscriptionId: sub.id, ...preferenceData },
+        update: preferenceData,
+      })
+    )
   } else if (hasPreferencePayload) {
     // Re-enable / re-subscribe with explicit choices overwrites stored toggles.
     preferences = await prisma.pushNotificationPreference.update({
