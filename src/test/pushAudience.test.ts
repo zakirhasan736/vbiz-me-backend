@@ -6,10 +6,12 @@ import {
   exactOwnerPushProfileIds,
   isOperationalPushType,
   mergeAnnouncementPushProfiles,
+  resolveStoredAudience,
   skipsPublicProfileGate,
   staffAdminAllowsBrowserPush,
   subscriberKindsForDelivery,
   userMatchesSpecificAnnouncement,
+  webPushSendOptions,
 } from '../utils/pushAudience'
 
 describe('push audience', () => {
@@ -131,5 +133,30 @@ describe('push audience', () => {
       }),
       true
     )
+  })
+
+  it('sends every push with high urgency so locked phones show it immediately', () => {
+    for (const type of ['save_contact', 'viewer_return', 'meeting_alert']) {
+      assert.deepEqual(webPushSendOptions(type), { urgency: 'high', TTL: 86400 })
+    }
+    for (const type of ['service_updates', 'event_updates', 'announcement_updates', 'theme_updates']) {
+      assert.deepEqual(webPushSendOptions(type), { urgency: 'high', TTL: 259200 })
+    }
+  })
+
+  it('never lets a follower subscribe downgrade an owner device on the same card', () => {
+    assert.equal(resolveStoredAudience('owner', 'follower'), 'owner')
+    assert.equal(resolveStoredAudience('owner', 'owner'), 'owner')
+    assert.equal(resolveStoredAudience('follower', 'owner'), 'owner')
+    assert.equal(resolveStoredAudience('follower', 'follower'), 'follower')
+    assert.equal(resolveStoredAudience(undefined, 'follower'), 'follower')
+    assert.equal(resolveStoredAudience(null, 'owner'), 'owner')
+  })
+
+  it('routes the owner self-test like other operational owner alerts', () => {
+    assert.equal(isOperationalPushType('owner_test'), true)
+    assert.equal(defaultPushDeliveryAudience('owner_test'), 'owners')
+    assert.equal(staffAdminAllowsBrowserPush('owner_test'), true)
+    assert.deepEqual(webPushSendOptions('owner_test'), { urgency: 'high', TTL: 86400 })
   })
 })

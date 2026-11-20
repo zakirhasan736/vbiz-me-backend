@@ -12,9 +12,11 @@ import { retryOnUniqueConflict } from '../utils/prismaErrors'
 import {
   cardChangeAlsoReachesSavers,
   defaultPushDeliveryAudience,
+  resolveStoredAudience,
   skipsPublicProfileGate,
   staffAdminAllowsBrowserPush,
   subscriberKindsForDelivery,
+  webPushSendOptions,
   type PushDeliveryAudience,
   type PushSubscriberKind,
 } from '../utils/pushAudience'
@@ -314,8 +316,15 @@ const subscribe = async (input: {
   const hasPreferencePayload = Object.keys(preferenceData).length > 0
 
   // A browser can fire the same subscribe twice at once (two tabs, a retry); the second must not 500.
-  const sub = await retryOnUniqueConflict(() =>
-    prisma.pushSubscription.upsert({
+  const sub = await retryOnUniqueConflict(async () => {
+    // Same endpoint already registered as this card's OWNER device (owner viewing / following
+    // their own card) — keep it owner, or owner alerts for this card stop reaching the phone.
+    const existing = await prisma.pushSubscription.findUnique({
+      where: { profileId_endpointHash: { profileId: profile.id, endpointHash } },
+      select: { audience: true },
+    })
+    const storedAudience = resolveStoredAudience(existing?.audience, audience)
+    return prisma.pushSubscription.upsert({
       where: {
         profileId_endpointHash: {
           profileId: profile.id,
@@ -330,7 +339,7 @@ const subscribe = async (input: {
         auth: input.keys.auth,
         browser: input.browser,
         platform: input.platform,
-        audience,
+        audience: storedAudience,
         isActive: true,
         lastUsedAt: new Date(),
         preferences: { create: preferenceData },
@@ -341,13 +350,13 @@ const subscribe = async (input: {
         auth: input.keys.auth,
         browser: input.browser,
         platform: input.platform,
-        audience,
+        audience: storedAudience,
         isActive: true,
         lastUsedAt: new Date(),
       },
       include: { preferences: true },
     })
-  )
+  })
 
   let preferences = sub.preferences
   if (!preferences) {
@@ -369,7 +378,7 @@ const subscribe = async (input: {
   return {
     id: sub.id,
     subscribed: true,
-    audience,
+    audience: normalizeSubscriberKind(sub.audience),
     preferences: preferencesToSnake(preferences),
   }
 }
@@ -435,8 +444,11 @@ const unsubscribe = async (input: { profile_slug?: string; profile_id?: string; 
 
   const profile = await resolvePublicProfile(input)
   const endpointHash = hashEndpoint(input.endpoint)
+  // Public "stop updates" only turns off FOLLOWER rows. If this endpoint is the card's
+  // owner device (owner unfollowing their own card), owner alerts must keep working —
+  // those are turned off from the backoffice, not from the public card.
   const result = await prisma.pushSubscription.updateMany({
-    where: { profileId: profile.id, endpointHash },
+    where: { profileId: profile.id, endpointHash, audience: { not: 'owner' } },
     data: { isActive: false },
   })
 
@@ -473,7 +485,9 @@ const sendOne = async (sub: { id: string; endpoint: string; p256dh: string; auth
         endpoint: sub.endpoint,
         keys: { p256dh: sub.p256dh, auth: sub.auth },
       },
-      JSON.stringify(webPushBody(payload))
+      JSON.stringify(webPushBody(payload)),
+      // High urgency so locked / idle phones show it immediately (see webPushSendOptions).
+      webPushSendOptions(String(payload.type))
     )
     await prisma.pushSubscription.update({
       where: { id: sub.id },
@@ -822,6 +836,71 @@ export const preferenceKeyForCollection = (
   }
 }
 
+/** Owner backoffice "Send test alert": max delay so the owner has time to lock the phone. */
+const OWNER_TEST_MAX_DELAY_SECONDS = 30
+
+/**
+ * Owner self-test for lock-screen alerts. Reports whether THIS browser endpoint is a
+ * registered owner device for the card (or a sibling card of the same owner), how many
+ * owner devices exist, then sends one high-urgency push to all of them after a delay.
+ */
+const sendOwnerTest = async (input: { profileId: string; endpoint?: string; delaySeconds?: number }) => {
+  if (!config.VAPID.PUBLIC_KEY || !config.VAPID.PRIVATE_KEY) {
+    throw new AppError(503, 'Push notifications are not configured on the server (missing VAPID keys).')
+  }
+  const profile = await prisma.profile.findUnique({
+    where: { id: input.profileId },
+    select: { id: true, userId: true, companyUserId: true },
+  })
+  if (!profile) throw new AppError(404, 'Profile not found')
+
+  const ownerUserIds = [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id))
+  const relatedIds = ownerUserIds.length
+    ? (
+        await prisma.profile.findMany({
+          where: { OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }] },
+          select: { id: true },
+          take: 80,
+        })
+      ).map((row) => row.id)
+    : []
+  const profileIds = [...new Set([profile.id, ...relatedIds])]
+
+  const ownerSubs = await prisma.pushSubscription.findMany({
+    where: { profileId: { in: profileIds }, isActive: true, audience: 'owner' },
+    select: { endpointHash: true },
+  })
+  const devices = new Set(ownerSubs.map((row) => row.endpointHash)).size
+  const endpoint = input.endpoint?.trim()
+  const thisDeviceRegistered = endpoint ? ownerSubs.some((row) => row.endpointHash === hashEndpoint(endpoint)) : false
+
+  if (devices === 0) {
+    return { scheduled: false, devices, thisDeviceRegistered, delaySeconds: 0 }
+  }
+
+  const rawDelay = Number(input.delaySeconds)
+  const delaySeconds = Number.isFinite(rawDelay)
+    ? Math.min(OWNER_TEST_MAX_DELAY_SECONDS, Math.max(0, Math.round(rawDelay)))
+    : 0
+
+  const send = () =>
+    sendToProfile(
+      profile.id,
+      {
+        title: 'Test alert from vBiz Me',
+        body: 'Lock-screen alerts are working. You will get alerts like this when someone saves your contact or views your card again.',
+        type: 'owner_test',
+        url: '/settings',
+      },
+      { audience: 'owners', allowPrivate: true, includeSavers: false }
+    ).catch((error) => logger.error('Owner test push failed', error))
+
+  if (delaySeconds > 0) setTimeout(() => void send(), delaySeconds * 1000)
+  else void send()
+
+  return { scheduled: true, devices, thisDeviceRegistered, delaySeconds }
+}
+
 const pushService = {
   getVapidPublicKey,
   subscribe,
@@ -829,6 +908,7 @@ const pushService = {
   updatePreferences,
   unsubscribe,
   sendTest,
+  sendOwnerTest,
   sendToProfile,
   notifyProfileUpdate,
   profileIdsMatchingEmails,

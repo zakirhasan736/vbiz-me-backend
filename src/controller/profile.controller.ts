@@ -527,6 +527,26 @@ const ownerPushSubscribe = catchAsyncError(async (req, res) => {
   })
 })
 
+/** Owner backoffice: send a delayed test push to this owner's devices (lock-screen check). */
+const ownerPushTest = catchAsyncError(async (req, res) => {
+  if (!req.user) throw new AppError(403, 'Unauthorized')
+  const profileId = param(req.params.id)
+  await profileService.getOwned(profileId, req.user.id, req.user.role)
+
+  const body = (req.body || {}) as { endpoint?: string; delaySeconds?: number }
+  const data = await pushService.sendOwnerTest({
+    profileId,
+    endpoint: typeof body.endpoint === 'string' ? body.endpoint : undefined,
+    delaySeconds: typeof body.delaySeconds === 'number' ? body.delaySeconds : undefined,
+  })
+  sendResponse(res, {
+    success: true,
+    statusCode: 200,
+    message: data.scheduled ? 'Test alert scheduled' : 'No owner devices registered for push',
+    data,
+  })
+})
+
 const profileController = {
   list,
   getOne,
@@ -569,6 +589,7 @@ const profileController = {
   subscriptions,
   entitlements,
   ownerPushSubscribe,
+  ownerPushTest,
 }
 
 export default profileController
