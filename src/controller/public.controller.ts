@@ -197,7 +197,8 @@ const saveNote = catchAsyncError(async (req, res) => {
   if (!profileId || !content) {
     return sendPublicResponse(res, { success: false, data: null, error: 'profile_id and content are required' }, 400)
   }
-  const data = await publicCardService.saveNote(profileId, content, { authorName, visitorId })
+  const pushEndpoint = String(req.body?.push_endpoint || '').trim() || undefined
+  const data = await publicCardService.saveNote(profileId, content, { authorName, visitorId, pushEndpoint })
   sendPublicResponse(res, { success: true, data })
 })
 

@@ -119,19 +119,36 @@ export function mergeAnnouncementPushProfiles(input: {
 }
 
 /**
+ * Direct owner of a card for ALL owner notifications (push, email, SMS):
+ * the member login when one is assigned, else the corporate parent (unassigned card).
+ */
+export function directCardOwnerId(card: { userId?: string | null; companyUserId?: string | null }): string | null {
+  return card.userId?.trim() || card.companyUserId?.trim() || null
+}
+
+/**
  * Which cards' OWNER devices may receive an owner alert (contact saved, repeat visit,
- * 1-on-1, test) for an event card. Devices are matched on cards the event card's direct
- * owner or corporate parent PERSONALLY own (`userId`), never on cards that merely share
- * the same corporate parent (`companyUserId`) — those belong to other members, and
- * matching them leaked one member's leads to every other member of the company.
+ * 1-on-1, CRM, test) for an event card: only cards the event card's DIRECT owner owns.
  *
- * - Member card event → member's own devices + corporate parent's devices
- * - Corporate HQ card event → corporate parent's devices
- * - Other members of the same company → never
+ * - Member card B (owned by member b) → b's devices only. The corporate parent sees B's
+ *   activity in the back office dashboard, but gets no push / email / SMS for it.
+ * - Corporate's own card, or a linked card not yet assigned to a member → corporate's devices.
+ * - Other members of the same company → never.
  */
 export function ownerDeviceCardWhere(eventCard: { userId?: string | null; companyUserId?: string | null }) {
-  const ownerUserIds = [eventCard.userId, eventCard.companyUserId].filter((id): id is string => Boolean(id))
-  return ownerUserIds.length ? { userId: { in: ownerUserIds } } : null
+  const owner = directCardOwnerId(eventCard)
+  if (!owner) return null
+  return { OR: [{ userId: owner }, { userId: null, companyUserId: owner }] }
+}
+
+/**
+ * Corporate parent whose devices must be EXCLUDED from a member card's owner alerts.
+ * Null when the card is the corporate parent's own (or has no corporate parent).
+ */
+export function excludedCorporateOwnerId(card: { userId?: string | null; companyUserId?: string | null }) {
+  const company = card.companyUserId?.trim() || null
+  const owner = directCardOwnerId(card)
+  return company && owner && owner !== company ? company : null
 }
 
 /**

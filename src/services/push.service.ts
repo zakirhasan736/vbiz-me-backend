@@ -12,6 +12,8 @@ import { retryOnUniqueConflict } from '../utils/prismaErrors'
 import {
   cardChangeAlsoReachesSavers,
   defaultPushDeliveryAudience,
+  excludedCorporateOwnerId,
+  ownerDeviceCardWhere,
   resolveStoredAudience,
   skipsPublicProfileGate,
   staffAdminAllowsBrowserPush,
@@ -670,20 +672,18 @@ const sendToProfile = async (
     include: { preferences: true },
   })
 
-  // Owner devices may have been registered on another owned card (or HQ). Always merge
-  // those endpoints so closed-browser Web Push works after the first Allow — even when
-  // this card already has a stale/dead owner row that would otherwise block the fallback.
+  // Owner alerts go to the card's DIRECT owner only (member when assigned, else corporate).
   if (deliveryAudience === 'owners') {
     const ownerRow = await prisma.profile.findUnique({
       where: { id: profileId },
       select: { userId: true, companyUserId: true },
     })
-    const ownerUserIds = [ownerRow?.userId, ownerRow?.companyUserId].filter((id): id is string => Boolean(id))
-    if (ownerUserIds.length) {
+    // Merge the direct owner's devices registered on their OTHER cards, so closed-browser
+    // Web Push works after the first Allow even when this card has a stale owner row.
+    const ownerCardWhere = ownerRow ? ownerDeviceCardWhere(ownerRow) : null
+    if (ownerCardWhere) {
       const siblingIds = await prisma.profile.findMany({
-        // Only cards the direct owner / corporate parent personally own — never other
-        // members' cards under the same company (that leaked leads between members).
-        where: { userId: { in: ownerUserIds } },
+        where: ownerCardWhere,
         select: { id: true },
         take: 80,
       })
@@ -697,12 +697,34 @@ const sendToProfile = async (
           },
           include: { preferences: true },
         })
-        if (siblingSubs.length) {
-          const seenSubIds = new Set(subscriptions.map((row) => row.id))
-          for (const sub of siblingSubs) {
-            if (seenSubIds.has(sub.id)) continue
-            subscriptions.push(sub)
-            seenSubIds.add(sub.id)
+        const seenSubIds = new Set(subscriptions.map((row) => row.id))
+        for (const sub of siblingSubs) {
+          if (seenSubIds.has(sub.id)) continue
+          subscriptions.push(sub)
+          seenSubIds.add(sub.id)
+        }
+      }
+    }
+
+    // Member card: drop the corporate parent's devices, even if an older back office
+    // registered them on this linked card. Corporate sees linked-card activity in the
+    // dashboard, not as push / email / SMS.
+    const corporateId = ownerRow ? excludedCorporateOwnerId(ownerRow) : null
+    if (corporateId) {
+      const corporateCardWhere = ownerDeviceCardWhere({ userId: corporateId })
+      const corporateCards = corporateCardWhere
+        ? await prisma.profile.findMany({ where: corporateCardWhere, select: { id: true }, take: 80 })
+        : []
+      if (corporateCards.length) {
+        const corporateDevices = await prisma.pushSubscription.findMany({
+          where: { profileId: { in: corporateCards.map((row) => row.id) }, isActive: true, audience: 'owner' },
+          select: { endpointHash: true },
+        })
+        const blocked = new Set(corporateDevices.map((row) => row.endpointHash))
+        if (blocked.size) {
+          for (let index = subscriptions.length - 1; index >= 0; index -= 1) {
+            const sub = subscriptions[index]
+            if (sub.audience === 'owner' && blocked.has(sub.endpointHash)) subscriptions.splice(index, 1)
           }
         }
       }
@@ -751,6 +773,42 @@ const sendToProfile = async (
 }
 
 /** Fire-and-forget wrapper — never throws to callers. Audience defaults from push type. */
+/**
+ * Push to ONE visitor's browser (e.g. the browser that sent a 1-on-1 request or a note),
+ * identified by the endpoint hash saved with that request. Works for visitors with no
+ * vBiz Me account, as long as that browser allowed notifications on a vBiz card.
+ */
+const sendToVisitorDevice = async (input: {
+  endpointHash: string | null | undefined
+  /** Card the event belongs to — used for the notification icon / name / link. */
+  profileId: string
+  partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
+    Partial<Pick<PushPayload, 'slug' | 'url' | 'businessName'>>
+  seenEndpoints?: Set<string>
+}) => {
+  const endpointHash = input.endpointHash?.trim()
+  if (!endpointHash || !config.VAPID.PUBLIC_KEY || !config.VAPID.PRIVATE_KEY) return { sent: 0 }
+  const sub = await prisma.pushSubscription.findFirst({
+    where: { endpointHash, isActive: true },
+    orderBy: { lastUsedAt: 'desc' },
+  })
+  if (!sub || input.seenEndpoints?.has(sub.endpoint)) return { sent: 0 }
+  const payload = await buildProfilePayload(input.profileId, input.partial, { allowPrivate: true })
+  if (!payload) return { sent: 0 }
+  const ok = await sendOne(sub, payload)
+  if (ok) input.seenEndpoints?.add(sub.endpoint)
+  return { sent: ok ? 1 : 0 }
+}
+
+/** Endpoint hash to save with a visitor request, only if that browser has an active subscription. */
+const visitorEndpointHash = async (endpoint: string | null | undefined) => {
+  const value = endpoint?.trim()
+  if (!value) return null
+  const endpointHash = hashEndpoint(value)
+  const sub = await prisma.pushSubscription.findFirst({ where: { endpointHash, isActive: true }, select: { id: true } })
+  return sub ? endpointHash : null
+}
+
 const notifyProfileUpdate = (
   profileId: string,
   partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
@@ -854,11 +912,11 @@ const sendOwnerTest = async (input: { profileId: string; endpoint?: string; dela
   })
   if (!profile) throw new AppError(404, 'Profile not found')
 
-  const ownerUserIds = [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id))
-  const relatedIds = ownerUserIds.length
+  const ownerCardWhere = ownerDeviceCardWhere(profile)
+  const relatedIds = ownerCardWhere
     ? (
         await prisma.profile.findMany({
-          where: { userId: { in: ownerUserIds } },
+          where: ownerCardWhere,
           select: { id: true },
           take: 80,
         })
@@ -909,6 +967,8 @@ const pushService = {
   unsubscribe,
   sendTest,
   sendOwnerTest,
+  sendToVisitorDevice,
+  visitorEndpointHash,
   sendToProfile,
   notifyProfileUpdate,
   profileIdsMatchingEmails,

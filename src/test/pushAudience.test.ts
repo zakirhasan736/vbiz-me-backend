@@ -3,7 +3,9 @@ import { describe, it } from 'node:test'
 import {
   cardChangeAlsoReachesSavers,
   defaultPushDeliveryAudience,
+  directCardOwnerId,
   exactOwnerPushProfileIds,
+  excludedCorporateOwnerId,
   isOperationalPushType,
   mergeAnnouncementPushProfiles,
   ownerDeviceCardWhere,
@@ -161,18 +163,22 @@ describe('push audience', () => {
     assert.deepEqual(webPushSendOptions('owner_test'), { urgency: 'high', TTL: 86400 })
   })
 
-  it('sends member-card owner alerts to that member and the corporate parent, never other members', () => {
-    // Member card: owned by julie, under corporate parent corp-1.
-    assert.deepEqual(ownerDeviceCardWhere({ userId: 'julie', companyUserId: 'corp-1' }), {
-      userId: { in: ['julie', 'corp-1'] },
+  it("sends owner alerts to the card's direct owner only — never the corporate parent or other members", () => {
+    // Member card B owned by member b under corporate AA → only b's cards.
+    assert.equal(directCardOwnerId({ userId: 'b', companyUserId: 'AA' }), 'b')
+    assert.deepEqual(ownerDeviceCardWhere({ userId: 'b', companyUserId: 'AA' }), {
+      OR: [{ userId: 'b' }, { userId: null, companyUserId: 'b' }],
     })
-    // Corporate HQ card: only the corporate parent.
-    assert.deepEqual(ownerDeviceCardWhere({ userId: 'corp-1', companyUserId: null }), { userId: { in: ['corp-1'] } })
-    // Never matches by companyUserId (that would include every other member's card).
-    assert.equal(
-      JSON.stringify(ownerDeviceCardWhere({ userId: 'julie', companyUserId: 'corp-1' })).includes('companyUserId'),
-      false
-    )
+    assert.equal(excludedCorporateOwnerId({ userId: 'b', companyUserId: 'AA' }), 'AA')
+    // Corporate AA's own card → AA's cards, nothing excluded.
+    assert.equal(directCardOwnerId({ userId: 'AA', companyUserId: null }), 'AA')
+    assert.equal(excludedCorporateOwnerId({ userId: 'AA', companyUserId: null }), null)
+    // Linked card not yet assigned to a member is still corporate AA's own card.
+    assert.equal(directCardOwnerId({ userId: null, companyUserId: 'AA' }), 'AA')
+    assert.deepEqual(ownerDeviceCardWhere({ userId: null, companyUserId: 'AA' }), {
+      OR: [{ userId: 'AA' }, { userId: null, companyUserId: 'AA' }],
+    })
+    assert.equal(excludedCorporateOwnerId({ userId: null, companyUserId: 'AA' }), null)
     assert.equal(ownerDeviceCardWhere({ userId: null, companyUserId: null }), null)
   })
 })

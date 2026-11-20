@@ -4169,6 +4169,27 @@ const patchContact = async (
       })
       .catch((error) => logger.error('Visitor reply notify failed', { contactId, error }))
 
+    // Visitor who left a public note with no email / phone: push the reply to the browser
+    // that wrote it (saved with the note when that browser had allowed notifications).
+    if (row.source === 'note' && row.profile?.id) {
+      const noteRow = await prisma.userNote.findUnique({ where: { id: row.id }, select: { meta: true } })
+      const endpointHash = metaString(noteRow?.meta, 'pushEndpointHash')
+      if (endpointHash) {
+        void pushService
+          .sendToVisitorDevice({
+            endpointHash,
+            profileId: row.profile.id,
+            partial: {
+              title: `${cardName} replied to your note`,
+              body: `${cardName} replied: “${replyPreview}”`,
+              type: 'contact_updates',
+              ...(cardUrl ? { url: cardUrl } : {}),
+            },
+          })
+          .catch((error) => logger.error('Visitor note reply push failed', { contactId, error }))
+      }
+    }
+
     // Owner confirmation stays on this exact card only (push already covered by UI; SMS optional).
     if (row.profile?.id) {
       void smsService.notifyProfilePhone(row.profile.id, 'Note', `Your reply was sent to ${row.name || 'the visitor'}.`)

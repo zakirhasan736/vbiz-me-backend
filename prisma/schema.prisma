@@ -1856,6 +1856,9 @@ model OneOnOneRequest {
   proposedDescription String?
   proposedTimezone String?
   proposedDurationMinutes Int?
+  /// sha256 of the requesting browser's push endpoint (visitor allowed notifications) —
+  /// lets owner replies reach visitors with no vBiz Me account.
+  guestPushEndpointHash String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

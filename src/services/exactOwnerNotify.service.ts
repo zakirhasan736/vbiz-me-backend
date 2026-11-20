@@ -65,12 +65,12 @@ export async function resolveExactCardOwner(profileId: string): Promise<ExactCar
     userId: profile.userId,
     companyUserId: profile.companyUserId,
   })
-  // Include corporate parent email on linked member cards so HQ gets responsible email too.
+  // Direct owner only: a linked member card never emails the corporate parent
+  // (corporate sees member-card activity in the back office dashboard instead).
   const emails = collectProfileNotificationEmails({
     profileEmail: profile.email,
     userEmail: profile.user?.email,
     companyUserEmail: profile.companyUser?.email,
-    includeCompanyUser: Boolean(profile.companyUserId && profile.userId && profile.companyUserId !== profile.userId),
   })
 
   return {
