@@ -392,16 +392,12 @@ async function processMeetingReminders() {
       url: meeting.meetLink || buildOwnerBackofficePath('calendar'),
     }
 
-    if (meeting.scope === 'group') {
-      for (const profileId of parseGroupProfileIds(meeting.groupProfileIds)) {
-        pushService.notifyProfileUpdate(profileId, pushPayload, { audience: 'owners', allowPrivate: true })
-      }
-    } else if (meeting.profileId) {
-      pushService.notifyProfileUpdate(meeting.profileId, pushPayload, {
-        audience: 'owners',
-        allowPrivate: true,
-      })
-    }
+    // Once per device across all cards of the meeting.
+    pushService.notifyProfilesOnce(
+      meeting.scope === 'group' ? parseGroupProfileIds(meeting.groupProfileIds) : [meeting.profileId || ''],
+      pushPayload,
+      { audience: 'owners', allowPrivate: true }
+    )
 
     const senderEmail = meeting.createdBy?.email?.trim().toLowerCase()
     if (senderEmail && meeting.createdBy) {

@@ -435,18 +435,17 @@ export async function notifyUserInbox(opts: {
       select: { id: true },
       take: 20,
     })
-    for (const profile of owned) {
-      pushService.notifyProfileUpdate(
-        profile.id,
-        {
-          title: opts.push.title,
-          body: opts.push.body,
-          type: opts.push.type,
-          url: opts.push.url || opts.href || buildOwnerBackofficePath('crm_notes'),
-        },
-        { audience: 'owners', allowPrivate: true }
-      )
-    }
+    // One alert per device — every owned card used to send its own copy (3 cards = 3 pushes).
+    pushService.notifyProfilesOnce(
+      owned.map((profile: { id: string }) => profile.id),
+      {
+        title: opts.push.title,
+        body: opts.push.body,
+        type: opts.push.type,
+        url: opts.push.url || opts.href || buildOwnerBackofficePath('crm_notes'),
+      },
+      { audience: 'owners', allowPrivate: true }
+    )
   }
 
   if (opts.sendEmail !== false && email && config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
@@ -503,18 +502,16 @@ export async function notifyVisitorChannels(opts: {
     }
     if (opts.allowPush) {
       // Recipient's own owner devices only — never follower/saver subscriptions on the card owner's card.
-      for (const profileId of await pushService.profileIdsMatchingEmails([email])) {
-        pushService.notifyProfileUpdate(
-          profileId,
-          {
-            title: opts.title,
-            body: opts.body,
-            type: opts.pushType || 'meeting_alert',
-            ...(opts.pushUrl ? { url: opts.pushUrl } : {}),
-          },
-          { audience: 'owners', allowPrivate: true }
-        )
-      }
+      pushService.notifyProfilesOnce(
+        await pushService.profileIdsMatchingEmails([email]),
+        {
+          title: opts.title,
+          body: opts.body,
+          type: opts.pushType || 'meeting_alert',
+          ...(opts.pushUrl ? { url: opts.pushUrl } : {}),
+        },
+        { audience: 'owners', allowPrivate: true }
+      )
     }
   }
 

@@ -816,6 +816,31 @@ const visitorEndpointHash = async (endpoint: string | null | undefined) => {
   return sub ? endpointHash : null
 }
 
+/**
+ * Send ONE event to the devices of several cards — once per device. A person who owns
+ * several of these cards (group meeting, all of a user's cards, a lead with 2 vBiz cards)
+ * got one copy per card before, because each card was sent with its own dedupe set.
+ * Fire-and-forget, like notifyProfileUpdate.
+ */
+const notifyProfilesOnce = (
+  profileIds: Iterable<string>,
+  partial: Parameters<typeof sendToProfile>[1],
+  options: Omit<NonNullable<Parameters<typeof sendToProfile>[2]>, 'seenEndpoints'> = {}
+) => {
+  const ids = [...new Set([...profileIds].filter(Boolean))]
+  if (!ids.length) return
+  const seenEndpoints = new Set<string>()
+  void (async () => {
+    for (const id of ids) {
+      try {
+        await sendToProfile(id, partial, { ...options, seenEndpoints })
+      } catch (error) {
+        logger.error('Push send failed', { profileId: id, error })
+      }
+    }
+  })()
+}
+
 const notifyProfileUpdate = (
   profileId: string,
   partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
@@ -1032,6 +1057,7 @@ const pushService = {
   sendToVisitorDevice,
   visitorEndpointHash,
   sendToProfile,
+  notifyProfilesOnce,
   notifyProfileUpdate,
   profileIdsMatchingEmails,
   preferenceKeyForPostType,
