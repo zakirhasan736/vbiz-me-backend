@@ -59,6 +59,7 @@ router.get('/push/vapid-public-key', publicController.pushVapidPublicKey)
 router.post('/push/subscribe', validSchema(PublicZodSchema.pushSubscribe), publicController.pushSubscribe)
 router.post('/push/preferences', validSchema(PublicZodSchema.pushPreferences), publicController.pushPreferences)
 router.post('/push/unsubscribe', validSchema(PublicZodSchema.pushUnsubscribe), publicController.pushUnsubscribe)
+router.post('/push/rotate', validSchema(PublicZodSchema.pushRotate), publicController.pushRotate)
 router.post('/push/test', validSchema(PublicZodSchema.pushTest), publicController.pushTest)
 
 export default router

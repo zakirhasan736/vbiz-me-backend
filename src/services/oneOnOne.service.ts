@@ -1,4 +1,5 @@
 import config from '../configs/config'
+import { buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
 import { isStaffRole } from '../constants/userRole'
 import AppError from '../error/AppError'
 import authUtils from '../utils/auth.utils'
@@ -467,6 +468,10 @@ async function sendEmailsSafe(emails: string[], subject: string, html: string, c
 async function pushGuestMeetingNotification(opts: {
   guestProfileId: string | null
   guestEmail: string
+  /** Card the 1-on-1 belongs to (notification icon / name / link for visitors). */
+  cardProfileId: string
+  /** Browser that sent the request, when the visitor allowed notifications (no account needed). */
+  guestPushEndpointHash?: string | null
   ownerName: string
   eventType: 'times_proposed' | 'scheduled' | 'rescheduled' | 'cancelled'
   dateLabel: string
@@ -476,7 +481,9 @@ async function pushGuestMeetingNotification(opts: {
 }) {
   const matchedProfiles = await pushService.profileIdsMatchingEmails([opts.guestEmail])
   const profileIds = [...new Set([...(opts.guestProfileId ? [opts.guestProfileId] : []), ...matchedProfiles])]
-  if (!profileIds.length) return { sent: false as const, reason: 'no_push_subscription' as const }
+  if (!profileIds.length && !opts.guestPushEndpointHash) {
+    return { sent: false as const, reason: 'no_push_subscription' as const }
+  }
 
   const title =
     opts.eventType === 'times_proposed'
@@ -503,19 +510,91 @@ async function pushGuestMeetingNotification(opts: {
     body = `${body} Message: "${truncatedReply}"`
   }
 
-  for (const profileId of profileIds) {
-    pushService.notifyProfileUpdate(
-      profileId,
-      {
-        title,
-        body,
-        type: 'meeting_alert',
-        url: opts.meetingUrl || undefined,
-      },
-      { audience: 'owners', allowPrivate: true }
-    )
+  // One notification per device: the requesting browser first, then any vBiz Me
+  // owner devices of a guest who has their own card (deduped by endpoint).
+  const seenEndpoints = new Set<string>()
+  let sent = 0
+  try {
+    if (opts.guestPushEndpointHash) {
+      const card = await prisma.profile.findUnique({ where: { id: opts.cardProfileId }, select: { slug: true } })
+      const cardUrl = card?.slug
+        ? buildFrontendPublicCardUrl(config.FRONTEND_URL || 'https://vbiz.me', card.slug)
+        : undefined
+      const visitor = await pushService.sendToVisitorDevice({
+        endpointHash: opts.guestPushEndpointHash,
+        profileId: opts.cardProfileId,
+        // Visitors have no back office — always open the meeting / pick link or the card.
+        partial: { title, body, type: 'meeting_alert', url: opts.meetingUrl || cardUrl },
+        seenEndpoints,
+      })
+      sent += visitor.sent
+    }
+    for (const profileId of profileIds) {
+      const result = await pushService.sendToProfile(
+        profileId,
+        { title, body, type: 'meeting_alert', url: opts.meetingUrl || undefined },
+        { audience: 'owners', allowPrivate: true, seenEndpoints }
+      )
+      sent += result.sent
+    }
+  } catch (error) {
+    logger.error('1-on-1 guest push failed', error)
   }
-  return { sent: true as const, reason: 'ok' as const }
+  return sent
+    ? { sent: true as const, reason: 'ok' as const }
+    : { sent: false as const, reason: 'no_push_subscription' as const }
+}
+
+/**
+ * Reschedule / cancel used to reach an ordinary visitor only through the calendar invite
+ * update. Same channels as "times proposed" / "confirmed": email + SMS to the guest.
+ */
+async function notifyGuestMeetingChange(opts: {
+  request: { profileId: string; guestName: string; guestEmail: string; guestPhone: string | null }
+  ownerName: string
+  kind: 'rescheduled' | 'cancelled'
+  dateLabel: string
+  timeLabel: string
+  timezone: string
+  meetingUrl: string | null
+}) {
+  const card = await prisma.profile.findUnique({
+    where: { id: opts.request.profileId },
+    select: { slug: true, name: true },
+  })
+  const cardUrl = card?.slug ? buildFrontendPublicCardUrl(config.FRONTEND_URL || 'https://vbiz.me', card.slug) : null
+  const rescheduled = opts.kind === 'rescheduled'
+  const subject = rescheduled
+    ? `Your 1-on-1 with ${opts.ownerName} was rescheduled`
+    : `Your 1-on-1 with ${opts.ownerName} was cancelled`
+  await sendEmailsSafe(
+    [opts.request.guestEmail],
+    subject,
+    oneOnOneEmailHtml({
+      greetingName: opts.request.guestName,
+      intro: rescheduled
+        ? `<strong>${escapeHtml(opts.ownerName)}</strong> moved your 1-on-1.`
+        : `<strong>${escapeHtml(opts.ownerName)}</strong> cancelled your 1-on-1.`,
+      details: [
+        { label: rescheduled ? 'New date' : 'Date', value: opts.dateLabel },
+        { label: rescheduled ? 'New time' : 'Time', value: `${opts.timeLabel} (${opts.timezone})` },
+      ],
+      ...(rescheduled && (opts.meetingUrl || cardUrl)
+        ? { ctaLabel: opts.meetingUrl ? 'Join meeting' : 'View card', ctaUrl: opts.meetingUrl || cardUrl }
+        : {}),
+      footer: 'You are receiving this because you requested a 1-on-1.',
+    }),
+    rescheduled ? '1-on-1 reschedule guest' : '1-on-1 cancel guest'
+  )
+  smsService.notifyGuestPhone({
+    to: opts.request.guestPhone,
+    topic: '1-on-1',
+    cardName: card?.name?.trim() || opts.ownerName,
+    cardUrl: opts.meetingUrl || cardUrl || config.FRONTEND_URL || 'https://vbiz.me',
+    detail: rescheduled
+      ? `${opts.ownerName} moved your 1-on-1 to ${opts.dateLabel} at ${opts.timeLabel}.`
+      : `${opts.ownerName} cancelled your 1-on-1 for ${opts.dateLabel} at ${opts.timeLabel}.`,
+  })
 }
 
 async function notifyOwnerMeetingPush(
@@ -585,6 +664,7 @@ const createPublicRequest = async (input: CreatePublicRequestInput) => {
       status: 'open',
       cardOwnerUserId: profile.userId || null,
       corporateId: profile.companyUserId || null,
+      guestPushEndpointHash: await pushService.visitorEndpointHash(input.pushEndpoint),
     },
   })
 
@@ -788,6 +868,8 @@ const scheduleMeetingFromRequest = async (actor: Actor, input: ScheduleMeetingIn
   const guestProfileId = await findGuestPushProfile(request.guestEmail)
   await pushGuestMeetingNotification({
     guestProfileId,
+    cardProfileId: request.profileId,
+    guestPushEndpointHash: request.guestPushEndpointHash,
     guestEmail: request.guestEmail,
     ownerName,
     eventType: 'times_proposed',
@@ -891,6 +973,8 @@ const confirmGuestSlot = async (requestId: string, input: ConfirmGuestSlotInput)
   const guestProfileId = await findGuestPushProfile(request.guestEmail)
   await pushGuestMeetingNotification({
     guestProfileId,
+    cardProfileId: request.profileId,
+    guestPushEndpointHash: request.guestPushEndpointHash,
     guestEmail: request.guestEmail,
     ownerName,
     eventType: 'scheduled',
@@ -1032,11 +1116,22 @@ const rescheduleMeetingFromRequest = async (actor: Actor, input: RescheduleMeeti
   const guestProfileId = await findGuestPushProfile(request.guestEmail)
   await pushGuestMeetingNotification({
     guestProfileId,
+    cardProfileId: request.profileId,
+    guestPushEndpointHash: request.guestPushEndpointHash,
     guestEmail: request.guestEmail,
     ownerName,
     eventType: 'rescheduled',
     dateLabel: formatDisplayDate(startsAt, timezone),
     timeLabel: formatDisplayTime(startsAt, timezone),
+    meetingUrl: calendar.meetLink,
+  })
+  await notifyGuestMeetingChange({
+    request,
+    ownerName,
+    kind: 'rescheduled',
+    dateLabel: formatDisplayDate(startsAt, timezone),
+    timeLabel: formatDisplayTime(startsAt, timezone),
+    timezone,
     meetingUrl: calendar.meetLink,
   })
 
@@ -1078,11 +1173,22 @@ const cancelMeetingFromRequest = async (actor: Actor, input: CancelMeetingInput)
     const guestProfileId = await findGuestPushProfile(request.guestEmail)
     await pushGuestMeetingNotification({
       guestProfileId,
+      cardProfileId: request.profileId,
+      guestPushEndpointHash: request.guestPushEndpointHash,
       guestEmail: request.guestEmail,
       ownerName,
       eventType: 'cancelled',
       dateLabel: formatDisplayDate(cancelled.startAt, cancelled.timezone),
       timeLabel: formatDisplayTime(cancelled.startAt, cancelled.timezone),
+      meetingUrl: null,
+    })
+    await notifyGuestMeetingChange({
+      request,
+      ownerName,
+      kind: 'cancelled',
+      dateLabel: formatDisplayDate(cancelled.startAt, cancelled.timezone),
+      timeLabel: formatDisplayTime(cancelled.startAt, cancelled.timezone),
+      timezone: cancelled.timezone,
       meetingUrl: null,
     })
     return serializeMeeting(cancelled)

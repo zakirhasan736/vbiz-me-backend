@@ -6,6 +6,8 @@ import { buildOverviewPdf } from '../utils/buildOverviewPdf'
 import catchAsyncError from '../utils/catchAsyncError'
 import liveClicksHub from '../utils/liveClicksHub'
 import { listMeta, parseListQuery } from '../utils/pagination'
+import { prisma } from '../utils/prisma'
+import { directCardOwnerId } from '../utils/pushAudience'
 import sendResponse from '../utils/sendResponse'
 import ProfileZodSchema from '../zodValidation/profile.zod'
 
@@ -510,6 +512,23 @@ const ownerPushSubscribe = catchAsyncError(async (req, res) => {
     throw new AppError(400, 'endpoint and keys are required')
   }
 
+  // Owner alerts belong to the card's DIRECT owner only. A corporate login (or staff
+  // admin) can open a linked card, but must not register its device for that card's
+  // owner alerts — corporate sees linked-card activity in the dashboard instead.
+  const card = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { userId: true, companyUserId: true },
+  })
+  if (!card || directCardOwnerId(card) !== req.user.id) {
+    sendResponse(res, {
+      success: true,
+      statusCode: 200,
+      message: 'Not the direct owner of this card — owner push not registered',
+      data: { subscribed: false, skipped: true, reason: 'not_direct_owner' },
+    })
+    return
+  }
+
   const data = await pushService.subscribe({
     profile_id: profileId,
     endpoint: body.endpoint,
@@ -532,6 +551,14 @@ const ownerPushTest = catchAsyncError(async (req, res) => {
   if (!req.user) throw new AppError(403, 'Unauthorized')
   const profileId = param(req.params.id)
   await profileService.getOwned(profileId, req.user.id, req.user.role)
+
+  const card = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { userId: true, companyUserId: true },
+  })
+  if (!card || directCardOwnerId(card) !== req.user.id) {
+    throw new AppError(400, 'Run the test alert from one of your own cards')
+  }
 
   const body = (req.body || {}) as { endpoint?: string; delaySeconds?: number }
   const data = await pushService.sendOwnerTest({

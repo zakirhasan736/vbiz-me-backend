@@ -79,6 +79,16 @@ const pushUnsubscribe = z
     message: 'profile_slug or profile_id is required',
   })
 
+/** Service worker: browser renewed this device's push endpoint (pushsubscriptionchange). */
+const pushRotate = z.object({
+  old_endpoint: z.string().trim().url().max(2000),
+  endpoint: z.string().trim().url().max(2000),
+  keys: z.object({
+    p256dh: z.string().trim().min(1).max(512),
+    auth: z.string().trim().min(1).max(256),
+  }),
+})
+
 const pushTest = z
   .object({
     ...pushProfileRef,
@@ -96,6 +106,7 @@ const PublicZodSchema = {
   pushSubscribe,
   pushPreferences,
   pushUnsubscribe,
+  pushRotate,
   pushTest,
 }
 

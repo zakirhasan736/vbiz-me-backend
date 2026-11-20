@@ -404,9 +404,8 @@ async function notifyOwnerPush(meeting: MeetingRow, _emails: string[] = []) {
   // Guests / saved contacts: email + SMS only — never public Web Push for schedules/events.
   const ownerProfileIds = await profileIdsForMeetingPush(meeting, [])
 
-  for (const profileId of ownerProfileIds) {
-    pushService.notifyProfileUpdate(profileId, payload, { audience: 'owners', allowPrivate: true })
-  }
+  // Once per device across all invited cards (an owner with 2 invited cards gets 1 alert).
+  pushService.notifyProfilesOnce(ownerProfileIds, payload, { audience: 'owners', allowPrivate: true })
 }
 
 async function resolveOwnerEmailsForMeeting(meeting: MeetingRow): Promise<{

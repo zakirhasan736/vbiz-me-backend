@@ -24,8 +24,13 @@ export function collectProfileNotificationEmails(input: {
   const company = normalize(input.companyUserEmail)
   const login = normalize(input.userEmail)
 
+  // Member card copied from the corporate card often still carries the CORPORATE contact
+  // email. When a member login exists, email the member — never the corporate parent.
+  const cardIsCorporateEmail = Boolean(card && company && card === company && login && login !== company)
+
   const emails: string[] = []
-  if (card) emails.push(card)
+  if (card && !cardIsCorporateEmail) emails.push(card)
+  if (cardIsCorporateEmail) emails.push(login)
   // Only fall back to login email when the card has no contact email.
   if (!card && login && !emails.includes(login)) emails.push(login)
   // Orphan corporate-owned card with no member login / contact email.

@@ -57,7 +57,7 @@ import { hasFullSaveContactInfo } from '../utils/smsMessage'
 import exactOwnerNotifyService from './exactOwnerNotify.service'
 import profileService from './profile.service'
 import { getPublicAssistantSupplement } from './profileAssistant.service'
-import { mediaFromProfile } from './push.service'
+import pushService, { mediaFromProfile } from './push.service'
 import { mergeSeoSettingsWithDefaults } from './seoMetadata.service'
 import smsService from './sms.service'
 
@@ -2704,6 +2704,8 @@ const saveGuestUser = async (
 type PublicNoteOptions = {
   authorName?: string
   visitorId?: string
+  /** Visitor browser's Web Push endpoint (when they allowed notifications) — for owner replies. */
+  pushEndpoint?: string
 }
 
 type PublicNoteMeta = {
@@ -2766,9 +2768,12 @@ const saveNote = async (profileId: string, content: string, options: PublicNoteO
 
   const authorName = options.authorName?.trim().slice(0, 200)
   const visitorId = options.visitorId?.trim().slice(0, 128)
+  // Lets the owner's reply reach this visitor by push even with no email / phone / account.
+  const pushEndpointHash = await pushService.visitorEndpointHash(options.pushEndpoint)
   const meta = {
     ...(authorName ? { fullName: authorName } : {}),
     ...(visitorId ? { visitorId } : {}),
+    ...(pushEndpointHash ? { pushEndpointHash } : {}),
     source: 'public_notepad',
   } satisfies Prisma.InputJsonValue
 

@@ -350,6 +350,59 @@ function eventVisibleInAccess(row: CrmEventRow, access: CrmAccessContext): boole
   return false
 }
 
+/**
+ * A scheduled CRM event / wish was moved or cancelled:
+ * - card owner (each target card): in-app + email + push — only when SOMEONE ELSE did it
+ * - lead / guest: SMS (they were texted when it was scheduled)
+ */
+async function notifyCrmEventChange(input: {
+  actor: CrmActor
+  actorUser: { name: string | null; email: string } | null
+  actorLabel: string
+  row: CrmEventRow
+  kind: 'rescheduled' | 'cancelled'
+}) {
+  const { actor, actorUser, actorLabel, row, kind } = input
+  const when = `${row.date} at ${row.time} (${row.timezone || DEFAULT_CAMPAIGN_TIMEZONE})`
+  const title = kind === 'cancelled' ? `Cancelled: ${row.type}` : `Rescheduled: ${row.type}`
+  const body =
+    kind === 'cancelled'
+      ? `${actorLabel} cancelled “${row.type}” with ${row.host} (${when}).`
+      : `${actorLabel} moved “${row.type}” with ${row.host} to ${when}.`
+  const targets = new Set<string>()
+  if (row.profileId) targets.add(row.profileId)
+  if (row.scope === 'group') for (const profileId of parseGroupProfileIds(row.groupProfileIds)) targets.add(profileId)
+
+  for (const profileId of targets) {
+    if (await exactOwnerNotifyService.actedByDirectOwner(profileId, actor.id)) continue
+    const eventId = `crm_event_${kind}:${row.id}:${row.date}T${row.time}`
+    void exactOwnerNotifyService
+      .notifyExactCardOwnerInbox({
+        actor: { id: actor.id, email: actorUser?.email || 'system@vbizme.com', name: actorUser?.name },
+        profileId,
+        title,
+        body,
+        category: 'event',
+        topic: 'crm',
+        href: buildOwnerBackofficePath('wish'),
+        eventKey: `${eventId}:${profileId}`,
+        sendEmail: true,
+        push: { title, body, type: 'meeting_alert', url: buildOwnerBackofficePath('wish'), eventId },
+      })
+      .catch((error) => logger.error('CRM event change owner notify failed', { profileId, error }))
+  }
+
+  void smsService.notifyScheduleChanged({
+    guestUserDataId: row.guestUserDataId,
+    profileId: row.profileId,
+    groupProfileIds: row.groupProfileIds,
+    detail:
+      kind === 'cancelled'
+        ? `${actorLabel} cancelled ${row.type} with you on ${row.date} at ${row.time}.`
+        : `${actorLabel} moved ${row.type} with you to ${row.date} at ${row.time}.`,
+  })
+}
+
 async function listEventsForAccess(access: CrmAccessContext, whereExtra: Prisma.CrmEventWhereInput = {}) {
   if (access.profileIds === null) {
     return prisma.crmEvent.findMany({
@@ -580,12 +633,26 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
     : `${actorLabel} scheduled “${row.type}” for ${leadCountLabel} on ${row.date} at ${row.time} (${timezone}). Auto-send runs at that time.`
 
   for (const profileId of targetProfileIds) {
+    // Owner scheduled it themselves → in-app + email confirm only. Someone else (corporate
+    // parent, staff admin, group organiser) scheduled on this card → also push the owner.
+    const byOwner = await exactOwnerNotifyService.actedByDirectOwner(profileId, actor.id)
     void exactOwnerNotifyService
       .notifyExactCardOwnerInbox({
         actor: { id: actor.id, email: actorUser?.email || 'system@vbizme.com', name: actorUser?.name },
         profileId,
         title: `Scheduled: ${row.type}`,
         body: scheduledBody,
+        ...(byOwner
+          ? {}
+          : {
+              push: {
+                title: `${actorLabel} scheduled ${row.type} on your card`,
+                body: `${row.date} at ${row.time} (${timezone}) for ${leadCountLabel}.`,
+                type: 'meeting_alert' as const,
+                url: buildOwnerBackofficePath('wish'),
+                eventId: `crm_event_scheduled:${row.id}`,
+              },
+            }),
         category: 'event',
         topic: 'crm',
         href: buildOwnerBackofficePath('wish'),
@@ -599,7 +666,7 @@ const create = async (actor: CrmActor, access: CrmAccessContext, input: CreateCr
             />/g,
             '&gt;'
           )}</p><p>Open CRM Wish &amp; Outreach to review. Delivery runs at the scheduled time.</p><p>vBiz Me</p></div>`,
-        // No browser push on create — delivery + owner confirm push fire at startsAt.
+        // Delivery + owner "delivered" push fire at startsAt (crmReminder).
       })
       .catch((error) => logger.error('CRM wish owner schedule confirm failed', { profileId, error }))
   }
@@ -737,6 +804,14 @@ const update = async (actor: CrmActor, access: CrmAccessContext, id: string, inp
     meta: { crmEventId: row.id, previousStatus: existing.status, status: input.status || existing.status },
   })
 
+  if (existing.status === 'Scheduled') {
+    if (input.status === 'Cancelled') {
+      await notifyCrmEventChange({ actor, actorUser, actorLabel, row, kind: 'cancelled' })
+    } else if (dateOrTimeChanged && (row.date !== existing.date || row.time !== existing.time)) {
+      await notifyCrmEventChange({ actor, actorUser, actorLabel, row, kind: 'rescheduled' })
+    }
+  }
+
   return serializeCrmEvent(row)
 }
 
@@ -770,6 +845,11 @@ const remove = async (actor: CrmActor, access: CrmAccessContext, id: string) => 
     profileId: existing.profileId,
     meta: { crmEventId: existing.id },
   })
+
+  // Deleting a still-scheduled event = it won't happen: same notices as cancelling.
+  if (existing.status === 'Scheduled') {
+    await notifyCrmEventChange({ actor, actorUser, actorLabel, row: existing, kind: 'cancelled' })
+  }
 
   return { id }
 }

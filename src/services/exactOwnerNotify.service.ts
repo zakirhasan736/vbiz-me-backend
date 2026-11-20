@@ -5,6 +5,7 @@ import logger from '../utils/logger'
 import { buildOwnerNotifyEmailHtml, type OwnerNotifyEmailDetail } from '../utils/ownerNotifyEmail'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
+import { directCardOwnerId, ownerDeviceCardWhere } from '../utils/pushAudience'
 import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
 import type { SmsTopic } from '../utils/smsMessage'
 import announcementService from './announcement.service'
@@ -64,12 +65,12 @@ export async function resolveExactCardOwner(profileId: string): Promise<ExactCar
     userId: profile.userId,
     companyUserId: profile.companyUserId,
   })
-  // Include corporate parent email on linked member cards so HQ gets responsible email too.
+  // Direct owner only: a linked member card never emails the corporate parent
+  // (corporate sees member-card activity in the back office dashboard instead).
   const emails = collectProfileNotificationEmails({
     profileEmail: profile.email,
     userEmail: profile.user?.email,
     companyUserEmail: profile.companyUser?.email,
-    includeCompanyUser: Boolean(profile.companyUserId && profile.userId && profile.companyUserId !== profile.userId),
   })
 
   return {
@@ -95,7 +96,7 @@ export type NotifyExactCardOwnerOpts = {
   eventKey?: string
   /** When true, announcement service also fans push via sendPush meta. Prefer explicit push below. */
   sendPushViaAnnouncement?: boolean
-  push?: Pick<PushPayload, 'title' | 'body' | 'type' | 'url'>
+  push?: Pick<PushPayload, 'title' | 'body' | 'type' | 'url' | 'eventId'>
   /** Email the exact card owner (Zoho when configured). */
   sendEmail?: boolean
   emailSubject?: string
@@ -129,6 +130,20 @@ export type NotifyExactCardOwnerResult = {
  * Never fans out to corporate siblings or public-card savers.
  * Channel failures are independent — inbox failure does not suppress push/email/SMS.
  */
+/**
+ * True when `actorId` is the card's DIRECT owner (member when assigned, else corporate).
+ * Used to skip "you did this" alerts, and to alert the owner when SOMEONE ELSE (corporate
+ * parent, staff admin) creates or changes something on their card from the CRM.
+ */
+export async function actedByDirectOwner(profileId: string | null | undefined, actorId: string | null | undefined) {
+  if (!profileId || !actorId) return false
+  const card = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { userId: true, companyUserId: true },
+  })
+  return Boolean(card && directCardOwnerId(card) === actorId)
+}
+
 export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts): Promise<NotifyExactCardOwnerResult> {
   const owner = await resolveExactCardOwner(opts.profileId)
   const eventKey = opts.eventKey?.trim() || `exact_owner:${opts.profileId}:${opts.category || 'event'}:${Date.now()}`
@@ -211,17 +226,18 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
         type: opts.push.type,
         // Prefer explicit push URL, then CRM/backoffice href — never silent public-card fallback.
         url: opts.push.url || opts.href || buildOwnerBackofficePath('calendar'),
+        // Same event → same notification tag on the device (a repeat replaces, never stacks).
+        eventId: opts.push.eventId || eventKey,
       }
       // Web Push + SW: delivers after first Allow even when backoffice/card tab is closed.
-      // Hit the event card plus every card tied to the direct owner and corporate parent so
-      // a device registered on HQ (or any sibling) still receives OS push without reopening.
+      // Hit the event card plus every card the direct owner or corporate parent personally
+      // owns, so a device registered on HQ (or the owner's other card) still receives OS push
+      // without reopening. Never other members' cards in the same company (lead leak).
       const pushTargets = new Set<string>([owner.profileId])
-      const ownerUserIds = [owner.ownerUserId, owner.companyUserId].filter((id): id is string => Boolean(id))
-      if (ownerUserIds.length) {
+      const ownerCardWhere = ownerDeviceCardWhere({ userId: owner.ownerUserId, companyUserId: owner.companyUserId })
+      if (ownerCardWhere) {
         const relatedCards = await prisma.profile.findMany({
-          where: {
-            OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }],
-          },
+          where: ownerCardWhere,
           select: { id: true },
           take: 80,
         })
@@ -419,18 +435,17 @@ export async function notifyUserInbox(opts: {
       select: { id: true },
       take: 20,
     })
-    for (const profile of owned) {
-      pushService.notifyProfileUpdate(
-        profile.id,
-        {
-          title: opts.push.title,
-          body: opts.push.body,
-          type: opts.push.type,
-          url: opts.push.url || opts.href || buildOwnerBackofficePath('crm_notes'),
-        },
-        { audience: 'owners', allowPrivate: true }
-      )
-    }
+    // One alert per device — every owned card used to send its own copy (3 cards = 3 pushes).
+    pushService.notifyProfilesOnce(
+      owned.map((profile: { id: string }) => profile.id),
+      {
+        title: opts.push.title,
+        body: opts.push.body,
+        type: opts.push.type,
+        url: opts.push.url || opts.href || buildOwnerBackofficePath('crm_notes'),
+      },
+      { audience: 'owners', allowPrivate: true }
+    )
   }
 
   if (opts.sendEmail !== false && email && config.ZOHO_EMAIL_USER && config.ZOHO_EMAIL_PASSWORD) {
@@ -487,18 +502,16 @@ export async function notifyVisitorChannels(opts: {
     }
     if (opts.allowPush) {
       // Recipient's own owner devices only — never follower/saver subscriptions on the card owner's card.
-      for (const profileId of await pushService.profileIdsMatchingEmails([email])) {
-        pushService.notifyProfileUpdate(
-          profileId,
-          {
-            title: opts.title,
-            body: opts.body,
-            type: opts.pushType || 'meeting_alert',
-            ...(opts.pushUrl ? { url: opts.pushUrl } : {}),
-          },
-          { audience: 'owners', allowPrivate: true }
-        )
-      }
+      pushService.notifyProfilesOnce(
+        await pushService.profileIdsMatchingEmails([email]),
+        {
+          title: opts.title,
+          body: opts.body,
+          type: opts.pushType || 'meeting_alert',
+          ...(opts.pushUrl ? { url: opts.pushUrl } : {}),
+        },
+        { audience: 'owners', allowPrivate: true }
+      )
     }
   }
 
@@ -521,6 +534,7 @@ export async function requireExactCardOwner(profileId: string): Promise<ExactCar
 
 const exactOwnerNotifyService = {
   resolveExactCardOwner,
+  actedByDirectOwner,
   notifyExactCardOwnerInbox,
   notifyUserInbox,
   notifyVisitorChannels,

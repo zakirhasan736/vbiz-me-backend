@@ -14,6 +14,8 @@ const createPublicRequest = z.object({
   guestEmail: z.string().trim().email().max(200),
   guestPhone: z.string().trim().max(50).optional().nullable(),
   message: z.string().trim().max(2000).optional().nullable(),
+  /** Requesting browser's Web Push endpoint, when the visitor allowed notifications. */
+  pushEndpoint: z.string().trim().url().max(2000).optional().nullable(),
 })
 
 /** Owner proposes one or more slots; guest picks one to confirm the meeting. */

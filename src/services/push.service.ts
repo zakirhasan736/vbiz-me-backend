@@ -12,6 +12,8 @@ import { retryOnUniqueConflict } from '../utils/prismaErrors'
 import {
   cardChangeAlsoReachesSavers,
   defaultPushDeliveryAudience,
+  excludedCorporateOwnerId,
+  ownerDeviceCardWhere,
   resolveStoredAudience,
   skipsPublicProfileGate,
   staffAdminAllowsBrowserPush,
@@ -49,6 +51,12 @@ export type PushPayload = {
   avatarImageUrl?: string
   profile_id?: string
   profileId?: string
+  /**
+   * Stable id of the event (e.g. `save_contact:<contactId>`). The service worker uses it as
+   * the notification tag, so if the same event ever reaches a device twice, the second
+   * replaces the first instead of stacking a duplicate.
+   */
+  eventId?: string
 }
 
 const PREFERENCE_FIELD: Record<PushPreferenceKey, keyof PushNotificationPreference> = {
@@ -265,6 +273,7 @@ const webPushBody = (payload: PushPayload) => {
     businessName: payload.businessName,
     profile_id: payload.profile_id,
     profileId: payload.profileId,
+    ...(payload.eventId ? { eventId: payload.eventId } : {}),
   }
   if (icon) {
     body.icon = icon
@@ -670,20 +679,18 @@ const sendToProfile = async (
     include: { preferences: true },
   })
 
-  // Owner devices may have been registered on another owned card (or HQ). Always merge
-  // those endpoints so closed-browser Web Push works after the first Allow — even when
-  // this card already has a stale/dead owner row that would otherwise block the fallback.
+  // Owner alerts go to the card's DIRECT owner only (member when assigned, else corporate).
   if (deliveryAudience === 'owners') {
     const ownerRow = await prisma.profile.findUnique({
       where: { id: profileId },
       select: { userId: true, companyUserId: true },
     })
-    const ownerUserIds = [ownerRow?.userId, ownerRow?.companyUserId].filter((id): id is string => Boolean(id))
-    if (ownerUserIds.length) {
+    // Merge the direct owner's devices registered on their OTHER cards, so closed-browser
+    // Web Push works after the first Allow even when this card has a stale owner row.
+    const ownerCardWhere = ownerRow ? ownerDeviceCardWhere(ownerRow) : null
+    if (ownerCardWhere) {
       const siblingIds = await prisma.profile.findMany({
-        where: {
-          OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }],
-        },
+        where: ownerCardWhere,
         select: { id: true },
         take: 80,
       })
@@ -697,12 +704,34 @@ const sendToProfile = async (
           },
           include: { preferences: true },
         })
-        if (siblingSubs.length) {
-          const seenSubIds = new Set(subscriptions.map((row) => row.id))
-          for (const sub of siblingSubs) {
-            if (seenSubIds.has(sub.id)) continue
-            subscriptions.push(sub)
-            seenSubIds.add(sub.id)
+        const seenSubIds = new Set(subscriptions.map((row) => row.id))
+        for (const sub of siblingSubs) {
+          if (seenSubIds.has(sub.id)) continue
+          subscriptions.push(sub)
+          seenSubIds.add(sub.id)
+        }
+      }
+    }
+
+    // Member card: drop the corporate parent's devices, even if an older back office
+    // registered them on this linked card. Corporate sees linked-card activity in the
+    // dashboard, not as push / email / SMS.
+    const corporateId = ownerRow ? excludedCorporateOwnerId(ownerRow) : null
+    if (corporateId) {
+      const corporateCardWhere = ownerDeviceCardWhere({ userId: corporateId })
+      const corporateCards = corporateCardWhere
+        ? await prisma.profile.findMany({ where: corporateCardWhere, select: { id: true }, take: 80 })
+        : []
+      if (corporateCards.length) {
+        const corporateDevices = await prisma.pushSubscription.findMany({
+          where: { profileId: { in: corporateCards.map((row) => row.id) }, isActive: true, audience: 'owner' },
+          select: { endpointHash: true },
+        })
+        const blocked = new Set(corporateDevices.map((row) => row.endpointHash))
+        if (blocked.size) {
+          for (let index = subscriptions.length - 1; index >= 0; index -= 1) {
+            const sub = subscriptions[index]
+            if (sub.audience === 'owner' && blocked.has(sub.endpointHash)) subscriptions.splice(index, 1)
           }
         }
       }
@@ -710,16 +739,16 @@ const sendToProfile = async (
   }
 
   let sent = 0
-  const seen = options?.seenEndpoints
+  // ONE push per device per event. A device is stored once per card it registered on
+  // (an owner with 3 cards has 3 rows with the same endpoint) — without this set, every
+  // caller that didn't pass seenEndpoints sent the same alert 2–3 times to one phone.
+  const seen = options?.seenEndpoints ?? new Set<string>()
   for (const sub of subscriptions) {
     if (suppressOwnerSubsForStaff && sub.audience === 'owner') continue
     if (!preferenceAllows(sub.preferences, payload.type)) continue
-    if (seen?.has(sub.endpoint)) continue
-    const ok = await sendOne(sub, payload)
-    if (ok) {
-      sent += 1
-      seen?.add(sub.endpoint)
-    }
+    if (seen.has(sub.endpoint)) continue
+    seen.add(sub.endpoint)
+    if (await sendOne(sub, payload)) sent += 1
   }
 
   // Optional legacy fan-out (disabled by cardChangeAlsoReachesSavers). If re-enabled,
@@ -751,6 +780,67 @@ const sendToProfile = async (
 }
 
 /** Fire-and-forget wrapper — never throws to callers. Audience defaults from push type. */
+/**
+ * Push to ONE visitor's browser (e.g. the browser that sent a 1-on-1 request or a note),
+ * identified by the endpoint hash saved with that request. Works for visitors with no
+ * vBiz Me account, as long as that browser allowed notifications on a vBiz card.
+ */
+const sendToVisitorDevice = async (input: {
+  endpointHash: string | null | undefined
+  /** Card the event belongs to — used for the notification icon / name / link. */
+  profileId: string
+  partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
+    Partial<Pick<PushPayload, 'slug' | 'url' | 'businessName'>>
+  seenEndpoints?: Set<string>
+}) => {
+  const endpointHash = input.endpointHash?.trim()
+  if (!endpointHash || !config.VAPID.PUBLIC_KEY || !config.VAPID.PRIVATE_KEY) return { sent: 0 }
+  const sub = await prisma.pushSubscription.findFirst({
+    where: { endpointHash, isActive: true },
+    orderBy: { lastUsedAt: 'desc' },
+  })
+  if (!sub || input.seenEndpoints?.has(sub.endpoint)) return { sent: 0 }
+  const payload = await buildProfilePayload(input.profileId, input.partial, { allowPrivate: true })
+  if (!payload) return { sent: 0 }
+  const ok = await sendOne(sub, payload)
+  if (ok) input.seenEndpoints?.add(sub.endpoint)
+  return { sent: ok ? 1 : 0 }
+}
+
+/** Endpoint hash to save with a visitor request, only if that browser has an active subscription. */
+const visitorEndpointHash = async (endpoint: string | null | undefined) => {
+  const value = endpoint?.trim()
+  if (!value) return null
+  const endpointHash = hashEndpoint(value)
+  const sub = await prisma.pushSubscription.findFirst({ where: { endpointHash, isActive: true }, select: { id: true } })
+  return sub ? endpointHash : null
+}
+
+/**
+ * Send ONE event to the devices of several cards — once per device. A person who owns
+ * several of these cards (group meeting, all of a user's cards, a lead with 2 vBiz cards)
+ * got one copy per card before, because each card was sent with its own dedupe set.
+ * Fire-and-forget, like notifyProfileUpdate.
+ */
+const notifyProfilesOnce = (
+  profileIds: Iterable<string>,
+  partial: Parameters<typeof sendToProfile>[1],
+  options: Omit<NonNullable<Parameters<typeof sendToProfile>[2]>, 'seenEndpoints'> = {}
+) => {
+  const ids = [...new Set([...profileIds].filter(Boolean))]
+  if (!ids.length) return
+  const seenEndpoints = new Set<string>()
+  void (async () => {
+    for (const id of ids) {
+      try {
+        await sendToProfile(id, partial, { ...options, seenEndpoints })
+      } catch (error) {
+        logger.error('Push send failed', { profileId: id, error })
+      }
+    }
+  })()
+}
+
 const notifyProfileUpdate = (
   profileId: string,
   partial: Omit<PushPayload, 'slug' | 'url' | 'businessName' | 'profile_id' | 'profileId'> &
@@ -836,6 +926,60 @@ export const preferenceKeyForCollection = (
   }
 }
 
+/**
+ * The browser renewed this device's push endpoint (`pushsubscriptionchange`). The service
+ * worker calls this directly, so every card this device was registered on (owner AND
+ * follower rows) moves to the new endpoint without anyone opening the back office.
+ * Possession of the old endpoint (a secret only that browser holds) authorises the move.
+ */
+const rotateEndpoint = async (input: {
+  oldEndpoint: string
+  endpoint: string
+  keys: { p256dh: string; auth: string }
+}) => {
+  const oldHash = hashEndpoint(input.oldEndpoint.trim())
+  const endpoint = input.endpoint.trim()
+  const newHash = hashEndpoint(endpoint)
+  const rows = await prisma.pushSubscription.findMany({ where: { endpointHash: oldHash } })
+  let rotated = 0
+  for (const row of rows) {
+    const keysAndState = {
+      endpoint,
+      endpointHash: newHash,
+      p256dh: input.keys.p256dh,
+      auth: input.keys.auth,
+      isActive: true,
+      lastUsedAt: new Date(),
+    }
+    if (oldHash === newHash) {
+      await prisma.pushSubscription.update({ where: { id: row.id }, data: keysAndState })
+      rotated += 1
+      continue
+    }
+    const clash = await prisma.pushSubscription.findUnique({
+      where: { profileId_endpointHash: { profileId: row.profileId, endpointHash: newHash } },
+      select: { id: true, audience: true },
+    })
+    if (clash) {
+      // New endpoint already saved on this card (client re-registered first): keep that row,
+      // never losing the owner role, and drop the dead one.
+      await prisma.pushSubscription.update({
+        where: { id: clash.id },
+        data: {
+          ...keysAndState,
+          audience: resolveStoredAudience(clash.audience, normalizeSubscriberKind(row.audience)),
+        },
+      })
+      await prisma.pushSubscription.delete({ where: { id: row.id } })
+    } else {
+      await prisma.pushSubscription.update({ where: { id: row.id }, data: keysAndState })
+    }
+    rotated += 1
+  }
+  if (rotated) logger.info('Push endpoint rotated', { rotated })
+  return { rotated }
+}
+
 /** Owner backoffice "Send test alert": max delay so the owner has time to lock the phone. */
 const OWNER_TEST_MAX_DELAY_SECONDS = 30
 
@@ -854,11 +998,11 @@ const sendOwnerTest = async (input: { profileId: string; endpoint?: string; dela
   })
   if (!profile) throw new AppError(404, 'Profile not found')
 
-  const ownerUserIds = [profile.userId, profile.companyUserId].filter((id): id is string => Boolean(id))
-  const relatedIds = ownerUserIds.length
+  const ownerCardWhere = ownerDeviceCardWhere(profile)
+  const relatedIds = ownerCardWhere
     ? (
         await prisma.profile.findMany({
-          where: { OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }] },
+          where: ownerCardWhere,
           select: { id: true },
           take: 80,
         })
@@ -907,9 +1051,13 @@ const pushService = {
   subscriptionStatus,
   updatePreferences,
   unsubscribe,
+  rotateEndpoint,
   sendTest,
   sendOwnerTest,
+  sendToVisitorDevice,
+  visitorEndpointHash,
   sendToProfile,
+  notifyProfilesOnce,
   notifyProfileUpdate,
   profileIdsMatchingEmails,
   preferenceKeyForPostType,

@@ -3,9 +3,12 @@ import { describe, it } from 'node:test'
 import {
   cardChangeAlsoReachesSavers,
   defaultPushDeliveryAudience,
+  directCardOwnerId,
   exactOwnerPushProfileIds,
+  excludedCorporateOwnerId,
   isOperationalPushType,
   mergeAnnouncementPushProfiles,
+  ownerDeviceCardWhere,
   resolveStoredAudience,
   skipsPublicProfileGate,
   staffAdminAllowsBrowserPush,
@@ -158,5 +161,24 @@ describe('push audience', () => {
     assert.equal(defaultPushDeliveryAudience('owner_test'), 'owners')
     assert.equal(staffAdminAllowsBrowserPush('owner_test'), true)
     assert.deepEqual(webPushSendOptions('owner_test'), { urgency: 'high', TTL: 86400 })
+  })
+
+  it("sends owner alerts to the card's direct owner only — never the corporate parent or other members", () => {
+    // Member card B owned by member b under corporate AA → only b's cards.
+    assert.equal(directCardOwnerId({ userId: 'b', companyUserId: 'AA' }), 'b')
+    assert.deepEqual(ownerDeviceCardWhere({ userId: 'b', companyUserId: 'AA' }), {
+      OR: [{ userId: 'b' }, { userId: null, companyUserId: 'b' }],
+    })
+    assert.equal(excludedCorporateOwnerId({ userId: 'b', companyUserId: 'AA' }), 'AA')
+    // Corporate AA's own card → AA's cards, nothing excluded.
+    assert.equal(directCardOwnerId({ userId: 'AA', companyUserId: null }), 'AA')
+    assert.equal(excludedCorporateOwnerId({ userId: 'AA', companyUserId: null }), null)
+    // Linked card not yet assigned to a member is still corporate AA's own card.
+    assert.equal(directCardOwnerId({ userId: null, companyUserId: 'AA' }), 'AA')
+    assert.deepEqual(ownerDeviceCardWhere({ userId: null, companyUserId: 'AA' }), {
+      OR: [{ userId: 'AA' }, { userId: null, companyUserId: 'AA' }],
+    })
+    assert.equal(excludedCorporateOwnerId({ userId: null, companyUserId: 'AA' }), null)
+    assert.equal(ownerDeviceCardWhere({ userId: null, companyUserId: null }), null)
   })
 })

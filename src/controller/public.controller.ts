@@ -197,7 +197,8 @@ const saveNote = catchAsyncError(async (req, res) => {
   if (!profileId || !content) {
     return sendPublicResponse(res, { success: false, data: null, error: 'profile_id and content are required' }, 400)
   }
-  const data = await publicCardService.saveNote(profileId, content, { authorName, visitorId })
+  const pushEndpoint = String(req.body?.push_endpoint || '').trim() || undefined
+  const data = await publicCardService.saveNote(profileId, content, { authorName, visitorId, pushEndpoint })
   sendPublicResponse(res, { success: true, data })
 })
 
@@ -298,6 +299,17 @@ const pushPreferences = catchAsyncError(async (req, res) => {
   sendPublicResponse(res, { success: true, data })
 })
 
+/** Service worker: browser renewed the push endpoint — move this device's rows to it. */
+const pushRotate = catchAsyncError(async (req, res) => {
+  const body = req.body as { old_endpoint: string; endpoint: string; keys: { p256dh: string; auth: string } }
+  const data = await pushService.rotateEndpoint({
+    oldEndpoint: body.old_endpoint,
+    endpoint: body.endpoint,
+    keys: body.keys,
+  })
+  sendPublicResponse(res, { success: true, data })
+})
+
 const pushUnsubscribe = catchAsyncError(async (req, res) => {
   const body = req.body as {
     profile_slug?: string
@@ -369,6 +381,7 @@ const publicController = {
   pushSubscribe,
   pushPreferences,
   pushUnsubscribe,
+  pushRotate,
   pushTest,
   trackEvent,
 }

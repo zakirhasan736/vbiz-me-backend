@@ -2,6 +2,7 @@ import config from '../configs/config'
 import { buildFrontendPublicCardUrl } from '../constants/frontendPublicCardPath'
 import logger from '../utils/logger'
 import { prisma } from '../utils/prisma'
+import { excludedCorporateOwnerId, ownerDeviceCardWhere } from '../utils/pushAudience'
 import { buildVbizSms, toE164, type SmsTopic } from '../utils/smsMessage'
 import smsQuotaService from './smsQuota.service'
 
@@ -76,6 +77,8 @@ const sendTopicSms = (input: {
 
 const phoneSelect = {
   phone: true,
+  userId: true,
+  companyUserId: true,
   countryCode: true,
   name: true,
   slug: true,
@@ -84,6 +87,27 @@ const phoneSelect = {
 
 function regionHint(profile: { countryCode?: string | null; addresses?: { country: string | null }[] }) {
   return profile.countryCode?.trim() || profile.addresses?.[0]?.country?.trim() || null
+}
+
+const phoneDigits = (value?: string | null) => (value || '').replace(/\D/g, '').slice(-10)
+
+/**
+ * Owner SMS follows the same rule as push/email: a linked member card never texts the
+ * corporate parent. Member cards copied from the corporate card often keep the corporate
+ * phone — skip the text when it matches a phone on the corporate parent's own cards.
+ */
+async function isCorporateParentPhone(card: {
+  phone: string | null
+  userId: string | null
+  companyUserId: string | null
+}) {
+  const corporateId = excludedCorporateOwnerId(card)
+  const digits = phoneDigits(card.phone)
+  if (!corporateId || digits.length < 7) return false
+  const where = ownerDeviceCardWhere({ userId: corporateId })
+  if (!where) return false
+  const corporateCards = await prisma.profile.findMany({ where, select: { phone: true }, take: 80 })
+  return corporateCards.some((row) => phoneDigits(row.phone) === digits)
 }
 
 const notifyProfilePhone = async (
@@ -104,6 +128,7 @@ const notifyProfilePhone = async (
     select: phoneSelect,
   })
   if (!profile?.phone?.trim()) return { sent: false, reason: 'missing_phone' }
+  if (await isCorporateParentPhone(profile)) return { sent: false, reason: 'corporate_parent_phone' }
   const link = options?.linkUrl?.trim() || cardUrl(profile.slug)
   const body = buildVbizSms({
     topic,
@@ -273,6 +298,24 @@ async function notifyGuestScheduleSms(input: {
   return sent
 }
 
+/** Guest/lead only: their scheduled CRM event was moved or cancelled. */
+const notifyScheduleChanged = async (input: {
+  guestUserDataId?: string | null
+  profileId?: string | null
+  groupProfileIds?: unknown
+  detail: string
+  linkUrl?: string | null
+}) => {
+  if (!input.guestUserDataId?.trim()) return
+  await notifyGuestScheduleSms({
+    guestUserDataId: input.guestUserDataId,
+    profileId: input.profileId,
+    groupProfileIds: input.groupProfileIds,
+    linkUrl: input.linkUrl,
+    detail: input.detail,
+  })
+}
+
 /**
  * Guest/lead only: “someone scheduled with you…”.
  * Card owner is notified separately via notifyOwnerScheduleAlert (tier quota).
@@ -346,6 +389,7 @@ const smsService = {
   notifyOwnerScheduleAlert,
   notifyPhonesForEmails,
   notifyGlobalCardPhones,
+  notifyScheduleChanged,
   notifyScheduleCreated,
   notifyScheduleReminder,
 }
