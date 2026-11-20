@@ -681,9 +681,9 @@ const sendToProfile = async (
     const ownerUserIds = [ownerRow?.userId, ownerRow?.companyUserId].filter((id): id is string => Boolean(id))
     if (ownerUserIds.length) {
       const siblingIds = await prisma.profile.findMany({
-        where: {
-          OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }],
-        },
+        // Only cards the direct owner / corporate parent personally own — never other
+        // members' cards under the same company (that leaked leads between members).
+        where: { userId: { in: ownerUserIds } },
         select: { id: true },
         take: 80,
       })
@@ -858,7 +858,7 @@ const sendOwnerTest = async (input: { profileId: string; endpoint?: string; dela
   const relatedIds = ownerUserIds.length
     ? (
         await prisma.profile.findMany({
-          where: { OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }] },
+          where: { userId: { in: ownerUserIds } },
           select: { id: true },
           take: 80,
         })

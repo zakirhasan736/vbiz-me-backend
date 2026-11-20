@@ -6,6 +6,7 @@ import {
   exactOwnerPushProfileIds,
   isOperationalPushType,
   mergeAnnouncementPushProfiles,
+  ownerDeviceCardWhere,
   resolveStoredAudience,
   skipsPublicProfileGate,
   staffAdminAllowsBrowserPush,
@@ -158,5 +159,20 @@ describe('push audience', () => {
     assert.equal(defaultPushDeliveryAudience('owner_test'), 'owners')
     assert.equal(staffAdminAllowsBrowserPush('owner_test'), true)
     assert.deepEqual(webPushSendOptions('owner_test'), { urgency: 'high', TTL: 86400 })
+  })
+
+  it('sends member-card owner alerts to that member and the corporate parent, never other members', () => {
+    // Member card: owned by julie, under corporate parent corp-1.
+    assert.deepEqual(ownerDeviceCardWhere({ userId: 'julie', companyUserId: 'corp-1' }), {
+      userId: { in: ['julie', 'corp-1'] },
+    })
+    // Corporate HQ card: only the corporate parent.
+    assert.deepEqual(ownerDeviceCardWhere({ userId: 'corp-1', companyUserId: null }), { userId: { in: ['corp-1'] } })
+    // Never matches by companyUserId (that would include every other member's card).
+    assert.equal(
+      JSON.stringify(ownerDeviceCardWhere({ userId: 'julie', companyUserId: 'corp-1' })).includes('companyUserId'),
+      false
+    )
+    assert.equal(ownerDeviceCardWhere({ userId: null, companyUserId: null }), null)
   })
 })
