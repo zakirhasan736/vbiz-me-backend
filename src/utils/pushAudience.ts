@@ -1,5 +1,6 @@
 /** Push kinds that must arrive even when a card is unpublished or a content toggle is off. */
-const OPERATIONAL_PUSH_TYPES = new Set(['meeting_alert', 'viewer_return', 'save_contact'])
+/** owner_test = owner's own "Send test alert" from Settings — must bypass the same gates. */
+const OPERATIONAL_PUSH_TYPES = new Set(['meeting_alert', 'viewer_return', 'save_contact', 'owner_test'])
 
 /** Stored on PushSubscription.audience */
 export type PushSubscriberKind = 'follower' | 'owner'
@@ -15,6 +16,39 @@ export type PushDeliveryAudience = 'followers' | 'owners' | 'all'
 
 export function isOperationalPushType(type: string) {
   return OPERATIONAL_PUSH_TYPES.has(type)
+}
+
+/**
+ * Audience to store when a browser (re)subscribes on a card it already has a row for.
+ *
+ * One browser has ONE push endpoint per origin, so an owner who opens / follows their
+ * own public card re-posts the same endpoint as a "follower". Overwriting would silently
+ * drop the owner row and stop save_contact / viewer_return / meeting alerts for that card.
+ * Owner is the stronger role: a follower subscribe never downgrades it.
+ */
+export function resolveStoredAudience(
+  existing: string | null | undefined,
+  incoming: PushSubscriberKind
+): PushSubscriberKind {
+  if (existing === 'owner') return 'owner'
+  return incoming
+}
+
+/**
+ * Delivery options for webpush.sendNotification.
+ *
+ * Every vBiz Me push shows a visible notification, so it is sent with Urgency: high.
+ * Without it, web-push sends "normal", and Android (FCM Doze) / iOS may hold the
+ * message while the phone is locked and idle — it then only appears once the user
+ * wakes the phone or opens the PWA. TTL lets the push service retry delivery if the
+ * phone is offline; operational alerts expire sooner because they are time-sensitive.
+ */
+export function webPushSendOptions(type: string): { urgency: 'high'; TTL: number } {
+  const ONE_DAY = 60 * 60 * 24
+  return {
+    urgency: 'high',
+    TTL: isOperationalPushType(type) ? ONE_DAY : ONE_DAY * 3,
+  }
 }
 
 /**
@@ -51,7 +85,7 @@ export function cardChangeAlsoReachesSavers(_type: string) {
  * Callers that need every subscription on a guest’s own card may pass audience: 'all'.
  */
 export function defaultPushDeliveryAudience(type: string): PushDeliveryAudience {
-  if (type === 'save_contact' || type === 'viewer_return' || type === 'meeting_alert') return 'owners'
+  if (isOperationalPushType(type)) return 'owners'
   if (type === 'announcement_updates') return 'followers'
   return 'followers'
 }
