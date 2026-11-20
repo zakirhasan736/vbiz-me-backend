@@ -119,6 +119,22 @@ export function mergeAnnouncementPushProfiles(input: {
 }
 
 /**
+ * Which cards' OWNER devices may receive an owner alert (contact saved, repeat visit,
+ * 1-on-1, test) for an event card. Devices are matched on cards the event card's direct
+ * owner or corporate parent PERSONALLY own (`userId`), never on cards that merely share
+ * the same corporate parent (`companyUserId`) — those belong to other members, and
+ * matching them leaked one member's leads to every other member of the company.
+ *
+ * - Member card event → member's own devices + corporate parent's devices
+ * - Corporate HQ card event → corporate parent's devices
+ * - Other members of the same company → never
+ */
+export function ownerDeviceCardWhere(eventCard: { userId?: string | null; companyUserId?: string | null }) {
+  const ownerUserIds = [eventCard.userId, eventCard.companyUserId].filter((id): id is string => Boolean(id))
+  return ownerUserIds.length ? { userId: { in: ownerUserIds } } : null
+}
+
+/**
  * Owner / member alerts must stay on the exact card profile.
  * Do not merge email-matched sibling cards (corporate parent / shared email).
  */

@@ -5,6 +5,7 @@ import logger from '../utils/logger'
 import { buildOwnerNotifyEmailHtml, type OwnerNotifyEmailDetail } from '../utils/ownerNotifyEmail'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
+import { ownerDeviceCardWhere } from '../utils/pushAudience'
 import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
 import type { SmsTopic } from '../utils/smsMessage'
 import announcementService from './announcement.service'
@@ -213,15 +214,14 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
         url: opts.push.url || opts.href || buildOwnerBackofficePath('calendar'),
       }
       // Web Push + SW: delivers after first Allow even when backoffice/card tab is closed.
-      // Hit the event card plus every card tied to the direct owner and corporate parent so
-      // a device registered on HQ (or any sibling) still receives OS push without reopening.
+      // Hit the event card plus every card the direct owner or corporate parent personally
+      // owns, so a device registered on HQ (or the owner's other card) still receives OS push
+      // without reopening. Never other members' cards in the same company (lead leak).
       const pushTargets = new Set<string>([owner.profileId])
-      const ownerUserIds = [owner.ownerUserId, owner.companyUserId].filter((id): id is string => Boolean(id))
-      if (ownerUserIds.length) {
+      const ownerCardWhere = ownerDeviceCardWhere({ userId: owner.ownerUserId, companyUserId: owner.companyUserId })
+      if (ownerCardWhere) {
         const relatedCards = await prisma.profile.findMany({
-          where: {
-            OR: [{ userId: { in: ownerUserIds } }, { companyUserId: { in: ownerUserIds } }],
-          },
+          where: ownerCardWhere,
           select: { id: true },
           take: 80,
         })
