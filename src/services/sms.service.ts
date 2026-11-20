@@ -298,6 +298,24 @@ async function notifyGuestScheduleSms(input: {
   return sent
 }
 
+/** Guest/lead only: their scheduled CRM event was moved or cancelled. */
+const notifyScheduleChanged = async (input: {
+  guestUserDataId?: string | null
+  profileId?: string | null
+  groupProfileIds?: unknown
+  detail: string
+  linkUrl?: string | null
+}) => {
+  if (!input.guestUserDataId?.trim()) return
+  await notifyGuestScheduleSms({
+    guestUserDataId: input.guestUserDataId,
+    profileId: input.profileId,
+    groupProfileIds: input.groupProfileIds,
+    linkUrl: input.linkUrl,
+    detail: input.detail,
+  })
+}
+
 /**
  * Guest/lead only: “someone scheduled with you…”.
  * Card owner is notified separately via notifyOwnerScheduleAlert (tier quota).
@@ -371,6 +389,7 @@ const smsService = {
   notifyOwnerScheduleAlert,
   notifyPhonesForEmails,
   notifyGlobalCardPhones,
+  notifyScheduleChanged,
   notifyScheduleCreated,
   notifyScheduleReminder,
 }

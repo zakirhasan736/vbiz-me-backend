@@ -23,6 +23,7 @@ import {
 import { prisma } from '../utils/prisma'
 import { mapGuestSave, mergeAdminMeta, type AdminLeadRow } from './adminLeads.service'
 import crmEventService from './crmEvent.service'
+import exactOwnerNotifyService from './exactOwnerNotify.service'
 import {
   countOpenForActor as countOpenWorkNotesForActor,
   countOverdueForActor as countOverdueWorkNotesForActor,
@@ -461,6 +462,29 @@ export async function createCrmLead(actor: CrmActor, rawBody: Record<string, unk
     },
     include: { profile: profileInclude },
   })
+
+  // Lead added to this card by SOMEONE ELSE (corporate parent / staff admin from their CRM):
+  // tell the card's direct owner on every channel. The owner adding their own lead needs no alert.
+  if (!(await exactOwnerNotifyService.actedByDirectOwner(profileId, actor.id))) {
+    const actorUser = await prisma.user.findUnique({ where: { id: actor.id }, select: { name: true, email: true } })
+    const actorLabel = actorUser?.name?.trim() || actorUser?.email || 'Your team'
+    const title = 'New lead added to your card'
+    const body = `${actorLabel} added ${fullName} to your CRM${row.profile?.name ? ` on ${row.profile.name}` : ''}.`
+    void exactOwnerNotifyService
+      .notifyExactCardOwnerInbox({
+        actor: { id: actor.id, email: actorUser?.email || 'system@vbizme.com', name: actorUser?.name },
+        profileId,
+        title,
+        body,
+        category: 'lead',
+        topic: 'crm',
+        href: '/crm',
+        eventKey: `crm_lead_added:${row.id}`,
+        sendEmail: true,
+        push: { title, body, type: 'save_contact', url: '/crm' },
+      })
+      .catch(() => undefined)
+  }
 
   return {
     ...mapGuestSave(row),

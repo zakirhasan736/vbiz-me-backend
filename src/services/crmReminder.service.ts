@@ -558,6 +558,8 @@ async function processCrmEventReminders() {
           smsDetail: `${event.type} wish was sent. Open the link to view it.`,
           smsLinkUrl: wishAbsoluteUrl,
           push: {
+            // One notification per device even when the owner has several cards in a group wish.
+            eventId: `crm_wish_delivered:${event.id}`,
             title: ownerWishPush.title,
             body: ownerWishPush.body,
             type: 'meeting_alert',

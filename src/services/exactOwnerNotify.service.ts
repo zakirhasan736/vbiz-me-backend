@@ -5,7 +5,7 @@ import logger from '../utils/logger'
 import { buildOwnerNotifyEmailHtml, type OwnerNotifyEmailDetail } from '../utils/ownerNotifyEmail'
 import { prisma } from '../utils/prisma'
 import { collectProfileNotificationEmails, resolveDirectOwnerUserId } from '../utils/profileNotificationEmails'
-import { ownerDeviceCardWhere } from '../utils/pushAudience'
+import { directCardOwnerId, ownerDeviceCardWhere } from '../utils/pushAudience'
 import { buildOwnerBackofficePath } from '../utils/pushOwnerDeepLink'
 import type { SmsTopic } from '../utils/smsMessage'
 import announcementService from './announcement.service'
@@ -96,7 +96,7 @@ export type NotifyExactCardOwnerOpts = {
   eventKey?: string
   /** When true, announcement service also fans push via sendPush meta. Prefer explicit push below. */
   sendPushViaAnnouncement?: boolean
-  push?: Pick<PushPayload, 'title' | 'body' | 'type' | 'url'>
+  push?: Pick<PushPayload, 'title' | 'body' | 'type' | 'url' | 'eventId'>
   /** Email the exact card owner (Zoho when configured). */
   sendEmail?: boolean
   emailSubject?: string
@@ -130,6 +130,20 @@ export type NotifyExactCardOwnerResult = {
  * Never fans out to corporate siblings or public-card savers.
  * Channel failures are independent — inbox failure does not suppress push/email/SMS.
  */
+/**
+ * True when `actorId` is the card's DIRECT owner (member when assigned, else corporate).
+ * Used to skip "you did this" alerts, and to alert the owner when SOMEONE ELSE (corporate
+ * parent, staff admin) creates or changes something on their card from the CRM.
+ */
+export async function actedByDirectOwner(profileId: string | null | undefined, actorId: string | null | undefined) {
+  if (!profileId || !actorId) return false
+  const card = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { userId: true, companyUserId: true },
+  })
+  return Boolean(card && directCardOwnerId(card) === actorId)
+}
+
 export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts): Promise<NotifyExactCardOwnerResult> {
   const owner = await resolveExactCardOwner(opts.profileId)
   const eventKey = opts.eventKey?.trim() || `exact_owner:${opts.profileId}:${opts.category || 'event'}:${Date.now()}`
@@ -213,7 +227,7 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
         // Prefer explicit push URL, then CRM/backoffice href — never silent public-card fallback.
         url: opts.push.url || opts.href || buildOwnerBackofficePath('calendar'),
         // Same event → same notification tag on the device (a repeat replaces, never stacks).
-        eventId: eventKey,
+        eventId: opts.push.eventId || eventKey,
       }
       // Web Push + SW: delivers after first Allow even when backoffice/card tab is closed.
       // Hit the event card plus every card the direct owner or corporate parent personally
@@ -523,6 +537,7 @@ export async function requireExactCardOwner(profileId: string): Promise<ExactCar
 
 const exactOwnerNotifyService = {
   resolveExactCardOwner,
+  actedByDirectOwner,
   notifyExactCardOwnerInbox,
   notifyUserInbox,
   notifyVisitorChannels,

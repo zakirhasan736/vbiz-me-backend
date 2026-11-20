@@ -15,7 +15,9 @@ describe('CRM Wish & Outreach delivery timing', () => {
     assert.match(crmEventService, /On create: schedule only/)
     assert.match(crmEventService, /Scheduled: \$\{row\.type\}/)
     assert.doesNotMatch(crmEventService, /notifyVisitorChannels/)
-    assert.match(crmEventService, /No browser push on create/)
+    // Owner push on create only when someone ELSE scheduled on their card (corporate / admin).
+    assert.match(crmEventService, /actedByDirectOwner\(profileId, actor\.id\)/)
+    assert.match(crmEventService, /scheduled \$\{row\.type\} on your card/)
     assert.match(crmEventService, /recipientLeadIds/)
     assert.match(crmEventService, /resolveWishLeadIds/)
   })
@@ -27,6 +29,13 @@ describe('CRM Wish & Outreach delivery timing', () => {
     assert.doesNotMatch(fnBody, /normalized\.profileId \? \{ profileId: normalized\.profileId \}/)
     assert.match(crmEventService, /Lead is outside your CRM scope/)
     assert.match(crmEventService, /OR: \[\{ companyUserId \}, \{ userId: companyUserId \}\]/)
+  })
+
+  it('notifies the owner and the lead when a scheduled event is moved, cancelled or deleted', () => {
+    assert.match(crmEventService, /async function notifyCrmEventChange/)
+    assert.match(crmEventService, /kind: 'rescheduled'/)
+    assert.match(crmEventService, /kind: 'cancelled'/)
+    assert.match(crmEventService, /notifyScheduleChanged/)
   })
 
   it('at startsAt delivers lead email+SMS link and confirms the card owner (inbox/email/push/SMS)', () => {
