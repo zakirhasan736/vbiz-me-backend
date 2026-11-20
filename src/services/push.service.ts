@@ -51,6 +51,12 @@ export type PushPayload = {
   avatarImageUrl?: string
   profile_id?: string
   profileId?: string
+  /**
+   * Stable id of the event (e.g. `save_contact:<contactId>`). The service worker uses it as
+   * the notification tag, so if the same event ever reaches a device twice, the second
+   * replaces the first instead of stacking a duplicate.
+   */
+  eventId?: string
 }
 
 const PREFERENCE_FIELD: Record<PushPreferenceKey, keyof PushNotificationPreference> = {
@@ -267,6 +273,7 @@ const webPushBody = (payload: PushPayload) => {
     businessName: payload.businessName,
     profile_id: payload.profile_id,
     profileId: payload.profileId,
+    ...(payload.eventId ? { eventId: payload.eventId } : {}),
   }
   if (icon) {
     body.icon = icon
@@ -732,16 +739,16 @@ const sendToProfile = async (
   }
 
   let sent = 0
-  const seen = options?.seenEndpoints
+  // ONE push per device per event. A device is stored once per card it registered on
+  // (an owner with 3 cards has 3 rows with the same endpoint) — without this set, every
+  // caller that didn't pass seenEndpoints sent the same alert 2–3 times to one phone.
+  const seen = options?.seenEndpoints ?? new Set<string>()
   for (const sub of subscriptions) {
     if (suppressOwnerSubsForStaff && sub.audience === 'owner') continue
     if (!preferenceAllows(sub.preferences, payload.type)) continue
-    if (seen?.has(sub.endpoint)) continue
-    const ok = await sendOne(sub, payload)
-    if (ok) {
-      sent += 1
-      seen?.add(sub.endpoint)
-    }
+    if (seen.has(sub.endpoint)) continue
+    seen.add(sub.endpoint)
+    if (await sendOne(sub, payload)) sent += 1
   }
 
   // Optional legacy fan-out (disabled by cardChangeAlsoReachesSavers). If re-enabled,
@@ -894,6 +901,60 @@ export const preferenceKeyForCollection = (
   }
 }
 
+/**
+ * The browser renewed this device's push endpoint (`pushsubscriptionchange`). The service
+ * worker calls this directly, so every card this device was registered on (owner AND
+ * follower rows) moves to the new endpoint without anyone opening the back office.
+ * Possession of the old endpoint (a secret only that browser holds) authorises the move.
+ */
+const rotateEndpoint = async (input: {
+  oldEndpoint: string
+  endpoint: string
+  keys: { p256dh: string; auth: string }
+}) => {
+  const oldHash = hashEndpoint(input.oldEndpoint.trim())
+  const endpoint = input.endpoint.trim()
+  const newHash = hashEndpoint(endpoint)
+  const rows = await prisma.pushSubscription.findMany({ where: { endpointHash: oldHash } })
+  let rotated = 0
+  for (const row of rows) {
+    const keysAndState = {
+      endpoint,
+      endpointHash: newHash,
+      p256dh: input.keys.p256dh,
+      auth: input.keys.auth,
+      isActive: true,
+      lastUsedAt: new Date(),
+    }
+    if (oldHash === newHash) {
+      await prisma.pushSubscription.update({ where: { id: row.id }, data: keysAndState })
+      rotated += 1
+      continue
+    }
+    const clash = await prisma.pushSubscription.findUnique({
+      where: { profileId_endpointHash: { profileId: row.profileId, endpointHash: newHash } },
+      select: { id: true, audience: true },
+    })
+    if (clash) {
+      // New endpoint already saved on this card (client re-registered first): keep that row,
+      // never losing the owner role, and drop the dead one.
+      await prisma.pushSubscription.update({
+        where: { id: clash.id },
+        data: {
+          ...keysAndState,
+          audience: resolveStoredAudience(clash.audience, normalizeSubscriberKind(row.audience)),
+        },
+      })
+      await prisma.pushSubscription.delete({ where: { id: row.id } })
+    } else {
+      await prisma.pushSubscription.update({ where: { id: row.id }, data: keysAndState })
+    }
+    rotated += 1
+  }
+  if (rotated) logger.info('Push endpoint rotated', { rotated })
+  return { rotated }
+}
+
 /** Owner backoffice "Send test alert": max delay so the owner has time to lock the phone. */
 const OWNER_TEST_MAX_DELAY_SECONDS = 30
 
@@ -965,6 +1026,7 @@ const pushService = {
   subscriptionStatus,
   updatePreferences,
   unsubscribe,
+  rotateEndpoint,
   sendTest,
   sendOwnerTest,
   sendToVisitorDevice,

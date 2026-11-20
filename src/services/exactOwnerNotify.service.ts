@@ -212,6 +212,8 @@ export async function notifyExactCardOwnerInbox(opts: NotifyExactCardOwnerOpts):
         type: opts.push.type,
         // Prefer explicit push URL, then CRM/backoffice href — never silent public-card fallback.
         url: opts.push.url || opts.href || buildOwnerBackofficePath('calendar'),
+        // Same event → same notification tag on the device (a repeat replaces, never stacks).
+        eventId: eventKey,
       }
       // Web Push + SW: delivers after first Allow even when backoffice/card tab is closed.
       // Hit the event card plus every card the direct owner or corporate parent personally
