@@ -32,6 +32,7 @@ const EXPECTED_PUBLIC_ROUTES = [
   'POST /push/subscribe',
   'POST /push/preferences',
   'POST /push/unsubscribe',
+  'POST /push/rotate',
   'POST /push/test',
 ]
 
