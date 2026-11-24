@@ -89,6 +89,11 @@ if (process.env.NODE_ENV === 'test') {
   app.get('/__test__/error', (_req: Request, _res: Response, next: NextFunction) => {
     next(new Error('Forced test failure'))
   })
+  app.get('/__test__/bad-request', (_req: Request, _res: Response, next: NextFunction) => {
+    // Mimic Express / http-errors client faults (message "Bad Request", status 400).
+    const err = Object.assign(new Error('Bad Request'), { status: 400, statusCode: 400 })
+    next(err)
+  })
 }
 
 app.use((req: Request, res: Response, _next: NextFunction) => {

@@ -117,3 +117,12 @@ test('unexpected errors use the standard 500 response shape', async () => {
   assert.equal(response.body.message, 'Forced test failure')
   assert.ok(Array.isArray(response.body.errorMessages))
 })
+
+test('http-errors style Bad Request stays 400 and is not treated as a 500', async () => {
+  const response = await request(app).get('/__test__/bad-request')
+
+  assert.equal(response.status, 400)
+  assert.equal(response.body.success, false)
+  assert.equal(response.body.statusCode, 400)
+  assert.equal(response.body.message, 'Bad Request')
+})

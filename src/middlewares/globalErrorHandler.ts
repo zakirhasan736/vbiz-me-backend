@@ -13,6 +13,21 @@ import logger from '../utils/logger'
 import { isPrismaColumnMismatch, isPrismaMissingTable, isPrismaTypeMismatch } from '../utils/prismaErrors'
 import { captureSentryException } from '../utils/sentry'
 
+/** Express / http-errors / body-parser attach status or statusCode (e.g. 400 "Bad Request"). */
+function readHttpErrorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const record = error as { status?: unknown; statusCode?: unknown }
+  const raw =
+    typeof record.statusCode === 'number'
+      ? record.statusCode
+      : typeof record.status === 'number'
+        ? record.status
+        : undefined
+  if (raw == null || !Number.isFinite(raw)) return undefined
+  if (raw < 400 || raw > 599) return undefined
+  return raw
+}
+
 const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   let message = error.message || 'Something went wrong!'
   let statusCode = 500
@@ -64,6 +79,11 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     statusCode = simpleErr.statusCode
     message = simpleErr.message
     errorMessages = simpleErr.errorSources
+  } else if (error instanceof URIError) {
+    // Malformed percent-encoding in a GET path/query — client noise, not a server fault.
+    statusCode = 400
+    message = 'Bad Request'
+    errorMessages = [{ path: '', message }]
   } else if (isPrismaMissingTable(error) || isPrismaColumnMismatch(error) || isPrismaTypeMismatch(error)) {
     logger.error(`${req.method} ${req.originalUrl} schema mismatch`, { error: error.message })
     if (req.method === 'GET') {
@@ -77,6 +97,14 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     statusCode = 409
     message = 'Database schema is missing a table or column this API expects.'
     errorMessages = [{ path: '', message }]
+  } else {
+    const httpStatus = readHttpErrorStatus(error)
+    if (httpStatus) {
+      // body-parser / http-errors (e.g. status 400, message "Bad Request") must not become Sentry 500s.
+      statusCode = httpStatus
+      message = error.message || message
+      errorMessages = [{ path: '', message }]
+    }
   }
 
   const requestId =
